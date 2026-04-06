@@ -94,9 +94,16 @@ struct ConflictResolutionSheet: View {
     }
 
     private func importExternalChanges() {
-        // In a full implementation, we'd fetch the CNContact data and update the .vcf
-        // For now, just clear the conflict flag
-        contact.conflictState = nil
-        dismiss()
+        Task {
+            if let data = await syncService.fetchCNContactData(localContactsID: contact.localContactsID) {
+                try? await store.applyExternalData(data, to: contact)
+                // Re-push to CN so both sides are consistent
+                try? await syncService.pushContact(contact)
+            } else {
+                // Couldn't fetch — just clear the flag
+                contact.conflictState = nil
+            }
+            dismiss()
+        }
     }
 }

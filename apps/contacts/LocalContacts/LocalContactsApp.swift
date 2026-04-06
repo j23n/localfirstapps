@@ -28,8 +28,7 @@ struct LocalContactsApp: App {
         await store.loadContacts()
 
         // Check CNContactStore for external changes
-        let knownIDs = Set(store.contacts.map(\.localContactsID))
-        let events = await syncService.fetchChanges(knownIDs: knownIDs)
+        let events = await syncService.fetchChanges(localContacts: store.contacts)
 
         for event in events {
             switch event.kind {

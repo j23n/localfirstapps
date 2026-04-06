@@ -8,6 +8,19 @@ actor CNSyncService {
     private let historyTokenKey = "LocalContacts_ChangeHistoryToken"
     private let idMappingKey = "LocalContacts_IDMapping" // [LCID: CNContactIdentifier]
 
+    nonisolated(unsafe) private static let fullKeysToFetch: [any CNKeyDescriptor] = [
+        CNContactGivenNameKey as CNKeyDescriptor,
+        CNContactFamilyNameKey as CNKeyDescriptor,
+        CNContactMiddleNameKey as CNKeyDescriptor,
+        CNContactNamePrefixKey as CNKeyDescriptor,
+        CNContactNameSuffixKey as CNKeyDescriptor,
+        CNContactPhoneNumbersKey as CNKeyDescriptor,
+        CNContactEmailAddressesKey as CNKeyDescriptor,
+        CNContactPostalAddressesKey as CNKeyDescriptor,
+        CNContactBirthdayKey as CNKeyDescriptor,
+        CNContactImageDataKey as CNKeyDescriptor,
+    ]
+
     // MARK: - Authorization
 
     func requestAccess() async -> Bool {
@@ -189,7 +202,7 @@ actor CNSyncService {
         let imageData: Data?
     }
 
-    func fetchChanges(knownIDs: Set<String>) async -> [ChangeEvent] {
+    func fetchChanges(localContacts: [Contact]) async -> [ChangeEvent] {
         guard authorizationStatus == .authorized else { return [] }
 
         let currentToken = store.currentHistoryToken
@@ -198,15 +211,9 @@ actor CNSyncService {
             return []
         }
 
-        let keysToFetch: [CNKeyDescriptor] = [
-            CNContactGivenNameKey as CNKeyDescriptor,
-            CNContactFamilyNameKey as CNKeyDescriptor,
-            CNContactPhoneNumbersKey as CNKeyDescriptor,
-            CNContactEmailAddressesKey as CNKeyDescriptor,
-            CNContactBirthdayKey as CNKeyDescriptor,
-            CNContactImageDataKey as CNKeyDescriptor,
-        ]
+        let keysToFetch = Self.fullKeysToFetch
 
+        let knownByID = Dictionary(uniqueKeysWithValues: localContacts.map { ($0.localContactsID, $0) })
         var events: [ChangeEvent] = []
 
         do {
@@ -219,7 +226,7 @@ actor CNSyncService {
             for cn in cnContacts {
                 if let lcID = extractLocalContactsID(from: cn) {
                     foundIDs.insert(lcID)
-                    if knownIDs.contains(lcID) {
+                    if let local = knownByID[lcID], contactDiffers(local: local, cn: cn) {
                         let data = extractCNContactData(from: cn, localContactsID: lcID)
                         events.append(ChangeEvent(kind: .updated(contactData: data)))
                     }
@@ -229,7 +236,7 @@ actor CNSyncService {
                 }
             }
 
-            for id in knownIDs where !foundIDs.contains(id) {
+            for id in knownByID.keys where !foundIDs.contains(id) {
                 events.append(ChangeEvent(kind: .deleted(localContactsID: id)))
             }
         } catch {
@@ -238,6 +245,50 @@ actor CNSyncService {
 
         saveHistoryToken()
         return events
+    }
+
+    /// Compare local Contact fields against CNContact to detect real changes.
+    private func contactDiffers(local: Contact, cn: CNContact) -> Bool {
+        // Name fields
+        if local.givenName != cn.givenName { return true }
+        if local.familyName != cn.familyName { return true }
+        if local.middleName != cn.middleName { return true }
+        if local.namePrefix != cn.namePrefix { return true }
+        if local.nameSuffix != cn.nameSuffix { return true }
+
+        // Phone numbers (compare values, ignore label differences)
+        let localPhones = local.phoneNumbers.map(\.value).sorted()
+        let cnPhones = cn.phoneNumbers.map { $0.value.stringValue }.sorted()
+        if localPhones != cnPhones { return true }
+
+        // Email addresses
+        let localEmails = local.emailAddresses.map { $0.value.lowercased() }.sorted()
+        let cnEmails = cn.emailAddresses.map { ($0.value as String).lowercased() }.sorted()
+        if localEmails != cnEmails { return true }
+
+        // Postal addresses
+        let localAddrs = local.postalAddresses.map {
+            [$0.value.street, $0.value.city, $0.value.state, $0.value.postalCode, $0.value.country].joined(separator: "|")
+        }.sorted()
+        let cnAddrs = cn.postalAddresses.map {
+            let a = $0.value
+            return [a.street, a.city, a.state, a.postalCode, a.country].joined(separator: "|")
+        }.sorted()
+        if localAddrs != cnAddrs { return true }
+
+        // Birthday
+        if local.birthday != cn.birthday { return true }
+
+        // Photo
+        if local.photoData != cn.imageData { return true }
+
+        return false
+    }
+
+    /// Fetch the CNContact data for a specific local contact, for import purposes.
+    func fetchCNContactData(localContactsID: String) async -> CNContactData? {
+        guard let cn = try? findCNContact(localContactsID: localContactsID) else { return nil }
+        return extractCNContactData(from: cn, localContactsID: localContactsID)
     }
 
     // MARK: - Mapping
@@ -303,21 +354,8 @@ actor CNSyncService {
         let mapping = loadIDMapping()
         guard let cnID = mapping[localContactsID] else { return nil }
 
-        let keysToFetch: [CNKeyDescriptor] = [
-            CNContactGivenNameKey as CNKeyDescriptor,
-            CNContactFamilyNameKey as CNKeyDescriptor,
-            CNContactMiddleNameKey as CNKeyDescriptor,
-            CNContactNamePrefixKey as CNKeyDescriptor,
-            CNContactNameSuffixKey as CNKeyDescriptor,
-            CNContactPhoneNumbersKey as CNKeyDescriptor,
-            CNContactEmailAddressesKey as CNKeyDescriptor,
-            CNContactPostalAddressesKey as CNKeyDescriptor,
-            CNContactBirthdayKey as CNKeyDescriptor,
-            CNContactImageDataKey as CNKeyDescriptor,
-        ]
-
         let predicate = CNContact.predicateForContacts(withIdentifiers: [cnID])
-        return try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch).first
+        return try store.unifiedContacts(matching: predicate, keysToFetch: Self.fullKeysToFetch).first
     }
 
     private func extractLocalContactsID(from cn: CNContact) -> String? {

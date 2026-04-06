@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(ContactsStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var showFolderPicker = false
+    @State private var showOverwriteConfirmation = false
     @State private var contactsAuthStatus: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
 
     private let syncService = CNSyncService()
@@ -38,9 +39,7 @@ struct SettingsView: View {
                             .foregroundStyle(.green)
 
                         Button("Force Overwrite Contacts App") {
-                            Task {
-                                try? await syncService.fullReconciliation(contacts: store.contacts)
-                            }
+                            showOverwriteConfirmation = true
                         }
 
                     case .denied, .restricted:
@@ -96,6 +95,19 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .confirmationDialog("Force Overwrite", isPresented: $showOverwriteConfirmation, titleVisibility: .visible) {
+                Button("Overwrite", role: .destructive) {
+                    Task {
+                        try? await syncService.fullReconciliation(contacts: store.contacts)
+                    }
+                }
+            } message: {
+                if store.hasConflicts {
+                    Text("This will delete all contacts in the LocalContacts group and replace them with the local .vcf versions. \(store.contacts.filter { $0.conflictState != nil }.count) unresolved conflict(s) will be lost.")
+                } else {
+                    Text("This will delete all contacts in the LocalContacts group and replace them with the local .vcf versions.")
                 }
             }
             .sheet(isPresented: $showFolderPicker) {

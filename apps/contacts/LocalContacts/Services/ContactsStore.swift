@@ -175,6 +175,34 @@ final class ContactsStore {
         contacts.removeAll { $0.localContactsID == contact.localContactsID }
     }
 
+    // MARK: - Import External Changes
+
+    func applyExternalData(_ data: CNSyncService.CNContactData, to contact: Contact) async throws {
+        contact.givenName = data.givenName
+        contact.familyName = data.familyName
+
+        contact.phoneNumbers = data.phoneNumbers.map {
+            LabeledValue(label: $0.label, value: $0.value)
+        }
+        contact.emailAddresses = data.emailAddresses.map {
+            LabeledValue(label: $0.label, value: $0.value)
+        }
+
+        if let bday = data.birthday {
+            contact.birthday = bday
+        }
+        if let imageData = data.imageData {
+            contact.photoData = imageData
+        }
+
+        // Update full name
+        let parts = [contact.givenName, contact.middleName, contact.familyName].filter { !$0.isEmpty }
+        contact.fullName = parts.joined(separator: " ")
+
+        contact.conflictState = nil
+        try await save(contact)
+    }
+
     // MARK: - Helpers
 
     private func uniqueFileName(for contact: Contact, in folder: URL) -> String {
