@@ -37,7 +37,7 @@ struct SettingsView: View {
                         Label("Contacts access granted", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
 
-                        Button("Full Resync to Contacts App") {
+                        Button("Force Overwrite Contacts App") {
                             Task {
                                 try? await syncService.fullReconciliation(contacts: store.contacts)
                             }
