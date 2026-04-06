@@ -1,0 +1,27 @@
+name: LocalContacts
+options:
+  bundleIdPrefix: com.localcontacts
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+
+targets:
+  LocalContacts:
+    type: application
+    platform: iOS
+    sources:
+      - LocalContacts
+    settings:
+      base:
+        INFOPLIST_FILE: LocalContacts/Info.plist
+        CODE_SIGN_ENTITLEMENTS: LocalContacts/LocalContacts.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.localcontacts.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_STRICT_CONCURRENCY: complete
