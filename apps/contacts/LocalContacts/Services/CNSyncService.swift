@@ -195,9 +195,12 @@ actor CNSyncService {
         let localContactsID: String
         let givenName: String
         let familyName: String
+        let middleName: String
+        let namePrefix: String
+        let nameSuffix: String
         let phoneNumbers: [(label: String, value: String)]
         let emailAddresses: [(label: String, value: String)]
-        let note: String
+        let postalAddresses: [(label: String, street: String, city: String, state: String, postalCode: String, country: String)]
         let birthday: DateComponents?
         let imageData: Data?
     }
@@ -279,8 +282,8 @@ actor CNSyncService {
         // Birthday
         if local.birthday != cn.birthday { return true }
 
-        // Photo
-        if local.photoData != cn.imageData { return true }
+        // Photo: skip comparison — CNContactStore re-encodes images,
+        // so byte-level comparison would always trigger false positives
 
         return false
     }
@@ -368,9 +371,15 @@ actor CNSyncService {
             localContactsID: localContactsID,
             givenName: cn.givenName,
             familyName: cn.familyName,
+            middleName: cn.middleName,
+            namePrefix: cn.namePrefix,
+            nameSuffix: cn.nameSuffix,
             phoneNumbers: cn.phoneNumbers.map { (label: $0.label ?? "mobile", value: $0.value.stringValue) },
             emailAddresses: cn.emailAddresses.map { (label: $0.label ?? "home", value: $0.value as String) },
-            note: "",
+            postalAddresses: cn.postalAddresses.map { lv in
+                let a = lv.value
+                return (label: lv.label ?? "home", street: a.street, city: a.city, state: a.state, postalCode: a.postalCode, country: a.country)
+            },
             birthday: cn.birthday,
             imageData: cn.imageData
         )

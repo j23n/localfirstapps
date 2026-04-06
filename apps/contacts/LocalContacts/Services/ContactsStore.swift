@@ -180,6 +180,9 @@ final class ContactsStore {
     func applyExternalData(_ data: CNSyncService.CNContactData, to contact: Contact) async throws {
         contact.givenName = data.givenName
         contact.familyName = data.familyName
+        contact.middleName = data.middleName
+        contact.namePrefix = data.namePrefix
+        contact.nameSuffix = data.nameSuffix
 
         contact.phoneNumbers = data.phoneNumbers.map {
             LabeledValue(label: $0.label, value: $0.value)
@@ -187,15 +190,18 @@ final class ContactsStore {
         contact.emailAddresses = data.emailAddresses.map {
             LabeledValue(label: $0.label, value: $0.value)
         }
-
-        if let bday = data.birthday {
-            contact.birthday = bday
+        contact.postalAddresses = data.postalAddresses.map {
+            LabeledValue(label: $0.label, value: PostalAddress(
+                street: $0.street, city: $0.city, state: $0.state,
+                postalCode: $0.postalCode, country: $0.country
+            ))
         }
+
+        contact.birthday = data.birthday
         if let imageData = data.imageData {
             contact.photoData = imageData
         }
 
-        // Update full name
         let parts = [contact.givenName, contact.middleName, contact.familyName].filter { !$0.isEmpty }
         contact.fullName = parts.joined(separator: " ")
 
