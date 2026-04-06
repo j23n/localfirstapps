@@ -233,6 +233,9 @@ actor CNSyncService {
                 mapContactToCN(contact, cn: newCN)
                 saveRequest.add(newCN, toContainerWithIdentifier: containerID)
                 saveRequest.addMember(newCN, to: group)
+                try store.execute(saveRequest)
+                setCNIdentifier(newCN.identifier, forLocalContactsID: contact.localContactsID)
+                continue
             }
 
             try store.execute(saveRequest)
