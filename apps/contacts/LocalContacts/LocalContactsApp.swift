@@ -3,7 +3,6 @@ import SwiftUI
 @main
 struct LocalContactsApp: App {
     @State private var store = ContactsStore()
-    private let syncService = CNSyncService()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -26,23 +25,21 @@ struct LocalContactsApp: App {
     private func checkForExternalChanges() async {
         guard store.folderURL != nil else { return }
 
-        // Reload vcf files from disk
         await store.loadContacts()
 
-        // Check CNContactStore for external changes
-        let events = await syncService.fetchChanges(localContacts: store.contacts)
-
-        // Only touch UI state if there are actual changes
+        let events = await store.syncService.fetchChanges(localContacts: store.contacts)
         guard !events.isEmpty else { return }
 
         for event in events {
             switch event.kind {
             case .updated(let data):
-                if let contact = store.contacts.first(where: { $0.localContactsID == data.localContactsID }) {
+                if let contact = store.contacts.first(where: { $0.localContactsID == data.localContactsID }),
+                   contact.conflictState == nil {
                     contact.conflictState = .externalEdit
                 }
             case .deleted(let localContactsID):
-                if let contact = store.contacts.first(where: { $0.localContactsID == localContactsID }) {
+                if let contact = store.contacts.first(where: { $0.localContactsID == localContactsID }),
+                   contact.conflictState == nil {
                     contact.conflictState = .externalDelete
                 }
             case .added(let data):
@@ -73,8 +70,11 @@ struct LocalContactsApp: App {
 
         do {
             try await store.save(contact)
-            // Push back so the CN contact gets linked via ID mapping
-            try? await syncService.pushContact(contact)
+            // Claim the EXISTING CN contact — don't push a duplicate
+            await store.syncService.claimCNContact(
+                cnIdentifier: data.cnIdentifier,
+                forLocalContactsID: contact.localContactsID
+            )
         } catch {
             print("Failed to import external contact: \(error)")
         }

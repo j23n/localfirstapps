@@ -5,8 +5,6 @@ struct ConflictResolutionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let contact: Contact
 
-    private let syncService = CNSyncService()
-
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
@@ -88,17 +86,17 @@ struct ConflictResolutionSheet: View {
     private func keepLocalVersion() {
         contact.conflictState = nil
         Task {
-            try? await syncService.pushContact(contact)
+            try? await store.syncService.pushContact(contact)
             dismiss()
         }
     }
 
     private func importExternalChanges() {
         Task {
-            if let data = await syncService.fetchCNContactData(localContactsID: contact.localContactsID) {
+            if let data = await store.syncService.fetchCNContactData(localContactsID: contact.localContactsID) {
                 try? await store.applyExternalData(data, to: contact)
                 // Re-push to CN so both sides are consistent
-                try? await syncService.pushContact(contact)
+                try? await store.syncService.pushContact(contact)
             } else {
                 // Couldn't fetch — just clear the flag
                 contact.conflictState = nil

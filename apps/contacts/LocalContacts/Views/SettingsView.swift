@@ -8,8 +8,6 @@ struct SettingsView: View {
     @State private var showOverwriteConfirmation = false
     @State private var contactsAuthStatus: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
 
-    private let syncService = CNSyncService()
-
     var body: some View {
         NavigationStack {
             List {
@@ -59,10 +57,10 @@ struct SettingsView: View {
                     case .notDetermined:
                         Button("Enable Contacts Sync") {
                             Task {
-                                let granted = await syncService.requestAccess()
+                                let granted = await store.syncService.requestAccess()
                                 contactsAuthStatus = CNContactStore.authorizationStatus(for: .contacts)
                                 if granted {
-                                    try? await syncService.fullReconciliation(contacts: store.contacts)
+                                    try? await store.syncService.fullReconciliation(contacts: store.contacts)
                                 }
                             }
                         }
@@ -100,7 +98,7 @@ struct SettingsView: View {
             .confirmationDialog("Force Overwrite", isPresented: $showOverwriteConfirmation, titleVisibility: .visible) {
                 Button("Overwrite", role: .destructive) {
                     Task {
-                        try? await syncService.fullReconciliation(contacts: store.contacts)
+                        try? await store.syncService.fullReconciliation(contacts: store.contacts)
                     }
                 }
             } message: {

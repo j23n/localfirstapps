@@ -116,6 +116,14 @@ actor CNSyncService {
         }
     }
 
+    /// Map an existing CNContact identifier to a local contact ID.
+    /// Used when importing an externally-created CN contact — we claim
+    /// ownership of the existing CN contact instead of pushing a duplicate.
+    func claimCNContact(cnIdentifier: String, forLocalContactsID lcID: String) {
+        setCNIdentifier(cnIdentifier, forLocalContactsID: lcID)
+        saveHistoryToken()
+    }
+
     // MARK: - Full Reconciliation
 
     /// Deletes all contacts in the LocalContacts group, removes duplicate groups,
@@ -134,24 +142,27 @@ actor CNSyncService {
             CNContactIdentifierKey as CNKeyDescriptor,
         ]
 
+        let deleteRequest = CNSaveRequest()
+        var hasDeletes = false
+
         for group in lcGroups {
             let memberPredicate = CNContact.predicateForContactsInGroup(withIdentifier: group.identifier)
             let members = try store.unifiedContacts(matching: memberPredicate, keysToFetch: keysToFetch)
 
-            // Delete all members
             for member in members {
-                let saveReq = CNSaveRequest()
-                saveReq.delete(member.mutableCopy() as! CNMutableContact)
-                try? store.execute(saveReq)
+                deleteRequest.delete(member.mutableCopy() as! CNMutableContact)
+                hasDeletes = true
             }
 
-            // Delete the group
-            let groupReq = CNSaveRequest()
-            groupReq.delete(group.mutableCopy() as! CNMutableGroup)
-            try? store.execute(groupReq)
+            deleteRequest.delete(group.mutableCopy() as! CNMutableGroup)
+            hasDeletes = true
         }
 
-        // 2. Clear stale mapping
+        if hasDeletes {
+            try store.execute(deleteRequest)
+        }
+
+        // 2. Clear mapping only after deletes succeeded
         saveIDMapping([:])
 
         // 3. Create fresh group
@@ -192,6 +203,7 @@ actor CNSyncService {
     }
 
     struct CNContactData: Sendable {
+        let cnIdentifier: String
         let localContactsID: String
         let givenName: String
         let familyName: String
@@ -368,6 +380,7 @@ actor CNSyncService {
 
     private func extractCNContactData(from cn: CNContact, localContactsID: String) -> CNContactData {
         CNContactData(
+            cnIdentifier: cn.identifier,
             localContactsID: localContactsID,
             givenName: cn.givenName,
             familyName: cn.familyName,

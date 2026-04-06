@@ -16,8 +16,6 @@ struct ContactEditView: View {
     @State private var hasBirthday: Bool
     @State private var birthdayDate: Date
 
-    private let syncService = CNSyncService()
-
     init(contact: Contact, isNew: Bool) {
         self._contact = State(initialValue: contact)
         self.isNew = isNew
@@ -289,7 +287,7 @@ struct ContactEditView: View {
                 try await store.save(contact)
 
                 // Push to CNContactStore
-                try? await syncService.pushContact(contact)
+                try? await store.syncService.pushContact(contact)
 
                 await MainActor.run {
                     dismiss()

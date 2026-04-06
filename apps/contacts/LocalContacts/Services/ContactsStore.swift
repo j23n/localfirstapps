@@ -15,6 +15,7 @@ final class ContactsStore {
     private let writer = VCardWriter()
     let bookmarkManager = BookmarkManager()
     let folderAccess = FolderAccessManager()
+    let syncService = CNSyncService()
 
     // MARK: - Computed
 
@@ -86,7 +87,7 @@ final class ContactsStore {
 
     func loadContacts() async {
         guard let url = folderURL else { return }
-        isLoading = true
+        if contacts.isEmpty { isLoading = true }
         errorMessage = nil
 
         do {
@@ -173,6 +174,9 @@ final class ContactsStore {
         }
 
         contacts.removeAll { $0.localContactsID == contact.localContactsID }
+
+        // Also remove from CNContactStore
+        try? await syncService.deleteContact(localContactsID: contact.localContactsID)
     }
 
     // MARK: - Import External Changes
