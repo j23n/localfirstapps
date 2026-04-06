@@ -226,33 +226,40 @@ actor CNSyncService {
             return []
         }
 
-        let keysToFetch = Self.fullKeysToFetch
-
-        let knownByID = Dictionary(uniqueKeysWithValues: localContacts.map { ($0.localContactsID, $0) })
         var events: [ChangeEvent] = []
+        let mapping = loadIDMapping()
+        let localByID = Dictionary(localContacts.map { ($0.localContactsID, $0) },
+                                   uniquingKeysWith: { first, _ in first })
 
         do {
             let (_, group) = try resolveGroup()
             let predicate = CNContact.predicateForContactsInGroup(withIdentifier: group.identifier)
-            let cnContacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
+            let cnContacts = try store.unifiedContacts(matching: predicate, keysToFetch: Self.fullKeysToFetch)
 
-            var foundIDs = Set<String>()
+            // Index CN contacts by identifier for O(1) lookup
+            let cnByID = Dictionary(cnContacts.map { ($0.identifier, $0) },
+                                    uniquingKeysWith: { first, _ in first })
 
-            for cn in cnContacts {
-                if let lcID = extractLocalContactsID(from: cn) {
-                    foundIDs.insert(lcID)
-                    if let local = knownByID[lcID], contactDiffers(local: local, cn: cn) {
+            // Check mapped contacts for updates and deletions (forward lookup)
+            for (lcID, cnID) in mapping {
+                guard let local = localByID[lcID] else { continue }
+
+                if let cn = cnByID[cnID] {
+                    if contactDiffers(local: local, cn: cn) {
                         let data = extractCNContactData(from: cn, localContactsID: lcID)
                         events.append(ChangeEvent(kind: .updated(contactData: data)))
                     }
                 } else {
-                    let data = extractCNContactData(from: cn, localContactsID: "")
-                    events.append(ChangeEvent(kind: .added(contactData: data)))
+                    // Was mapped but no longer in group — deleted externally
+                    events.append(ChangeEvent(kind: .deleted(localContactsID: lcID)))
                 }
             }
 
-            for id in knownByID.keys where !foundIDs.contains(id) {
-                events.append(ChangeEvent(kind: .deleted(localContactsID: id)))
+            // Check for externally added contacts (not in any mapping value)
+            let mappedCNIDs = Set(mapping.values)
+            for cn in cnContacts where !mappedCNIDs.contains(cn.identifier) {
+                let data = extractCNContactData(from: cn, localContactsID: "")
+                events.append(ChangeEvent(kind: .added(contactData: data)))
             }
         } catch {
             print("Failed to fetch contacts for change detection: \(error)")
@@ -371,11 +378,6 @@ actor CNSyncService {
 
         let predicate = CNContact.predicateForContacts(withIdentifiers: [cnID])
         return try store.unifiedContacts(matching: predicate, keysToFetch: Self.fullKeysToFetch).first
-    }
-
-    private func extractLocalContactsID(from cn: CNContact) -> String? {
-        let mapping = loadIDMapping()
-        return mapping.first(where: { $0.value == cn.identifier })?.key
     }
 
     private func extractCNContactData(from cn: CNContact, localContactsID: String) -> CNContactData {
