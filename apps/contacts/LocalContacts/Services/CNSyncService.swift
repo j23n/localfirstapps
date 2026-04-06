@@ -23,71 +23,52 @@ actor CNSyncService {
         CNContactStore.authorizationStatus(for: .contacts)
     }
 
-    // MARK: - Container
+    // MARK: - Container & Group
 
-    private func findOrCreateContainer() throws -> String {
-        // Check stored container ID
-        if let storedID = UserDefaults.standard.string(forKey: containerIDKey) {
-            // Verify it still exists
-            do {
-                let containers = try store.containers(matching: CNContainer.predicateForContainers(withIdentifiers: [storedID]))
-                if !containers.isEmpty {
-                    return storedID
-                }
-            } catch {
-                // Container no longer exists, will create new
-            }
-        }
-
-        // Look for existing container by name
-        do {
-            let allContainers = try store.containers(matching: nil)
-            if let existing = allContainers.first(where: { $0.name == containerNameKey }) {
-                UserDefaults.standard.set(existing.identifier, forKey: containerIDKey)
-                return existing.identifier
-            }
-        } catch {
-            // Fall through to create
-        }
-
-        // Note: iOS doesn't allow creating custom containers programmatically.
-        // We use the default container and group contacts under a "LocalContacts" group instead.
-        let defaultContainer = try store.defaultContainerIdentifier()
-        UserDefaults.standard.set(defaultContainer, forKey: containerIDKey)
-        return defaultContainer
+    private func defaultContainerID() -> String {
+        (try? store.defaultContainerIdentifier()) ?? ""
     }
 
-    private func findOrCreateGroup(inContainer containerID: String) throws -> CNGroup {
+    /// Find or create the single "LocalContacts" group in the default container.
+    /// Also cleans up any duplicate groups from prior bugs.
+    private func resolveGroup() throws -> (containerID: String, group: CNGroup) {
+        let containerID = defaultContainerID()
         let predicate = CNGroup.predicateForGroupsInContainer(withIdentifier: containerID)
         let groups = try store.groups(matching: predicate)
+        let matches = groups.filter { $0.name == containerNameKey }
 
-        if let existing = groups.first(where: { $0.name == containerNameKey }) {
-            return existing
+        if let first = matches.first {
+            // Clean up duplicates if any
+            if matches.count > 1 {
+                let saveRequest = CNSaveRequest()
+                for dupe in matches.dropFirst() {
+                    saveRequest.delete(dupe.mutableCopy() as! CNMutableGroup)
+                }
+                try store.execute(saveRequest)
+            }
+            return (containerID, first)
         }
 
+        // Create new group
         let newGroup = CNMutableGroup()
         newGroup.name = containerNameKey
         let saveRequest = CNSaveRequest()
         saveRequest.add(newGroup, toContainerWithIdentifier: containerID)
         try store.execute(saveRequest)
 
-        // Re-fetch to get the persisted group
-        let refreshedGroups = try store.groups(matching: predicate)
-        guard let created = refreshedGroups.first(where: { $0.name == containerNameKey }) else {
+        let refreshed = try store.groups(matching: predicate)
+        guard let created = refreshed.first(where: { $0.name == containerNameKey }) else {
             throw CNSyncError.groupCreationFailed
         }
-        return created
+        return (containerID, created)
     }
 
-    // MARK: - Push to CNContactStore
+    // MARK: - Push Single Contact
 
     func pushContact(_ contact: Contact) async throws {
         guard authorizationStatus == .authorized else { return }
 
-        let containerID = try findOrCreateContainer()
-        let group = try findOrCreateGroup(inContainer: containerID)
-
-        // Check if contact already exists
+        let (containerID, group) = try resolveGroup()
         let existingCN = try findCNContact(localContactsID: contact.localContactsID)
 
         let saveRequest = CNSaveRequest()
@@ -96,19 +77,16 @@ actor CNSyncService {
             let mutable = existing.mutableCopy() as! CNMutableContact
             mapContactToCN(contact, cn: mutable)
             saveRequest.update(mutable)
+            try store.execute(saveRequest)
         } else {
             let newCN = CNMutableContact()
             mapContactToCN(contact, cn: newCN)
             saveRequest.add(newCN, toContainerWithIdentifier: containerID)
             saveRequest.addMember(newCN, to: group)
-            // Save mapping after execute so CNContact gets its identifier
             try store.execute(saveRequest)
             setCNIdentifier(newCN.identifier, forLocalContactsID: contact.localContactsID)
-            saveHistoryToken()
-            return
         }
 
-        try store.execute(saveRequest)
         saveHistoryToken()
     }
 
@@ -125,7 +103,71 @@ actor CNSyncService {
         }
     }
 
-    // MARK: - Delta Sync (CNChangeHistory)
+    // MARK: - Full Reconciliation
+
+    /// Deletes all contacts in the LocalContacts group, removes duplicate groups,
+    /// then re-adds every contact fresh. This is a clean "nuke and pave".
+    func fullReconciliation(contacts: [Contact]) async throws {
+        guard authorizationStatus == .authorized else { return }
+
+        let containerID = defaultContainerID()
+
+        // 1. Find ALL "LocalContacts" groups and delete their member contacts + the groups themselves
+        let predicate = CNGroup.predicateForGroupsInContainer(withIdentifier: containerID)
+        let allGroups = try store.groups(matching: predicate)
+        let lcGroups = allGroups.filter { $0.name == containerNameKey }
+
+        let keysToFetch: [CNKeyDescriptor] = [
+            CNContactIdentifierKey as CNKeyDescriptor,
+        ]
+
+        for group in lcGroups {
+            let memberPredicate = CNContact.predicateForContactsInGroup(withIdentifier: group.identifier)
+            let members = try store.unifiedContacts(matching: memberPredicate, keysToFetch: keysToFetch)
+
+            // Delete all members
+            for member in members {
+                let saveReq = CNSaveRequest()
+                saveReq.delete(member.mutableCopy() as! CNMutableContact)
+                try? store.execute(saveReq)
+            }
+
+            // Delete the group
+            let groupReq = CNSaveRequest()
+            groupReq.delete(group.mutableCopy() as! CNMutableGroup)
+            try? store.execute(groupReq)
+        }
+
+        // 2. Clear stale mapping
+        saveIDMapping([:])
+
+        // 3. Create fresh group
+        let newGroup = CNMutableGroup()
+        newGroup.name = containerNameKey
+        let groupReq = CNSaveRequest()
+        groupReq.add(newGroup, toContainerWithIdentifier: containerID)
+        try store.execute(groupReq)
+
+        let refreshed = try store.groups(matching: predicate)
+        guard let group = refreshed.first(where: { $0.name == containerNameKey }) else {
+            throw CNSyncError.groupCreationFailed
+        }
+
+        // 4. Add all contacts fresh
+        for contact in contacts {
+            let newCN = CNMutableContact()
+            mapContactToCN(contact, cn: newCN)
+            let saveReq = CNSaveRequest()
+            saveReq.add(newCN, toContainerWithIdentifier: containerID)
+            saveReq.addMember(newCN, to: group)
+            try store.execute(saveReq)
+            setCNIdentifier(newCN.identifier, forLocalContactsID: contact.localContactsID)
+        }
+
+        saveHistoryToken()
+    }
+
+    // MARK: - Delta Sync
 
     struct ChangeEvent: Sendable {
         enum Kind: Sendable {
@@ -147,17 +189,11 @@ actor CNSyncService {
         let imageData: Data?
     }
 
-    /// Detects changes by comparing current CNContactStore state against known local contacts.
-    /// CNChangeHistoryFetchRequest's enumerator is NS_SWIFT_UNAVAILABLE, so we use a
-    /// snapshot-comparison approach: fetch all contacts in our group and diff against known IDs.
     func fetchChanges(knownIDs: Set<String>) async -> [ChangeEvent] {
         guard authorizationStatus == .authorized else { return [] }
 
-        // Check if anything changed via history token
         let currentToken = store.currentHistoryToken
         let lastToken = UserDefaults.standard.data(forKey: historyTokenKey)
-
-        // If tokens match, no changes
         if let current = currentToken, let last = lastToken, current == last {
             return []
         }
@@ -167,7 +203,6 @@ actor CNSyncService {
             CNContactFamilyNameKey as CNKeyDescriptor,
             CNContactPhoneNumbersKey as CNKeyDescriptor,
             CNContactEmailAddressesKey as CNKeyDescriptor,
-            CNContactNoteKey as CNKeyDescriptor,
             CNContactBirthdayKey as CNKeyDescriptor,
             CNContactImageDataKey as CNKeyDescriptor,
         ]
@@ -175,11 +210,7 @@ actor CNSyncService {
         var events: [ChangeEvent] = []
 
         do {
-            guard let containerID = try? findOrCreateContainer(),
-                  let group = try? findOrCreateGroup(inContainer: containerID) else {
-                return []
-            }
-
+            let (_, group) = try resolveGroup()
             let predicate = CNContact.predicateForContactsInGroup(withIdentifier: group.identifier)
             let cnContacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
 
@@ -189,18 +220,15 @@ actor CNSyncService {
                 if let lcID = extractLocalContactsID(from: cn) {
                     foundIDs.insert(lcID)
                     if knownIDs.contains(lcID) {
-                        // Exists locally — flag as potentially updated
                         let data = extractCNContactData(from: cn, localContactsID: lcID)
                         events.append(ChangeEvent(kind: .updated(contactData: data)))
                     }
                 } else {
-                    // New contact without LCID — added externally
                     let data = extractCNContactData(from: cn, localContactsID: "")
                     events.append(ChangeEvent(kind: .added(contactData: data)))
                 }
             }
 
-            // Contacts in our known set but missing from CN — deleted externally
             for id in knownIDs where !foundIDs.contains(id) {
                 events.append(ChangeEvent(kind: .deleted(localContactsID: id)))
             }
@@ -210,38 +238,6 @@ actor CNSyncService {
 
         saveHistoryToken()
         return events
-    }
-
-    // MARK: - Full Reconciliation (fallback)
-
-    func fullReconciliation(contacts: [Contact]) async throws {
-        guard authorizationStatus == .authorized else { return }
-
-        let containerID = try findOrCreateContainer()
-        let group = try findOrCreateGroup(inContainer: containerID)
-
-        for contact in contacts {
-            let saveRequest = CNSaveRequest()
-            let existingCN = try findCNContact(localContactsID: contact.localContactsID)
-
-            if let existing = existingCN {
-                let mutable = existing.mutableCopy() as! CNMutableContact
-                mapContactToCN(contact, cn: mutable)
-                saveRequest.update(mutable)
-            } else {
-                let newCN = CNMutableContact()
-                mapContactToCN(contact, cn: newCN)
-                saveRequest.add(newCN, toContainerWithIdentifier: containerID)
-                saveRequest.addMember(newCN, to: group)
-                try store.execute(saveRequest)
-                setCNIdentifier(newCN.identifier, forLocalContactsID: contact.localContactsID)
-                continue
-            }
-
-            try store.execute(saveRequest)
-        }
-
-        saveHistoryToken()
     }
 
     // MARK: - Mapping
@@ -336,7 +332,7 @@ actor CNSyncService {
             familyName: cn.familyName,
             phoneNumbers: cn.phoneNumbers.map { (label: $0.label ?? "mobile", value: $0.value.stringValue) },
             emailAddresses: cn.emailAddresses.map { (label: $0.label ?? "home", value: $0.value as String) },
-            note: cn.note,
+            note: "",
             birthday: cn.birthday,
             imageData: cn.imageData
         )
