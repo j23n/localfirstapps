@@ -13,16 +13,17 @@ struct SettingsView: View {
             List {
                 // Folder
                 Section("Contacts Folder") {
-                    if let url = store.folderURL {
-                        LabeledContent("Current Folder") {
-                            Text(url.lastPathComponent)
+                    Button {
+                        showFolderPicker = true
+                    } label: {
+                        LabeledContent {
+                            Text(store.folderURL?.lastPathComponent ?? "Not selected")
                                 .foregroundStyle(.secondary)
+                        } label: {
+                            Label("Folder", systemImage: "folder")
                         }
                     }
-
-                    Button("Change Folder") {
-                        showFolderPicker = true
-                    }
+                    .tint(.primary)
 
                     Button("Reload Contacts") {
                         Task { await store.loadContacts() }

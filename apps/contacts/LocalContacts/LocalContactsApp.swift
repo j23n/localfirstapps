@@ -55,10 +55,14 @@ struct LocalContactsApp: App {
         contact.middleName = data.middleName
         contact.namePrefix = data.namePrefix
         contact.nameSuffix = data.nameSuffix
+        contact.organization = data.organization
+        contact.jobTitle = data.jobTitle
+        contact.nickname = data.nickname
         contact.fullName = [data.givenName, data.middleName, data.familyName]
             .filter { !$0.isEmpty }.joined(separator: " ")
         contact.phoneNumbers = data.phoneNumbers.map { LabeledValue(label: $0.label, value: $0.value) }
         contact.emailAddresses = data.emailAddresses.map { LabeledValue(label: $0.label, value: $0.value) }
+        contact.urls = data.urls.map { LabeledValue(label: $0.label, value: $0.value) }
         contact.postalAddresses = data.postalAddresses.map {
             LabeledValue(label: $0.label, value: PostalAddress(
                 street: $0.street, city: $0.city, state: $0.state,

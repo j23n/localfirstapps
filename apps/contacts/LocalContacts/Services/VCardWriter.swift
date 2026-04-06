@@ -20,6 +20,27 @@ struct VCardWriter: Sendable {
         let fn = contact.fullName.isEmpty ? contact.displayName : contact.fullName
         lines.append("FN:\(escape(fn))")
 
+        // ORG
+        if !contact.organization.isEmpty {
+            lines.append("ORG:\(escape(contact.organization))")
+        }
+
+        // TITLE
+        if !contact.jobTitle.isEmpty {
+            lines.append("TITLE:\(escape(contact.jobTitle))")
+        }
+
+        // NICKNAME
+        if !contact.nickname.isEmpty {
+            lines.append("NICKNAME:\(escape(contact.nickname))")
+        }
+
+        // URL
+        for url in contact.urls {
+            let typeParam = url.label.isEmpty ? "homepage" : url.label
+            lines.append("URL;TYPE=\(typeParam):\(url.value)")
+        }
+
         // TEL
         for phone in contact.phoneNumbers {
             let typeParam = phone.label.isEmpty ? "cell" : phone.label

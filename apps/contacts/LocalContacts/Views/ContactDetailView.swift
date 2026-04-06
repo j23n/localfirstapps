@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContactDetailView: View {
     @Environment(ContactsStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     let contact: Contact
     @State private var showEdit = false
     @State private var showDeleteConfirmation = false
@@ -9,12 +10,26 @@ struct ContactDetailView: View {
 
     var body: some View {
         List {
-            // Header
+            // Hero Header
             Section {
                 VStack(spacing: 12) {
-                    AvatarView(contact: contact, size: 100)
+                    AvatarView(contact: contact, size: 120)
+
                     Text(contact.displayName)
                         .font(.title2.bold())
+
+                    if !contact.organization.isEmpty || !contact.jobTitle.isEmpty {
+                        Text([contact.jobTitle, contact.organization].filter { !$0.isEmpty }.joined(separator: " — "))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !contact.nickname.isEmpty {
+                        Text("\"\(contact.nickname)\"")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    }
 
                     if !contact.categories.isEmpty {
                         HStack(spacing: 6) {
@@ -23,7 +38,7 @@ struct ContactDetailView: View {
                                     .font(.caption)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(Color.accentColor.opacity(0.15), in: Capsule())
+                                    .background(Color.accentColor.opacity(0.12), in: Capsule())
                                     .foregroundStyle(Color.accentColor)
                             }
                         }
@@ -33,29 +48,36 @@ struct ContactDetailView: View {
                 .listRowBackground(Color.clear)
             }
 
-            // Quick Actions
-            if !contact.phoneNumbers.isEmpty || !contact.emailAddresses.isEmpty {
+            // Conflict Banner
+            if contact.conflictState != nil {
                 Section {
-                    HStack(spacing: 16) {
-                        if let phone = contact.phoneNumbers.first {
-                            actionButton(icon: "phone.fill", label: "Call") {
-                                openURL("tel:\(phone.value)")
+                    Button {
+                        showConflictSheet = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: contact.conflictState == .externalEdit
+                                  ? "pencil.circle.fill" : "trash.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.orange)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(contact.conflictState == .externalEdit
+                                     ? "External Edit Detected"
+                                     : "External Deletion Detected")
+                                    .font(.subheadline.weight(.medium))
+                                Text("Tap to resolve")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
-                            actionButton(icon: "message.fill", label: "Message") {
-                                openURL("sms:\(phone.value)")
-                            }
-                            actionButton(icon: "video.fill", label: "FaceTime") {
-                                openURL("facetime:\(phone.value)")
-                            }
-                        }
-                        if let email = contact.emailAddresses.first {
-                            actionButton(icon: "envelope.fill", label: "Mail") {
-                                openURL("mailto:\(email.value)")
-                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .listRowBackground(Color.clear)
+                    .tint(.primary)
                 }
             }
 
@@ -63,9 +85,7 @@ struct ContactDetailView: View {
             if !contact.phoneNumbers.isEmpty {
                 Section("Phone") {
                     ForEach(contact.phoneNumbers) { phone in
-                        Button {
-                            openURL("tel:\(phone.value)")
-                        } label: {
+                        Link(destination: URL(string: "tel:\(phone.value)")!) {
                             LabeledContent {
                                 Text(phone.value)
                                     .foregroundStyle(Color.accentColor)
@@ -82,15 +102,33 @@ struct ContactDetailView: View {
             if !contact.emailAddresses.isEmpty {
                 Section("Email") {
                     ForEach(contact.emailAddresses) { email in
-                        Button {
-                            openURL("mailto:\(email.value)")
-                        } label: {
+                        Link(destination: URL(string: "mailto:\(email.value)")!) {
                             LabeledContent {
                                 Text(email.value)
                                     .foregroundStyle(Color.accentColor)
                             } label: {
                                 Text(email.label.capitalized)
                                     .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // URLs
+            if !contact.urls.isEmpty {
+                Section("Website") {
+                    ForEach(contact.urls) { url in
+                        if let linkURL = URL(string: url.value.hasPrefix("http") ? url.value : "https://\(url.value)") {
+                            Link(destination: linkURL) {
+                                LabeledContent {
+                                    Text(url.value)
+                                        .foregroundStyle(Color.accentColor)
+                                        .lineLimit(1)
+                                } label: {
+                                    Text(url.label.capitalized)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
@@ -150,6 +188,7 @@ struct ContactDetailView: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -170,28 +209,11 @@ struct ContactDetailView: View {
             Button("Delete", role: .destructive) {
                 Task {
                     try? await store.delete(contact)
+                    dismiss()
                 }
             }
         } message: {
             Text("This will permanently delete \(contact.displayName) and remove the .vcf file.")
-        }
-        .onAppear {
-            if contact.conflictState != nil {
-                showConflictSheet = true
-            }
-        }
-    }
-
-    private func actionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.title3)
-                Text(label)
-                    .font(.caption2)
-            }
-            .frame(width: 60, height: 50)
-            .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 
@@ -207,10 +229,5 @@ struct ContactDetailView: View {
         formatter.dateFormat = "MMMM d"
         let date = Calendar.current.date(from: DateComponents(month: month, day: day))!
         return formatter.string(from: date)
-    }
-
-    private func openURL(_ urlString: String) {
-        guard let url = URL(string: urlString) else { return }
-        UIApplication.shared.open(url)
     }
 }

@@ -82,13 +82,13 @@ struct ContactListView: View {
                     Section(group.letter) {
                         ForEach(group.contacts) { contact in
                             NavigationLink(value: contact.id) {
-                                ContactRow(contact: contact)
+                                ContactCard(contact: contact)
                             }
                         }
                     }
                 }
             }
-            .listStyle(.plain)
+            .listStyle(.insetGrouped)
             .navigationDestination(for: UUID.self) { contactID in
                 if let contact = store.contacts.first(where: { $0.id == contactID }) {
                     ContactDetailView(contact: contact)
@@ -103,32 +103,57 @@ struct ContactListView: View {
     }
 }
 
-struct ContactRow: View {
+// MARK: - Contact Card
+
+struct ContactCard: View {
     let contact: Contact
 
     var body: some View {
-        HStack(spacing: 12) {
-            AvatarView(contact: contact, size: 40)
+        HStack(spacing: 14) {
+            AvatarView(contact: contact, size: 48)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(contact.displayName)
-                        .font(.body)
-                    if contact.conflictState != nil {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .font(.caption)
-                    }
-                }
-                if let phone = contact.phoneNumbers.first {
-                    Text(phone.value)
-                        .font(.caption)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(contact.displayName)
+                    .font(.body.weight(.medium))
+
+                if !contact.organization.isEmpty || !contact.jobTitle.isEmpty {
+                    Text([contact.jobTitle, contact.organization].filter { !$0.isEmpty }.joined(separator: " — "))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                if let detail = contactDetail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                 }
             }
+
+            Spacer()
+
+            if contact.conflictState != nil {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.subheadline)
+            }
         }
+        .padding(.vertical, 4)
+    }
+
+    private var contactDetail: String? {
+        if let phone = contact.phoneNumbers.first {
+            return phone.value
+        }
+        if let email = contact.emailAddresses.first {
+            return email.value
+        }
+        return nil
     }
 }
+
+// MARK: - Avatar
 
 struct AvatarView: View {
     let contact: Contact
@@ -144,13 +169,15 @@ struct AvatarView: View {
                 .clipShape(Circle())
         } else {
             Text(contact.initials)
-                .font(.system(size: size * 0.38, weight: .medium))
+                .font(.system(size: size * 0.36, weight: .medium, design: .rounded))
                 .foregroundStyle(.white)
                 .frame(width: size, height: size)
-                .background(Color.accentColor.gradient, in: Circle())
+                .background(Color.accentColor.opacity(0.8).gradient, in: Circle())
         }
     }
 }
+
+// MARK: - Tag Filter Bar
 
 struct TagFilterBar: View {
     @Environment(ContactsStore.self) private var store

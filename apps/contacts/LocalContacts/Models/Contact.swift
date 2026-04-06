@@ -15,6 +15,12 @@ final class Contact: Identifiable, @unchecked Sendable {
     var namePrefix: String
     var nameSuffix: String
 
+    // Organization
+    var organization: String
+    var jobTitle: String
+    var nickname: String
+    var urls: [LabeledValue<String>]
+
     // Communication
     var phoneNumbers: [LabeledValue<String>]
     var emailAddresses: [LabeledValue<String>]
@@ -42,6 +48,10 @@ final class Contact: Identifiable, @unchecked Sendable {
         middleName: String = "",
         namePrefix: String = "",
         nameSuffix: String = "",
+        organization: String = "",
+        jobTitle: String = "",
+        nickname: String = "",
+        urls: [LabeledValue<String>] = [],
         phoneNumbers: [LabeledValue<String>] = [],
         emailAddresses: [LabeledValue<String>] = [],
         postalAddresses: [LabeledValue<PostalAddress>] = [],
@@ -61,6 +71,10 @@ final class Contact: Identifiable, @unchecked Sendable {
         self.middleName = middleName
         self.namePrefix = namePrefix
         self.nameSuffix = nameSuffix
+        self.organization = organization
+        self.jobTitle = jobTitle
+        self.nickname = nickname
+        self.urls = urls
         self.phoneNumbers = phoneNumbers
         self.emailAddresses = emailAddresses
         self.postalAddresses = postalAddresses
@@ -111,6 +125,10 @@ final class Contact: Identifiable, @unchecked Sendable {
             middleName: self.middleName,
             namePrefix: self.namePrefix,
             nameSuffix: self.nameSuffix,
+            organization: self.organization,
+            jobTitle: self.jobTitle,
+            nickname: self.nickname,
+            urls: self.urls,
             phoneNumbers: self.phoneNumbers,
             emailAddresses: self.emailAddresses,
             postalAddresses: self.postalAddresses.map { LabeledValue(label: $0.label, value: $0.value.copy()) },

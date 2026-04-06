@@ -62,6 +62,38 @@ struct ContactEditView: View {
                 TextField("Name Suffix", text: $contact.nameSuffix)
             }
 
+            // Organization
+            Section("Organization") {
+                TextField("Company", text: $contact.organization)
+                TextField("Job Title", text: $contact.jobTitle)
+                TextField("Nickname", text: $contact.nickname)
+            }
+
+            // Websites
+            Section("Websites") {
+                ForEach($contact.urls) { $url in
+                    HStack {
+                        TextField("URL", text: $url.value)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+
+                        Button {
+                            contact.urls.removeAll { $0.id == url.id }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Button {
+                    contact.urls.append(LabeledValue(label: "homepage", value: ""))
+                } label: {
+                    Label("Add Website", systemImage: "plus.circle.fill")
+                }
+            }
+
             // Phone Numbers
             Section("Phone Numbers") {
                 ForEach($contact.phoneNumbers) { $phone in

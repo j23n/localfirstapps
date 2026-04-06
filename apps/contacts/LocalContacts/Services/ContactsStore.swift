@@ -187,7 +187,13 @@ final class ContactsStore {
         contact.middleName = data.middleName
         contact.namePrefix = data.namePrefix
         contact.nameSuffix = data.nameSuffix
+        contact.organization = data.organization
+        contact.jobTitle = data.jobTitle
+        contact.nickname = data.nickname
 
+        contact.urls = data.urls.map {
+            LabeledValue(label: $0.label, value: $0.value)
+        }
         contact.phoneNumbers = data.phoneNumbers.map {
             LabeledValue(label: $0.label, value: $0.value)
         }

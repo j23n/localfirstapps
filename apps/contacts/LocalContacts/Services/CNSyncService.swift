@@ -19,6 +19,10 @@ actor CNSyncService {
         CNContactPostalAddressesKey as CNKeyDescriptor,
         CNContactBirthdayKey as CNKeyDescriptor,
         CNContactImageDataKey as CNKeyDescriptor,
+        CNContactOrganizationNameKey as CNKeyDescriptor,
+        CNContactJobTitleKey as CNKeyDescriptor,
+        CNContactNicknameKey as CNKeyDescriptor,
+        CNContactUrlAddressesKey as CNKeyDescriptor,
     ]
 
     // MARK: - Authorization
@@ -210,6 +214,10 @@ actor CNSyncService {
         let middleName: String
         let namePrefix: String
         let nameSuffix: String
+        let organization: String
+        let jobTitle: String
+        let nickname: String
+        let urls: [(label: String, value: String)]
         let phoneNumbers: [(label: String, value: String)]
         let emailAddresses: [(label: String, value: String)]
         let postalAddresses: [(label: String, street: String, city: String, state: String, postalCode: String, country: String)]
@@ -301,6 +309,15 @@ actor CNSyncService {
         // Birthday
         if local.birthday != cn.birthday { return true }
 
+        // Organization
+        if local.organization != cn.organizationName { return true }
+        if local.jobTitle != cn.jobTitle { return true }
+        if local.nickname != cn.nickname { return true }
+
+        let localURLs = local.urls.map(\.value).sorted()
+        let cnURLs = cn.urlAddresses.map { $0.value as String }.sorted()
+        if localURLs != cnURLs { return true }
+
         // Photo: skip comparison — CNContactStore re-encodes images,
         // so byte-level comparison would always trigger false positives
 
@@ -344,6 +361,14 @@ actor CNSyncService {
         }
 
         cn.birthday = contact.birthday
+        cn.organizationName = contact.organization
+        cn.jobTitle = contact.jobTitle
+        cn.nickname = contact.nickname
+
+        cn.urlAddresses = contact.urls.map { url in
+            let label = cnLabel(from: url.label, isPhone: false)
+            return CNLabeledValue(label: label, value: url.value as NSString)
+        }
 
         if let photoData = contact.photoData {
             cn.imageData = photoData
@@ -389,6 +414,10 @@ actor CNSyncService {
             middleName: cn.middleName,
             namePrefix: cn.namePrefix,
             nameSuffix: cn.nameSuffix,
+            organization: cn.organizationName,
+            jobTitle: cn.jobTitle,
+            nickname: cn.nickname,
+            urls: cn.urlAddresses.map { (label: $0.label ?? "homepage", value: $0.value as String) },
             phoneNumbers: cn.phoneNumbers.map { (label: $0.label ?? "mobile", value: $0.value.stringValue) },
             emailAddresses: cn.emailAddresses.map { (label: $0.label ?? "home", value: $0.value as String) },
             postalAddresses: cn.postalAddresses.map { lv in

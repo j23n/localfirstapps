@@ -66,6 +66,19 @@ struct VCardParser: Sendable {
                 )
                 contact.postalAddresses.append(LabeledValue(label: label, value: address))
 
+            case "ORG":
+                contact.organization = unescape(value.components(separatedBy: ";").first ?? "")
+
+            case "TITLE":
+                contact.jobTitle = unescape(value)
+
+            case "NICKNAME":
+                contact.nickname = unescape(value)
+
+            case "URL":
+                let label = extractTypeLabel(params, default: "homepage")
+                contact.urls.append(LabeledValue(label: label, value: unescape(value)))
+
             case "BDAY":
                 contact.birthday = parseBirthday(value)
 
