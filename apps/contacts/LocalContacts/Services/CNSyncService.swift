@@ -6,6 +6,7 @@ actor CNSyncService {
     private let containerNameKey = "LocalContacts"
     private let containerIDKey = "LocalContacts_ContainerID"
     private let historyTokenKey = "LocalContacts_ChangeHistoryToken"
+    private let idMappingKey = "LocalContacts_IDMapping" // [LCID: CNContactIdentifier]
 
     // MARK: - Authorization
 
@@ -100,6 +101,11 @@ actor CNSyncService {
             mapContactToCN(contact, cn: newCN)
             saveRequest.add(newCN, toContainerWithIdentifier: containerID)
             saveRequest.addMember(newCN, to: group)
+            // Save mapping after execute so CNContact gets its identifier
+            try store.execute(saveRequest)
+            setCNIdentifier(newCN.identifier, forLocalContactsID: contact.localContactsID)
+            saveHistoryToken()
+            return
         }
 
         try store.execute(saveRequest)
@@ -114,6 +120,7 @@ actor CNSyncService {
             let saveRequest = CNSaveRequest()
             saveRequest.delete(mutable)
             try store.execute(saveRequest)
+            removeMappingForLocalContactsID(localContactsID)
             saveHistoryToken()
         }
     }
@@ -266,23 +273,37 @@ actor CNSyncService {
 
         cn.birthday = contact.birthday
 
-        if !contact.note.isEmpty {
-            cn.note = contact.note
-        }
-
         if let photoData = contact.photoData {
             cn.imageData = photoData
         }
+    }
 
-        // Store the localContactsID in the contact's note or custom field
-        // We use a custom note prefix for identification
-        let idMarker = "[LCID:\(contact.localContactsID)]"
-        if !cn.note.contains(idMarker) {
-            cn.note = cn.note.isEmpty ? idMarker : "\(cn.note)\n\(idMarker)"
-        }
+    // MARK: - ID Mapping (LCID <-> CNContact.identifier)
+
+    private func loadIDMapping() -> [String: String] {
+        UserDefaults.standard.dictionary(forKey: idMappingKey) as? [String: String] ?? [:]
+    }
+
+    private func saveIDMapping(_ mapping: [String: String]) {
+        UserDefaults.standard.set(mapping, forKey: idMappingKey)
+    }
+
+    private func setCNIdentifier(_ cnID: String, forLocalContactsID lcID: String) {
+        var mapping = loadIDMapping()
+        mapping[lcID] = cnID
+        saveIDMapping(mapping)
+    }
+
+    private func removeMappingForLocalContactsID(_ lcID: String) {
+        var mapping = loadIDMapping()
+        mapping.removeValue(forKey: lcID)
+        saveIDMapping(mapping)
     }
 
     private func findCNContact(localContactsID: String) throws -> CNContact? {
+        let mapping = loadIDMapping()
+        guard let cnID = mapping[localContactsID] else { return nil }
+
         let keysToFetch: [CNKeyDescriptor] = [
             CNContactGivenNameKey as CNKeyDescriptor,
             CNContactFamilyNameKey as CNKeyDescriptor,
@@ -293,26 +314,16 @@ actor CNSyncService {
             CNContactEmailAddressesKey as CNKeyDescriptor,
             CNContactPostalAddressesKey as CNKeyDescriptor,
             CNContactBirthdayKey as CNKeyDescriptor,
-            CNContactNoteKey as CNKeyDescriptor,
             CNContactImageDataKey as CNKeyDescriptor,
         ]
 
-        let predicate = CNContact.predicateForContactsInContainer(withIdentifier:
-            UserDefaults.standard.string(forKey: containerIDKey) ?? store.defaultContainerIdentifier())
-        let allContacts = try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch)
-
-        let idMarker = "[LCID:\(localContactsID)]"
-        return allContacts.first { $0.note.contains(idMarker) }
+        let predicate = CNContact.predicateForContacts(withIdentifiers: [cnID])
+        return try store.unifiedContacts(matching: predicate, keysToFetch: keysToFetch).first
     }
 
     private func extractLocalContactsID(from cn: CNContact) -> String? {
-        let pattern = "\\[LCID:([A-F0-9\\-]+)\\]"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let match = regex.firstMatch(in: cn.note, range: NSRange(cn.note.startIndex..., in: cn.note)),
-              let range = Range(match.range(at: 1), in: cn.note) else {
-            return nil
-        }
-        return String(cn.note[range])
+        let mapping = loadIDMapping()
+        return mapping.first(where: { $0.value == cn.identifier })?.key
     }
 
     private func extractCNContactData(from cn: CNContact, localContactsID: String) -> CNContactData {
