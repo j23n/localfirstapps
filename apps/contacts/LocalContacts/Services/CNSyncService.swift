@@ -2,7 +2,7 @@ import Contacts
 import Foundation
 
 actor CNSyncService {
-    private let store = CNContactStore()
+    nonisolated(unsafe) private let store = CNContactStore()
     private let containerNameKey = "LocalContacts"
     private let containerIDKey = "LocalContacts_ContainerID"
     private let historyTokenKey = "LocalContacts_ChangeHistoryToken"
