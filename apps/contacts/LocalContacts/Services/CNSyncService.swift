@@ -42,14 +42,21 @@ actor CNSyncService {
 
     // MARK: - Container & Group
 
-    private func defaultContainerID() -> String {
-        (try? store.defaultContainerIdentifier()) ?? ""
+    /// Prefer the local (on-device / "iPhone") container so the LocalContacts
+    /// group doesn't land in a remote account like Google Contacts.
+    /// Falls back to the default container when no local container exists.
+    private func localContainerID() -> String {
+        if let containers = try? store.containers(matching: nil),
+           let local = containers.first(where: { $0.type == .local }) {
+            return local.identifier
+        }
+        return (try? store.defaultContainerIdentifier()) ?? ""
     }
 
     /// Find or create the single "LocalContacts" group in the default container.
     /// Also cleans up any duplicate groups from prior bugs.
     private func resolveGroup() throws -> (containerID: String, group: CNGroup) {
-        let containerID = defaultContainerID()
+        let containerID = localContainerID()
         let predicate = CNGroup.predicateForGroupsInContainer(withIdentifier: containerID)
         let groups = try store.groups(matching: predicate)
         let matches = groups.filter { $0.name == containerNameKey }
@@ -135,7 +142,7 @@ actor CNSyncService {
     func fullReconciliation(contacts: [Contact]) async throws {
         guard authorizationStatus == .authorized else { return }
 
-        let containerID = defaultContainerID()
+        let containerID = localContainerID()
 
         // 1. Find ALL "LocalContacts" groups and delete their member contacts + the groups themselves
         let predicate = CNGroup.predicateForGroupsInContainer(withIdentifier: containerID)
