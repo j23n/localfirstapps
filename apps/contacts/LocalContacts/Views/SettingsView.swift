@@ -94,6 +94,20 @@ struct SettingsView: View {
                     Text("Synced contacts appear under a \"LocalContacts\" group in the Apple Contacts app, enabling caller ID and QuickType suggestions.")
                 }
 
+                // Tag Management
+                Section("Tags") {
+                    NavigationLink {
+                        TagManagementView()
+                    } label: {
+                        LabeledContent {
+                            Text("\(store.allTags.count)")
+                                .foregroundStyle(.secondary)
+                        } label: {
+                            Label("Manage Tags", systemImage: "tag")
+                        }
+                    }
+                }
+
                 // Stats
                 Section("Info") {
                     LabeledContent("Total Contacts", value: "\(store.contacts.count)")
@@ -142,5 +156,82 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Tag Management
+
+struct TagManagementView: View {
+    @Environment(ContactsStore.self) private var store
+    @State private var editingTag: String?
+    @State private var editedName = ""
+    @State private var tagToDelete: String?
+
+    var body: some View {
+        List {
+            if store.allTags.isEmpty {
+                ContentUnavailableView("No Tags",
+                    systemImage: "tag.slash",
+                    description: Text("Tags are created when you assign them to contacts."))
+            } else {
+                ForEach(store.allTags, id: \.tag) { tagInfo in
+                    HStack {
+                        if editingTag == tagInfo.tag {
+                            TextField("Tag name", text: $editedName)
+                                .onSubmit { commitRename(from: tagInfo.tag) }
+                            Button("Save") { commitRename(from: tagInfo.tag) }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            Button("Cancel") { editingTag = nil }
+                                .controlSize(.small)
+                        } else {
+                            Text(tagInfo.tag)
+                            Spacer()
+                            Text("\(tagInfo.count) contacts")
+                                .foregroundStyle(.secondary)
+                                .font(.subheadline)
+                        }
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            tagToDelete = tagInfo.tag
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        Button {
+                            editingTag = tagInfo.tag
+                            editedName = tagInfo.tag
+                        } label: {
+                            Label("Rename", systemImage: "pencil")
+                        }
+                        .tint(.orange)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Manage Tags")
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Delete Tag", isPresented: .init(
+            get: { tagToDelete != nil },
+            set: { if !$0 { tagToDelete = nil } }
+        ), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let tag = tagToDelete {
+                    Task { try? await store.deleteTag(tag) }
+                }
+            }
+        } message: {
+            if let tag = tagToDelete {
+                let count = store.allTags.first(where: { $0.tag == tag })?.count ?? 0
+                Text("This will remove \"\(tag)\" from \(count) contact(s).")
+            }
+        }
+    }
+
+    private func commitRename(from oldName: String) {
+        let newName = editedName.trimmingCharacters(in: .whitespaces)
+        guard !newName.isEmpty else { return }
+        editingTag = nil
+        Task { try? await store.renameTag(oldName, to: newName) }
     }
 }

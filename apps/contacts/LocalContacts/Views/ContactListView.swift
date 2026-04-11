@@ -4,6 +4,10 @@ struct ContactListView: View {
     @Environment(ContactsStore.self) private var store
     @State private var showSettings = false
     @State private var showAddContact = false
+    @State private var isSelecting = false
+    @State private var selectedContactIDs: Set<String> = []
+    @State private var showBulkTagPicker = false
+    @State private var showBulkDeleteConfirmation = false
 
     var body: some View {
         @Bindable var store = store
@@ -19,20 +23,34 @@ struct ContactListView: View {
                 }
             }
             .navigationTitle("Contacts")
-            .searchable(text: $store.searchText, prompt: "Name, phone, or email")
+            .searchable(text: $store.searchText, prompt: "Name, company, phone, or email")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gear")
+                    HStack {
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Image(systemName: "gear")
+                        }
+                        if !store.contacts.isEmpty {
+                            Button(isSelecting ? "Done" : "Select") {
+                                withAnimation {
+                                    isSelecting.toggle()
+                                    if !isSelecting {
+                                        selectedContactIDs.removeAll()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showAddContact = true
-                    } label: {
-                        Image(systemName: "plus")
+                    if !isSelecting {
+                        Button {
+                            showAddContact = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
                     }
                 }
             }
@@ -44,9 +62,14 @@ struct ContactListView: View {
                     ContactEditView(contact: Contact(), isNew: true)
                 }
             }
+            .onChange(of: showAddContact) { _, isAdding in
+                store.isSuppressingReload = isAdding
+            }
             .refreshable {
                 await store.loadContacts()
             }
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .alert("Error", isPresented: .init(
                 get: { store.errorMessage != nil },
                 set: { if !$0 { store.errorMessage = nil } }
@@ -77,21 +100,31 @@ struct ContactListView: View {
                 TagFilterBar()
             }
 
-            List {
+            List(selection: isSelecting ? $selectedContactIDs : nil) {
                 ForEach(store.groupedContacts, id: \.letter) { group in
                     Section(group.letter) {
                         ForEach(group.contacts) { contact in
-                            NavigationLink(value: contact.id) {
+                            if isSelecting {
                                 ContactCard(contact: contact)
+                                    .tag(contact.localContactsID)
+                            } else {
+                                NavigationLink(value: contact.localContactsID) {
+                                    ContactCard(contact: contact)
+                                }
                             }
                         }
                     }
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationDestination(for: UUID.self) { contactID in
-                if let contact = store.contacts.first(where: { $0.id == contactID }) {
+            .environment(\.editMode, isSelecting ? .constant(.active) : .constant(.inactive))
+            .navigationDestination(for: String.self) { contactID in
+                if let contact = store.contacts.first(where: { $0.localContactsID == contactID }) {
                     ContactDetailView(contact: contact)
+                } else {
+                    ContentUnavailableView("Contact Not Found",
+                        systemImage: "person.crop.circle.badge.xmark",
+                        description: Text("This contact may have been deleted."))
                 }
             }
             .overlay {
@@ -99,6 +132,65 @@ struct ContactListView: View {
                     ContentUnavailableView.search(text: store.searchText)
                 }
             }
+
+            if isSelecting && !selectedContactIDs.isEmpty {
+                bulkActionBar
+            }
+        }
+        .sheet(isPresented: $showBulkTagPicker) {
+            BulkTagPickerView(selectedContactIDs: selectedContactIDs) {
+                withAnimation {
+                    isSelecting = false
+                    selectedContactIDs.removeAll()
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete \(selectedContactIDs.count) Contacts",
+            isPresented: $showBulkDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(selectedContactIDs.count) Contacts", role: .destructive) {
+                Task {
+                    try? await store.deleteMultiple(selectedContactIDs)
+                    withAnimation {
+                        isSelecting = false
+                        selectedContactIDs.removeAll()
+                    }
+                }
+            }
+        } message: {
+            Text("This will permanently delete the selected contacts and their .vcf files.")
+        }
+    }
+
+    private var bulkActionBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 24) {
+                Button {
+                    showBulkTagPicker = true
+                } label: {
+                    Label("Tag", systemImage: "tag")
+                }
+
+                Spacer()
+
+                Text("\(selectedContactIDs.count) selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    showBulkDeleteConfirmation = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.bar)
         }
     }
 }
@@ -217,6 +309,7 @@ struct TagFilterBar: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
+        .background(.ultraThinMaterial)
     }
 }
 
@@ -236,5 +329,66 @@ struct TagChip: View {
                 .foregroundStyle(isSelected ? .white : .primary)
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Bulk Tag Picker
+
+struct BulkTagPickerView: View {
+    @Environment(ContactsStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let selectedContactIDs: Set<String>
+    let onComplete: () -> Void
+    @State private var newTagName = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !store.allTags.isEmpty {
+                    Section("Existing Tags") {
+                        ForEach(store.allTags, id: \.tag) { tagInfo in
+                            Button {
+                                applyTag(tagInfo.tag)
+                            } label: {
+                                HStack {
+                                    Text(tagInfo.tag)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Text("\(tagInfo.count)")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Section("New Tag") {
+                    HStack {
+                        TextField("Tag name", text: $newTagName)
+                        Button("Apply") {
+                            applyTag(newTagName.trimmingCharacters(in: .whitespaces))
+                        }
+                        .disabled(newTagName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+            .navigationTitle("Assign Tag")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func applyTag(_ tag: String) {
+        guard !tag.isEmpty else { return }
+        Task {
+            try? await store.assignTag(tag, to: selectedContactIDs)
+            dismiss()
+            onComplete()
+        }
     }
 }
