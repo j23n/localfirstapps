@@ -55,13 +55,13 @@ struct ContactDetailView: View {
                         showConflictSheet = true
                     } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: contact.conflictState == .externalEdit
+                            Image(systemName: contact.conflictState?.isExternalEdit == true
                                   ? "pencil.circle.fill" : "trash.circle.fill")
                                 .font(.title3)
                                 .foregroundStyle(.orange)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(contact.conflictState == .externalEdit
+                                Text(contact.conflictState?.isExternalEdit == true
                                      ? "External Edit Detected"
                                      : "External Deletion Detected")
                                     .font(.subheadline.weight(.medium))

@@ -73,7 +73,7 @@ struct ContactListView: View {
 
     private var contactList: some View {
         VStack(spacing: 0) {
-            if !store.allTags.isEmpty {
+            if !store.allTags.isEmpty || store.hasConflicts {
                 TagFilterBar()
             }
 
@@ -187,15 +187,30 @@ struct TagFilterBar: View {
 
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                TagChip(title: "All", isSelected: store.selectedTag == nil) {
+                TagChip(title: "All", isSelected: store.selectedTag == nil && !store.showConflictsOnly) {
                     store.selectedTag = nil
+                    store.showConflictsOnly = false
                 }
+
+                if store.hasConflicts {
+                    let count = store.contacts.filter { $0.conflictState != nil }.count
+                    TagChip(
+                        title: "Conflicts (\(count))",
+                        isSelected: store.showConflictsOnly,
+                        tint: .orange
+                    ) {
+                        store.showConflictsOnly.toggle()
+                        if store.showConflictsOnly { store.selectedTag = nil }
+                    }
+                }
+
                 ForEach(store.allTags, id: \.tag) { tagInfo in
                     TagChip(
                         title: "\(tagInfo.tag) (\(tagInfo.count))",
                         isSelected: store.selectedTag == tagInfo.tag
                     ) {
                         store.selectedTag = store.selectedTag == tagInfo.tag ? nil : tagInfo.tag
+                        store.showConflictsOnly = false
                     }
                 }
             }
@@ -208,6 +223,7 @@ struct TagFilterBar: View {
 struct TagChip: View {
     let title: String
     let isSelected: Bool
+    var tint: Color = .accentColor
     let action: () -> Void
 
     var body: some View {
@@ -216,7 +232,7 @@ struct TagChip: View {
                 .font(.subheadline)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.accentColor : Color(.systemGray5), in: Capsule())
+                .background(isSelected ? tint : Color(.systemGray5), in: Capsule())
                 .foregroundStyle(isSelected ? .white : .primary)
         }
         .buttonStyle(.plain)

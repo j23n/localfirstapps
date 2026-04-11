@@ -7,6 +7,8 @@ struct SettingsView: View {
     @State private var showFolderPicker = false
     @State private var showOverwriteConfirmation = false
     @State private var contactsAuthStatus: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
+    @AppStorage("hasSeenSyncInfo") private var hasSeenSyncInfo = false
+    @State private var syncInfoExpanded = false
 
     var body: some View {
         NavigationStack {
@@ -28,6 +30,13 @@ struct SettingsView: View {
                     Button("Reload Contacts") {
                         Task { await store.loadContacts() }
                     }
+
+                    if let lastSync = store.lastSyncedAt {
+                        LabeledContent("Last Synced") {
+                            Text(lastSync, style: .relative)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 // Contacts Sync
@@ -37,7 +46,17 @@ struct SettingsView: View {
                         Label("Contacts access granted", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
 
-                        Button("Force Overwrite Contacts App") {
+                        DisclosureGroup("About Contacts Sync", isExpanded: $syncInfoExpanded) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Local .vcf files are the source of truth. Changes made in Apple Contacts are detected as conflicts for you to review.")
+                                Text("When creating contacts in Apple Contacts, you must manually add them to the \"LocalContacts\" list at the bottom of the new contact creation or edit screen.")
+                                Text("Photos may not round-trip perfectly due to re-encoding by Apple Contacts.")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+
+                        Button("Force Overwrite LocalContacts List in Contacts") {
                             showOverwriteConfirmation = true
                         }
 
@@ -96,7 +115,13 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .confirmationDialog("Force Overwrite", isPresented: $showOverwriteConfirmation, titleVisibility: .visible) {
+            .onAppear {
+                if !hasSeenSyncInfo {
+                    syncInfoExpanded = true
+                    hasSeenSyncInfo = true
+                }
+            }
+            .confirmationDialog("Force Overwrite LocalContacts List", isPresented: $showOverwriteConfirmation, titleVisibility: .visible) {
                 Button("Overwrite", role: .destructive) {
                     Task {
                         try? await store.syncService.fullReconciliation(contacts: store.contacts)
@@ -104,9 +129,9 @@ struct SettingsView: View {
                 }
             } message: {
                 if store.hasConflicts {
-                    Text("This will delete all contacts in the LocalContacts group and replace them with the local .vcf versions. \(store.contacts.filter { $0.conflictState != nil }.count) unresolved conflict(s) will be lost.")
+                    Text("This will delete all contacts in the LocalContacts list in Apple Contacts and replace them with the local .vcf versions. \(store.contacts.filter { $0.conflictState != nil }.count) unresolved conflict(s) will be lost.")
                 } else {
-                    Text("This will delete all contacts in the LocalContacts group and replace them with the local .vcf versions.")
+                    Text("This will delete all contacts in the LocalContacts list in Apple Contacts and replace them with the local .vcf versions.")
                 }
             }
             .sheet(isPresented: $showFolderPicker) {

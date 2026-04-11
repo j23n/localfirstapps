@@ -7,9 +7,11 @@ final class ContactsStore {
     var contacts: [Contact] = []
     var searchText: String = ""
     var selectedTag: String?
+    var showConflictsOnly = false
     var folderURL: URL?
     var isLoading = false
     var errorMessage: String?
+    var lastSyncedAt: Date?
 
     private let parser = VCardParser()
     private let writer = VCardWriter()
@@ -32,7 +34,9 @@ final class ContactsStore {
     var filteredContacts: [Contact] {
         var result = contacts
 
-        if let tag = selectedTag {
+        if showConflictsOnly {
+            result = result.filter { $0.conflictState != nil }
+        } else if let tag = selectedTag {
             result = result.filter { $0.categories.contains(tag) }
         }
 
@@ -128,6 +132,7 @@ final class ContactsStore {
             errorMessage = "Failed to read folder: \(error.localizedDescription)"
         }
 
+        lastSyncedAt = Date()
         isLoading = false
     }
 

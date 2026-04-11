@@ -37,8 +37,9 @@ struct ContactEditView: View {
                     Spacer()
                     VStack(spacing: 8) {
                         AvatarView(contact: contact, size: 80)
+                        let hasPhoto = contact.photoData != nil
                         PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Text(contact.photoData != nil ? "Change Photo" : "Add Photo")
+                            Text(hasPhoto ? "Change Photo" : "Add Photo")
                                 .font(.subheadline)
                         }
                         if contact.photoData != nil {

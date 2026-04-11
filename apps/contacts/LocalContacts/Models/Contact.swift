@@ -171,6 +171,16 @@ struct PostalAddress: Sendable {
 }
 
 enum ConflictState: Sendable {
-    case externalEdit
+    case externalEdit(CNSyncService.CNContactData)
     case externalDelete
+
+    var isExternalEdit: Bool {
+        if case .externalEdit = self { return true }
+        return false
+    }
+
+    var externalData: CNSyncService.CNContactData? {
+        if case .externalEdit(let data) = self { return data }
+        return nil
+    }
 }

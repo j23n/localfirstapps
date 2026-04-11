@@ -35,7 +35,7 @@ struct LocalContactsApp: App {
             case .updated(let data):
                 if let contact = store.contacts.first(where: { $0.localContactsID == data.localContactsID }),
                    contact.conflictState == nil {
-                    contact.conflictState = .externalEdit
+                    contact.conflictState = .externalEdit(data)
                 }
             case .deleted(let localContactsID):
                 if let contact = store.contacts.first(where: { $0.localContactsID == localContactsID }),
