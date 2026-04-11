@@ -202,6 +202,9 @@ struct ContactDetailView: View {
                 ContactEditView(contact: contact.copy(), isNew: false)
             }
         }
+        .onChange(of: showEdit) { _, isEditing in
+            store.isSuppressingReload = isEditing
+        }
         .sheet(isPresented: $showConflictSheet) {
             ConflictResolutionSheet(contact: contact)
         }

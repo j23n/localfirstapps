@@ -10,6 +10,7 @@ final class ContactsStore {
     var showConflictsOnly = false
     var folderURL: URL?
     var isLoading = false
+    var isSuppressingReload = false
     var errorMessage: String?
     var lastSyncedAt: Date?
 
@@ -44,6 +45,8 @@ final class ContactsStore {
             let query = searchText.lowercased()
             result = result.filter { contact in
                 contact.displayName.lowercased().contains(query)
+                || contact.organization.lowercased().contains(query)
+                || contact.jobTitle.lowercased().contains(query)
                 || contact.phoneNumbers.contains { $0.value.contains(query) }
                 || contact.emailAddresses.contains { $0.value.lowercased().contains(query) }
             }
@@ -91,6 +94,7 @@ final class ContactsStore {
 
     func loadContacts() async {
         guard let url = folderURL else { return }
+        guard !isSuppressingReload else { return }
         if contacts.isEmpty { isLoading = true }
         errorMessage = nil
 
@@ -182,6 +186,60 @@ final class ContactsStore {
 
         // Also remove from CNContactStore
         try? await syncService.deleteContact(localContactsID: contact.localContactsID)
+    }
+
+    // MARK: - Tag Management
+
+    func renameTag(_ oldName: String, to newName: String) async throws {
+        let trimmed = newName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != oldName else { return }
+
+        for contact in contacts {
+            if let index = contact.categories.firstIndex(of: oldName) {
+                contact.categories[index] = trimmed
+                // Deduplicate if new name already existed on this contact
+                var seen = Set<String>()
+                contact.categories = contact.categories.filter { seen.insert($0).inserted }
+                try await save(contact)
+            }
+        }
+
+        if selectedTag == oldName {
+            selectedTag = trimmed
+        }
+    }
+
+    func deleteTag(_ tagName: String) async throws {
+        for contact in contacts {
+            if contact.categories.contains(tagName) {
+                contact.categories.removeAll { $0 == tagName }
+                try await save(contact)
+            }
+        }
+
+        if selectedTag == tagName {
+            selectedTag = nil
+        }
+    }
+
+    // MARK: - Bulk Operations
+
+    func deleteMultiple(_ contactIDs: Set<String>) async throws {
+        for id in contactIDs {
+            if let contact = contacts.first(where: { $0.localContactsID == id }) {
+                try await delete(contact)
+            }
+        }
+    }
+
+    func assignTag(_ tag: String, to contactIDs: Set<String>) async throws {
+        for id in contactIDs {
+            if let contact = contacts.first(where: { $0.localContactsID == id }),
+               !contact.categories.contains(tag) {
+                contact.categories.append(tag)
+                try await save(contact)
+            }
+        }
     }
 
     // MARK: - Import External Changes
