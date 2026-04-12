@@ -24,6 +24,20 @@ struct ContactListView: View {
             }
             .navigationTitle("Contacts")
             .searchable(text: $store.searchText, prompt: "Name, company, phone, or email")
+            .overlay(alignment: .top) {
+                LinearGradient(
+                    stops: [
+                        .init(color: Color(.systemGroupedBackground), location: 0),
+                        .init(color: Color(.systemGroupedBackground).opacity(0.7), location: 0.5),
+                        .init(color: Color(.systemGroupedBackground).opacity(0), location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 130)
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack {
@@ -68,8 +82,7 @@ struct ContactListView: View {
             .refreshable {
                 await store.loadContacts()
             }
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
             .alert("Error", isPresented: .init(
                 get: { store.errorMessage != nil },
                 set: { if !$0 { store.errorMessage = nil } }
@@ -96,10 +109,6 @@ struct ContactListView: View {
 
     private var contactList: some View {
         VStack(spacing: 0) {
-            if !store.allTags.isEmpty || store.hasConflicts {
-                TagFilterBar()
-            }
-
             List(selection: isSelecting ? $selectedContactIDs : nil) {
                 ForEach(store.groupedContacts, id: \.letter) { group in
                     Section(group.letter) {
@@ -117,6 +126,11 @@ struct ContactListView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !store.allTags.isEmpty || store.hasConflicts {
+                    TagFilterBar()
+                }
+            }
             .environment(\.editMode, isSelecting ? .constant(.active) : .constant(.inactive))
             .navigationDestination(for: String.self) { contactID in
                 if let contact = store.contacts.first(where: { $0.localContactsID == contactID }) {
@@ -309,7 +323,16 @@ struct TagFilterBar: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
-        .background(.ultraThinMaterial)
+        .background(
+            LinearGradient(
+                stops: [
+                    .init(color: Color(.systemGroupedBackground).opacity(0.9), location: 0),
+                    .init(color: Color(.systemGroupedBackground).opacity(0), location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 }
 
