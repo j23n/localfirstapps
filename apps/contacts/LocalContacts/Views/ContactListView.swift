@@ -110,6 +110,13 @@ struct ContactListView: View {
     private var contactList: some View {
         VStack(spacing: 0) {
             List(selection: isSelecting ? $selectedContactIDs : nil) {
+                if !store.allTags.isEmpty || store.hasConflicts {
+                    TagFilterBar()
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+
                 ForEach(store.groupedContacts, id: \.letter) { group in
                     Section(group.letter) {
                         ForEach(group.contacts) { contact in
@@ -126,11 +133,8 @@ struct ContactListView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if !store.allTags.isEmpty || store.hasConflicts {
-                    TagFilterBar()
-                }
-            }
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground))
             .environment(\.editMode, isSelecting ? .constant(.active) : .constant(.inactive))
             .navigationDestination(for: String.self) { contactID in
                 if let contact = store.contacts.first(where: { $0.localContactsID == contactID }) {
@@ -323,16 +327,7 @@ struct TagFilterBar: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
-        .background(
-            LinearGradient(
-                stops: [
-                    .init(color: Color(.systemGroupedBackground).opacity(0.9), location: 0),
-                    .init(color: Color(.systemGroupedBackground).opacity(0), location: 1.0)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .background(Color.clear)
     }
 }
 
