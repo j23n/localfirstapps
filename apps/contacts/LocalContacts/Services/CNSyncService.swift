@@ -285,7 +285,7 @@ actor CNSyncService {
     }
 
     /// Compare local Contact fields against CNContact to detect real changes.
-    private func contactDiffers(local: Contact, cn: CNContact) -> Bool {
+    nonisolated func contactDiffers(local: Contact, cn: CNContact) -> Bool {
         // Name fields
         if local.givenName != cn.givenName { return true }
         if local.familyName != cn.familyName { return true }
@@ -436,7 +436,7 @@ actor CNSyncService {
         )
     }
 
-    private func cnLabel(from label: String, isPhone: Bool) -> String {
+    nonisolated func cnLabel(from label: String, isPhone: Bool) -> String {
         switch label.lowercased() {
         case "home": return CNLabelHome
         case "work": return CNLabelWork
