@@ -39,6 +39,19 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    let layoutColor: Color = store.layoutMode.isSupported ? .secondary : .orange
+                    LabeledContent("Layout") {
+                        Text(store.layoutMode.label)
+                            .foregroundStyle(layoutColor)
+                    }
+                    Text(store.layoutMode.detail)
+                        .font(.caption)
+                        .foregroundStyle(layoutColor)
+                } header: {
+                    Text("Storage Layout")
+                }
+
                 // Contacts Sync
                 Section {
                     switch contactsAuthStatus {

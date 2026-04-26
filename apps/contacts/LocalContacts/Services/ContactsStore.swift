@@ -66,6 +66,27 @@ final class ContactsStore {
         contacts.contains { $0.conflictState != nil }
     }
 
+    /// The folder's vCard layout, derived from how contacts are distributed across files.
+    /// Two layouts are supported: every contact in its own file, or every contact in a single
+    /// shared file. Anything else is `.mixed` and should be reconciled by the user.
+    ///
+    /// A folder containing exactly one contact is reported as `.oneFilePerContact`, since
+    /// the layout is only distinguishable once a second contact joins the file. Adding a
+    /// second contact in this state creates a new file rather than appending to the first.
+    var layoutMode: FolderLayoutMode {
+        var counts: [String: Int] = [:]
+        for contact in contacts {
+            counts[contact.fileName, default: 0] += 1
+        }
+        if counts.isEmpty { return .empty }
+        let oversize = counts.filter { $0.value > 1 }
+        if oversize.isEmpty { return .oneFilePerContact }
+        if counts.count == 1, let only = counts.first {
+            return .singleFile(fileName: only.key)
+        }
+        return .mixed
+    }
+
     // MARK: - Folder Management
 
     func setFolder(_ url: URL) async {
@@ -112,19 +133,27 @@ final class ContactsStore {
                 do {
                     let data = try Data(contentsOf: file)
                     let parsed = parser.parseMultiple(data: data, fileName: file.lastPathComponent)
+                    var needsRewrite = false
                     for contact in parsed {
-                        // Migration: generate ID if missing
+                        // Migration: generate ID if missing. We rewrite the whole
+                        // file once below so multi-vCard files don't lose siblings.
                         if contact.localContactsID.isEmpty {
                             contact.localContactsID = UUID().uuidString
-                            // Write back with the new ID
-                            let vcardString = writer.write(contact)
-                            try? vcardString.data(using: .utf8)?.write(to: file)
+                            needsRewrite = true
                         }
                         // Preserve conflict state from existing contacts
                         if let existing = contacts.first(where: { $0.localContactsID == contact.localContactsID }) {
                             contact.conflictState = existing.conflictState
                         }
                         loaded.append(contact)
+                    }
+                    if needsRewrite {
+                        let combined = parsed.map { writer.write($0) }.joined()
+                        do {
+                            try combined.data(using: .utf8)?.write(to: file, options: .atomic)
+                        } catch {
+                            print("Warning: Could not migrate IDs in \(file.lastPathComponent): \(error). New IDs may regenerate on next launch, breaking Apple Contacts sync links.")
+                        }
                     }
                 } catch {
                     print("Warning: Could not parse \(file.lastPathComponent): \(error)")
@@ -147,18 +176,27 @@ final class ContactsStore {
             throw ContactsStoreError.noFolder
         }
 
-        let vcardString = writer.write(contact)
+        if contact.fileName.isEmpty {
+            if case .singleFile(let bundleName) = layoutMode {
+                contact.fileName = bundleName
+            } else {
+                contact.fileName = uniqueFileName(for: contact, in: url)
+            }
+        }
+
+        // Rewrite the whole file so siblings in a multi-vCard file are preserved.
+        var fileContacts = contacts.filter {
+            $0.fileName == contact.fileName && $0.localContactsID != contact.localContactsID
+        }
+        fileContacts.append(contact)
+
+        let vcardString = fileContacts.map { writer.write($0) }.joined()
         guard let data = vcardString.data(using: .utf8) else {
             throw ContactsStoreError.encodingFailed
         }
 
-        // Determine file name
-        if contact.fileName.isEmpty {
-            contact.fileName = uniqueFileName(for: contact, in: url)
-        }
-
         let fileURL = url.appendingPathComponent(contact.fileName)
-        try data.write(to: fileURL)
+        try data.write(to: fileURL, options: .atomic)
 
         // Update in-memory
         if let index = contacts.firstIndex(where: { $0.localContactsID == contact.localContactsID }) {
@@ -177,8 +215,19 @@ final class ContactsStore {
 
         if !contact.fileName.isEmpty {
             let fileURL = url.appendingPathComponent(contact.fileName)
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                try FileManager.default.removeItem(at: fileURL)
+            let remaining = contacts.filter {
+                $0.fileName == contact.fileName && $0.localContactsID != contact.localContactsID
+            }
+            if remaining.isEmpty {
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+            } else {
+                let vcardString = remaining.map { writer.write($0) }.joined()
+                guard let data = vcardString.data(using: .utf8) else {
+                    throw ContactsStoreError.encodingFailed
+                }
+                try data.write(to: fileURL, options: .atomic)
             }
         }
 
@@ -194,14 +243,19 @@ final class ContactsStore {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed != oldName else { return }
 
+        var touchedFiles = Set<String>()
         for contact in contacts {
             if let index = contact.categories.firstIndex(of: oldName) {
                 contact.categories[index] = trimmed
                 // Deduplicate if new name already existed on this contact
                 var seen = Set<String>()
                 contact.categories = contact.categories.filter { seen.insert($0).inserted }
-                try await save(contact)
+                touchedFiles.insert(contact.fileName)
             }
+        }
+
+        for fileName in touchedFiles {
+            try rewriteFile(fileName)
         }
 
         if selectedTag == oldName {
@@ -210,11 +264,16 @@ final class ContactsStore {
     }
 
     func deleteTag(_ tagName: String) async throws {
+        var touchedFiles = Set<String>()
         for contact in contacts {
             if contact.categories.contains(tagName) {
                 contact.categories.removeAll { $0 == tagName }
-                try await save(contact)
+                touchedFiles.insert(contact.fileName)
             }
+        }
+
+        for fileName in touchedFiles {
+            try rewriteFile(fileName)
         }
 
         if selectedTag == tagName {
@@ -225,20 +284,33 @@ final class ContactsStore {
     // MARK: - Bulk Operations
 
     func deleteMultiple(_ contactIDs: Set<String>) async throws {
-        for id in contactIDs {
-            if let contact = contacts.first(where: { $0.localContactsID == id }) {
-                try await delete(contact)
-            }
+        let toDelete = contacts.filter { contactIDs.contains($0.localContactsID) }
+        guard !toDelete.isEmpty else { return }
+
+        let touchedFiles = Set(toDelete.map { $0.fileName }.filter { !$0.isEmpty })
+        contacts.removeAll { contactIDs.contains($0.localContactsID) }
+
+        for fileName in touchedFiles {
+            try rewriteFile(fileName)
+        }
+
+        for contact in toDelete {
+            try? await syncService.deleteContact(localContactsID: contact.localContactsID)
         }
     }
 
     func assignTag(_ tag: String, to contactIDs: Set<String>) async throws {
+        var touchedFiles = Set<String>()
         for id in contactIDs {
             if let contact = contacts.first(where: { $0.localContactsID == id }),
                !contact.categories.contains(tag) {
                 contact.categories.append(tag)
-                try await save(contact)
+                touchedFiles.insert(contact.fileName)
             }
+        }
+
+        for fileName in touchedFiles {
+            try rewriteFile(fileName)
         }
     }
 
@@ -284,18 +356,76 @@ final class ContactsStore {
 
     // MARK: - Helpers
 
+    /// Rewrite a single .vcf file from in-memory state. If no contacts remain
+    /// for the file, the file is removed. Used by bulk operations to collapse
+    /// N saves on a shared file into a single atomic write.
+    private func rewriteFile(_ fileName: String) throws {
+        guard let url = folderURL, !fileName.isEmpty else { return }
+        let fileURL = url.appendingPathComponent(fileName)
+        let fileContacts = contacts.filter { $0.fileName == fileName }
+
+        if fileContacts.isEmpty {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+            return
+        }
+
+        let vcardString = fileContacts.map { writer.write($0) }.joined()
+        guard let data = vcardString.data(using: .utf8) else {
+            throw ContactsStoreError.encodingFailed
+        }
+        try data.write(to: fileURL, options: .atomic)
+    }
+
     private func uniqueFileName(for contact: Contact, in folder: URL) -> String {
         let base = writer.suggestedFileName(for: contact)
         let name = (base as NSString).deletingPathExtension
         let ext = (base as NSString).pathExtension
+        let inMemory = Set(contacts.map { $0.fileName })
 
         var candidate = base
         var counter = 1
-        while FileManager.default.fileExists(atPath: folder.appendingPathComponent(candidate).path) {
+        while FileManager.default.fileExists(atPath: folder.appendingPathComponent(candidate).path)
+                || inMemory.contains(candidate) {
             candidate = "\(name)-\(counter).\(ext)"
             counter += 1
         }
         return candidate
+    }
+}
+
+enum FolderLayoutMode: Equatable, Sendable {
+    case empty
+    case oneFilePerContact
+    case singleFile(fileName: String)
+    case mixed
+
+    var label: String {
+        switch self {
+        case .empty: "Empty folder"
+        case .oneFilePerContact: "One file per contact"
+        case .singleFile(let name): "Single file (\(name))"
+        case .mixed: "Mixed layout"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .empty:
+            "No contacts yet. The folder layout will be determined by your first vCard files."
+        case .oneFilePerContact:
+            "Each contact lives in its own .vcf file. New contacts will be saved the same way."
+        case .singleFile(let name):
+            "All contacts share \(name). New contacts will be appended to it."
+        case .mixed:
+            "Some .vcf files contain multiple contacts while others contain one. Edits still persist, but a uniform layout (one file per contact, or one shared file) is recommended."
+        }
+    }
+
+    var isSupported: Bool {
+        if case .mixed = self { return false }
+        return true
     }
 }
 
