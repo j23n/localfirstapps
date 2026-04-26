@@ -39,6 +39,19 @@ struct SettingsView: View {
                     }
                 }
 
+                // Storage Layout
+                Section {
+                    LabeledContent("Layout") {
+                        Text(store.layoutMode.label)
+                            .foregroundStyle(store.layoutMode.isSupported ? .secondary : .orange)
+                    }
+                    Text(store.layoutMode.detail)
+                        .font(.caption)
+                        .foregroundStyle(store.layoutMode.isSupported ? .secondary : .orange)
+                } header: {
+                    Text("Storage Layout")
+                }
+
                 // Contacts Sync
                 Section {
                     switch contactsAuthStatus {

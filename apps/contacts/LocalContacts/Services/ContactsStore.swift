@@ -66,6 +66,23 @@ final class ContactsStore {
         contacts.contains { $0.conflictState != nil }
     }
 
+    /// The folder's vCard layout, derived from how contacts are distributed across files.
+    /// Two layouts are supported: every contact in its own file, or every contact in a single
+    /// shared file. Anything else is `.mixed` and should be reconciled by the user.
+    var layoutMode: FolderLayoutMode {
+        var counts: [String: Int] = [:]
+        for contact in contacts {
+            counts[contact.fileName, default: 0] += 1
+        }
+        if counts.isEmpty { return .empty }
+        let oversize = counts.filter { $0.value > 1 }
+        if oversize.isEmpty { return .oneFilePerContact }
+        if counts.count == 1, let only = counts.first {
+            return .singleFile(fileName: only.key)
+        }
+        return .mixed
+    }
+
     // MARK: - Folder Management
 
     func setFolder(_ url: URL) async {
@@ -152,7 +169,11 @@ final class ContactsStore {
         }
 
         if contact.fileName.isEmpty {
-            contact.fileName = uniqueFileName(for: contact, in: url)
+            if case .singleFile(let bundleName) = layoutMode {
+                contact.fileName = bundleName
+            } else {
+                contact.fileName = uniqueFileName(for: contact, in: url)
+            }
         }
 
         // Rewrite the whole file so siblings in a multi-vCard file are preserved.
@@ -316,6 +337,40 @@ final class ContactsStore {
             counter += 1
         }
         return candidate
+    }
+}
+
+enum FolderLayoutMode: Equatable, Sendable {
+    case empty
+    case oneFilePerContact
+    case singleFile(fileName: String)
+    case mixed
+
+    var label: String {
+        switch self {
+        case .empty: "Empty folder"
+        case .oneFilePerContact: "One file per contact"
+        case .singleFile(let name): "Single file (\(name))"
+        case .mixed: "Mixed layout"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .empty:
+            "No contacts yet. New contacts will be saved as one .vcf file each."
+        case .oneFilePerContact:
+            "Each contact lives in its own .vcf file. New contacts will be saved the same way."
+        case .singleFile(let name):
+            "All contacts share \(name). New contacts will be appended to it."
+        case .mixed:
+            "Some .vcf files contain multiple contacts and others contain one. Consolidate to a single layout for reliable syncing."
+        }
+    }
+
+    var isSupported: Bool {
+        if case .mixed = self { return false }
+        return true
     }
 }
 
