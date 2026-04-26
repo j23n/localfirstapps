@@ -39,7 +39,6 @@ struct SettingsView: View {
                     }
                 }
 
-                // Storage Layout
                 Section {
                     let layoutColor: Color = store.layoutMode.isSupported ? .secondary : .orange
                     LabeledContent("Layout") {

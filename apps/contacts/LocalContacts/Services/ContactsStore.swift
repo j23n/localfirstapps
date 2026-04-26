@@ -69,6 +69,10 @@ final class ContactsStore {
     /// The folder's vCard layout, derived from how contacts are distributed across files.
     /// Two layouts are supported: every contact in its own file, or every contact in a single
     /// shared file. Anything else is `.mixed` and should be reconciled by the user.
+    ///
+    /// A folder containing exactly one contact is reported as `.oneFilePerContact`, since
+    /// the layout is only distinguishable once a second contact joins the file. Adding a
+    /// second contact in this state creates a new file rather than appending to the first.
     var layoutMode: FolderLayoutMode {
         var counts: [String: Int] = [:]
         for contact in contacts {
@@ -145,7 +149,11 @@ final class ContactsStore {
                     }
                     if needsRewrite {
                         let combined = parsed.map { writer.write($0) }.joined()
-                        try? combined.data(using: .utf8)?.write(to: file, options: .atomic)
+                        do {
+                            try combined.data(using: .utf8)?.write(to: file, options: .atomic)
+                        } catch {
+                            print("Warning: Could not migrate IDs in \(file.lastPathComponent): \(error). New IDs may regenerate on next launch, breaking Apple Contacts sync links.")
+                        }
                     }
                 } catch {
                     print("Warning: Could not parse \(file.lastPathComponent): \(error)")
@@ -235,14 +243,19 @@ final class ContactsStore {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed != oldName else { return }
 
+        var touchedFiles = Set<String>()
         for contact in contacts {
             if let index = contact.categories.firstIndex(of: oldName) {
                 contact.categories[index] = trimmed
                 // Deduplicate if new name already existed on this contact
                 var seen = Set<String>()
                 contact.categories = contact.categories.filter { seen.insert($0).inserted }
-                try await save(contact)
+                touchedFiles.insert(contact.fileName)
             }
+        }
+
+        for fileName in touchedFiles {
+            try rewriteFile(fileName)
         }
 
         if selectedTag == oldName {
@@ -251,11 +264,16 @@ final class ContactsStore {
     }
 
     func deleteTag(_ tagName: String) async throws {
+        var touchedFiles = Set<String>()
         for contact in contacts {
             if contact.categories.contains(tagName) {
                 contact.categories.removeAll { $0 == tagName }
-                try await save(contact)
+                touchedFiles.insert(contact.fileName)
             }
+        }
+
+        for fileName in touchedFiles {
+            try rewriteFile(fileName)
         }
 
         if selectedTag == tagName {
@@ -266,20 +284,33 @@ final class ContactsStore {
     // MARK: - Bulk Operations
 
     func deleteMultiple(_ contactIDs: Set<String>) async throws {
-        for id in contactIDs {
-            if let contact = contacts.first(where: { $0.localContactsID == id }) {
-                try await delete(contact)
-            }
+        let toDelete = contacts.filter { contactIDs.contains($0.localContactsID) }
+        guard !toDelete.isEmpty else { return }
+
+        let touchedFiles = Set(toDelete.map { $0.fileName }.filter { !$0.isEmpty })
+        contacts.removeAll { contactIDs.contains($0.localContactsID) }
+
+        for fileName in touchedFiles {
+            try rewriteFile(fileName)
+        }
+
+        for contact in toDelete {
+            try? await syncService.deleteContact(localContactsID: contact.localContactsID)
         }
     }
 
     func assignTag(_ tag: String, to contactIDs: Set<String>) async throws {
+        var touchedFiles = Set<String>()
         for id in contactIDs {
             if let contact = contacts.first(where: { $0.localContactsID == id }),
                !contact.categories.contains(tag) {
                 contact.categories.append(tag)
-                try await save(contact)
+                touchedFiles.insert(contact.fileName)
             }
+        }
+
+        for fileName in touchedFiles {
+            try rewriteFile(fileName)
         }
     }
 
@@ -325,14 +356,38 @@ final class ContactsStore {
 
     // MARK: - Helpers
 
+    /// Rewrite a single .vcf file from in-memory state. If no contacts remain
+    /// for the file, the file is removed. Used by bulk operations to collapse
+    /// N saves on a shared file into a single atomic write.
+    private func rewriteFile(_ fileName: String) throws {
+        guard let url = folderURL, !fileName.isEmpty else { return }
+        let fileURL = url.appendingPathComponent(fileName)
+        let fileContacts = contacts.filter { $0.fileName == fileName }
+
+        if fileContacts.isEmpty {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+            }
+            return
+        }
+
+        let vcardString = fileContacts.map { writer.write($0) }.joined()
+        guard let data = vcardString.data(using: .utf8) else {
+            throw ContactsStoreError.encodingFailed
+        }
+        try data.write(to: fileURL, options: .atomic)
+    }
+
     private func uniqueFileName(for contact: Contact, in folder: URL) -> String {
         let base = writer.suggestedFileName(for: contact)
         let name = (base as NSString).deletingPathExtension
         let ext = (base as NSString).pathExtension
+        let inMemory = Set(contacts.map { $0.fileName })
 
         var candidate = base
         var counter = 1
-        while FileManager.default.fileExists(atPath: folder.appendingPathComponent(candidate).path) {
+        while FileManager.default.fileExists(atPath: folder.appendingPathComponent(candidate).path)
+                || inMemory.contains(candidate) {
             candidate = "\(name)-\(counter).\(ext)"
             counter += 1
         }
@@ -358,13 +413,13 @@ enum FolderLayoutMode: Equatable, Sendable {
     var detail: String {
         switch self {
         case .empty:
-            "No contacts yet. New contacts will be saved as one .vcf file each."
+            "No contacts yet. The folder layout will be determined by your first vCard files."
         case .oneFilePerContact:
             "Each contact lives in its own .vcf file. New contacts will be saved the same way."
         case .singleFile(let name):
             "All contacts share \(name). New contacts will be appended to it."
         case .mixed:
-            "Some .vcf files contain multiple contacts and others contain one. Consolidate to a single layout for reliable syncing."
+            "Some .vcf files contain multiple contacts while others contain one. Edits still persist, but a uniform layout (one file per contact, or one shared file) is recommended."
         }
     }
 
