@@ -41,13 +41,14 @@ struct SettingsView: View {
 
                 // Storage Layout
                 Section {
+                    let layoutColor: Color = store.layoutMode.isSupported ? .secondary : .orange
                     LabeledContent("Layout") {
                         Text(store.layoutMode.label)
-                            .foregroundStyle(store.layoutMode.isSupported ? .secondary : .orange)
+                            .foregroundStyle(layoutColor)
                     }
                     Text(store.layoutMode.detail)
                         .font(.caption)
-                        .foregroundStyle(store.layoutMode.isSupported ? .secondary : .orange)
+                        .foregroundStyle(layoutColor)
                 } header: {
                     Text("Storage Layout")
                 }
