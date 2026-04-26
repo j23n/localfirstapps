@@ -112,19 +112,23 @@ final class ContactsStore {
                 do {
                     let data = try Data(contentsOf: file)
                     let parsed = parser.parseMultiple(data: data, fileName: file.lastPathComponent)
+                    var needsRewrite = false
                     for contact in parsed {
-                        // Migration: generate ID if missing
+                        // Migration: generate ID if missing. We rewrite the whole
+                        // file once below so multi-vCard files don't lose siblings.
                         if contact.localContactsID.isEmpty {
                             contact.localContactsID = UUID().uuidString
-                            // Write back with the new ID
-                            let vcardString = writer.write(contact)
-                            try? vcardString.data(using: .utf8)?.write(to: file)
+                            needsRewrite = true
                         }
                         // Preserve conflict state from existing contacts
                         if let existing = contacts.first(where: { $0.localContactsID == contact.localContactsID }) {
                             contact.conflictState = existing.conflictState
                         }
                         loaded.append(contact)
+                    }
+                    if needsRewrite {
+                        let combined = parsed.map { writer.write($0) }.joined()
+                        try? combined.data(using: .utf8)?.write(to: file, options: .atomic)
                     }
                 } catch {
                     print("Warning: Could not parse \(file.lastPathComponent): \(error)")
@@ -147,18 +151,23 @@ final class ContactsStore {
             throw ContactsStoreError.noFolder
         }
 
-        let vcardString = writer.write(contact)
-        guard let data = vcardString.data(using: .utf8) else {
-            throw ContactsStoreError.encodingFailed
-        }
-
-        // Determine file name
         if contact.fileName.isEmpty {
             contact.fileName = uniqueFileName(for: contact, in: url)
         }
 
+        // Rewrite the whole file so siblings in a multi-vCard file are preserved.
+        var fileContacts = contacts.filter {
+            $0.fileName == contact.fileName && $0.localContactsID != contact.localContactsID
+        }
+        fileContacts.append(contact)
+
+        let vcardString = fileContacts.map { writer.write($0) }.joined()
+        guard let data = vcardString.data(using: .utf8) else {
+            throw ContactsStoreError.encodingFailed
+        }
+
         let fileURL = url.appendingPathComponent(contact.fileName)
-        try data.write(to: fileURL)
+        try data.write(to: fileURL, options: .atomic)
 
         // Update in-memory
         if let index = contacts.firstIndex(where: { $0.localContactsID == contact.localContactsID }) {
@@ -177,8 +186,19 @@ final class ContactsStore {
 
         if !contact.fileName.isEmpty {
             let fileURL = url.appendingPathComponent(contact.fileName)
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                try FileManager.default.removeItem(at: fileURL)
+            let remaining = contacts.filter {
+                $0.fileName == contact.fileName && $0.localContactsID != contact.localContactsID
+            }
+            if remaining.isEmpty {
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+            } else {
+                let vcardString = remaining.map { writer.write($0) }.joined()
+                guard let data = vcardString.data(using: .utf8) else {
+                    throw ContactsStoreError.encodingFailed
+                }
+                try data.write(to: fileURL, options: .atomic)
             }
         }
 
