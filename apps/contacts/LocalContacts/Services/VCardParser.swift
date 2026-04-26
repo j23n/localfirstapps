@@ -13,7 +13,12 @@ struct VCardParser: Sendable {
 
         guard lines.contains(where: { $0.uppercased().hasPrefix("BEGIN:VCARD") }) else { return nil }
 
-        let contact = Contact(fileName: fileName)
+        // Start with an empty localContactsID so loadContacts' migration
+        // path can detect files that lack X-LOCALCONTACTS-ID and persist
+        // a fresh ID. (Contact's init default of UUID().uuidString would
+        // otherwise mask missing IDs and break Apple Contacts sync links
+        // by regenerating a different UUID on every load.)
+        let contact = Contact(localContactsID: "", fileName: fileName)
         var unknownFields: [String] = []
         var noteLines: [String] = []
         var inNote = false
