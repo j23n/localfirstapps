@@ -156,11 +156,11 @@ final class ContactsStore {
                         do {
                             try combined.data(using: .utf8)?.write(to: file, options: .atomic)
                         } catch {
-                            Log.store.warning("Could not migrate IDs in \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .public). New IDs may regenerate on next launch, breaking Apple Contacts sync links.")
+                            Log.store.warning("Could not migrate IDs in \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private). New IDs may regenerate on next launch, breaking Apple Contacts sync links.")
                         }
                     }
                 } catch {
-                    Log.parse.warning("Could not parse \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .public)")
+                    Log.parse.warning("Could not parse \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)")
                 }
             }
 

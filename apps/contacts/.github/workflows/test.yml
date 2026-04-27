@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: macos-26
@@ -28,13 +32,17 @@ jobs:
       - name: Pick a simulator
         id: pick
         run: |
-          # Prefer the newest iPhone simulator that's pre-installed on the runner.
+          # Prefer the newest numbered iPhone simulator that's pre-installed
+          # on the runner. Sorting by name lexicographically would put
+          # "iPhone SE" or "iPhone Air" ahead of "iPhone 17", so match the
+          # major version number and sort numerically instead.
           NAME=$(xcrun simctl list devices available -j \
             | jq -r '.devices | to_entries
                      | map(select(.key | contains("iOS")))
                      | sort_by(.key) | reverse | .[0].value
-                     | map(select(.name | startswith("iPhone")))
-                     | sort_by(.name) | reverse | .[0].name')
+                     | map(select(.name | test("^iPhone [0-9]")))
+                     | sort_by(.name | capture("iPhone (?<n>[0-9]+)").n | tonumber)
+                     | reverse | .[0].name')
           if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
             echo "No iPhone simulator available"; exit 1
           fi
@@ -46,7 +54,7 @@ jobs:
           xcodebuild test \
             -project LocalContacts.xcodeproj \
             -scheme LocalContacts \
-            -destination "platform=iOS Simulator,name=${{ steps.pick.outputs.device_name }}" \
+            -destination "platform=iOS Simulator,name=${{ steps.pick.outputs.device_name }},OS=latest" \
             -resultBundlePath build/TestResults.xcresult \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
@@ -58,4 +66,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: build/TestResults.xcresult
+          path: |
+            build/TestResults.xcresult
+            xcodebuild.log
