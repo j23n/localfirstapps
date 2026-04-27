@@ -2,18 +2,31 @@ import Foundation
 
 struct VCardParser: Sendable {
 
-    func parse(data: Data, fileName: String) -> Contact? {
+    /// Parse a single vCard.
+    ///
+    /// - Parameter assignDefaultID: When `true` (the default), a contact whose
+    ///   vCard lacks `X-LOCALCONTACTS-ID` receives a fresh UUID. Pass `false`
+    ///   from migration-aware callers (e.g. `ContactsStore.loadContacts`) so
+    ///   missing IDs surface as an empty string and can be assigned + persisted
+    ///   exactly once. New call sites that don't perform migration should keep
+    ///   the default to avoid emitting contacts with empty IDs.
+    func parse(data: Data, fileName: String, assignDefaultID: Bool = true) -> Contact? {
         guard let text = String(data: data, encoding: .utf8) else { return nil }
-        return parse(string: text, fileName: fileName)
+        return parse(string: text, fileName: fileName, assignDefaultID: assignDefaultID)
     }
 
-    func parse(string: String, fileName: String) -> Contact? {
+    func parse(string: String, fileName: String, assignDefaultID: Bool = true) -> Contact? {
         let unfolded = unfold(string)
         let lines = unfolded.components(separatedBy: .newlines)
 
         guard lines.contains(where: { $0.uppercased().hasPrefix("BEGIN:VCARD") }) else { return nil }
 
-        let contact = Contact(fileName: fileName)
+        // Migration-aware callers pass `assignDefaultID: false` so an absent
+        // X-LOCALCONTACTS-ID line surfaces as an empty string and can be
+        // detected for one-time persistence. Default `true` keeps casual
+        // callers safe by emitting a fresh UUID.
+        let initialID = assignDefaultID ? UUID().uuidString : ""
+        let contact = Contact(localContactsID: initialID, fileName: fileName)
         var unknownFields: [String] = []
         var noteLines: [String] = []
         var inNote = false
@@ -110,7 +123,7 @@ struct VCardParser: Sendable {
         return contact
     }
 
-    func parseMultiple(data: Data, fileName: String) -> [Contact] {
+    func parseMultiple(data: Data, fileName: String, assignDefaultID: Bool = true) -> [Contact] {
         guard let text = String(data: data, encoding: .utf8) else { return [] }
         let unfolded = unfold(text)
 
@@ -124,7 +137,7 @@ struct VCardParser: Sendable {
                 currentBlock = line + "\n"
             } else if line.uppercased().hasPrefix("END:VCARD") {
                 currentBlock += line + "\n"
-                if let contact = parse(string: currentBlock, fileName: fileName) {
+                if let contact = parse(string: currentBlock, fileName: fileName, assignDefaultID: assignDefaultID) {
                     contacts.append(contact)
                 }
                 currentBlock = ""

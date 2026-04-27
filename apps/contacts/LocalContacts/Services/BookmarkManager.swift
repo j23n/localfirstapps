@@ -1,7 +1,14 @@
 import Foundation
 
-struct BookmarkManager: Sendable {
-    private static let bookmarkKey = "LocalContacts_FolderBookmark"
+// `UserDefaults` is documented thread-safe but isn't yet annotated Sendable
+// in the SDK, so we vouch for it with @unchecked.
+struct BookmarkManager: @unchecked Sendable {
+    static let bookmarkKey = "LocalContacts_FolderBookmark"
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     func saveBookmark(for url: URL) throws {
         // Must call startAccessingSecurityScopedResource BEFORE creating bookmark
@@ -12,11 +19,11 @@ struct BookmarkManager: Sendable {
             relativeTo: nil
         )
         url.stopAccessingSecurityScopedResource()
-        UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
+        defaults.set(bookmarkData, forKey: Self.bookmarkKey)
     }
 
     func loadBookmark() -> URL? {
-        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return nil }
+        guard let data = defaults.data(forKey: Self.bookmarkKey) else { return nil }
         var isStale = false
         guard let url = try? URL(
             resolvingBookmarkData: data,
@@ -34,11 +41,11 @@ struct BookmarkManager: Sendable {
     }
 
     func clearBookmark() {
-        UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+        defaults.removeObject(forKey: Self.bookmarkKey)
     }
 
     var hasBookmark: Bool {
-        UserDefaults.standard.data(forKey: Self.bookmarkKey) != nil
+        defaults.data(forKey: Self.bookmarkKey) != nil
     }
 }
 

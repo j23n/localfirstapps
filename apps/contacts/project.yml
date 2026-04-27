@@ -25,3 +25,19 @@ targets:
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_STRICT_CONCURRENCY: complete
+    scheme:
+      testTargets:
+        - LocalContactsTests
+
+  LocalContactsTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - LocalContactsTests
+    dependencies:
+      - target: LocalContacts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.localcontacts.app.tests
+        SWIFT_STRICT_CONCURRENCY: complete
+        GENERATE_INFOPLIST_FILE: YES
