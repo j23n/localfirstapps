@@ -442,5 +442,10 @@ struct ContactsStoreFileSystemTests {
         let bob = try #require(store.contacts.first { $0.localContactsID == "lcid-B" })
         #expect(alice.categories == ["vip"])      // not duplicated
         #expect(bob.categories == ["vip"])
+
+        // Bob's file must actually be rewritten with the new tag — alice was
+        // a no-op (already tagged) so we don't bother re-checking her file.
+        let onDiskBob = try readFile("bob.vcf", in: folder)
+        #expect(onDiskBob.contains("CATEGORIES:vip"))
     }
 }

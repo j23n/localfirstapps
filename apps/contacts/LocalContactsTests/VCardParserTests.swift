@@ -227,6 +227,30 @@ struct VCardParserTests {
         #expect(c.localContactsID == "abc-123")
     }
 
+    @Test("default behavior assigns a fresh UUID when X-LOCALCONTACTS-ID is missing")
+    func assignDefaultIDFillsMissing() throws {
+        // Casual callers (not the migration path) should get a usable ID
+        // without having to handle empty strings.
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nEND:VCARD\r\n"
+        let c = try #require(parser.parse(string: vcard, fileName: "id.vcf"))
+        #expect(!c.localContactsID.isEmpty)
+        #expect(UUID(uuidString: c.localContactsID) != nil)
+    }
+
+    @Test("assignDefaultID:false leaves missing X-LOCALCONTACTS-ID empty")
+    func assignDefaultIDOptOut() throws {
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nEND:VCARD\r\n"
+        let c = try #require(parser.parse(string: vcard, fileName: "id.vcf", assignDefaultID: false))
+        #expect(c.localContactsID.isEmpty)
+    }
+
+    @Test("assignDefaultID:false still respects an explicit X-LOCALCONTACTS-ID line")
+    func assignDefaultIDOptOutHonorsFile() throws {
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nX-LOCALCONTACTS-ID:abc-123\r\nEND:VCARD\r\n"
+        let c = try #require(parser.parse(string: vcard, fileName: "id.vcf", assignDefaultID: false))
+        #expect(c.localContactsID == "abc-123")
+    }
+
     // MARK: - Unknown fields
 
     @Test("unrecognized fields are kept in unknownFields")

@@ -3,7 +3,7 @@ import Foundation
 // `UserDefaults` is documented thread-safe but isn't yet annotated Sendable
 // in the SDK, so we vouch for it with @unchecked.
 struct BookmarkManager: @unchecked Sendable {
-    private static let bookmarkKey = "LocalContacts_FolderBookmark"
+    static let bookmarkKey = "LocalContacts_FolderBookmark"
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {

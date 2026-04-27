@@ -132,7 +132,10 @@ final class ContactsStore {
             for file in vcfFiles {
                 do {
                     let data = try Data(contentsOf: file)
-                    let parsed = parser.parseMultiple(data: data, fileName: file.lastPathComponent)
+                    // assignDefaultID:false so missing X-LOCALCONTACTS-ID surfaces
+                    // as an empty string and the migration block below assigns +
+                    // persists a stable UUID exactly once.
+                    let parsed = parser.parseMultiple(data: data, fileName: file.lastPathComponent, assignDefaultID: false)
                     var needsRewrite = false
                     for contact in parsed {
                         // Migration: generate ID if missing. We rewrite the whole

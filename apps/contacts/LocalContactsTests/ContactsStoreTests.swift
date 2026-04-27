@@ -173,7 +173,8 @@ struct ContactsStoreComputedTests {
         ])
         let result = store.groupedContacts
         let letters = result.map(\.letter)
-        #expect(letters == ["A", "B", "W", "#"].sorted())
+        // '#' (0x23) sorts before letters by codepoint.
+        #expect(letters == ["#", "A", "B", "W"])
         // A group should contain Anne (family Apple).
         let aGroup = result.first { $0.letter == "A" }
         #expect(aGroup?.contacts.contains { $0.givenName == "Anne" } == true)

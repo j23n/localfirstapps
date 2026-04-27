@@ -57,7 +57,9 @@ struct BookmarkManagerTests {
     func loadCorrupt() {
         let defaults = makeDefaults()
         // Write garbage under the bookmark key — must not crash; must return nil.
-        defaults.set(Data([0x00, 0x01, 0x02, 0x03]), forKey: "LocalContacts_FolderBookmark")
+        // Reference the manager's key constant so a rename doesn't silently
+        // turn this into a "no key set → nil" test.
+        defaults.set(Data([0x00, 0x01, 0x02, 0x03]), forKey: BookmarkManager.bookmarkKey)
         let manager = BookmarkManager(defaults: defaults)
         #expect(manager.loadBookmark() == nil)
     }
