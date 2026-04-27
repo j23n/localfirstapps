@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 @main
 struct LocalContactsApp: App {
@@ -80,7 +81,7 @@ struct LocalContactsApp: App {
                 forLocalContactsID: contact.localContactsID
             )
         } catch {
-            print("Failed to import external contact: \(error)")
+            Log.sync.error("Failed to import external contact: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
