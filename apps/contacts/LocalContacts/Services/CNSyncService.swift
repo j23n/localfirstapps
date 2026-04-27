@@ -1,5 +1,6 @@
 import Contacts
 import Foundation
+import os
 
 actor CNSyncService {
     nonisolated(unsafe) private let store = CNContactStore()
@@ -31,7 +32,7 @@ actor CNSyncService {
         do {
             return try await store.requestAccess(for: .contacts)
         } catch {
-            print("CNContactStore access error: \(error)")
+            Log.sync.error("CNContactStore access error: \(error.localizedDescription, privacy: .public)")
             return false
         }
     }
@@ -277,7 +278,7 @@ actor CNSyncService {
                 events.append(ChangeEvent(kind: .added(contactData: data)))
             }
         } catch {
-            print("Failed to fetch contacts for change detection: \(error)")
+            Log.sync.error("Failed to fetch contacts for change detection: \(error.localizedDescription, privacy: .public)")
         }
 
         saveHistoryToken()

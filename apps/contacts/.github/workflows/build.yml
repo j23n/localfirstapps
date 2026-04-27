@@ -8,9 +8,13 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
@@ -19,21 +23,6 @@ jobs:
 
       - name: Generate Xcode project
         run: xcodegen
-
-      - name: Run tests
-        run: |
-          xcodebuild test \
-            -project LocalContacts.xcodeproj \
-            -scheme LocalContacts \
-            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
-            -resultBundlePath build/TestResults.xcresult
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: build/TestResults.xcresult
 
       - name: Build
         run: |

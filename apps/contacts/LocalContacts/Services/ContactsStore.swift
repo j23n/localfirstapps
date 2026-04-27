@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 @Observable
 @MainActor
@@ -155,11 +156,11 @@ final class ContactsStore {
                         do {
                             try combined.data(using: .utf8)?.write(to: file, options: .atomic)
                         } catch {
-                            print("Warning: Could not migrate IDs in \(file.lastPathComponent): \(error). New IDs may regenerate on next launch, breaking Apple Contacts sync links.")
+                            Log.store.warning("Could not migrate IDs in \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private). New IDs may regenerate on next launch, breaking Apple Contacts sync links.")
                         }
                     }
                 } catch {
-                    print("Warning: Could not parse \(file.lastPathComponent): \(error)")
+                    Log.parse.warning("Could not parse \(file.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)")
                 }
             }
 
