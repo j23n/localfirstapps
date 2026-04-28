@@ -10,6 +10,10 @@ struct SettingsView: View {
     @AppStorage("hasSeenSyncInfo") private var hasSeenSyncInfo = false
     @State private var syncInfoExpanded = false
 
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -27,15 +31,15 @@ struct SettingsView: View {
                     }
                     .tint(.primary)
 
-                    Button("Reload Contacts") {
+                    Button {
                         Task { await store.loadContacts() }
+                    } label: {
+                        Label("Reload Contacts", systemImage: "arrow.clockwise")
                     }
+                    .disabled(store.isLoading)
 
                     if let lastSync = store.lastSyncedAt {
-                        LabeledContent("Last Synced") {
-                            Text(lastSync, style: .relative)
-                                .foregroundStyle(.secondary)
-                        }
+                        LabeledContent("Last Synced", value: lastSync, format: .dateTime)
                     }
                 }
 
@@ -133,6 +137,8 @@ struct SettingsView: View {
                                 .foregroundStyle(.orange)
                         }
                     }
+
+                    LabeledContent("Version", value: appVersion)
                 }
             }
             .navigationTitle("Settings")
@@ -176,6 +182,7 @@ struct SettingsView: View {
 
 struct TagManagementView: View {
     @Environment(ContactsStore.self) private var store
+    @Environment(\.editMode) private var editMode
     @State private var editingTag: String?
     @State private var editedName = ""
     @State private var tagToDelete: String?
@@ -200,9 +207,27 @@ struct TagManagementView: View {
                         } else {
                             Text(tagInfo.tag)
                             Spacer()
-                            Text("\(tagInfo.count) contacts")
-                                .foregroundStyle(.secondary)
-                                .font(.subheadline)
+                            if editMode?.wrappedValue.isEditing == true {
+                                HStack(spacing: 16) {
+                                    Button {
+                                        editingTag = tagInfo.tag
+                                        editedName = tagInfo.tag
+                                    } label: {
+                                        Image(systemName: "pencil")
+                                    }
+                                    .tint(.orange)
+                                    Button {
+                                        tagToDelete = tagInfo.tag
+                                    } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                    .tint(.red)
+                                }
+                            } else {
+                                Text("\(tagInfo.count) contacts")
+                                    .foregroundStyle(.secondary)
+                                    .font(.subheadline)
+                            }
                         }
                     }
                     .swipeActions(edge: .trailing) {
@@ -224,6 +249,11 @@ struct TagManagementView: View {
         }
         .navigationTitle("Manage Tags")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                EditButton()
+            }
+        }
         .confirmationDialog("Delete Tag", isPresented: .init(
             get: { tagToDelete != nil },
             set: { if !$0 { tagToDelete = nil } }
