@@ -11,7 +11,7 @@ struct SettingsView: View {
     @State private var syncInfoExpanded = false
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
     }
 
     var body: some View {
@@ -250,7 +250,7 @@ struct TagManagementView: View {
         .navigationTitle("Manage Tags")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 EditButton()
             }
         }
