@@ -15,7 +15,13 @@ struct ContactListView: View {
         NavigationStack {
             Group {
                 if store.isLoading {
-                    ProgressView("Loading contacts...")
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading contacts…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if store.contacts.isEmpty {
                     emptyState
                 } else {
