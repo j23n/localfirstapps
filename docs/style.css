@@ -10,6 +10,7 @@
   --accent:   #4385BE;
   --green:    #879A39;
   --cyan:     #3AA99F;
+  --yellow:   #D0A215;
 }
 
 @media (prefers-color-scheme: light) {
@@ -25,6 +26,7 @@
     --accent:   #205EA6;
     --green:    #66800B;
     --cyan:     #24837B;
+    --yellow:   #AD8301;
   }
 }
 
@@ -52,7 +54,7 @@ header {
 
 .prompt {
   font-size: 0.85rem;
-  color: var(--green);
+  color: var(--yellow);
   margin-bottom: 0.9rem;
 }
 
@@ -74,7 +76,7 @@ section { margin-bottom: 3.5rem; }
 
 h2 {
   font-size: 1rem;
-  color: var(--cyan);
+  color: var(--yellow);
   letter-spacing: 0.07em;
   margin-bottom: 1.75rem;
 }
