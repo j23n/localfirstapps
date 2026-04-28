@@ -182,8 +182,7 @@ struct SettingsView: View {
 
 struct TagManagementView: View {
     @Environment(ContactsStore.self) private var store
-    @Environment(\.editMode) private var editMode
-    @State private var editingTag: String?
+    @State private var tagToRename: String?
     @State private var editedName = ""
     @State private var tagToDelete: String?
 
@@ -195,49 +194,27 @@ struct TagManagementView: View {
                     description: Text("Tags are created when you assign them to contacts."))
             } else {
                 ForEach(store.allTags, id: \.tag) { tagInfo in
-                    HStack {
-                        if editingTag == tagInfo.tag {
-                            TextField("Tag name", text: $editedName)
-                                .onSubmit { commitRename(from: tagInfo.tag) }
-                            Button("Save") { commitRename(from: tagInfo.tag) }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                            Button("Cancel") { editingTag = nil }
-                                .controlSize(.small)
-                        } else {
+                    Button {
+                        tagToRename = tagInfo.tag
+                        editedName = tagInfo.tag
+                    } label: {
+                        LabeledContent {
+                            Text("\(tagInfo.count) contacts")
+                                .foregroundStyle(.secondary)
+                                .font(.subheadline)
+                        } label: {
                             Text(tagInfo.tag)
-                            Spacer()
-                            if editMode?.wrappedValue.isEditing == true {
-                                HStack(spacing: 16) {
-                                    Button {
-                                        editingTag = tagInfo.tag
-                                        editedName = tagInfo.tag
-                                    } label: {
-                                        Image(systemName: "pencil")
-                                    }
-                                    .tint(.orange)
-                                    Button {
-                                        tagToDelete = tagInfo.tag
-                                    } label: {
-                                        Image(systemName: "trash")
-                                    }
-                                    .tint(.red)
-                                }
-                            } else {
-                                Text("\(tagInfo.count) contacts")
-                                    .foregroundStyle(.secondary)
-                                    .font(.subheadline)
-                            }
+                                .foregroundStyle(.primary)
                         }
                     }
-                    .swipeActions(edge: .trailing) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
                             tagToDelete = tagInfo.tag
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
                         Button {
-                            editingTag = tagInfo.tag
+                            tagToRename = tagInfo.tag
                             editedName = tagInfo.tag
                         } label: {
                             Label("Rename", systemImage: "pencil")
@@ -245,16 +222,39 @@ struct TagManagementView: View {
                         .tint(.orange)
                     }
                 }
+                .onDelete { indexSet in
+                    if let index = indexSet.first {
+                        tagToDelete = store.allTags[index].tag
+                    }
+                }
             }
         }
         .navigationTitle("Manage Tags")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                EditButton()
+            if !store.allTags.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    EditButton()
+                }
             }
         }
-        .confirmationDialog("Delete Tag", isPresented: .init(
+        .alert("Rename Tag", isPresented: Binding(
+            get: { tagToRename != nil },
+            set: { if !$0 { tagToRename = nil } }
+        )) {
+            TextField("Tag name", text: $editedName)
+            Button("Rename") {
+                if let old = tagToRename {
+                    commitRename(from: old)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            if let tag = tagToRename {
+                Text("Enter a new name for \"\(tag)\".")
+            }
+        }
+        .confirmationDialog("Delete Tag", isPresented: Binding(
             get: { tagToDelete != nil },
             set: { if !$0 { tagToDelete = nil } }
         ), titleVisibility: .visible) {
@@ -265,7 +265,7 @@ struct TagManagementView: View {
             }
         } message: {
             if let tag = tagToDelete {
-                let count = store.allTags.first(where: { $0.tag == tag })?.count ?? 0
+                let count: Int = store.allTags.first(where: { $0.tag == tag })?.count ?? 0
                 Text("This will remove \"\(tag)\" from \(count) contact(s).")
             }
         }
@@ -274,7 +274,7 @@ struct TagManagementView: View {
     private func commitRename(from oldName: String) {
         let newName = editedName.trimmingCharacters(in: .whitespaces)
         guard !newName.isEmpty else { return }
-        editingTag = nil
+        tagToRename = nil
         Task { try? await store.renameTag(oldName, to: newName) }
     }
 }
