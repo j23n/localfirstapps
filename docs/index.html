@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Apps</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+</head>
+<body>
+
+<header>
+  <div class="prompt">$ ./localapps --info</div>
+  <h1>Local Apps</h1>
+  <p class="tagline">three iOS apps for a local-first life</p>
+</header>
+
+<main>
+
+  <section id="why">
+    <h2>why</h2>
+    <p>I try not to use the cloud for my personal files. Not because I can't, but because I already have a setup on Linux that works: photos managed in digikam, contacts in khard, music in a folder on a hard drive. I know exactly where those files are. I can inspect them, back them up, and open them with any tool I choose ten years from now.</p>
+    <p>Cloud services are convenient until they change their pricing, shut down, or decide you've violated a policy. <code>.vcf</code> files, <code>.mp3</code> files, <code>.jpeg</code> and <code>.png</code> files with up-to-date metadata - these will still be readable long after any particular app stops existing. The apps on this site are the iOS end of that setup. No accounts, no syncing to someone else's server, no lock-in.</p>
+  </section>
+
+  <section id="apps">
+    <h2>apps</h2>
+
+    <div class="app">
+      <h3>LocalMusic</h3>
+      <p>A music player for files you own. Point it at a folder synced via Synctrain and it scans, indexes, and plays your library. No streaming, no recommendations, no accounts — just your music.</p>
+      <ul>
+        <li>Search and filter your music files</li>
+        <li>Playlist support via <code>.m3u</code> files with relative paths</li>
+        <li>Full playback controls, background audio iOS integration</li>
+        <li>Lyrics display</li>
+        <li>Mini-player while browsing</li>
+      </ul>
+      <p class="desktop-companion">Desktop companion: <a href="https://codeberg.org/ravachol/kew">kew</a> — a terminal music player for Linux</p>
+      <div class="screenshots">
+        <figure>
+          <img src="screenshots/localmusic-library.jpg" alt="LocalMusic library view">
+          <figcaption>Library</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/localmusic-nowplaying.jpg" alt="LocalMusic now playing">
+          <figcaption>Now Playing</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/localmusic-playlist.jpg" alt="LocalMusic playlist">
+          <figcaption>Playlist</figcaption>
+        </figure>
+      </div>
+      <p class="source"><a href="https://github.com/j23n/localmusic">github.com/j23n/localmusic</a></p>
+      <p class="testflight"><a href="#">TestFlight — coming soon</a></p>
+    </div>
+
+    <div class="app">
+      <h3>LocalGallery</h3>
+      <p>A photo browser for your local library. Your photos stay on disk; LocalGallery reads the EXIF metadata written by <a href="https://github.com/j23n/photo-tools">photo-tools</a> and the same metadata digikam manages on the desktop. Browse by folder, tag or person - all derived from the metadata in the files themselves.</p>
+      <p><code>photo-tools</code> runs on Linux and tags new photos automatically: RAM++ for object recognition, CLIP embeddings for landmark identification, and Paddle OCR for text in images. Tags are written as EXIF metadata inside the photo file, so they survive any move or rename and are readable by any XMP-aware tool.</p>
+      <ul>
+        <li>Photo grid and full-screen viewer</li>
+        <li>EXIF and XMP metadata display</li>
+        <li>Memories and collections view</li>
+        <li>Person tagging linked to contacts, to surface memories on birthdays</li>
+      </ul>
+      <p class="desktop-companion">Desktop companion: <a href="https://www.digikam.org/">digikam</a> — photo management for Linux</p>
+      <div class="screenshots">
+        <figure>
+          <img src="screenshots/localgallery-grid.jpg" alt="LocalGallery photo grid">
+          <figcaption>Photo Grid</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/localgallery-folders.jpg" alt="LocalGallery photo folders">
+          <figcaption>Photo folders</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/localgallery-collections.jpg" alt="LocalGallery collections">
+          <figcaption>Collections</figcaption>
+        </figure>
+      </div>
+      <p class="source"><a href="https://github.com/j23n/localgallery">github.com/j23n/localgallery</a></p>
+      <p class="testflight"><a href="#">TestFlight — coming soon</a></p>
+    </div>
+
+    <div class="app">
+      <h3>LocalContacts</h3>
+      <p>A contacts manager for vCard files you own. Your contacts live as plain <code>.vcf</code> files in a folder synced via Synctrain. LocalContacts reads them, lets you browse and edit, and keeps them in sync with Apple's native Contacts app — so your contacts work everywhere on iOS (Phone, Messages, Mail) while remaining portable plain-text files.</p>
+      <ul>
+        <li>Browse, search, and edit contacts</li>
+        <li>Bidirectional sync with Apple Contacts</li>
+      </ul>
+      <p class="desktop-companion">Desktop companion: <a href="https://github.com/lucc/khard">khard</a> — a terminal vCard contacts manager</p>
+      <div class="screenshots">
+        <figure>
+          <img src="screenshots/localcontacts-list.jpg" alt="LocalContacts contact list">
+          <figcaption>Contact List</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/localcontacts-details.jpg" alt="LocalContacts edit contact">
+          <figcaption>Edit Contact</figcaption>
+        </figure>
+        <figure>
+          <img src="screenshots/localcontacts-settings.jpg" alt="LocalContacts settings">
+          <figcaption>Settings</figcaption>
+        </figure>
+      </div>
+      <p class="source"><a href="https://github.com/j23n/localcontacts">github.com/j23n/localcontacts</a></p>
+      <p class="testflight"><a href="#">TestFlight — coming soon</a></p>
+    </div>
+
+  </section>
+
+  <section id="stack">
+    <h2>the stack</h2>
+    <p>All three apps share the same sync layer: <a href="https://syncthing.net/">Syncthing</a> on Linux and <a href="https://github.com/pixelspark/sushitrain">Synctrain</a> on iOS. Syncthing is a decentralized, open-source P2P sync tool - no relay server required on a local network, no account, no data leaving your machines. Synctrain is the excellent iOS client that makes it seamless on iPhone.</p>
+    <table>
+      <thead>
+        <tr><th>tool</th><th>role</th><th>platform</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><a href="https://syncthing.net/">Syncthing</a></td><td>file sync daemon</td><td>Linux</td></tr>
+        <tr><td><a href="https://github.com/pixelspark/sushitrain">Synctrain</a></td><td>file sync</td><td>iOS</td></tr>
+        <tr><td><a href="https://github.com/j23n/photo-tools">photo-tools</a></td><td>automatic photo tagging (RAM++, CLIP, OCR)</td><td>Linux</td></tr>
+        <tr><td><a href="https://www.digikam.org/">digikam</a></td><td>photo management</td><td>Linux</td></tr>
+        <tr><td><a href="https://github.com/lucc/khard">khard</a></td><td>vCard contacts manager</td><td>Linux</td></tr>
+        <tr><td><a href="https://codeberg.org/ravachol/kew">kew</a></td><td>music player</td><td>Linux</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="privacy">
+    <h2>privacy</h2>
+    <p>These apps collect no data. They make no network requests. There are no analytics, no crash reporters, no third-party SDKs of any kind.</p>
+    <p>All three apps read and write files in folders you choose on your device. File sync is handled by Synctrain at the OS level - the apps themselves are entirely unaware of the network.</p>
+
+    <h3>data collected</h3>
+    <p>None.</p>
+
+    <h3>network access</h3>
+    <p>None. The apps do not initiate any network connections.</p>
+
+    <h3>third-party SDKs</h3>
+    <p>None. These apps have no external dependencies beyond Apple's own frameworks.</p>
+
+    <h3>data storage</h3>
+    <p>All data lives in files in the folder you designate. App preferences are stored in the iOS standard UserDefaults. Deleting the app removes preferences; your files remain in the folder you chose.</p>
+
+    <h3>contact</h3>
+    <p>Questions or comments? <a href="mailto:mail@j23n.com">mail@j23n.com</a></p>
+  </section>
+
+</main>
+
+<footer>
+  <p>Johannes Windelen &middot; <a href="https://j23n.com">j23n.com</a> &middot; <a href="https://github.com/j23n">github.com/j23n</a></p>
+</footer>
+
+</body>
+</html>
