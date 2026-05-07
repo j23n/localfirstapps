@@ -32,7 +32,7 @@ actor CNSyncService {
         do {
             return try await store.requestAccess(for: .contacts)
         } catch {
-            Log.sync.error("CNContactStore access error: \(error.localizedDescription, privacy: .public)")
+            Log.sync.error("CNContactStore access error: \(error.localizedDescription)")
             return false
         }
     }
@@ -278,7 +278,7 @@ actor CNSyncService {
                 events.append(ChangeEvent(kind: .added(contactData: data)))
             }
         } catch {
-            Log.sync.error("Failed to fetch contacts for change detection: \(error.localizedDescription, privacy: .public)")
+            Log.sync.error("Failed to fetch contacts for change detection: \(error.localizedDescription)")
         }
 
         saveHistoryToken()

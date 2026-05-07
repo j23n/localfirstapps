@@ -47,11 +47,7 @@ struct ContactListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack {
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Image(systemName: "gear")
-                        }
+                        SettingsToolbarButton(isPresented: $showSettings)
                         if !store.contacts.isEmpty {
                             Button(isSelecting ? "Done" : "Select") {
                                 withAnimation {

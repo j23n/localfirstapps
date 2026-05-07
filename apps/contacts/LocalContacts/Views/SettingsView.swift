@@ -4,11 +4,17 @@ import Contacts
 struct SettingsView: View {
     @Environment(ContactsStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showFolderPicker = false
     @State private var showOverwriteConfirmation = false
     @State private var contactsAuthStatus: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
     @AppStorage("hasSeenSyncInfo") private var hasSeenSyncInfo = false
     @State private var syncInfoExpanded = false
+    @AppStorage("crashReportingEnabled") private var crashReportingEnabled = false
+    private var crashService = CrashDiagnosticsService.shared
+
+    private static let githubURL = URL(string: "https://github.com/j23n/localcontacts")!
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
@@ -17,7 +23,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                // Folder
                 Section("Contacts Folder") {
                     Button {
                         showFolderPicker = true
@@ -43,20 +48,6 @@ struct SettingsView: View {
                     }
                 }
 
-                Section {
-                    let layoutColor: Color = store.layoutMode.isSupported ? .secondary : .orange
-                    LabeledContent("Layout") {
-                        Text(store.layoutMode.label)
-                            .foregroundStyle(layoutColor)
-                    }
-                    Text(store.layoutMode.detail)
-                        .font(.caption)
-                        .foregroundStyle(layoutColor)
-                } header: {
-                    Text("Storage Layout")
-                }
-
-                // Contacts Sync
                 Section {
                     switch contactsAuthStatus {
                     case .authorized:
@@ -106,12 +97,11 @@ struct SettingsView: View {
                         Text("Unknown authorization status")
                     }
                 } header: {
-                    Text("Contacts Integration")
+                    Text("Contacts Sync")
                 } footer: {
                     Text("Synced contacts appear under a \"LocalContacts\" group in the Apple Contacts app, enabling caller ID and QuickType suggestions.")
                 }
 
-                // Tag Management
                 Section("Tags") {
                     NavigationLink {
                         TagManagementView()
@@ -125,20 +115,37 @@ struct SettingsView: View {
                     }
                 }
 
-                // Stats
-                Section("Info") {
-                    LabeledContent("Total Contacts", value: "\(store.contacts.count)")
-                    LabeledContent("Tags", value: "\(store.allTags.count)")
+                statsSection
 
-                    let conflicts = store.contacts.filter { $0.conflictState != nil }.count
-                    if conflicts > 0 {
-                        LabeledContent("Conflicts") {
-                            Text("\(conflicts)")
-                                .foregroundStyle(.orange)
+                diagnosticsSection
+
+                if crashReportingEnabled, crashService.hasPendingCrash {
+                    crashSection
+                }
+
+                Section("About") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("LocalContacts manages your contacts as .vcf files in a folder of your choice — no import, no cloud account.")
+                            .font(.callout)
+
+                        Text("Found a bug or have feedback? Open an issue or get in touch:")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+
+                    Button {
+                        openURL(Self.githubURL)
+                    } label: {
+                        LabeledContent {
+                            Image(systemName: "arrow.up.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } label: {
+                            Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                         }
                     }
-
-                    LabeledContent("Version", value: appVersion)
+                    .tint(.primary)
                 }
             }
             .navigationTitle("Settings")
@@ -152,6 +159,14 @@ struct SettingsView: View {
                 if !hasSeenSyncInfo {
                     syncInfoExpanded = true
                     hasSeenSyncInfo = true
+                }
+            }
+            .onChange(of: crashReportingEnabled) { _, newValue in
+                CrashDiagnosticsService.shared.setEnabled(newValue)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    crashService.refreshPendingCrash()
                 }
             }
             .confirmationDialog("Force Overwrite LocalContacts List", isPresented: $showOverwriteConfirmation, titleVisibility: .visible) {
@@ -175,6 +190,102 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var statsSection: some View {
+        Section("Stats") {
+            LabeledContent("Total Contacts", value: "\(store.contacts.count)")
+            LabeledContent("Tags", value: "\(store.allTags.count)")
+
+            let conflicts = store.contacts.filter { $0.conflictState != nil }.count
+            if conflicts > 0 {
+                LabeledContent("Conflicts") {
+                    Text("\(conflicts)")
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            let layoutColor: Color = store.layoutMode.isSupported ? .secondary : .orange
+            LabeledContent("Storage Layout") {
+                Text(store.layoutMode.label)
+                    .foregroundStyle(layoutColor)
+            }
+            if !store.layoutMode.isSupported {
+                Text(store.layoutMode.detail)
+                    .font(.caption)
+                    .foregroundStyle(layoutColor)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var diagnosticsSection: some View {
+        Section {
+            NavigationLink {
+                LogsView()
+            } label: {
+                Label("Logs", systemImage: "doc.text.magnifyingglass")
+            }
+            LabeledContent("Version", value: appVersion)
+            Toggle("Crash Reporting", isOn: $crashReportingEnabled)
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Text("When on, LocalContacts captures crash details and recent log entries on this device. Nothing is sent automatically — if a crash is captured, a banner appears here in Settings and you can choose to share the report with the developer. Logs include file names from your contacts folder. Off by default. App Store crash analytics (system-level) are unaffected by this setting.")
+        }
+    }
+
+    @ViewBuilder
+    private var crashSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("LocalContacts crashed last session", systemImage: "exclamationmark.triangle.fill")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.orange)
+                Text("A crash report was captured. You can share it with the developer to help diagnose the issue, or dismiss it.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 2)
+
+            Button {
+                shareCrashReport()
+            } label: {
+                Label("Share Crash Report", systemImage: "square.and.arrow.up")
+            }
+
+            Button(role: .destructive) {
+                crashService.clearPendingCrash()
+            } label: {
+                Label("Dismiss", systemImage: "xmark.circle")
+            }
+        }
+    }
+
+    private func shareCrashReport() {
+        let stamp = Date().formatted(.iso8601.year().month().day().dateSeparator(.dash))
+        var items: [Any] = []
+
+        if let crashData = crashService.pendingCrashReport() {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("localcontacts-crash-\(stamp).json")
+            if (try? crashData.write(to: url, options: .atomic)) != nil {
+                items.append(url)
+            }
+        }
+
+        if let logData = crashService.recentLogTail() {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("localcontacts-logs-\(stamp).txt")
+            if (try? logData.write(to: url, options: .atomic)) != nil {
+                items.append(url)
+            }
+        }
+
+        guard !items.isEmpty else { return }
+        ShareSheet.present(items: items)
     }
 }
 
