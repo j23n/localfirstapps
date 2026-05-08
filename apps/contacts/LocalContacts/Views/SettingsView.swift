@@ -119,10 +119,6 @@ struct SettingsView: View {
 
                 diagnosticsSection
 
-                if crashReportingEnabled, crashService.hasPendingCrash {
-                    crashSection
-                }
-
                 Section("About") {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("LocalContacts manages your contacts as .vcf files in a folder of your choice — no import, no cloud account.")
@@ -229,6 +225,10 @@ struct SettingsView: View {
             }
             LabeledContent("Version", value: appVersion)
             Toggle("Crash Reporting", isOn: $crashReportingEnabled)
+
+            if crashReportingEnabled, crashService.hasPendingCrash {
+                crashRows
+            }
         } header: {
             Text("Diagnostics")
         } footer: {
@@ -237,30 +237,28 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var crashSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 6) {
-                Label("LocalContacts crashed last session", systemImage: "exclamationmark.triangle.fill")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.orange)
-                Text("A crash report was captured. You can share it with the developer to help diagnose the issue, or dismiss it.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 2)
+    private var crashRows: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("LocalContacts crashed last session", systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.orange)
+            Text("A crash report was captured. You can share it with the developer to help diagnose the issue, or dismiss it.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
 
-            Button {
-                shareCrashReport()
-            } label: {
-                Label("Share Crash Report", systemImage: "square.and.arrow.up")
-            }
+        Button {
+            shareCrashReport()
+        } label: {
+            Label("Share Crash Report", systemImage: "square.and.arrow.up")
+        }
 
-            Button(role: .destructive) {
-                crashService.clearPendingCrash()
-            } label: {
-                Label("Dismiss", systemImage: "xmark.circle")
-            }
+        Button(role: .destructive) {
+            crashService.clearPendingCrash()
+        } label: {
+            Label("Dismiss", systemImage: "xmark.circle")
         }
     }
 
