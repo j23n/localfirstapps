@@ -45,6 +45,10 @@ On first launch, the app asks you to select (or create) a folder for storing `.v
 
 Contacts permission is optional. Without it, the app works as a standalone vCard manager. With it, contacts sync to Apple Contacts.
 
+## AI disclaimer
+
+Please see [docs/AI-DISCLAIMER.md]
+
 ## License
 
 [MPL 2.0](LICENSE)
