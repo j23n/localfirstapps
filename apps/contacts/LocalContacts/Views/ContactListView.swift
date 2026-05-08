@@ -220,28 +220,25 @@ struct ContactListView: View {
 struct ContactCard: View {
     let contact: Contact
 
-    var body: some View {
-        HStack(spacing: 14) {
-            AvatarView(contact: contact, size: 48)
+    private static let avatarSize: CGFloat = 36
+    private static let avatarSpacing: CGFloat = 12
 
-            VStack(alignment: .leading, spacing: 3) {
+    var body: some View {
+        HStack(spacing: Self.avatarSpacing) {
+            AvatarView(contact: contact, size: Self.avatarSize)
+
+            VStack(alignment: .leading, spacing: 1) {
                 Text(contact.displayName)
                     .font(.body.weight(.medium))
 
-                if !contact.organization.isEmpty || !contact.jobTitle.isEmpty {
-                    Text([contact.jobTitle, contact.organization].filter { !$0.isEmpty }.joined(separator: " — "))
+                if !contact.organization.isEmpty {
+                    Text(contact.organization)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-
-                if let detail = contactDetail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
             }
+            .alignmentGuide(.listRowSeparatorLeading) { d in d[.leading] }
 
             Spacer()
 
@@ -251,17 +248,6 @@ struct ContactCard: View {
                     .font(.subheadline)
             }
         }
-        .padding(.vertical, 4)
-    }
-
-    private var contactDetail: String? {
-        if let phone = contact.phoneNumbers.first {
-            return phone.value
-        }
-        if let email = contact.emailAddresses.first {
-            return email.value
-        }
-        return nil
     }
 }
 
