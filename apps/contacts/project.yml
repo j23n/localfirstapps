@@ -25,6 +25,11 @@ targets:
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_STRICT_CONCURRENCY: complete
+    postBuildScripts:
+      - name: Set Build Number from Git
+        script: |
+          BUILD=$(git -C "$SRCROOT" rev-list --count HEAD)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
     scheme:
       testTargets:
         - LocalContactsTests
