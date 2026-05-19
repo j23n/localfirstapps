@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ContactDetailView: View {
     @Environment(ContactsStore.self) private var store
@@ -17,11 +18,14 @@ struct ContactDetailView: View {
 
                     Text(contact.displayName)
                         .font(.title2.bold())
+                        .contextMenu { copyButton(contact.displayName) }
 
                     if !contact.organization.isEmpty || !contact.jobTitle.isEmpty {
-                        Text([contact.jobTitle, contact.organization].filter { !$0.isEmpty }.joined(separator: " — "))
+                        let orgLine = [contact.jobTitle, contact.organization].filter { !$0.isEmpty }.joined(separator: " — ")
+                        Text(orgLine)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .contextMenu { copyButton(orgLine) }
                     }
 
                     if !contact.nickname.isEmpty {
@@ -29,6 +33,7 @@ struct ContactDetailView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .italic()
+                            .contextMenu { copyButton(contact.nickname) }
                     }
 
                     if !contact.categories.isEmpty {
@@ -94,6 +99,7 @@ struct ContactDetailView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .contextMenu { copyButton(phone.value) }
                     }
                 }
             }
@@ -111,6 +117,7 @@ struct ContactDetailView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .contextMenu { copyButton(email.value) }
                     }
                 }
             }
@@ -130,6 +137,7 @@ struct ContactDetailView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
+                            .contextMenu { copyButton(url.value) }
                         }
                     }
                 }
@@ -146,6 +154,7 @@ struct ContactDetailView: View {
                             Text(addr.value.formatted)
                                 .font(.body)
                         }
+                        .contextMenu { copyButton(addr.value.formatted) }
                     }
                 }
             }
@@ -153,18 +162,22 @@ struct ContactDetailView: View {
             // Birthday
             if let bday = contact.birthday, let month = bday.month, let day = bday.day {
                 Section("Birthday") {
-                    HStack {
+                    let bdayText: String = {
                         if let year = bday.year {
-                            Text(birthdayString(year: year, month: month, day: day))
+                            return birthdayString(year: year, month: month, day: day)
                         } else {
-                            Text(birthdayString(month: month, day: day))
+                            return birthdayString(month: month, day: day)
                         }
+                    }()
+                    HStack {
+                        Text(bdayText)
                         if let age = contact.age {
                             Spacer()
                             Text("Age \(age)")
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .contextMenu { copyButton(bdayText) }
                 }
             }
 
@@ -172,6 +185,7 @@ struct ContactDetailView: View {
             if !contact.note.isEmpty {
                 Section("Notes") {
                     Text(contact.note)
+                        .contextMenu { copyButton(contact.note) }
                 }
             }
 
@@ -217,6 +231,16 @@ struct ContactDetailView: View {
             }
         } message: {
             Text("This will permanently delete \(contact.displayName) and remove the .vcf file.")
+        }
+    }
+
+    @ViewBuilder
+    private func copyButton(_ value: String) -> some View {
+        Button {
+            UIPasteboard.general.string = value
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc")
         }
     }
 
