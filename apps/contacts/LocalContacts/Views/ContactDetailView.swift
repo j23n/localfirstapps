@@ -90,13 +90,13 @@ struct ContactDetailView: View {
             if !contact.phoneNumbers.isEmpty {
                 Section("Phone") {
                     ForEach(contact.phoneNumbers) { phone in
-                        Link(destination: URL(string: "tel:\(phone.value)")!) {
-                            LabeledContent {
-                                Text(phone.value)
-                                    .foregroundStyle(Color.accentColor)
-                            } label: {
-                                Text(phone.label.capitalized)
-                                    .foregroundStyle(.secondary)
+                        Group {
+                            if let url = Self.dialURL(phone.value) {
+                                Link(destination: url) {
+                                    valueRow(label: phone.label, value: phone.value)
+                                }
+                            } else {
+                                valueRow(label: phone.label, value: phone.value)
                             }
                         }
                         .contextMenu { copyButton(phone.value) }
@@ -108,13 +108,13 @@ struct ContactDetailView: View {
             if !contact.emailAddresses.isEmpty {
                 Section("Email") {
                     ForEach(contact.emailAddresses) { email in
-                        Link(destination: URL(string: "mailto:\(email.value)")!) {
-                            LabeledContent {
-                                Text(email.value)
-                                    .foregroundStyle(Color.accentColor)
-                            } label: {
-                                Text(email.label.capitalized)
-                                    .foregroundStyle(.secondary)
+                        Group {
+                            if let url = Self.mailURL(email.value) {
+                                Link(destination: url) {
+                                    valueRow(label: email.label, value: email.value)
+                                }
+                            } else {
+                                valueRow(label: email.label, value: email.value)
                             }
                         }
                         .contextMenu { copyButton(email.value) }
@@ -224,14 +224,56 @@ struct ContactDetailView: View {
         }
         .confirmationDialog("Delete Contact", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
+                // Dismiss first so the detail view is off the navigation stack
+                // before the contact disappears from the store. Deleting first
+                // makes the list's navigationDestination resolve to "Contact Not
+                // Found" while this view is still presented, swapping it out
+                // mid-pop.
+                dismiss()
                 Task {
                     try? await store.delete(contact)
-                    dismiss()
                 }
             }
         } message: {
             Text("This will permanently delete \(contact.displayName) and remove the .vcf file.")
         }
+    }
+
+    @ViewBuilder
+    private func valueRow(label: String, value: String) -> some View {
+        LabeledContent {
+            Text(value)
+                .foregroundStyle(Color.accentColor)
+        } label: {
+            Text(label.capitalized)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Build a `tel:` URL from a phone number, keeping only characters the URL
+    /// scheme accepts. Returns `nil` (so the caller renders a plain, non-tappable
+    /// row instead of crashing) when nothing dialable remains. Formatted numbers
+    /// like "+1 (555) 123-4567" otherwise produce a nil URL that force-unwrapping
+    /// would trap on.
+    static func dialURL(_ phone: String) -> URL? {
+        let allowed = CharacterSet(charactersIn: "+0123456789*#,;")
+        let filtered = String(phone.unicodeScalars.filter { allowed.contains($0) })
+        guard !filtered.isEmpty else { return nil }
+        return URL(string: "tel:\(filtered)")
+    }
+
+    /// Build a `mailto:` URL, percent-encoding as needed. Returns `nil` for an
+    /// empty or unencodable address so the caller can fall back to a plain row.
+    static func mailURL(_ email: String) -> URL? {
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let url = URL(string: "mailto:\(trimmed)") {
+            return url
+        }
+        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return nil
+        }
+        return URL(string: "mailto:\(encoded)")
     }
 
     @ViewBuilder

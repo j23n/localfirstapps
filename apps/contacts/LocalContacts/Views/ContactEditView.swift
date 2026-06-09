@@ -72,9 +72,9 @@ struct ContactEditView: View {
 
             // Websites
             Section("Websites") {
-                ForEach($contact.urls) { $url in
+                ForEach(contact.urls) { url in
                     HStack {
-                        TextField("URL", text: $url.value)
+                        TextField("URL", text: fieldBinding(\.urls, id: url.id, to: \.value))
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
 
@@ -97,9 +97,9 @@ struct ContactEditView: View {
 
             // Phone Numbers
             Section("Phone Numbers") {
-                ForEach($contact.phoneNumbers) { $phone in
+                ForEach(contact.phoneNumbers) { phone in
                     HStack {
-                        Picker("", selection: $phone.label) {
+                        Picker("", selection: fieldBinding(\.phoneNumbers, id: phone.id, to: \.label)) {
                             ForEach(["mobile", "home", "work", "main", "iphone", "other"], id: \.self) {
                                 Text($0.capitalized).tag($0)
                             }
@@ -107,7 +107,7 @@ struct ContactEditView: View {
                         .labelsHidden()
                         .frame(width: 100)
 
-                        TextField("Phone", text: $phone.value)
+                        TextField("Phone", text: fieldBinding(\.phoneNumbers, id: phone.id, to: \.value))
                             .keyboardType(.phonePad)
 
                         Button {
@@ -129,9 +129,9 @@ struct ContactEditView: View {
 
             // Email
             Section("Email Addresses") {
-                ForEach($contact.emailAddresses) { $email in
+                ForEach(contact.emailAddresses) { email in
                     HStack {
-                        Picker("", selection: $email.label) {
+                        Picker("", selection: fieldBinding(\.emailAddresses, id: email.id, to: \.label)) {
                             ForEach(["home", "work", "other"], id: \.self) {
                                 Text($0.capitalized).tag($0)
                             }
@@ -139,7 +139,7 @@ struct ContactEditView: View {
                         .labelsHidden()
                         .frame(width: 100)
 
-                        TextField("Email", text: $email.value)
+                        TextField("Email", text: fieldBinding(\.emailAddresses, id: email.id, to: \.value))
                             .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
 
@@ -162,10 +162,10 @@ struct ContactEditView: View {
 
             // Addresses
             Section("Addresses") {
-                ForEach($contact.postalAddresses) { $addr in
+                ForEach(contact.postalAddresses) { addr in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Picker("", selection: $addr.label) {
+                            Picker("", selection: fieldBinding(\.postalAddresses, id: addr.id, to: \.label)) {
                                 ForEach(["home", "work", "other"], id: \.self) {
                                     Text($0.capitalized).tag($0)
                                 }
@@ -183,14 +183,14 @@ struct ContactEditView: View {
                             .buttonStyle(.plain)
                         }
 
-                        TextField("Street", text: $addr.value.street)
-                        TextField("City", text: $addr.value.city)
+                        TextField("Street", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.street))
+                        TextField("City", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.city))
                         HStack {
-                            TextField("State", text: $addr.value.state)
-                            TextField("ZIP", text: $addr.value.postalCode)
+                            TextField("State", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.state))
+                            TextField("ZIP", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.postalCode))
                                 .frame(width: 100)
                         }
-                        TextField("Country", text: $addr.value.country)
+                        TextField("Country", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.country))
                     }
                     .padding(.vertical, 4)
                 }
@@ -292,6 +292,26 @@ struct ContactEditView: View {
         } message: {
             Text(saveError ?? "")
         }
+    }
+
+    /// A `Binding` into a labeled-value collection that resolves the element by its
+    /// stable `id` on every access rather than capturing an array index. This keeps
+    /// editing safe across insertions and deletions: a torn-down row can no longer
+    /// read a now-out-of-range index (the cause of "Index out of range" crashes with
+    /// binding-based `ForEach`), and the getter falls back to "" if the element is gone.
+    private func fieldBinding<T>(
+        _ collection: ReferenceWritableKeyPath<Contact, [LabeledValue<T>]>,
+        id: UUID,
+        to field: WritableKeyPath<LabeledValue<T>, String>
+    ) -> Binding<String> {
+        Binding(
+            get: { contact[keyPath: collection].first { $0.id == id }?[keyPath: field] ?? "" },
+            set: { newValue in
+                if let index = contact[keyPath: collection].firstIndex(where: { $0.id == id }) {
+                    contact[keyPath: collection][index][keyPath: field] = newValue
+                }
+            }
+        )
     }
 
     private func addTag() {
