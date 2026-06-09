@@ -51,7 +51,7 @@ actor CNSyncService {
            let local = containers.first(where: { $0.type == .local }) {
             return local.identifier
         }
-        return (try? store.defaultContainerIdentifier()) ?? ""
+        return store.defaultContainerIdentifier()
     }
 
     /// Find or create the single "LocalContacts" group in the default container.

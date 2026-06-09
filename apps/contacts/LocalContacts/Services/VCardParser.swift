@@ -28,8 +28,6 @@ struct VCardParser: Sendable {
         let initialID = assignDefaultID ? UUID().uuidString : ""
         let contact = Contact(localContactsID: initialID, fileName: fileName)
         var unknownFields: [String] = []
-        var noteLines: [String] = []
-        var inNote = false
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -114,9 +112,6 @@ struct VCardParser: Sendable {
             default:
                 unknownFields.append(trimmed)
             }
-
-            _ = inNote
-            _ = noteLines
         }
 
         contact.unknownFields = unknownFields
