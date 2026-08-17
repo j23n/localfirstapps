@@ -46,4 +46,27 @@ struct ContactDetailURLTests {
     func mailURLEmpty() {
         #expect(ContactDetailView.mailURL("   ") == nil)
     }
+
+    @Test("mailURL percent-encodes a space in the address")
+    func mailURLEncodesSpace() {
+        let url = ContactDetailView.mailURL("alice smith@example.com")
+        #expect(url?.absoluteString == "mailto:alice%20smith@example.com")
+    }
+
+    // MARK: - websiteURL
+
+    @Test("websiteURL prepends https when no scheme")
+    func websiteURLBareHost() {
+        #expect(ContactDetailView.websiteURL("example.com") == URL(string: "https://example.com"))
+    }
+
+    @Test("websiteURL accepts HTTPS case-insensitively")
+    func websiteURLHTTPS() {
+        #expect(ContactDetailView.websiteURL("HTTPS://example.com") == URL(string: "HTTPS://example.com"))
+    }
+
+    @Test("websiteURL returns nil for empty input")
+    func websiteURLEmpty() {
+        #expect(ContactDetailView.websiteURL("   ") == nil)
+    }
 }

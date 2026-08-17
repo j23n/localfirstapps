@@ -67,6 +67,7 @@ struct ContactListView: View {
                         } label: {
                             Image(systemName: "plus")
                         }
+                        .accessibilityLabel("Add Contact")
                     }
                 }
             }
@@ -172,10 +173,14 @@ struct ContactListView: View {
         ) {
             Button("Delete \(selectedContactIDs.count) Contacts", role: .destructive) {
                 Task {
-                    try? await store.deleteMultiple(selectedContactIDs)
-                    withAnimation {
-                        isSelecting = false
-                        selectedContactIDs.removeAll()
+                    do {
+                        try await store.deleteMultiple(selectedContactIDs)
+                        withAnimation {
+                            isSelecting = false
+                            selectedContactIDs.removeAll()
+                        }
+                    } catch {
+                        store.errorMessage = error.localizedDescription
                     }
                 }
             }
@@ -392,9 +397,13 @@ struct BulkTagPickerView: View {
     private func applyTag(_ tag: String) {
         guard !tag.isEmpty else { return }
         Task {
-            try? await store.assignTag(tag, to: selectedContactIDs)
-            dismiss()
-            onComplete()
+            do {
+                try await store.assignTag(tag, to: selectedContactIDs)
+                dismiss()
+                onComplete()
+            } catch {
+                store.errorMessage = error.localizedDescription
+            }
         }
     }
 }

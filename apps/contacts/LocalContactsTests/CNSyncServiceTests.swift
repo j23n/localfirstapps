@@ -42,6 +42,51 @@ struct CNSyncServiceTests {
         #expect(svc.cnLabel(from: "MoBiLe", isPhone: true) == CNLabelPhoneNumberMobile)
     }
 
+    @Test("vCardLabel maps CN constants to stable vCard labels")
+    func vCardLabelFromCNConstants() {
+        let svc = CNSyncService()
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelHome, isPhone: false, default: "home") == "home")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelWork, isPhone: false, default: "work") == "work")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelOther, isPhone: false, default: "other") == "other")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelPhoneNumberMobile, isPhone: true, default: "mobile") == "mobile")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelPhoneNumberMain, isPhone: true, default: "mobile") == "main")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelPhoneNumberiPhone, isPhone: true, default: "mobile") == "iphone")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelPhoneNumberWorkFax, isPhone: true, default: "mobile") == "fax")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelPhoneNumberHomeFax, isPhone: true, default: "mobile") == "fax")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelPhoneNumberPager, isPhone: true, default: "mobile") == "pager")
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelURLAddressHomePage, isPhone: false, default: "homepage") == "homepage")
+        // Parser-lowercased polluted form still maps.
+        #expect(svc.vCardLabel(fromCNLabel: CNLabelPhoneNumberMobile.lowercased(), isPhone: true, default: "mobile") == "mobile")
+        #expect(svc.vCardLabel(fromCNLabel: "cell", isPhone: true, default: "mobile") == "mobile")
+        #expect(svc.vCardLabel(fromCNLabel: nil, isPhone: true, default: "mobile") == "mobile")
+    }
+
+    @Test("cnLabel maps the raw CN mobile constant back to itself")
+    func cnLabelRawCNConstant() {
+        let svc = CNSyncService()
+        #expect(svc.cnLabel(from: CNLabelPhoneNumberMobile, isPhone: true) == CNLabelPhoneNumberMobile)
+        #expect(svc.cnLabel(from: CNLabelPhoneNumberMobile.lowercased(), isPhone: true) == CNLabelPhoneNumberMobile)
+    }
+
+    @Test("vCard label → cnLabel → vCardLabel is a stable synonym")
+    func labelRoundTrip() {
+        let svc = CNSyncService()
+        let cases: [(label: String, isPhone: Bool)] = [
+            ("home", true), ("work", true), ("mobile", true), ("cell", true),
+            ("main", true), ("iphone", true), ("fax", true), ("pager", true),
+            ("other", true), ("homepage", false), ("HOME", true),
+        ]
+        for item in cases {
+            let cn = svc.cnLabel(from: item.label, isPhone: item.isPhone)
+            let back = svc.vCardLabel(fromCNLabel: cn, isPhone: item.isPhone, default: "other")
+            if item.label.lowercased() == "cell" {
+                #expect(back == "mobile" || back == "cell")
+            } else {
+                #expect(back == item.label.lowercased())
+            }
+        }
+    }
+
     // MARK: - contactDiffers
 
     private func makeCN(

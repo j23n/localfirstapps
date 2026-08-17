@@ -107,7 +107,54 @@ struct VCardWriterTests {
         let c = Contact(givenName: "X", photoData: payload)
         let out = writer.write(c)
         #expect(out.contains("PHOTO;ENCODING=b;TYPE=JPEG:"))
-        #expect(out.contains(payload.base64EncodedString(options: .lineLength76Characters)))
+        #expect(out.contains(payload.base64EncodedString()))
+    }
+
+    @Test("PHOTO larger than 76 bytes of base64 folds with CRLF+space and round-trips")
+    func photoFoldingRoundTrip() throws {
+        // 200 bytes → 268 chars of base64, well past the 75-octet fold limit
+        // once the PHOTO;ENCODING=b;TYPE=JPEG: prefix is included.
+        var payload = Data(repeating: 0x41, count: 200)
+        payload[0] = 0xFF
+        payload[1] = 0xD8
+        let c = Contact(givenName: "X", photoData: payload)
+        let out = writer.write(c)
+
+        #expect(out.contains("PHOTO;ENCODING=b;TYPE=JPEG:"))
+        #expect(out.contains("\r\n "))
+        // Bare \n mid-base64 (the old .lineLength76Characters bug) must not appear.
+        let withoutCRLF = out.replacingOccurrences(of: "\r\n", with: "")
+        #expect(!withoutCRLF.contains("\n"))
+
+        let parsed = try #require(parser.parse(string: out, fileName: "x.vcf"))
+        #expect(parsed.photoData == payload)
+    }
+
+    @Test("TEL/EMAIL/URL values with comma, semicolon, and newline round-trip")
+    func escapeLabeledValues() throws {
+        let c = Contact(
+            givenName: "X",
+            urls: [LabeledValue(label: "homepage", value: "https://ex.com/a,b;c\nmore")],
+            phoneNumbers: [LabeledValue(label: "mobile", value: "+1;555,000\next")],
+            emailAddresses: [LabeledValue(label: "home", value: "a;b,c@x.com")]
+        )
+        let out = writer.write(c)
+        let parsed = try #require(parser.parse(string: out, fileName: "x.vcf"))
+        #expect(parsed.phoneNumbers.first?.value == "+1;555,000\next")
+        #expect(parsed.emailAddresses.first?.value == "a;b,c@x.com")
+        #expect(parsed.urls.first?.value == "https://ex.com/a,b;c\nmore")
+    }
+
+    @Test("TYPE with embedded newline and colon cannot inject a new field")
+    func typeSanitizedAgainstInjection() {
+        let c = Contact(
+            givenName: "X",
+            phoneNumbers: [LabeledValue(label: "cell:\nEMAIL:evil@x.com", value: "555")]
+        )
+        let out = writer.write(c)
+        #expect(!out.contains("EMAIL:evil@x.com"))
+        #expect(out.contains("TEL;TYPE="))
+        #expect(out.contains(":555"))
     }
 
     // MARK: - Unknown fields preserved

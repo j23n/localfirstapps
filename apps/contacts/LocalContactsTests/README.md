@@ -2,75 +2,52 @@
 
 Unit + integration tests for LocalContacts. Run via the `LocalContacts`
 scheme — the test target is wired into it, and CI executes
-`xcodebuild test` before the archive step.
+`xcodebuild test`. A UI-test target (`LocalContactsUITests`) is also on
+the scheme.
 
 ## Conventions
 
 - **Temp dirs per test.** File-system tests build a unique folder under
   `FileManager.default.temporaryDirectory` and remove it via `defer`.
   Never touch the user-selected folder.
-- **No `UserDefaults.standard`.** `BookmarkManager` accepts an injected
-  `UserDefaults`; tests pass a per-test `UserDefaults(suiteName:)`.
+- **No `UserDefaults.standard`.** `BookmarkManager` and `CNSyncService`
+  accept an injected `UserDefaults`; tests pass a per-test
+  `UserDefaults(suiteName:)`.
 - **Skip `setFolder`.** It goes through bookmarks, security-scoped
   resources, and `UserDefaults`. File-system tests assign
   `store.folderURL` directly and call `loadContacts` / `save` / etc.
-- **Skip `CNContactStore` operations.** Anything authorization-gated is
-  out of scope for the unit suite — see "Follow-up work" below for the
-  protocol-shim plan.
-- **Swift Testing** (`@Test`, `#expect`, `#require`) for new tests.
+- **Fake the contact store.** Authorization-gated `CNContactStore` work
+  goes through `CNContactStoreProtocol`. Tests inject `FakeCNContactStore`.
+- **Swift Testing** (`@Test`, `#expect`, `#require`) for unit tests.
+  The smoke UI test uses XCTest.
 
 ## Current coverage
 
 | Suite | What it covers |
 | --- | --- |
-| `VCardParserTests` | Round-trip identity, header skipping, name components, type-label extraction (TYPE=, vCard 2.1 bare types, defaults), group prefix vs. semicolon-in-params, addresses, all three BDAY formats + malformed, base64 PHOTO + URI fallback, CATEGORIES, X-LOCALCONTACTS-ID, unknown-field preservation, escape sequences, line folding (CRLF+space and LF+tab), `parseMultiple` ordering and blanks between cards, both `assignDefaultID` branches. |
-| `VCardWriterTests` | Header order + CRLF endings, optional-field omission/inclusion, escaping (NOTE and FN), BDAY year/no-year/missing, base64 PHOTO encoding, unknown-field round-trip, filename suggestion (lowercased given-family, sanitization, lcid fallback for empty/punctuation-only), fully-populated end-to-end round trip, FN→displayName fallback. |
-| `ContactTests` / `PostalAddressTests` | `displayName` / `initials` / `sortLetter` fallbacks, `age` computation, **`copy()` deep-copies postal addresses**, `formatted` and `isEmpty` semantics. |
-| `ContactsStoreTests` | Pure computed properties: `allTags` counting + sorting, search across name / org / jobTitle / phone / email, `selectedTag` and `showConflictsOnly` filters, locale-aware sort, `groupedContacts` ordering, all four `layoutMode` cases. |
-| `ContactsStoreFileSystemTests` | Integration against per-test temp folders. ID migration with persistence + reload stability, save in both `.oneFilePerContact` and `.singleFile` layouts, filename-collision suffixing, **multi-vCard sibling preservation** (the regression test for editing one contact in a shared file), delete semantics for both layouts, bulk delete file collapse, `renameTag` with deduplication and `selectedTag` carryover, `deleteTag`, `assignTag` with no-duplicate guarantee + on-disk verification. |
-| `BookmarkManagerTests` | save/load round-trip, `hasBookmark` / `clearBookmark`, resilience to corrupt stored data (writes garbage at `BookmarkManager.bookmarkKey` and asserts nil). |
-| `CNSyncServiceTests` | `cnLabel` mapping table (case-insensitive, fax-non-phone fallback, unknown-label catch-all), `contactDiffers` for every diff trigger plus the documented "phone label-only ≠ diff" and "photo bytes intentionally ignored" cases. |
+| `VCardParserTests` | Round-trip identity, header skipping, name components, type-label extraction, group prefix, addresses, BDAY formats, base64 PHOTO + URI fallback + folded PHOTO, CATEGORIES, X-LOCALCONTACTS-ID, unknown-field preservation, single-pass unescape (`\\n` vs `\n`), line folding, `parseMultiple` (order, blanks, empty `Data`, BEGIN without END, junk between cards, stray BEGIN), both `assignDefaultID` branches. |
+| `VCardWriterTests` | Header order + CRLF, optional-field omission, escaping (NOTE, FN, TEL/EMAIL/URL), TYPE sanitization, BDAY, PHOTO folding, unknown-field round-trip, filename suggestion, end-to-end write→parse. |
+| `ContactTests` / `PostalAddressTests` | `displayName` / `initials` / `sortLetter`, `age`, `copy()` deep-copies addresses, `formatted` / `isEmpty`. |
+| `ContactsStoreTests` | `allTags`, search, tag/conflict filters, locale-aware sort, `groupedContacts`, all four `layoutMode` cases, `--contacts-folder` launch-arg parsing. |
+| `ContactsStoreFileSystemTests` | Load/save/delete against temp folders, ID migration, both layouts, filename collision, sibling preservation, disk sibling re-read, mixed-layout solo edit, corrupt-file sibling fallback, `save` with no folder, bulk delete, tag rewrite. |
+| `ContactsStoreChangeEventTests` | `applyChangeEvents`: update/delete conflict state (no overwrite), empty list, unknown IDs, added → import + CN claim. |
+| `ContactMergeTests` | Field-by-field Apple/local selection, list replace (not merge-by-index), birthday, photo-only-if-nil, `conflictState` left intact. |
+| `BookmarkManagerTests` | save/load, `hasBookmark` / `clearBookmark`, corrupt stored data. |
+| `CNSyncServiceTests` | Pure `cnLabel` / `vCardLabel` / `contactDiffers` logic. |
+| `CNSyncServiceStoreTests` | `pushContact` first vs update vs denied, `deleteContact` mapped/unmapped, `fetchChanges` token short-circuit / deleted / updated labels / added / fetch error keeps token, `fullReconciliation`, `claimCNContact`, `.limited` is not full access. |
+| `ContactDetailURLTests` | `dialURL`, `mailURL` (including space encoding), `websiteURL` (bare host + `HTTPS://`). |
+| `LocalContactsUITests` | Seeded-folder smoke: list → add → search → edit → delete. |
 
 ## Production-side accommodations
 
-The suite required three small testability tweaks to the app target:
-
-- `BookmarkManager` accepts an injected `UserDefaults` (defaults to
-  `.standard`); `bookmarkKey` is `internal static`.
-- `CNSyncService.cnLabel` and `contactDiffers` are `nonisolated`. They
-  access no actor state, so this is safe — and lets tests call them
-  synchronously without crossing an actor boundary (which would trip
-  `Sendable` on `CNContact`).
-- `VCardParser.parse(...)` / `parseMultiple(...)` take an
-  `assignDefaultID: Bool = true` parameter. `ContactsStore.loadContacts`
-  passes `false` so missing `X-LOCALCONTACTS-ID` lines surface as empty
-  strings and the migration block can assign + persist a stable UUID
-  exactly once. Default `true` keeps casual callers safe.
+- `BookmarkManager` accepts an injected `UserDefaults`; `bookmarkKey` is `internal static`.
+- `CNSyncService` takes `CNContactStoreProtocol` + `UserDefaults`. Production uses `CNContactStoreAdapter`.
+- Identifier / group fetches are explicit protocol methods (not opaque `NSPredicate`) so the fake can implement them.
+- `VCardParser.parse` / `parseMultiple` take `assignDefaultID: Bool = true`.
+- `ContactMerge.apply` and `ContactsStore.applyChangeEvents` hold logic that used to live in views.
+- `--contacts-folder <path>` skips the folder picker (`ContactsStore.folderPath(fromLaunchArguments:)`).
 
 ## Follow-up work
 
-Not blockers for the current suite, but worth picking up next:
-
-- **`CNContactStoreProtocol` shim + stateful sync tests.** The current
-  `CNSyncServiceTests` only cover pure logic. Extracting a small
-  protocol around the `CNContactStore` calls (`groups`,
-  `unifiedContacts`, `execute`, `currentHistoryToken`, `containers`)
-  would let us test `pushContact`, `fetchChanges`, and
-  `fullReconciliation` against a fake — including first-push vs.
-  update, externally-deleted detection, externally-added events,
-  history-token short-circuit, and reconciliation cleaning up
-  duplicate groups.
-- **Extract `processChangeEvents` and `applyMerge`.** Both currently
-  live inside views (`LocalContactsApp.checkForExternalChanges` and
-  `ConflictResolutionSheet.applyMerge`). Pulling them onto
-  `ContactsStore` / a merge helper would let us test the
-  conflict-state state machine and field-by-field merge selection.
-- **One XCUITest happy-path smoke.** Launch with a seeded temp folder
-  via a debug-only argument, list → add → search → edit → bulk delete.
-- **Coverage gaps the existing suites skip.** Empty `Data()` into
-  `parse`; `parseMultiple` on malformed input (BEGIN with no END, junk
-  between blocks); a file-system path exercising `.mixed` layout.
-- **`BookmarkManager` `Sendable` honesty.** Currently
-  `@unchecked Sendable` because it stores a `UserDefaults`. Pass
-  `UserDefaults` through each method instead of holding it; restores
-  compile-time safety.
+- **`BookmarkManager` `Sendable` honesty.** Still `@unchecked Sendable` because it stores a `UserDefaults`.
+- **UI-test robustness.** The smoke test drives unlabeled system controls (search clear, back navigation). Worth accessibility identifiers if it flakes on CI.

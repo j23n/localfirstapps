@@ -339,8 +339,11 @@ struct ContactEditView: View {
             do {
                 try await store.save(contact)
 
-                // Push to CNContactStore
-                try? await store.syncService.pushContact(contact)
+                do {
+                    try await store.syncService.pushContact(contact)
+                } catch {
+                    store.errorMessage = "Saved locally, but Apple Contacts sync failed: \(error.localizedDescription)"
+                }
 
                 await MainActor.run {
                     dismiss()

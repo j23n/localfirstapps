@@ -17,9 +17,14 @@ final class ContactsStore {
 
     private let parser = VCardParser()
     private let writer = VCardWriter()
+    private let fileAccess = CoordinatedFileAccess()
     let bookmarkManager = BookmarkManager()
     let folderAccess = FolderAccessManager()
-    let syncService = CNSyncService()
+    let syncService: CNSyncService
+
+    init(syncService: CNSyncService = CNSyncService()) {
+        self.syncService = syncService
+    }
 
     // MARK: - Computed
 
@@ -106,10 +111,23 @@ final class ContactsStore {
     }
 
     func restoreFolder() async {
+        if let path = Self.folderPath(fromLaunchArguments: ProcessInfo.processInfo.arguments) {
+            folderURL = URL(fileURLWithPath: path, isDirectory: true)
+            await loadContacts()
+            return
+        }
         guard let url = bookmarkManager.loadBookmark() else { return }
         await folderAccess.startAccessing(url)
         folderURL = url
         await loadContacts()
+    }
+
+    /// UI tests (and debug launches) can skip the folder picker with
+    /// `--contacts-folder <path>`.
+    static func folderPath(fromLaunchArguments arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: "--contacts-folder"),
+              arguments.indices.contains(index + 1) else { return nil }
+        return arguments[index + 1]
     }
 
     // MARK: - Load
@@ -121,18 +139,14 @@ final class ContactsStore {
         errorMessage = nil
 
         do {
-            let contents = try FileManager.default.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            )
+            let contents = try fileAccess.contentsOfDirectory(at: url)
 
             let vcfFiles = contents.filter { $0.pathExtension.lowercased() == "vcf" }
             var loaded: [Contact] = []
 
             for file in vcfFiles {
                 do {
-                    let data = try Data(contentsOf: file)
+                    let data = try fileAccess.read(from: file)
                     // assignDefaultID:false so missing X-LOCALCONTACTS-ID surfaces
                     // as an empty string and the migration block below assigns +
                     // persists a stable UUID exactly once.
@@ -154,7 +168,10 @@ final class ContactsStore {
                     if needsRewrite {
                         let combined = parsed.map { writer.write($0) }.joined()
                         do {
-                            try combined.data(using: .utf8)?.write(to: file, options: .atomic)
+                            guard let data = combined.data(using: .utf8) else {
+                                throw ContactsStoreError.encodingFailed
+                            }
+                            try fileAccess.write(data, to: file)
                         } catch {
                             Log.store.warning("Could not migrate IDs in \(file.lastPathComponent): \(error.localizedDescription). New IDs may regenerate on next launch, breaking Apple Contacts sync links.")
                         }
@@ -188,25 +205,49 @@ final class ContactsStore {
             }
         }
 
-        // Rewrite the whole file so siblings in a multi-vCard file are preserved.
-        var fileContacts = contacts.filter {
-            $0.fileName == contact.fileName && $0.localContactsID != contact.localContactsID
+        let fileURL = url.appendingPathComponent(contact.fileName)
+        var fileContacts: [Contact]
+
+        // Disk is the sibling source of truth. Re-reading here is what lets a
+        // Syncthing edit to Alice survive when the user saves Bob in the same
+        // file. rewriteFile / delete must NOT do this — they already updated
+        // in-memory state (e.g. removed deleted contacts).
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            let data = try fileAccess.read(from: fileURL)
+            var diskContacts = parser.parseMultiple(data: data, fileName: contact.fileName, assignDefaultID: false)
+            for sibling in diskContacts where sibling.localContactsID.isEmpty {
+                sibling.localContactsID = UUID().uuidString
+            }
+            if diskContacts.isEmpty {
+                // Corrupt / unreadable file: keep in-memory siblings so a
+                // save does not wipe the rest of a multi-vCard file.
+                fileContacts = contacts.filter {
+                    $0.fileName == contact.fileName && $0.localContactsID != contact.localContactsID
+                }
+                fileContacts.append(contact)
+            } else if let index = diskContacts.firstIndex(where: { $0.localContactsID == contact.localContactsID }) {
+                diskContacts[index] = contact
+                fileContacts = diskContacts
+            } else {
+                diskContacts.append(contact)
+                fileContacts = diskContacts
+            }
+        } else {
+            fileContacts = [contact]
         }
-        fileContacts.append(contact)
 
         let vcardString = fileContacts.map { writer.write($0) }.joined()
         guard let data = vcardString.data(using: .utf8) else {
             throw ContactsStoreError.encodingFailed
         }
+        try fileAccess.write(data, to: fileURL)
 
-        let fileURL = url.appendingPathComponent(contact.fileName)
-        try data.write(to: fileURL, options: .atomic)
-
-        // Update in-memory
-        if let index = contacts.firstIndex(where: { $0.localContactsID == contact.localContactsID }) {
-            contacts[index] = contact
-        } else {
-            contacts.append(contact)
+        upsertInMemory(contact)
+        for sibling in fileContacts where sibling.localContactsID != contact.localContactsID {
+            if let existing = contacts.first(where: { $0.localContactsID == sibling.localContactsID }) {
+                sibling.conflictState = existing.conflictState
+            }
+            upsertInMemory(sibling)
         }
     }
 
@@ -223,15 +264,13 @@ final class ContactsStore {
                 $0.fileName == contact.fileName && $0.localContactsID != contact.localContactsID
             }
             if remaining.isEmpty {
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    try FileManager.default.removeItem(at: fileURL)
-                }
+                try fileAccess.delete(fileURL)
             } else {
                 let vcardString = remaining.map { writer.write($0) }.joined()
                 guard let data = vcardString.data(using: .utf8) else {
                     throw ContactsStoreError.encodingFailed
                 }
-                try data.write(to: fileURL, options: .atomic)
+                try fileAccess.write(data, to: fileURL)
             }
         }
 
@@ -318,6 +357,64 @@ final class ContactsStore {
         }
     }
 
+    // MARK: - External change events
+
+    /// Apply Apple Contacts change events: mark conflicts or import new contacts.
+    /// Existing conflict state is left untouched.
+    func applyChangeEvents(_ events: [CNSyncService.ChangeEvent]) async {
+        for event in events {
+            switch event.kind {
+            case .updated(let data):
+                if let contact = contacts.first(where: { $0.localContactsID == data.localContactsID }),
+                   contact.conflictState == nil {
+                    contact.conflictState = .externalEdit(data)
+                }
+            case .deleted(let localContactsID):
+                if let contact = contacts.first(where: { $0.localContactsID == localContactsID }),
+                   contact.conflictState == nil {
+                    contact.conflictState = .externalDelete
+                }
+            case .added(let data):
+                await importExternalContact(data)
+            }
+        }
+    }
+
+    func importExternalContact(_ data: CNSyncService.CNContactData) async {
+        let contact = Contact()
+        contact.givenName = data.givenName
+        contact.familyName = data.familyName
+        contact.middleName = data.middleName
+        contact.namePrefix = data.namePrefix
+        contact.nameSuffix = data.nameSuffix
+        contact.organization = data.organization
+        contact.jobTitle = data.jobTitle
+        contact.nickname = data.nickname
+        contact.fullName = [data.givenName, data.middleName, data.familyName]
+            .filter { !$0.isEmpty }.joined(separator: " ")
+        contact.phoneNumbers = data.phoneNumbers.map { LabeledValue(label: $0.label, value: $0.value) }
+        contact.emailAddresses = data.emailAddresses.map { LabeledValue(label: $0.label, value: $0.value) }
+        contact.urls = data.urls.map { LabeledValue(label: $0.label, value: $0.value) }
+        contact.postalAddresses = data.postalAddresses.map {
+            LabeledValue(label: $0.label, value: PostalAddress(
+                street: $0.street, city: $0.city, state: $0.state,
+                postalCode: $0.postalCode, country: $0.country
+            ))
+        }
+        contact.birthday = data.birthday
+        if let photo = data.imageData { contact.photoData = photo }
+
+        do {
+            try await save(contact)
+            await syncService.claimCNContact(
+                cnIdentifier: data.cnIdentifier,
+                forLocalContactsID: contact.localContactsID
+            )
+        } catch {
+            Log.sync.error("Failed to import external contact: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Import External Changes
 
     func applyExternalData(_ data: CNSyncService.CNContactData, to contact: Contact) async throws {
@@ -369,9 +466,7 @@ final class ContactsStore {
         let fileContacts = contacts.filter { $0.fileName == fileName }
 
         if fileContacts.isEmpty {
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                try FileManager.default.removeItem(at: fileURL)
-            }
+            try fileAccess.delete(fileURL)
             return
         }
 
@@ -379,7 +474,15 @@ final class ContactsStore {
         guard let data = vcardString.data(using: .utf8) else {
             throw ContactsStoreError.encodingFailed
         }
-        try data.write(to: fileURL, options: .atomic)
+        try fileAccess.write(data, to: fileURL)
+    }
+
+    private func upsertInMemory(_ contact: Contact) {
+        if let index = contacts.firstIndex(where: { $0.localContactsID == contact.localContactsID }) {
+            contacts[index] = contact
+        } else {
+            contacts.append(contact)
+        }
     }
 
     private func uniqueFileName(for contact: Contact, in folder: URL) -> String {
@@ -433,7 +536,7 @@ enum FolderLayoutMode: Equatable, Sendable {
     }
 }
 
-enum ContactsStoreError: LocalizedError {
+enum ContactsStoreError: LocalizedError, Equatable {
     case noFolder
     case encodingFailed
 

@@ -240,6 +240,54 @@ struct ContactsStoreFileSystemTests {
         #expect(store.contacts.count == 3)
     }
 
+    @Test("save re-reads siblings from disk so an out-of-band edit survives")
+    func saveReReadsSiblingsFromDisk() async throws {
+        let folder = try makeTempFolder()
+        defer { cleanup(folder) }
+
+        let bundle = """
+        BEGIN:VCARD\r
+        VERSION:3.0\r
+        X-LOCALCONTACTS-ID:lcid-A\r
+        FN:Alice\r
+        END:VCARD\r
+        BEGIN:VCARD\r
+        VERSION:3.0\r
+        X-LOCALCONTACTS-ID:lcid-B\r
+        FN:Bob\r
+        END:VCARD\r
+        """
+        try writeFixture(bundle, named: "pair.vcf", in: folder)
+
+        let store = makeStore(folder: folder)
+        await store.loadContacts()
+        #expect(store.contacts.count == 2)
+
+        // Simulate Syncthing rewriting Alice on disk without updating memory.
+        let stale = """
+        BEGIN:VCARD\r
+        VERSION:3.0\r
+        X-LOCALCONTACTS-ID:lcid-A\r
+        FN:Alicia\r
+        END:VCARD\r
+        BEGIN:VCARD\r
+        VERSION:3.0\r
+        X-LOCALCONTACTS-ID:lcid-B\r
+        FN:Bob\r
+        END:VCARD\r
+        """
+        try writeFixture(stale, named: "pair.vcf", in: folder)
+
+        let bob = try #require(store.contacts.first { $0.localContactsID == "lcid-B" })
+        bob.fullName = "Robert"
+        try await store.save(bob)
+
+        await store.loadContacts()
+        let names = Set(store.contacts.map(\.fullName))
+        #expect(names == Set(["Alicia", "Robert"]))
+        #expect(store.contacts.count == 2)
+    }
+
     // MARK: - Delete
 
     @Test("delete removes a per-file contact and its file")
@@ -447,5 +495,84 @@ struct ContactsStoreFileSystemTests {
         // a no-op (already tagged) so we don't bother re-checking her file.
         let onDiskBob = try readFile("bob.vcf", in: folder)
         #expect(onDiskBob.contains("CATEGORIES:vip"))
+    }
+
+    @Test("save throws noFolder when folderURL is nil")
+    func saveWithoutFolder() async {
+        let store = ContactsStore()
+        let contact = Contact(givenName: "Alice")
+        await #expect(throws: ContactsStoreError.noFolder) {
+            try await store.save(contact)
+        }
+    }
+
+    @Test("mixed layout: editing a solo file does not rewrite the shared file")
+    func mixedLayoutSoloEditLeavesSharedUntouched() async throws {
+        let folder = try makeTempFolder()
+        defer { cleanup(folder) }
+
+        let shared = """
+        BEGIN:VCARD\r
+        VERSION:3.0\r
+        X-LOCALCONTACTS-ID:lcid-A\r
+        FN:Alice\r
+        END:VCARD\r
+        BEGIN:VCARD\r
+        VERSION:3.0\r
+        X-LOCALCONTACTS-ID:lcid-B\r
+        FN:Bob\r
+        END:VCARD\r
+        """
+        try writeFixture(shared, named: "shared.vcf", in: folder)
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:lcid-C\r\nFN:Carol\r\nEND:VCARD\r\n",
+            named: "carol.vcf", in: folder
+        )
+
+        let store = makeStore(folder: folder)
+        await store.loadContacts()
+        #expect(store.layoutMode == .mixed)
+
+        let beforeShared = try readFile("shared.vcf", in: folder)
+        let carol = try #require(store.contacts.first { $0.localContactsID == "lcid-C" })
+        carol.fullName = "Caroline"
+        try await store.save(carol)
+
+        #expect(try readFile("shared.vcf", in: folder) == beforeShared)
+        #expect(try readFile("carol.vcf", in: folder).contains("FN:Caroline"))
+    }
+
+    @Test("save of a corrupt multi-vCard file keeps in-memory siblings")
+    func saveCorruptFileKeepsMemorySiblings() async throws {
+        let folder = try makeTempFolder()
+        defer { cleanup(folder) }
+
+        let bundle = """
+        BEGIN:VCARD\r
+        VERSION:3.0\r
+        X-LOCALCONTACTS-ID:lcid-A\r
+        FN:Alice\r
+        END:VCARD\r
+        BEGIN:VCARD\r
+        VERSION:3.0\r
+        X-LOCALCONTACTS-ID:lcid-B\r
+        FN:Bob\r
+        END:VCARD\r
+        """
+        try writeFixture(bundle, named: "pair.vcf", in: folder)
+
+        let store = makeStore(folder: folder)
+        await store.loadContacts()
+        #expect(store.contacts.count == 2)
+
+        try writeFixture("not-a-vcard", named: "pair.vcf", in: folder)
+
+        let bob = try #require(store.contacts.first { $0.localContactsID == "lcid-B" })
+        bob.fullName = "Robert"
+        try await store.save(bob)
+
+        let onDisk = try readFile("pair.vcf", in: folder)
+        #expect(onDisk.contains("FN:Alice"))
+        #expect(onDisk.contains("FN:Robert"))
     }
 }

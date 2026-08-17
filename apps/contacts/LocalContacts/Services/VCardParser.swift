@@ -179,12 +179,36 @@ struct VCardParser: Sendable {
             .replacingOccurrences(of: "\n\t", with: "")
     }
 
+    /// Single-pass unescape so `\\n` (backslash + n) is not eaten as a newline.
+    /// Known pairs: `\\` → `\`, `\n`/`\N` → newline, `\,` → `,`, `\;` → `;`.
+    /// Any other `\X` keeps `X` and drops the backslash.
     private func unescape(_ text: String) -> String {
-        text.replacingOccurrences(of: "\\n", with: "\n")
-            .replacingOccurrences(of: "\\N", with: "\n")
-            .replacingOccurrences(of: "\\,", with: ",")
-            .replacingOccurrences(of: "\\;", with: ";")
-            .replacingOccurrences(of: "\\\\", with: "\\")
+        var result = ""
+        var index = text.startIndex
+        while index < text.endIndex {
+            let char = text[index]
+            if char == "\\" {
+                let next = text.index(after: index)
+                guard next < text.endIndex else {
+                    result.append(char)
+                    break
+                }
+                let escaped = text[next]
+                switch escaped {
+                case "n", "N":
+                    result.append("\n")
+                case "\\", ",", ";":
+                    result.append(escaped)
+                default:
+                    result.append(escaped)
+                }
+                index = text.index(after: next)
+            } else {
+                result.append(char)
+                index = text.index(after: index)
+            }
+        }
+        return result
     }
 
     private func extractTypeLabel(_ params: [String], default defaultLabel: String) -> String {

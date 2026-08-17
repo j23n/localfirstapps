@@ -37,25 +37,25 @@ struct VCardWriter: Sendable {
 
         // URL
         for url in contact.urls {
-            let typeParam = url.label.isEmpty ? "homepage" : url.label
-            lines.append("URL;TYPE=\(typeParam):\(url.value)")
+            let typeParam = sanitizeType(url.label, default: "homepage")
+            lines.append("URL;TYPE=\(typeParam):\(escape(url.value))")
         }
 
         // TEL
         for phone in contact.phoneNumbers {
-            let typeParam = phone.label.isEmpty ? "cell" : phone.label
-            lines.append("TEL;TYPE=\(typeParam):\(phone.value)")
+            let typeParam = sanitizeType(phone.label, default: "cell")
+            lines.append("TEL;TYPE=\(typeParam):\(escape(phone.value))")
         }
 
         // EMAIL
         for email in contact.emailAddresses {
-            let typeParam = email.label.isEmpty ? "home" : email.label
-            lines.append("EMAIL;TYPE=\(typeParam):\(email.value)")
+            let typeParam = sanitizeType(email.label, default: "home")
+            lines.append("EMAIL;TYPE=\(typeParam):\(escape(email.value))")
         }
 
         // ADR
         for addr in contact.postalAddresses {
-            let typeParam = addr.label.isEmpty ? "home" : addr.label
+            let typeParam = sanitizeType(addr.label, default: "home")
             let adr = [
                 "", // PO box
                 "", // extended address
@@ -77,9 +77,11 @@ struct VCardWriter: Sendable {
             }
         }
 
-        // PHOTO
+        // PHOTO — unwrapped base64; foldLine inserts RFC 6350 continuations.
+        // Do not use .lineLength76Characters: that inserts bare \n without the
+        // leading space unfold requires, which corrupts photos on parse.
         if let photoData = contact.photoData {
-            let base64 = photoData.base64EncodedString(options: .lineLength76Characters)
+            let base64 = photoData.base64EncodedString()
             lines.append("PHOTO;ENCODING=b;TYPE=JPEG:\(base64)")
         }
 
@@ -100,7 +102,7 @@ struct VCardWriter: Sendable {
         }
 
         lines.append("END:VCARD")
-        return lines.joined(separator: "\r\n") + "\r\n"
+        return lines.map { foldLine($0) }.joined(separator: "\r\n") + "\r\n"
     }
 
     func suggestedFileName(for contact: Contact) -> String {
@@ -123,5 +125,45 @@ struct VCardWriter: Sendable {
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: ",", with: "\\,")
             .replacingOccurrences(of: ";", with: "\\;")
+    }
+
+    /// TYPE params must stay a single token. Strip anything that could split
+    /// the line (`\r` `\n` `;` `:`) and keep `[A-Za-z0-9\-_]`.
+    private func sanitizeType(_ label: String, default defaultLabel: String) -> String {
+        let allowed = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+        let filtered = String(label.filter { allowed.contains($0) })
+        return filtered.isEmpty ? defaultLabel : filtered
+    }
+
+    /// RFC 6350 §3.2: no line longer than 75 octets excluding the CRLF.
+    /// Continuations begin with a single SPACE (which counts toward the 75).
+    private func foldLine(_ line: String) -> String {
+        let bytes = Array(line.utf8)
+        guard bytes.count > 75 else { return line }
+
+        var result: [UInt8] = []
+        var offset = 0
+        var isFirst = true
+
+        while offset < bytes.count {
+            let limit = isFirst ? 75 : 74
+            var end = min(offset + limit, bytes.count)
+            // Don't split a multi-byte UTF-8 sequence.
+            while end > offset && end < bytes.count && (bytes[end] & 0xC0) == 0x80 {
+                end -= 1
+            }
+            if end == offset {
+                end = min(offset + 1, bytes.count)
+            }
+
+            if !isFirst {
+                result.append(contentsOf: [0x0D, 0x0A, 0x20]) // \r\n + space
+            }
+            result.append(contentsOf: bytes[offset..<end])
+            offset = end
+            isFirst = false
+        }
+
+        return String(bytes: result, encoding: .utf8) ?? line
     }
 }

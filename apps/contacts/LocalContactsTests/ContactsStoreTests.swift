@@ -234,4 +234,11 @@ struct ContactsStoreComputedTests {
         #expect(store.layoutMode == .mixed)
         #expect(!store.layoutMode.isSupported)
     }
+
+    @Test("folderPath reads --contacts-folder from launch arguments")
+    func launchFolderPath() {
+        #expect(ContactsStore.folderPath(fromLaunchArguments: ["app"]) == nil)
+        #expect(ContactsStore.folderPath(fromLaunchArguments: ["app", "--contacts-folder"]) == nil)
+        #expect(ContactsStore.folderPath(fromLaunchArguments: ["app", "--contacts-folder", "/tmp/vcf"]) == "/tmp/vcf")
+    }
 }

@@ -3,11 +3,19 @@ import Foundation
 import os
 
 actor CNSyncService {
-    nonisolated(unsafe) private let store = CNContactStore()
-    private let containerNameKey = "LocalContacts"
-    private let containerIDKey = "LocalContacts_ContainerID"
-    private let historyTokenKey = "LocalContacts_ChangeHistoryToken"
-    private let idMappingKey = "LocalContacts_IDMapping" // [LCID: CNContactIdentifier]
+    private let store: any CNContactStoreProtocol
+    private let defaults: UserDefaults
+    static let groupName = "LocalContacts"
+    static let historyTokenKey = "LocalContacts_ChangeHistoryToken"
+    static let idMappingKey = "LocalContacts_IDMapping" // [LCID: CNContactIdentifier]
+    private let containerNameKey = CNSyncService.groupName
+    private let historyTokenKey = CNSyncService.historyTokenKey
+    private let idMappingKey = CNSyncService.idMappingKey
+
+    init(store: (any CNContactStoreProtocol)? = nil, defaults: UserDefaults = .standard) {
+        self.store = store ?? CNContactStoreAdapter()
+        self.defaults = defaults
+    }
 
     nonisolated(unsafe) private static let fullKeysToFetch: [any CNKeyDescriptor] = [
         CNContactGivenNameKey as CNKeyDescriptor,
@@ -38,7 +46,12 @@ actor CNSyncService {
     }
 
     var authorizationStatus: CNAuthorizationStatus {
-        CNContactStore.authorizationStatus(for: .contacts)
+        store.authorizationStatus
+    }
+
+    /// Limited iOS 18 access cannot manage the LocalContacts group reliably.
+    var hasFullAccess: Bool {
+        authorizationStatus == .authorized
     }
 
     // MARK: - Container & Group
@@ -91,7 +104,7 @@ actor CNSyncService {
     // MARK: - Push Single Contact
 
     func pushContact(_ contact: Contact) async throws {
-        guard authorizationStatus == .authorized else { return }
+        guard hasFullAccess else { return }
 
         let (containerID, group) = try resolveGroup()
         let existingCN = try findCNContact(localContactsID: contact.localContactsID)
@@ -116,7 +129,7 @@ actor CNSyncService {
     }
 
     func deleteContact(localContactsID: String) async throws {
-        guard authorizationStatus == .authorized else { return }
+        guard hasFullAccess else { return }
 
         if let existing = try findCNContact(localContactsID: localContactsID) {
             let mutable = existing.mutableCopy() as! CNMutableContact
@@ -141,7 +154,7 @@ actor CNSyncService {
     /// Deletes all contacts in the LocalContacts group, removes duplicate groups,
     /// then re-adds every contact fresh. This is a clean "nuke and pave".
     func fullReconciliation(contacts: [Contact]) async throws {
-        guard authorizationStatus == .authorized else { return }
+        guard hasFullAccess else { return }
 
         let containerID = localContainerID()
 
@@ -158,8 +171,7 @@ actor CNSyncService {
         var hasDeletes = false
 
         for group in lcGroups {
-            let memberPredicate = CNContact.predicateForContactsInGroup(withIdentifier: group.identifier)
-            let members = try store.unifiedContacts(matching: memberPredicate, keysToFetch: keysToFetch)
+            let members = try store.contacts(inGroup: group.identifier, keysToFetch: keysToFetch)
 
             for member in members {
                 deleteRequest.delete(member.mutableCopy() as! CNMutableContact)
@@ -234,10 +246,10 @@ actor CNSyncService {
     }
 
     func fetchChanges(localContacts: [Contact]) async -> [ChangeEvent] {
-        guard authorizationStatus == .authorized else { return [] }
+        guard hasFullAccess else { return [] }
 
         let currentToken = store.currentHistoryToken
-        let lastToken = UserDefaults.standard.data(forKey: historyTokenKey)
+        let lastToken = defaults.data(forKey: historyTokenKey)
         if let current = currentToken, let last = lastToken, current == last {
             return []
         }
@@ -249,8 +261,7 @@ actor CNSyncService {
 
         do {
             let (_, group) = try resolveGroup()
-            let predicate = CNContact.predicateForContactsInGroup(withIdentifier: group.identifier)
-            let cnContacts = try store.unifiedContacts(matching: predicate, keysToFetch: Self.fullKeysToFetch)
+            let cnContacts = try store.contacts(inGroup: group.identifier, keysToFetch: Self.fullKeysToFetch)
 
             // Index CN contacts by identifier for O(1) lookup
             let cnByID = Dictionary(cnContacts.map { ($0.identifier, $0) },
@@ -277,11 +288,11 @@ actor CNSyncService {
                 let data = extractCNContactData(from: cn, localContactsID: "")
                 events.append(ChangeEvent(kind: .added(contactData: data)))
             }
+            saveHistoryToken()
         } catch {
             Log.sync.error("Failed to fetch contacts for change detection: \(error.localizedDescription)")
         }
 
-        saveHistoryToken()
         return events
     }
 
@@ -385,12 +396,28 @@ actor CNSyncService {
 
     // MARK: - ID Mapping (LCID <-> CNContact.identifier)
 
+    func idMapping() -> [String: String] {
+        loadIDMapping()
+    }
+
+    func storedHistoryToken() -> Data? {
+        defaults.data(forKey: historyTokenKey)
+    }
+
+    func setIDMapping(_ mapping: [String: String]) {
+        saveIDMapping(mapping)
+    }
+
+    func setStoredHistoryToken(_ data: Data?) {
+        defaults.set(data, forKey: historyTokenKey)
+    }
+
     private func loadIDMapping() -> [String: String] {
-        UserDefaults.standard.dictionary(forKey: idMappingKey) as? [String: String] ?? [:]
+        defaults.dictionary(forKey: idMappingKey) as? [String: String] ?? [:]
     }
 
     private func saveIDMapping(_ mapping: [String: String]) {
-        UserDefaults.standard.set(mapping, forKey: idMappingKey)
+        defaults.set(mapping, forKey: idMappingKey)
     }
 
     private func setCNIdentifier(_ cnID: String, forLocalContactsID lcID: String) {
@@ -409,8 +436,7 @@ actor CNSyncService {
         let mapping = loadIDMapping()
         guard let cnID = mapping[localContactsID] else { return nil }
 
-        let predicate = CNContact.predicateForContacts(withIdentifiers: [cnID])
-        return try store.unifiedContacts(matching: predicate, keysToFetch: Self.fullKeysToFetch).first
+        return try store.contacts(withIdentifiers: [cnID], keysToFetch: Self.fullKeysToFetch).first
     }
 
     private func extractCNContactData(from cn: CNContact, localContactsID: String) -> CNContactData {
@@ -425,19 +451,64 @@ actor CNSyncService {
             organization: cn.organizationName,
             jobTitle: cn.jobTitle,
             nickname: cn.nickname,
-            urls: cn.urlAddresses.map { (label: $0.label ?? "homepage", value: $0.value as String) },
-            phoneNumbers: cn.phoneNumbers.map { (label: $0.label ?? "mobile", value: $0.value.stringValue) },
-            emailAddresses: cn.emailAddresses.map { (label: $0.label ?? "home", value: $0.value as String) },
+            urls: cn.urlAddresses.map { (label: vCardLabel(fromCNLabel: $0.label, isPhone: false, default: "homepage"), value: $0.value as String) },
+            phoneNumbers: cn.phoneNumbers.map { (label: vCardLabel(fromCNLabel: $0.label, isPhone: true, default: "mobile"), value: $0.value.stringValue) },
+            emailAddresses: cn.emailAddresses.map { (label: vCardLabel(fromCNLabel: $0.label, isPhone: false, default: "home"), value: $0.value as String) },
             postalAddresses: cn.postalAddresses.map { lv in
                 let a = lv.value
-                return (label: lv.label ?? "home", street: a.street, city: a.city, state: a.state, postalCode: a.postalCode, country: a.country)
+                return (label: vCardLabel(fromCNLabel: lv.label, isPhone: false, default: "home"), street: a.street, city: a.city, state: a.state, postalCode: a.postalCode, country: a.country)
             },
             birthday: cn.birthday,
             imageData: cn.imageData
         )
     }
 
+    /// Map a CN labeled-value label (or a polluted / synonym form) to a stable
+    /// vCard TYPE. Parser-lowercased `_$!<mobile>!$_` still matches.
+    nonisolated func vCardLabel(fromCNLabel label: String?, isPhone _: Bool, default defaultLabel: String) -> String {
+        guard let label, !label.isEmpty else { return defaultLabel }
+
+        if matchesCN(label, CNLabelHome) { return "home" }
+        if matchesCN(label, CNLabelWork) { return "work" }
+        if matchesCN(label, CNLabelOther) { return "other" }
+        if matchesCN(label, CNLabelPhoneNumberMobile) { return "mobile" }
+        if matchesCN(label, CNLabelPhoneNumberMain) { return "main" }
+        if matchesCN(label, CNLabelPhoneNumberiPhone) { return "iphone" }
+        if matchesCN(label, CNLabelPhoneNumberWorkFax) || matchesCN(label, CNLabelPhoneNumberHomeFax) { return "fax" }
+        if matchesCN(label, CNLabelPhoneNumberPager) { return "pager" }
+        if matchesCN(label, CNLabelURLAddressHomePage) { return "homepage" }
+
+        switch label.lowercased() {
+        case "home": return "home"
+        case "work": return "work"
+        case "other": return "other"
+        case "mobile", "cell": return "mobile"
+        case "main": return "main"
+        case "iphone": return "iphone"
+        case "fax": return "fax"
+        case "pager": return "pager"
+        case "homepage": return "homepage"
+        default:
+            // Unrecognized `_$!<…>!$_` constants fall back; custom tokens stay.
+            if label.hasPrefix("_$!<") { return defaultLabel }
+            return label
+        }
+    }
+
     nonisolated func cnLabel(from label: String, isPhone: Bool) -> String {
+        // Polluted files store the raw CN constant (possibly lowercased by
+        // the parser). Map those back to themselves so a second push stays Mobile.
+        if matchesCN(label, CNLabelHome) { return CNLabelHome }
+        if matchesCN(label, CNLabelWork) { return CNLabelWork }
+        if matchesCN(label, CNLabelOther) { return CNLabelOther }
+        if matchesCN(label, CNLabelPhoneNumberMobile) { return CNLabelPhoneNumberMobile }
+        if matchesCN(label, CNLabelPhoneNumberMain) { return CNLabelPhoneNumberMain }
+        if matchesCN(label, CNLabelPhoneNumberiPhone) { return CNLabelPhoneNumberiPhone }
+        if matchesCN(label, CNLabelPhoneNumberWorkFax) { return CNLabelPhoneNumberWorkFax }
+        if matchesCN(label, CNLabelPhoneNumberHomeFax) { return CNLabelPhoneNumberHomeFax }
+        if matchesCN(label, CNLabelPhoneNumberPager) { return CNLabelPhoneNumberPager }
+        if matchesCN(label, CNLabelURLAddressHomePage) { return CNLabelURLAddressHomePage }
+
         switch label.lowercased() {
         case "home": return CNLabelHome
         case "work": return CNLabelWork
@@ -447,13 +518,18 @@ actor CNSyncService {
         case "fax": return isPhone ? CNLabelPhoneNumberWorkFax : CNLabelWork
         case "pager": return CNLabelPhoneNumberPager
         case "other": return CNLabelOther
+        case "homepage": return CNLabelURLAddressHomePage
         default: return CNLabelOther
         }
     }
 
+    nonisolated private func matchesCN(_ label: String, _ constant: String) -> Bool {
+        label == constant || label.lowercased() == constant.lowercased()
+    }
+
     private func saveHistoryToken() {
         if let token = store.currentHistoryToken {
-            UserDefaults.standard.set(token, forKey: historyTokenKey)
+            defaults.set(token, forKey: historyTokenKey)
         }
     }
 }

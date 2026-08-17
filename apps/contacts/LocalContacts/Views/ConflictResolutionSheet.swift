@@ -4,6 +4,7 @@ struct ConflictResolutionSheet: View {
     @Environment(ContactsStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let contact: Contact
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -13,6 +14,14 @@ struct ConflictResolutionSheet: View {
                 // External delete — simple UI
                 deletionView
             }
+        }
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -33,10 +42,14 @@ struct ConflictResolutionSheet: View {
 
             VStack(spacing: 12) {
                 Button {
-                    contact.conflictState = nil
                     Task {
-                        try? await store.syncService.pushContact(contact)
-                        dismiss()
+                        do {
+                            try await store.syncService.pushContact(contact)
+                            contact.conflictState = nil
+                            dismiss()
+                        } catch {
+                            errorMessage = error.localizedDescription
+                        }
                     }
                 } label: {
                     Label("Re-Push to Contacts", systemImage: "arrow.up.doc")
@@ -46,8 +59,12 @@ struct ConflictResolutionSheet: View {
 
                 Button(role: .destructive) {
                     Task {
-                        try? await store.delete(contact)
-                        dismiss()
+                        do {
+                            try await store.delete(contact)
+                            dismiss()
+                        } catch {
+                            errorMessage = error.localizedDescription
+                        }
                     }
                 } label: {
                     Label("Accept Deletion", systemImage: "trash")
@@ -78,11 +95,8 @@ private struct ConflictDiffView: View {
     let store: ContactsStore
     let dismiss: DismissAction
 
-    @State private var selections: [String: FieldSource] = [:]
-
-    enum FieldSource {
-        case local, apple
-    }
+    @State private var selections: [String: ContactMerge.FieldSource] = [:]
+    @State private var errorMessage: String?
 
     var body: some View {
         List {
@@ -129,6 +143,14 @@ private struct ConflictDiffView: View {
         .safeAreaInset(edge: .bottom) {
             bottomBar
         }
+        .alert("Error", isPresented: .init(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .onAppear {
             // Default all selections to local
             for diff in diffs {
@@ -141,13 +163,13 @@ private struct ConflictDiffView: View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 Button("Keep All Local") {
-                    for diff in diffs { selections[diff.key] = .local }
+                    for diff in diffs { selections[diff.key] = ContactMerge.FieldSource.local }
                 }
                 .buttonStyle(.bordered)
                 .tint(.accentColor)
 
                 Button("Keep All Apple") {
-                    for diff in diffs { selections[diff.key] = .apple }
+                    for diff in diffs { selections[diff.key] = ContactMerge.FieldSource.apple }
                 }
                 .buttonStyle(.bordered)
                 .tint(.orange)
@@ -251,71 +273,17 @@ private struct ConflictDiffView: View {
     // MARK: - Apply Merge
 
     private func applyMerge() {
-        for diff in diffs {
-            let useApple = selections[diff.key] == .apple
-            switch diff.key {
-            case "name":
-                if useApple {
-                    contact.givenName = externalData.givenName
-                    contact.familyName = externalData.familyName
-                    contact.middleName = externalData.middleName
-                    contact.namePrefix = externalData.namePrefix
-                    contact.nameSuffix = externalData.nameSuffix
-                    contact.fullName = [externalData.givenName, externalData.middleName, externalData.familyName]
-                        .filter { !$0.isEmpty }.joined(separator: " ")
-                }
-            case "organization":
-                if useApple { contact.organization = externalData.organization }
-            case "jobTitle":
-                if useApple { contact.jobTitle = externalData.jobTitle }
-            case "nickname":
-                if useApple { contact.nickname = externalData.nickname }
-            case "phones":
-                if useApple {
-                    contact.phoneNumbers = externalData.phoneNumbers.map {
-                        LabeledValue(label: $0.label, value: $0.value)
-                    }
-                }
-            case "emails":
-                if useApple {
-                    contact.emailAddresses = externalData.emailAddresses.map {
-                        LabeledValue(label: $0.label, value: $0.value)
-                    }
-                }
-            case "urls":
-                if useApple {
-                    contact.urls = externalData.urls.map {
-                        LabeledValue(label: $0.label, value: $0.value)
-                    }
-                }
-            case "addresses":
-                if useApple {
-                    contact.postalAddresses = externalData.postalAddresses.map {
-                        LabeledValue(label: $0.label, value: PostalAddress(
-                            street: $0.street, city: $0.city, state: $0.state,
-                            postalCode: $0.postalCode, country: $0.country
-                        ))
-                    }
-                }
-            case "birthday":
-                if useApple { contact.birthday = externalData.birthday }
-            default:
-                break
-            }
-        }
-
-        // Import photo from Apple if available (photos aren't diffed)
-        // Keep local photo unless Apple version exists and local is nil
-        if contact.photoData == nil, let applePhoto = externalData.imageData {
-            contact.photoData = applePhoto
-        }
-
-        contact.conflictState = nil
+        ContactMerge.apply(selections: selections, external: externalData, to: contact)
 
         Task {
-            try? await store.save(contact)
-            try? await store.syncService.pushContact(contact)
-            dismiss()
+            do {
+                try await store.save(contact)
+                try await store.syncService.pushContact(contact)
+                contact.conflictState = nil
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
@@ -326,8 +294,8 @@ private struct FieldRow: View {
     let key: String
     let localValue: String
     let appleValue: String
-    let selection: ConflictDiffView.FieldSource?
-    let onSelect: (ConflictDiffView.FieldSource) -> Void
+    let selection: ContactMerge.FieldSource?
+    let onSelect: (ContactMerge.FieldSource) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

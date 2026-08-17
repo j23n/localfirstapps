@@ -277,6 +277,21 @@ struct VCardParserTests {
         #expect(c.note == "a\\b")
     }
 
+    @Test("NOTE:a\\\\n is backslash + n, not a newline")
+    func unescapeLiteralBackslashN() throws {
+        // File content: a + \\ + n. Sequential replace used to turn this into a newline.
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nNOTE:a\\\\n\r\nEND:VCARD\r\n"
+        let c = try #require(parser.parse(string: vcard, fileName: "esc.vcf"))
+        #expect(c.note == "a\\n")
+    }
+
+    @Test("NOTE:a\\nb still becomes a + newline + b")
+    func unescapeNewlineStillWorks() throws {
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nNOTE:a\\nb\r\nEND:VCARD\r\n"
+        let c = try #require(parser.parse(string: vcard, fileName: "esc.vcf"))
+        #expect(c.note == "a\nb")
+    }
+
     // MARK: - Line folding
 
     @Test("CRLF + space continuation reassembles to single line")
@@ -324,5 +339,41 @@ struct VCardParserTests {
         let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:A\r\nEND:VCARD\r\n\r\nBEGIN:VCARD\r\nVERSION:3.0\r\nFN:B\r\nEND:VCARD\r\n"
         let contacts = parser.parseMultiple(data: vcard.data(using: .utf8)!, fileName: "x.vcf")
         #expect(contacts.count == 2)
+    }
+
+    @Test("empty Data returns nil / empty")
+    func emptyData() {
+        #expect(parser.parse(data: Data(), fileName: "x.vcf") == nil)
+        #expect(parser.parseMultiple(data: Data(), fileName: "x.vcf").isEmpty)
+    }
+
+    @Test("BEGIN without END is dropped by parseMultiple")
+    func beginWithoutEnd() {
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\n"
+        #expect(parser.parseMultiple(data: vcard.data(using: .utf8)!, fileName: "x.vcf").isEmpty)
+    }
+
+    @Test("junk between cards is ignored")
+    func junkBetweenCards() {
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:A\r\nEND:VCARD\r\nTHIS IS JUNK\r\nBEGIN:VCARD\r\nVERSION:3.0\r\nFN:B\r\nEND:VCARD\r\n"
+        let contacts = parser.parseMultiple(data: vcard.data(using: .utf8)!, fileName: "x.vcf")
+        #expect(contacts.map(\.fullName) == ["A", "B"])
+    }
+
+    @Test("stray BEGIN inside a card restarts the block")
+    func strayBeginRestarts() {
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nBEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob\r\nEND:VCARD\r\n"
+        let contacts = parser.parseMultiple(data: vcard.data(using: .utf8)!, fileName: "x.vcf")
+        #expect(contacts.map(\.fullName) == ["Bob"])
+    }
+
+    @Test("folded PHOTO line decodes")
+    func foldedPhoto() throws {
+        let payload = Data(repeating: 0x41, count: 80)
+        let b64 = payload.base64EncodedString()
+        let folded = "PHOTO;ENCODING=b;TYPE=JPEG:\(b64.prefix(20))\r\n \(b64.dropFirst(20))"
+        let vcard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\n\(folded)\r\nEND:VCARD\r\n"
+        let c = try #require(parser.parse(string: vcard, fileName: "p.vcf"))
+        #expect(c.photoData == payload)
     }
 }

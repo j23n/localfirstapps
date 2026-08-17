@@ -126,7 +126,7 @@ struct ContactDetailView: View {
             if !contact.urls.isEmpty {
                 Section("Website") {
                     ForEach(contact.urls) { url in
-                        if let linkURL = URL(string: url.value.hasPrefix("http") ? url.value : "https://\(url.value)") {
+                        if let linkURL = Self.websiteURL(url.value) {
                             Link(destination: linkURL) {
                                 LabeledContent {
                                     Text(url.value)
@@ -224,14 +224,13 @@ struct ContactDetailView: View {
         }
         .confirmationDialog("Delete Contact", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                // Dismiss first so the detail view is off the navigation stack
-                // before the contact disappears from the store. Deleting first
-                // makes the list's navigationDestination resolve to "Contact Not
-                // Found" while this view is still presented, swapping it out
-                // mid-pop.
-                dismiss()
                 Task {
-                    try? await store.delete(contact)
+                    do {
+                        try await store.delete(contact)
+                        dismiss()
+                    } catch {
+                        store.errorMessage = error.localizedDescription
+                    }
                 }
             }
         } message: {
@@ -274,6 +273,17 @@ struct ContactDetailView: View {
             return nil
         }
         return URL(string: "mailto:\(encoded)")
+    }
+
+    /// Accept `http(s)://` case-insensitively; otherwise prepend `https://`.
+    static func websiteURL(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
+            return URL(string: trimmed)
+        }
+        return URL(string: "https://\(trimmed)")
     }
 
     @ViewBuilder

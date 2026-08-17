@@ -68,6 +68,20 @@ struct SettingsView: View {
                             showOverwriteConfirmation = true
                         }
 
+                    case .limited:
+                        Label("Limited Contacts access is not enough", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+
+                        Text("LocalContacts needs **full** Contacts access to maintain the LocalContacts group and caller ID. Limited access cannot sync.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+
                     case .denied, .restricted:
                         Label("Contacts access denied", systemImage: "xmark.circle.fill")
                             .foregroundStyle(.red)
@@ -88,7 +102,11 @@ struct SettingsView: View {
                                 let granted = await store.syncService.requestAccess()
                                 contactsAuthStatus = CNContactStore.authorizationStatus(for: .contacts)
                                 if granted {
-                                    try? await store.syncService.fullReconciliation(contacts: store.contacts)
+                                    do {
+                                        try await store.syncService.fullReconciliation(contacts: store.contacts)
+                                    } catch {
+                                        store.errorMessage = error.localizedDescription
+                                    }
                                 }
                             }
                         }
@@ -165,10 +183,22 @@ struct SettingsView: View {
                     crashService.refreshPendingCrash()
                 }
             }
+            .alert("Error", isPresented: .init(
+                get: { store.errorMessage != nil },
+                set: { if !$0 { store.errorMessage = nil } }
+            )) {
+                Button("OK") { store.errorMessage = nil }
+            } message: {
+                Text(store.errorMessage ?? "")
+            }
             .confirmationDialog("Force Overwrite LocalContacts List", isPresented: $showOverwriteConfirmation, titleVisibility: .visible) {
                 Button("Overwrite", role: .destructive) {
                     Task {
-                        try? await store.syncService.fullReconciliation(contacts: store.contacts)
+                        do {
+                            try await store.syncService.fullReconciliation(contacts: store.contacts)
+                        } catch {
+                            store.errorMessage = error.localizedDescription
+                        }
                     }
                 }
             } message: {
@@ -369,7 +399,13 @@ struct TagManagementView: View {
         ), titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 if let tag = tagToDelete {
-                    Task { try? await store.deleteTag(tag) }
+                    Task {
+                        do {
+                            try await store.deleteTag(tag)
+                        } catch {
+                            store.errorMessage = error.localizedDescription
+                        }
+                    }
                 }
             }
         } message: {
@@ -384,6 +420,12 @@ struct TagManagementView: View {
         let newName = editedName.trimmingCharacters(in: .whitespaces)
         guard !newName.isEmpty else { return }
         tagToRename = nil
-        Task { try? await store.renameTag(oldName, to: newName) }
+        Task {
+            do {
+                try await store.renameTag(oldName, to: newName)
+            } catch {
+                store.errorMessage = error.localizedDescription
+            }
+        }
     }
 }

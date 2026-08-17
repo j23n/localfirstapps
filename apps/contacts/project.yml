@@ -25,14 +25,47 @@ targets:
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_STRICT_CONCURRENCY: complete
+        # The git build-number script reads .git and writes the built Info.plist.
+        # Xcode's default script sandbox blocks both of those paths.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
     postBuildScripts:
       - name: Set Build Number from Git
+        basedOnDependencyAnalysis: false
+        # Declaring the built Info.plist as an input orders this phase after
+        # ProcessInfoPlistFile (which would otherwise overwrite CFBundleVersion)
+        # and before CodeSign.
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
         script: |
-          BUILD=$(git -C "$SRCROOT" rev-list --count HEAD)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          set -euo pipefail
+          export PATH="/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
+          BUILD=$(/usr/bin/git -C "$SRCROOT" rev-list --count HEAD)
+          if [ -z "$BUILD" ]; then
+            echo "error: git rev-list --count HEAD returned empty" >&2
+            exit 1
+          fi
+          PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          if [ ! -f "$PLIST" ]; then
+            echo "error: no Info.plist at $PLIST" >&2
+            exit 1
+          fi
+          CURRENT=$(/usr/bin/plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || echo "")
+          if [ "$CURRENT" = "$BUILD" ]; then
+            echo "note: CFBundleVersion already $BUILD"
+            exit 0
+          fi
+          # Leaves an already-signed bundle untouched, so rebuilds keep a valid signature.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$PLIST"
+          ACTUAL=$(/usr/bin/plutil -extract CFBundleVersion raw "$PLIST")
+          if [ "$ACTUAL" != "$BUILD" ]; then
+            echo "error: CFBundleVersion is $ACTUAL, expected $BUILD" >&2
+            exit 1
+          fi
+          echo "note: set CFBundleVersion=$BUILD in $PLIST"
     scheme:
       testTargets:
         - LocalContactsTests
+        - LocalContactsUITests
 
   LocalContactsTests:
     type: bundle.unit-test
@@ -46,3 +79,16 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localcontacts.app.tests
         SWIFT_STRICT_CONCURRENCY: complete
         GENERATE_INFOPLIST_FILE: YES
+
+  LocalContactsUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - LocalContactsUITests
+    dependencies:
+      - target: LocalContacts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localcontacts.app.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: LocalContacts
