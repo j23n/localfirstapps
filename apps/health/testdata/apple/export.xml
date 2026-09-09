@@ -1,0 +1,669 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE HealthData [
+<!-- HealthKit Export Version: 14 -->
+<!ELEMENT HealthData (ExportDate,Me,(Record|Correlation|Workout|ActivitySummary|ClinicalRecord|Audiogram|VisionPrescription)*)>
+<!ATTLIST HealthData
+  locale CDATA #REQUIRED
+>
+<!ELEMENT ExportDate EMPTY>
+<!ATTLIST ExportDate
+  value CDATA #REQUIRED
+>
+<!ELEMENT Me EMPTY>
+<!ATTLIST Me
+  HKCharacteristicTypeIdentifierDateOfBirth                   CDATA #REQUIRED
+  HKCharacteristicTypeIdentifierBiologicalSex                 CDATA #REQUIRED
+  HKCharacteristicTypeIdentifierBloodType                     CDATA #REQUIRED
+  HKCharacteristicTypeIdentifierFitzpatrickSkinType           CDATA #REQUIRED
+  HKCharacteristicTypeIdentifierCardioFitnessMedicationsUse   CDATA #REQUIRED
+>
+<!ELEMENT Record ((MetadataEntry|HeartRateVariabilityMetadataList)*)>
+<!ATTLIST Record
+  type          CDATA #REQUIRED
+  unit          CDATA #IMPLIED
+  value         CDATA #IMPLIED
+  sourceName    CDATA #REQUIRED
+  sourceVersion CDATA #IMPLIED
+  device        CDATA #IMPLIED
+  creationDate  CDATA #IMPLIED
+  startDate     CDATA #REQUIRED
+  endDate       CDATA #REQUIRED
+>
+<!-- Note: Any Records that appear as children of a correlation also appear as top-level records in this document. -->
+<!ELEMENT Correlation ((MetadataEntry|Record)*)>
+<!ATTLIST Correlation
+  type          CDATA #REQUIRED
+  sourceName    CDATA #REQUIRED
+  sourceVersion CDATA #IMPLIED
+  device        CDATA #IMPLIED
+  creationDate  CDATA #IMPLIED
+  startDate     CDATA #REQUIRED
+  endDate       CDATA #REQUIRED
+>
+<!ELEMENT Workout ((MetadataEntry|WorkoutEvent|WorkoutRoute|WorkoutStatistics)*)>
+<!ATTLIST Workout
+  workoutActivityType   CDATA #REQUIRED
+  duration              CDATA #IMPLIED
+  durationUnit          CDATA #IMPLIED
+  totalDistance         CDATA #IMPLIED
+  totalDistanceUnit     CDATA #IMPLIED
+  totalEnergyBurned     CDATA #IMPLIED
+  totalEnergyBurnedUnit CDATA #IMPLIED
+  sourceName            CDATA #REQUIRED
+  sourceVersion         CDATA #IMPLIED
+  device                CDATA #IMPLIED
+  creationDate          CDATA #IMPLIED
+  startDate             CDATA #REQUIRED
+  endDate               CDATA #REQUIRED
+>
+<!ELEMENT WorkoutActivity ((MetadataEntry)*)>
+<!ATTLIST WorkoutActivity
+  uuid                 CDATA #REQUIRED
+  startDate            CDATA #REQUIRED
+  endDate              CDATA #IMPLIED
+  duration             CDATA #IMPLIED
+  durationUnit         CDATA #IMPLIED
+>
+<!ELEMENT WorkoutEvent ((MetadataEntry)*)>
+<!ATTLIST WorkoutEvent
+  type                 CDATA #REQUIRED
+  date                 CDATA #REQUIRED
+  duration             CDATA #IMPLIED
+  durationUnit         CDATA #IMPLIED
+>
+<!ELEMENT WorkoutStatistics EMPTY>
+<!ATTLIST WorkoutStatistics
+  type                 CDATA #REQUIRED
+  startDate            CDATA #REQUIRED
+  endDate              CDATA #REQUIRED
+  average              CDATA #IMPLIED
+  minimum              CDATA #IMPLIED
+  maximum              CDATA #IMPLIED
+  sum                  CDATA #IMPLIED
+  unit                 CDATA #IMPLIED
+>
+<!ELEMENT WorkoutRoute ((MetadataEntry|FileReference)*)>
+<!ATTLIST WorkoutRoute
+  sourceName    CDATA #REQUIRED
+  sourceVersion CDATA #IMPLIED
+  device        CDATA #IMPLIED
+  creationDate  CDATA #IMPLIED
+  startDate     CDATA #REQUIRED
+  endDate       CDATA #REQUIRED
+>
+<!ELEMENT FileReference EMPTY>
+<!ATTLIST FileReference
+  path CDATA #REQUIRED
+>
+<!ELEMENT ActivitySummary EMPTY>
+<!ATTLIST ActivitySummary
+  dateComponents           CDATA #IMPLIED
+  activeEnergyBurned       CDATA #IMPLIED
+  activeEnergyBurnedGoal   CDATA #IMPLIED
+  activeEnergyBurnedUnit   CDATA #IMPLIED
+  appleMoveTime            CDATA #IMPLIED
+  appleMoveTimeGoal        CDATA #IMPLIED
+  appleExerciseTime        CDATA #IMPLIED
+  appleExerciseTimeGoal    CDATA #IMPLIED
+  appleStandHours          CDATA #IMPLIED
+  appleStandHoursGoal      CDATA #IMPLIED
+>
+<!ELEMENT MetadataEntry EMPTY>
+<!ATTLIST MetadataEntry
+  key   CDATA #REQUIRED
+  value CDATA #REQUIRED
+>
+<!-- Note: Heart Rate Variability records captured by Apple Watch may include an associated list of instantaneous beats-per-minute readings. -->
+<!ELEMENT HeartRateVariabilityMetadataList (InstantaneousBeatsPerMinute*)>
+<!ELEMENT InstantaneousBeatsPerMinute EMPTY>
+<!ATTLIST InstantaneousBeatsPerMinute
+  bpm  CDATA #REQUIRED
+  time CDATA #REQUIRED
+>
+<!ELEMENT ClinicalRecord EMPTY>
+<!ATTLIST ClinicalRecord
+  type              CDATA #REQUIRED
+  identifier        CDATA #REQUIRED
+  sourceName        CDATA #REQUIRED
+  sourceURL         CDATA #REQUIRED
+  fhirVersion       CDATA #REQUIRED
+  receivedDate      CDATA #REQUIRED
+  resourceFilePath  CDATA #REQUIRED
+>
+<!ELEMENT Audiogram ((MetadataEntry|SensitivityPoint)*)>
+<!ATTLIST Audiogram
+  type          CDATA #REQUIRED
+  sourceName    CDATA #REQUIRED
+  sourceVersion CDATA #IMPLIED
+  device        CDATA #IMPLIED
+  creationDate  CDATA #IMPLIED
+  startDate     CDATA #REQUIRED
+  endDate       CDATA #REQUIRED
+>
+<!ELEMENT SensitivityPoint EMPTY>
+<!ATTLIST SensitivityPoint
+  frequencyValue   CDATA #REQUIRED
+  frequencyUnit    CDATA #REQUIRED
+  leftEarValue     CDATA #IMPLIED
+  leftEarUnit      CDATA #IMPLIED
+  leftEarMasked      CDATA #IMPLIED
+  leftEarClampingRangeLowerBound   CDATA #IMPLIED
+  leftEarClampingRangeUpperBound   CDATA #IMPLIED
+  rightEarValue    CDATA #IMPLIED
+  rightEarUnit     CDATA #IMPLIED
+  rightEarMasked      CDATA #IMPLIED
+  rightEarClampingRangeLowerBound  CDATA #IMPLIED
+  rightEarClampingRangeUpperBound  CDATA #IMPLIED
+>
+<!ELEMENT VisionPrescription ((RightEye|LeftEye|Attachment|MetadataEntry)*)>
+<!ATTLIST VisionPrescription
+  type             CDATA #REQUIRED
+  dateIssued       CDATA #REQUIRED
+  expirationDate   CDATA #IMPLIED
+  brand            CDATA #IMPLIED
+>
+<!ELEMENT RightEye EMPTY>
+<!ATTLIST RightEye
+  sphere           CDATA #IMPLIED
+  sphereUnit       CDATA #IMPLIED
+  cylinder         CDATA #IMPLIED
+  cylinderUnit     CDATA #IMPLIED
+  axis             CDATA #IMPLIED
+  axisUnit         CDATA #IMPLIED
+  add              CDATA #IMPLIED
+  addUnit          CDATA #IMPLIED
+  vertex           CDATA #IMPLIED
+  vertexUnit       CDATA #IMPLIED
+  prismAmount      CDATA #IMPLIED
+  prismAmountUnit  CDATA #IMPLIED
+  prismAngle       CDATA #IMPLIED
+  prismAngleUnit   CDATA #IMPLIED
+  farPD            CDATA #IMPLIED
+  farPDUnit        CDATA #IMPLIED
+  nearPD           CDATA #IMPLIED
+  nearPDUnit       CDATA #IMPLIED
+  baseCurve        CDATA #IMPLIED
+  baseCurveUnit    CDATA #IMPLIED
+  diameter         CDATA #IMPLIED
+  diameterUnit     CDATA #IMPLIED
+>
+<!ELEMENT LeftEye EMPTY>
+<!ATTLIST LeftEye
+  sphere           CDATA #IMPLIED
+  sphereUnit       CDATA #IMPLIED
+  cylinder         CDATA #IMPLIED
+  cylinderUnit     CDATA #IMPLIED
+  axis             CDATA #IMPLIED
+  axisUnit         CDATA #IMPLIED
+  add              CDATA #IMPLIED
+  addUnit          CDATA #IMPLIED
+  vertex           CDATA #IMPLIED
+  vertexUnit       CDATA #IMPLIED
+  prismAmount      CDATA #IMPLIED
+  prismAmountUnit  CDATA #IMPLIED
+  prismAngle       CDATA #IMPLIED
+  prismAngleUnit   CDATA #IMPLIED
+  farPD            CDATA #IMPLIED
+  farPDUnit        CDATA #IMPLIED
+  nearPD           CDATA #IMPLIED
+  nearPDUnit       CDATA #IMPLIED
+  baseCurve        CDATA #IMPLIED
+  baseCurveUnit    CDATA #IMPLIED
+  diameter         CDATA #IMPLIED
+  diameterUnit     CDATA #IMPLIED
+>
+<!ELEMENT Attachment EMPTY>
+<!ATTLIST Attachment
+  identifier       CDATA #IMPLIED
+>
+]>
+<HealthData locale="en_US@rg=dezzzz">
+ <ExportDate value="2026-09-08 14:05:33 +0200"/>
+ <Me HKCharacteristicTypeIdentifierDateOfBirth="1980-01-01" HKCharacteristicTypeIdentifierBiologicalSex="HKBiologicalSexNotSet" HKCharacteristicTypeIdentifierBloodType="HKBloodTypeNotSet" HKCharacteristicTypeIdentifierFitzpatrickSkinType="HKFitzpatrickSkinTypeNotSet" HKCharacteristicTypeIdentifierCardioFitnessMedicationsUse="None"/>
+<Record type="HKQuantityTypeIdentifierHeight" sourceName="iPhone" sourceVersion="26.0" unit="cm" creationDate="2025-09-11 16:43:30 +0200" startDate="2025-09-11 16:43:30 +0200" endDate="2025-09-11 16:43:30 +0200" value="180"/>
+<Record type="HKQuantityTypeIdentifierBodyMass" sourceName="iPhone" sourceVersion="26.0" unit="kg" creationDate="2025-09-11 16:43:30 +0200" startDate="2025-09-11 16:43:30 +0200" endDate="2025-09-11 16:43:30 +0200" value="77"/>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 17:54:52 +0200" startDate="2025-09-11 17:53:52 +0200" endDate="2025-09-11 17:53:52 +0200" value="57.962">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="0"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 17:58:02 +0200" startDate="2025-09-11 17:55:28 +0200" endDate="2025-09-11 17:55:28 +0200" value="59">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:06:03 +0200" startDate="2025-09-11 17:58:01 +0200" endDate="2025-09-11 17:58:01 +0200" value="59">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:06:03 +0200" startDate="2025-09-11 18:02:02 +0200" endDate="2025-09-11 18:02:02 +0200" value="60">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:10:40 +0200" startDate="2025-09-11 18:05:35 +0200" endDate="2025-09-11 18:05:35 +0200" value="60">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:19:11 +0200" startDate="2025-09-11 18:10:44 +0200" endDate="2025-09-11 18:10:44 +0200" value="57">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:21:02 +0200" startDate="2025-09-11 18:17:03 +0200" endDate="2025-09-11 18:17:03 +0200" value="55">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:27:18 +0200" startDate="2025-09-11 18:20:37 +0200" endDate="2025-09-11 18:20:37 +0200" value="53">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:32:27 +0200" startDate="2025-09-11 18:26:03 +0200" endDate="2025-09-11 18:26:03 +0200" value="65">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:35:49 +0200" startDate="2025-09-11 18:34:26 +0200" endDate="2025-09-11 18:34:26 +0200" value="52">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:40:48 +0200" startDate="2025-09-11 18:37:20 +0200" endDate="2025-09-11 18:37:20 +0200" value="52">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:47:03 +0200" startDate="2025-09-11 18:43:28 +0200" endDate="2025-09-11 18:43:28 +0200" value="52">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:51:26 +0200" startDate="2025-09-11 18:49:51 +0200" endDate="2025-09-11 18:49:51 +0200" value="51">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 18:58:07 +0200" startDate="2025-09-11 18:52:38 +0200" endDate="2025-09-11 18:52:38 +0200" value="52">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 19:04:56 +0200" startDate="2025-09-11 18:57:08 +0200" endDate="2025-09-11 18:57:08 +0200" value="52">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 19:09:54 +0200" startDate="2025-09-11 19:03:43 +0200" endDate="2025-09-11 19:03:43 +0200" value="56">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 19:11:47 +0200" startDate="2025-09-11 19:08:19 +0200" endDate="2025-09-11 19:08:19 +0200" value="59">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 19:16:58 +0200" startDate="2025-09-11 19:11:38 +0200" endDate="2025-09-11 19:11:38 +0200" value="58">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 19:21:29 +0200" startDate="2025-09-11 19:18:29 +0200" endDate="2025-09-11 19:18:29 +0200" value="55">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="25" device="&lt;&lt;HKDevice: 0x66eec5680&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-11 19:26:58 +0200" startDate="2025-09-11 19:25:31 +0200" endDate="2025-09-11 19:25:31 +0200" value="55">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66eec5fe0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-12 20:04:08 +0200" startDate="2025-09-12 20:04:07 +0200" endDate="2025-09-12 20:04:07 +0200" value="68">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="0"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66eec5fe0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-12 20:04:13 +0200" startDate="2025-09-12 20:04:07 +0200" endDate="2025-09-12 20:04:07 +0200" value="68">
+  <MetadataEntry key="HKMetadataKeyHeartRateMotionContext" value="2"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierOxygenSaturation" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09fc60&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="%" creationDate="2025-09-11 19:16:58 +0200" startDate="2025-09-11 19:17:05 +0200" endDate="2025-09-11 19:17:05 +0200" value="0.97"/>
+<Record type="HKQuantityTypeIdentifierRespiratoryRate" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count/min" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-11 23:11:12 +0200" endDate="2025-09-11 23:11:12 +0200" value="18.5"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-08 22:08:24 +0200" startDate="2025-08-08 21:56:32 +0200" endDate="2025-08-08 21:56:37 +0200" value="11"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-08 22:24:17 +0200" startDate="2025-08-08 22:08:21 +0200" endDate="2025-08-08 22:08:24 +0200" value="8"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-08 22:27:53 +0200" startDate="2025-08-08 22:08:24 +0200" endDate="2025-08-08 22:09:40 +0200" value="31"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-08 22:38:53 +0200" startDate="2025-08-08 22:27:51 +0200" endDate="2025-08-08 22:36:30 +0200" value="331"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-08 22:49:03 +0200" startDate="2025-08-08 22:38:05 +0200" endDate="2025-08-08 22:39:06 +0200" value="69"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-08 23:01:41 +0200" startDate="2025-08-08 22:51:39 +0200" endDate="2025-08-08 23:00:34 +0200" value="87"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-08 23:15:57 +0200" startDate="2025-08-08 23:05:54 +0200" endDate="2025-08-08 23:07:06 +0200" value="69"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-09 09:34:33 +0200" startDate="2025-08-09 09:22:52 +0200" endDate="2025-08-09 09:31:55 +0200" value="119"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-09 09:44:33 +0200" startDate="2025-08-09 09:32:51 +0200" endDate="2025-08-09 09:37:12 +0200" value="149"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-09 09:55:59 +0200" startDate="2025-08-09 09:43:10 +0200" endDate="2025-08-09 09:53:09 +0200" value="439"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-09 10:04:43 +0200" startDate="2025-08-09 09:53:09 +0200" endDate="2025-08-09 09:55:56 +0200" value="314"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-09 10:10:55 +0200" startDate="2025-08-09 09:55:56 +0200" endDate="2025-08-09 10:03:34 +0200" value="414"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-09 10:52:51 +0200" startDate="2025-08-09 10:13:30 +0200" endDate="2025-08-09 10:13:33 +0200" value="8"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-09 19:49:03 +0200" startDate="2025-08-09 19:23:51 +0200" endDate="2025-08-09 19:25:00 +0200" value="22"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-09 20:00:03 +0200" startDate="2025-08-09 19:49:01 +0200" endDate="2025-08-09 19:49:03 +0200" value="4"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-10 09:49:51 +0200" startDate="2025-08-10 09:29:10 +0200" endDate="2025-08-10 09:29:13 +0200" value="8"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-10 11:24:38 +0200" startDate="2025-08-10 11:14:35 +0200" endDate="2025-08-10 11:24:19 +0200" value="249"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-10 11:34:40 +0200" startDate="2025-08-10 11:24:37 +0200" endDate="2025-08-10 11:31:47 +0200" value="460"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-10 12:08:35 +0200" startDate="2025-08-10 11:58:32 +0200" endDate="2025-08-10 12:05:47 +0200" value="145"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e465a40&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-10 12:34:39 +0200" startDate="2025-08-10 12:24:37 +0200" endDate="2025-08-10 12:30:20 +0200" value="225"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-11 18:12:08 +0200" startDate="2025-09-11 17:50:00 +0200" endDate="2025-09-11 17:50:03 +0200" value="2"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-11 18:40:50 +0200" startDate="2025-09-11 18:21:04 +0200" endDate="2025-09-11 18:29:42 +0200" value="17"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-11 20:39:21 +0200" startDate="2025-09-11 20:29:17 +0200" endDate="2025-09-11 20:29:20 +0200" value="2"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-11 21:16:37 +0200" startDate="2025-09-11 21:05:44 +0200" endDate="2025-09-11 21:05:49 +0200" value="7"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-11 21:30:51 +0200" startDate="2025-09-11 21:20:48 +0200" endDate="2025-09-11 21:20:51 +0200" value="2"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-11 21:48:33 +0200" startDate="2025-09-11 21:38:19 +0200" endDate="2025-09-11 21:38:22 +0200" value="22"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-11 22:22:03 +0200" startDate="2025-09-11 21:59:26 +0200" endDate="2025-09-11 21:59:29 +0200" value="22"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-11 22:34:47 +0200" startDate="2025-09-11 22:22:00 +0200" endDate="2025-09-11 22:22:03 +0200" value="16"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 00:27:37 +0200" startDate="2025-09-11 23:49:08 +0200" endDate="2025-09-11 23:50:05 +0200" value="23"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 00:39:15 +0200" startDate="2025-09-12 00:27:33 +0200" endDate="2025-09-12 00:27:35 +0200" value="3"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 00:42:50 +0200" startDate="2025-09-12 00:27:35 +0200" endDate="2025-09-12 00:30:25 +0200" value="62"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 00:54:31 +0200" startDate="2025-09-12 00:42:47 +0200" endDate="2025-09-12 00:42:49 +0200" value="20"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 05:32:09 +0200" startDate="2025-09-12 00:42:52 +0200" endDate="2025-09-12 00:43:07 +0200" value="11"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 05:44:08 +0200" startDate="2025-09-12 05:32:06 +0200" endDate="2025-09-12 05:32:09 +0200" value="18"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 06:16:24 +0200" startDate="2025-09-12 06:00:50 +0200" endDate="2025-09-12 06:10:29 +0200" value="41"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 07:11:10 +0200" startDate="2025-09-12 06:37:34 +0200" endDate="2025-09-12 06:37:37 +0200" value="10"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 07:21:19 +0200" startDate="2025-09-12 07:10:50 +0200" endDate="2025-09-12 07:11:01 +0200" value="14"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 08:14:14 +0200" startDate="2025-09-12 08:03:39 +0200" endDate="2025-09-12 08:13:39 +0200" value="496"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 08:28:11 +0200" startDate="2025-09-12 08:13:39 +0200" endDate="2025-09-12 08:14:13 +0200" value="59"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4652c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-12 08:32:36 +0200" startDate="2025-09-12 08:14:13 +0200" endDate="2025-09-12 08:22:33 +0200" value="419"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4642a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-16 20:03:54 +0200" startDate="2025-09-16 19:45:01 +0200" endDate="2025-09-16 19:50:49 +0200" value="198"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4642a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="count" creationDate="2025-09-16 20:05:31 +0200" startDate="2025-09-16 19:45:01 +0200" endDate="2025-09-16 19:50:49 +0200" value="198"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.6" device="&lt;&lt;HKDevice: 0x66e09dc20&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.6, creation date:2026-08-09 05:24:54 +0000&gt;" unit="count" creationDate="2026-08-24 08:13:43 +0200" startDate="2026-08-24 07:52:47 +0200" endDate="2026-08-24 07:55:46 +0200" value="232"/>
+<Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" sourceVersion="26.6" device="&lt;&lt;HKDevice: 0x66e09dc20&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.6, creation date:2026-08-09 05:24:54 +0000&gt;" unit="count" creationDate="2026-08-24 08:16:30 +0200" startDate="2026-08-24 07:52:47 +0200" endDate="2026-08-24 07:55:46 +0200" value="232"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-08 22:08:24 +0200" startDate="2025-08-08 21:56:32 +0200" endDate="2025-08-08 21:56:37 +0200" value="0.00827"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-08 22:24:17 +0200" startDate="2025-08-08 22:08:21 +0200" endDate="2025-08-08 22:08:24 +0200" value="0.00424"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-08 22:27:53 +0200" startDate="2025-08-08 22:08:24 +0200" endDate="2025-08-08 22:09:40 +0200" value="0.02247"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-08 22:38:53 +0200" startDate="2025-08-08 22:27:51 +0200" endDate="2025-08-08 22:36:30 +0200" value="0.22549"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-08 22:49:03 +0200" startDate="2025-08-08 22:38:05 +0200" endDate="2025-08-08 22:39:06 +0200" value="0.05338"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-08 23:01:41 +0200" startDate="2025-08-08 22:51:39 +0200" endDate="2025-08-08 23:00:34 +0200" value="0.05514"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-08 23:15:57 +0200" startDate="2025-08-08 23:05:54 +0200" endDate="2025-08-08 23:07:06 +0200" value="0.03951"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-09 09:34:33 +0200" startDate="2025-08-09 09:22:52 +0200" endDate="2025-08-09 09:31:55 +0200" value="0.0722"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-09 09:44:34 +0200" startDate="2025-08-09 09:32:51 +0200" endDate="2025-08-09 09:37:12 +0200" value="0.08823"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-09 09:55:58 +0200" startDate="2025-08-09 09:43:10 +0200" endDate="2025-08-09 09:53:09 +0200" value="0.25764"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-09 10:04:43 +0200" startDate="2025-08-09 09:53:09 +0200" endDate="2025-08-09 09:55:56 +0200" value="0.17278"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-09 10:10:55 +0200" startDate="2025-08-09 09:55:56 +0200" endDate="2025-08-09 10:03:34 +0200" value="0.23413"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-09 10:52:51 +0200" startDate="2025-08-09 10:13:30 +0200" endDate="2025-08-09 10:13:33 +0200" value="0.00376"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-09 19:49:03 +0200" startDate="2025-08-09 19:23:51 +0200" endDate="2025-08-09 19:25:00 +0200" value="0.01411"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-09 20:00:03 +0200" startDate="2025-08-09 19:49:01 +0200" endDate="2025-08-09 19:49:03 +0200" value="0.00296"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-10 09:49:51 +0200" startDate="2025-08-10 09:29:10 +0200" endDate="2025-08-10 09:29:13 +0200" value="0.00376"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-10 11:24:38 +0200" startDate="2025-08-10 11:14:35 +0200" endDate="2025-08-10 11:24:19 +0200" value="0.15336"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-10 11:34:40 +0200" startDate="2025-08-10 11:24:37 +0200" endDate="2025-08-10 11:31:47 +0200" value="0.27282"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-10 12:08:35 +0200" startDate="2025-08-10 11:58:32 +0200" endDate="2025-08-10 12:05:47 +0200" value="0.09051"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km" creationDate="2025-08-10 12:34:39 +0200" startDate="2025-08-10 12:24:37 +0200" endDate="2025-08-10 12:30:20 +0200" value="0.14774"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-11 18:12:08 +0200" startDate="2025-09-11 17:50:00 +0200" endDate="2025-09-11 17:50:03 +0200" value="0.0014197"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-11 18:40:50 +0200" startDate="2025-09-11 18:21:04 +0200" endDate="2025-09-11 18:29:42 +0200" value="0.0102311"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-11 20:39:21 +0200" startDate="2025-09-11 20:29:17 +0200" endDate="2025-09-11 20:29:20 +0200" value="0.0014197"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-11 21:16:37 +0200" startDate="2025-09-11 21:05:44 +0200" endDate="2025-09-11 21:05:49 +0200" value="0.00567043"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-11 21:30:51 +0200" startDate="2025-09-11 21:20:48 +0200" endDate="2025-09-11 21:20:51 +0200" value="0.00133256"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-11 21:48:33 +0200" startDate="2025-09-11 21:38:19 +0200" endDate="2025-09-11 21:38:22 +0200" value="0.0193066"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-11 22:22:03 +0200" startDate="2025-09-11 21:59:26 +0200" endDate="2025-09-11 21:59:29 +0200" value="0.0161863"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-11 22:34:47 +0200" startDate="2025-09-11 22:22:00 +0200" endDate="2025-09-11 22:22:03 +0200" value="0.0122461"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 00:27:37 +0200" startDate="2025-09-11 23:49:08 +0200" endDate="2025-09-11 23:50:05 +0200" value="0.0182688"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 00:39:15 +0200" startDate="2025-09-12 00:27:33 +0200" endDate="2025-09-12 00:27:35 +0200" value="0.00253847"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 00:42:50 +0200" startDate="2025-09-12 00:27:35 +0200" endDate="2025-09-12 00:30:25 +0200" value="0.0492378"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 00:54:31 +0200" startDate="2025-09-12 00:42:47 +0200" endDate="2025-09-12 00:42:49 +0200" value="0.0147148"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 05:32:09 +0200" startDate="2025-09-12 00:42:52 +0200" endDate="2025-09-12 00:43:07 +0200" value="0.00767762"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 05:44:08 +0200" startDate="2025-09-12 05:32:06 +0200" endDate="2025-09-12 05:32:09 +0200" value="0.0157524"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 06:16:24 +0200" startDate="2025-09-12 06:00:50 +0200" endDate="2025-09-12 06:10:29 +0200" value="0.0311442"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 07:11:10 +0200" startDate="2025-09-12 06:37:34 +0200" endDate="2025-09-12 06:37:37 +0200" value="0.00709848"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 07:21:19 +0200" startDate="2025-09-12 07:10:50 +0200" endDate="2025-09-12 07:11:01 +0200" value="0.010387"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 08:14:14 +0200" startDate="2025-09-12 08:03:39 +0200" endDate="2025-09-12 08:13:39 +0200" value="0.370096"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 08:18:10 +0200" startDate="2025-09-12 08:13:39 +0200" endDate="2025-09-12 08:14:10 +0200" value="0.0420773"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f0c0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-12 08:18:10 +0200" startDate="2025-09-12 08:14:10 +0200" endDate="2025-09-12 08:14:41 +0200" value="0.0428717"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f600&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-16 20:03:54 +0200" startDate="2025-09-16 19:45:01 +0200" endDate="2025-09-16 19:50:49 +0200" value="0.140247"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f600&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km" creationDate="2025-09-16 20:05:31 +0200" startDate="2025-09-16 19:45:01 +0200" endDate="2025-09-16 19:50:49 +0200" value="0.140247"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.6" device="&lt;&lt;HKDevice: 0x66e09cae0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.6, creation date:2026-08-09 05:24:54 +0000&gt;" unit="km" creationDate="2026-08-24 08:13:43 +0200" startDate="2026-08-24 07:52:47 +0200" endDate="2026-08-24 07:55:46 +0200" value="0.139193"/>
+<Record type="HKQuantityTypeIdentifierDistanceWalkingRunning" sourceName="iPhone" sourceVersion="26.6" device="&lt;&lt;HKDevice: 0x66e09cae0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.6, creation date:2026-08-09 05:24:54 +0000&gt;" unit="km" creationDate="2026-08-24 08:16:30 +0200" startDate="2026-08-24 07:52:47 +0200" endDate="2026-08-24 07:55:46 +0200" value="0.139193"/>
+<Record type="HKQuantityTypeIdentifierBasalEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466be0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 17:51:22 +0200" startDate="2025-08-08 17:36:21 +0200" endDate="2025-08-08 17:43:21 +0200" value="7.042"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 17:51:01 +0200" startDate="2025-08-08 17:36:21 +0200" endDate="2025-08-08 17:43:21 +0200" value="2.945"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 22:08:29 +0200" startDate="2025-08-08 21:56:20 +0200" endDate="2025-08-08 21:56:42 +0200" value="1.13"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 22:24:17 +0200" startDate="2025-08-08 22:08:16 +0200" endDate="2025-08-08 22:08:26 +0200" value="0.747"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 22:27:58 +0200" startDate="2025-08-08 22:08:26 +0200" endDate="2025-08-08 22:08:36 +0200" value="0.256"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 22:38:53 +0200" startDate="2025-08-08 22:27:45 +0200" endDate="2025-08-08 22:36:30 +0200" value="7.565"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 22:48:12 +0200" startDate="2025-08-08 22:38:02 +0200" endDate="2025-08-08 22:39:55 +0200" value="8.743"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 23:01:41 +0200" startDate="2025-08-08 22:51:31 +0200" endDate="2025-08-08 23:00:37 +0200" value="2.137"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-08 23:15:54 +0200" startDate="2025-08-08 23:05:44 +0200" endDate="2025-08-08 23:07:16 +0200" value="2.745"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-09 09:34:33 +0200" startDate="2025-08-09 09:22:47 +0200" endDate="2025-08-09 09:32:31 +0200" value="4.968"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-09 09:44:34 +0200" startDate="2025-08-09 09:34:23 +0200" endDate="2025-08-09 09:44:12 +0200" value="3.177"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-09 09:55:59 +0200" startDate="2025-08-09 09:44:12 +0200" endDate="2025-08-09 09:52:13 +0200" value="2.06"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-09 10:09:36 +0200" startDate="2025-08-09 09:55:38 +0200" endDate="2025-08-09 09:55:48 +0200" value="0.059"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-09 10:11:36 +0200" startDate="2025-08-09 09:55:48 +0200" endDate="2025-08-09 10:01:36 +0200" value="6.275"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-09 10:52:43 +0200" startDate="2025-08-09 10:13:22 +0200" endDate="2025-08-09 10:13:33 +0200" value="0.507"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-09 19:52:11 +0200" startDate="2025-08-09 19:24:55 +0200" endDate="2025-08-09 19:25:05 +0200" value="0.039"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-10 09:49:46 +0200" startDate="2025-08-10 09:29:05 +0200" endDate="2025-08-10 09:29:15 +0200" value="0.507"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-10 11:24:53 +0200" startDate="2025-08-10 11:14:43 +0200" endDate="2025-08-10 11:23:56 +0200" value="4.425"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-10 11:34:06 +0200" startDate="2025-08-10 11:23:56 +0200" endDate="2025-08-10 11:31:47 +0200" value="14.567"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-10 12:09:03 +0200" startDate="2025-08-10 11:58:53 +0200" endDate="2025-08-10 12:06:54 +0200" value="5.519"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e466ee0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="kcal" creationDate="2025-08-10 12:35:30 +0200" startDate="2025-08-10 12:25:20 +0200" endDate="2025-08-10 12:30:43 +0200" value="3.794"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 17:33:00 +0200" startDate="2025-09-11 17:25:39 +0200" endDate="2025-09-11 17:25:49 +0200" value="0.056"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 17:48:43 +0200" startDate="2025-09-11 17:25:59 +0200" endDate="2025-09-11 17:31:39 +0200" value="1.913"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 17:48:47 +0200" startDate="2025-09-11 17:31:39 +0200" endDate="2025-09-11 17:36:38 +0200" value="1.62"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 17:48:54 +0200" startDate="2025-09-11 17:36:38 +0200" endDate="2025-09-11 17:36:49 +0200" value="0.573"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 17:48:54 +0200" startDate="2025-09-11 17:36:49 +0200" endDate="2025-09-11 17:36:59 +0200" value="0.032"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 17:50:11 +0200" startDate="2025-09-11 17:49:29 +0200" endDate="2025-09-11 17:50:00 +0200" value="0.155"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 17:52:10 +0200" startDate="2025-09-11 17:50:00 +0200" endDate="2025-09-11 17:51:02 +0200" value="0.542"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 17:52:10 +0200" startDate="2025-09-11 17:51:02 +0200" endDate="2025-09-11 17:51:53 +0200" value="0.585"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 18:07:48 +0200" startDate="2025-09-11 17:52:04 +0200" endDate="2025-09-11 17:53:16 +0200" value="0.339"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 18:19:11 +0200" startDate="2025-09-11 18:06:07 +0200" endDate="2025-09-11 18:07:20 +0200" value="0.363"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 18:19:13 +0200" startDate="2025-09-11 18:07:40 +0200" endDate="2025-09-11 18:13:20 +0200" value="0.588"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 18:30:38 +0200" startDate="2025-09-11 18:17:38 +0200" endDate="2025-09-11 18:18:40 +0200" value="0.136"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 18:30:38 +0200" startDate="2025-09-11 18:20:02 +0200" endDate="2025-09-11 18:30:00 +0200" value="2.136"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 18:40:48 +0200" startDate="2025-09-11 18:30:00 +0200" endDate="2025-09-11 18:30:10 +0200" value="0.035"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 18:40:48 +0200" startDate="2025-09-11 18:30:41 +0200" endDate="2025-09-11 18:40:28 +0200" value="1.192"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 18:51:26 +0200" startDate="2025-09-11 18:40:28 +0200" endDate="2025-09-11 18:50:26 +0200" value="2.268"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 19:04:56 +0200" startDate="2025-09-11 18:50:26 +0200" endDate="2025-09-11 18:51:07 +0200" value="0.214"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 19:04:56 +0200" startDate="2025-09-11 18:51:07 +0200" endDate="2025-09-11 19:01:05 +0200" value="2.683"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 19:16:58 +0200" startDate="2025-09-11 19:01:05 +0200" endDate="2025-09-11 19:04:00 +0200" value="0.75"/>
+<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4651a0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="kcal" creationDate="2025-09-11 19:17:00 +0200" startDate="2025-09-11 19:04:51 +0200" endDate="2025-09-11 19:14:48 +0200" value="2.451"/>
+<Record type="HKQuantityTypeIdentifierFlightsClimbed" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09c6c0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="count" creationDate="2025-08-08 22:43:39 +0200" startDate="2025-08-08 22:32:40 +0200" endDate="2025-08-08 22:39:04 +0200" value="3"/>
+<Record type="HKQuantityTypeIdentifierAppleExerciseTime" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09dc20&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="min" creationDate="2025-09-12 08:33:03 +0200" startDate="2025-09-12 08:31:00 +0200" endDate="2025-09-12 08:32:00 +0200" value="1"/>
+<Record type="HKQuantityTypeIdentifierDietaryCaffeine" sourceName="Health" sourceVersion="26.0" unit="mg" creationDate="2025-09-13 09:15:06 +0200" startDate="2025-09-13 08:14:00 +0200" endDate="2025-09-13 08:14:00 +0200" value="200">
+  <MetadataEntry key="HKWasUserEntered" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierDistanceCycling" sourceName="Pace" sourceVersion="94" device="&lt;&lt;HKDevice: 0x66e09f360&gt;, name:Instinct, manufacturer:Garmin, model:Solar, localIdentifier:00000000-0000-4000-8000-000000000000, creation date:2026-05-20 06:51:23 +0000&gt;" unit="km" creationDate="2026-05-20 12:42:42 +0200" startDate="2026-04-30 12:39:11 +0200" endDate="2026-04-30 12:49:54 +0200" value="0.04589">
+  <MetadataEntry key="HKMetadataKeySyncVersion" value="2"/>
+  <MetadataEntry key="HKWasUserEntered" value="0"/>
+  <MetadataEntry key="HKMetadataKeySyncIdentifier" value="pace.workout.dist.cycling.1777545551000"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Apple Watch" sourceVersion="26.0" unit="count/min" creationDate="2025-09-11 22:01:34 +0200" startDate="2025-09-11 17:53:52 +0200" endDate="2025-09-11 21:56:47 +0200" value="45"/>
+<Record type="HKQuantityTypeIdentifierVO2Max" sourceName="Apple Watch" sourceVersion="3056.0.25.1.4" unit="mL/min·kg" creationDate="2025-09-14 20:17:47 +0200" startDate="2025-09-14 20:17:47 +0200" endDate="2025-09-14 20:17:47 +0200" value="44.77">
+  <MetadataEntry key="HKVO2MaxTestType" value="2"/>
+  <MetadataEntry key="HKMetadataKeySyncVersion" value="1"/>
+  <MetadataEntry key="HKMetadataKeySyncIdentifier" value="B94F6D57-19B3-4F47-BA95-31C85DA7DE53"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierWalkingHeartRateAverage" sourceName="Apple Watch" sourceVersion="26.0" unit="count/min" creationDate="2025-09-12 14:58:10 +0200" startDate="2025-09-11 23:04:18 +0200" endDate="2025-09-12 14:58:10 +0200" value="74"/>
+<Record type="HKQuantityTypeIdentifierEnvironmentalAudioExposure" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09eca0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="dBASPL" creationDate="2025-09-11 18:00:05 +0200" startDate="2025-09-11 17:25:56 +0200" endDate="2025-09-11 17:36:46 +0200" value="66.1455"/>
+<Record type="HKQuantityTypeIdentifierHeadphoneAudioExposure" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09c420&gt;, name:AirPods Pro, manufacturer:Apple Inc., model:0x2024, localIdentifier:00:11:22:33:44:55-tacl, creation date:2025-08-10 08:43:42 +0000&gt;" unit="dBASPL" creationDate="2025-08-10 10:56:34 +0200" startDate="2025-08-10 10:33:39 +0200" endDate="2025-08-10 10:46:22 +0200" value="80.316"/>
+<Record type="HKQuantityTypeIdentifierWalkingDoubleSupportPercentage" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f8a0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="%" creationDate="2025-08-08 23:01:08 +0200" startDate="2025-08-08 22:27:56 +0200" endDate="2025-08-08 22:28:01 +0200" value="0.312"/>
+<Record type="HKQuantityTypeIdentifierSixMinuteWalkTestDistance" sourceName="iPhone" sourceVersion="3056.0.25.0.8" unit="m" creationDate="2025-09-24 15:30:20 +0200" startDate="2025-09-24 15:30:20 +0200" endDate="2025-09-24 15:30:20 +0200" value="500">
+  <MetadataEntry key="HKDateOfEarliestDataUsedForEstimate" value="2025-09-10 21:00:00 +0000"/>
+  <MetadataEntry key="HKMetadataKeyAppleDeviceCalibrated" value="1"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierAppleStandTime" sourceName="Apple Watch" sourceVersion="3056.0.25.1.4" unit="min" creationDate="2025-09-11 21:35:30 +0200" startDate="2025-09-11 21:30:00 +0200" endDate="2025-09-11 21:35:00 +0200" value="1"/>
+<Record type="HKQuantityTypeIdentifierWalkingSpeed" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f000&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="km/hr" creationDate="2025-08-08 23:01:08 +0200" startDate="2025-08-08 22:27:56 +0200" endDate="2025-08-08 22:28:01 +0200" value="3.744"/>
+<Record type="HKQuantityTypeIdentifierWalkingStepLength" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09c420&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="cm" creationDate="2025-08-08 23:01:08 +0200" startDate="2025-08-08 22:27:56 +0200" endDate="2025-08-08 22:28:01 +0200" value="59"/>
+<Record type="HKQuantityTypeIdentifierWalkingAsymmetryPercentage" sourceName="iPhone" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09ff00&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="%" creationDate="2025-08-10 11:45:30 +0200" startDate="2025-08-10 11:29:47 +0200" endDate="2025-08-10 11:30:06 +0200" value="0">
+  <MetadataEntry key="HKMetadataKeyDevicePlacementSide" value="2"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierStairAscentSpeed" sourceName="Apple Watch" sourceVersion="3056.0.25.1.4" unit="m/s" creationDate="2025-09-12 08:35:20 +0200" startDate="2025-09-12 08:34:35 +0200" endDate="2025-09-12 08:34:40 +0200" value="0.325926"/>
+<Record type="HKQuantityTypeIdentifierStairDescentSpeed" sourceName="Apple Watch" sourceVersion="3056.0.25.1.4" unit="m/s" creationDate="2025-09-12 08:08:58 +0200" startDate="2025-09-12 08:08:14 +0200" endDate="2025-09-12 08:08:20 +0200" value="0.286056"/>
+<Record type="HKDataTypeSleepDurationGoal" sourceName="Sleep" sourceVersion="26.0" unit="hr" creationDate="2025-09-11 21:19:28 +0200" startDate="2025-09-11 21:19:28 +0200" endDate="2025-09-11 21:19:28 +0200" value="7.5"/>
+<Record type="HKQuantityTypeIdentifierAppleWalkingSteadiness" sourceName="iPhone" sourceVersion="3056.0.25.0.8" device="&lt;&lt;HKDevice: 0x66e09f9c0&gt;, name:iPhone, manufacturer:Apple Inc., model:iPhone, hardware:iPhone16,1, software:26.0, creation date:2025-08-08 15:50:55 +0000&gt;" unit="%" creationDate="2025-09-13 06:10:02 +0200" startDate="2025-08-08 02:00:00 +0200" endDate="2025-08-15 02:00:00 +0200" value="0.949288">
+  <MetadataEntry key="HKAlgorithmVersion" value="2"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierRunningStrideLength" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f7e0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="m" creationDate="2026-01-12 22:24:01 +0200" startDate="2025-09-14 19:35:47 +0200" endDate="2025-09-14 19:49:42 +0200" value="0.811345">
+  <MetadataEntry key="HKMetadataKeySyncVersion" value="1"/>
+  <MetadataEntry key="HKMetadataKeySyncIdentifier" value="6:01B29C59-9140-4317-8A67-00F3B2F218F7:779564147.14417:779564982.66430:119"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierRunningVerticalOscillation" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09db00&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="cm" creationDate="2025-09-14 20:14:35 +0200" startDate="2025-09-14 20:14:22 +0200" endDate="2025-09-14 20:14:22 +0200" value="9.5"/>
+<Record type="HKQuantityTypeIdentifierRunningGroundContactTime" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09d080&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="ms" creationDate="2025-09-14 20:14:30 +0200" startDate="2025-09-14 20:14:22 +0200" endDate="2025-09-14 20:14:22 +0200" value="343"/>
+<Record type="HKQuantityTypeIdentifierHeartRateRecoveryOneMinute" sourceName="Apple Watch" sourceVersion="3056.0.25.1.4" unit="count/min" creationDate="2025-09-16 19:50:55 +0200" startDate="2025-09-16 19:47:54 +0200" endDate="2025-09-16 19:47:54 +0200" value="23.6725">
+  <MetadataEntry key="HKMetadataKeyUserMotionContext" value="2"/>
+  <MetadataEntry key="HKMetadataKeyHeartRateRecoveryActivityDuration" value="2162.83 s"/>
+  <MetadataEntry key="HKMetadataKeyHeartRateRecoveryTestType" value="2"/>
+  <MetadataEntry key="HKMetadataKeyHeartRateRecoveryMaxObservedRecoveryHeartRate" value="156 count/min"/>
+  <MetadataEntry key="HKAlgorithmVersion" value="1"/>
+  <MetadataEntry key="HKMetadataKeyHeartRateRecoveryActivityType" value="37"/>
+ </Record>
+<Record type="HKQuantityTypeIdentifierRunningPower" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09f7e0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="W" creationDate="2025-09-14 20:14:30 +0200" startDate="2025-09-14 20:14:25 +0200" endDate="2025-09-14 20:14:25 +0200" value="118"/>
+<Record type="HKQuantityTypeIdentifierEnvironmentalSoundReduction" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09d080&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="dBASPL" creationDate="2025-09-14 20:21:36 +0200" startDate="2025-09-12 09:28:36 +0200" endDate="2025-09-12 09:42:18 +0200" value="25.1348"/>
+<Record type="HKQuantityTypeIdentifierRunningSpeed" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09c240&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="km/hr" creationDate="2025-09-14 20:14:28 +0200" startDate="2025-09-14 20:14:25 +0200" endDate="2025-09-14 20:14:25 +0200" value="5.40047"/>
+<Record type="HKQuantityTypeIdentifierTimeInDaylight" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e09d080&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="min" creationDate="2025-09-13 07:32:27 +0200" startDate="2025-09-13 07:21:03 +0200" endDate="2025-09-13 07:26:03 +0200" value="5"/>
+<Record type="HKQuantityTypeIdentifierPhysicalEffort" sourceName="Apple Watch" sourceVersion="3056.0.25.1.4" unit="kcal/hr·kg" creationDate="2025-09-11 17:48:54 +0200" startDate="2025-09-11 17:25:28 +0200" endDate="2025-09-11 17:36:33 +0200" value="1.4">
+  <MetadataEntry key="HKActivityType" value="3000"/>
+  <MetadataEntry key="HKAlgorithmVersion" value="1"/>
+  <MetadataEntry key="HKPhysicalEffortEstimationType" value="2"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 00:56:44 +0200" endDate="2025-09-12 01:00:15 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 01:00:15 +0200" endDate="2025-09-12 01:01:15 +0200" value="HKCategoryValueSleepAnalysisAwake">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 01:01:15 +0200" endDate="2025-09-12 01:18:19 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 01:18:19 +0200" endDate="2025-09-12 01:58:27 +0200" value="HKCategoryValueSleepAnalysisAsleepDeep">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 01:58:27 +0200" endDate="2025-09-12 01:59:27 +0200" value="HKCategoryValueSleepAnalysisAwake">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 01:59:27 +0200" endDate="2025-09-12 02:04:28 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:04:28 +0200" endDate="2025-09-12 02:19:02 +0200" value="HKCategoryValueSleepAnalysisAsleepREM">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:19:02 +0200" endDate="2025-09-12 02:20:02 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:20:02 +0200" endDate="2025-09-12 02:28:34 +0200" value="HKCategoryValueSleepAnalysisAsleepREM">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:28:34 +0200" endDate="2025-09-12 02:29:04 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:29:04 +0200" endDate="2025-09-12 02:29:34 +0200" value="HKCategoryValueSleepAnalysisAsleepREM">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:29:34 +0200" endDate="2025-09-12 02:41:37 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:41:37 +0200" endDate="2025-09-12 02:43:37 +0200" value="HKCategoryValueSleepAnalysisAsleepREM">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:43:37 +0200" endDate="2025-09-12 02:45:07 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:45:07 +0200" endDate="2025-09-12 02:52:09 +0200" value="HKCategoryValueSleepAnalysisAsleepREM">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 02:52:09 +0200" endDate="2025-09-12 03:28:47 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 03:28:47 +0200" endDate="2025-09-12 03:56:23 +0200" value="HKCategoryValueSleepAnalysisAsleepDeep">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 03:56:23 +0200" endDate="2025-09-12 03:57:53 +0200" value="HKCategoryValueSleepAnalysisAwake">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 03:57:53 +0200" endDate="2025-09-12 04:27:29 +0200" value="HKCategoryValueSleepAnalysisAsleepCore">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-12 06:18:50 +0200" startDate="2025-09-12 04:27:29 +0200" endDate="2025-09-12 04:31:30 +0200" value="HKCategoryValueSleepAnalysisAwake">
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierAppleStandHour" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4ce880&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" creationDate="2025-09-11 18:00:07 +0200" startDate="2025-09-11 17:00:00 +0200" endDate="2025-09-11 18:00:00 +0200" value="HKCategoryValueAppleStandHourIdle"/>
+<Record type="HKCategoryTypeIdentifierMindfulSession" sourceName="Mindful" sourceVersion="8709" creationDate="2025-09-17 00:32:45 +0200" startDate="2025-09-17 00:17:44 +0200" endDate="2025-09-17 00:32:45 +0200" value="HKCategoryValueNotApplicable"/>
+<Record type="HKCategoryTypeIdentifierLowHeartRateEvent" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4cf180&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" creationDate="2025-09-12 01:02:51 +0200" startDate="2025-09-12 00:51:49 +0200" endDate="2025-09-12 01:01:49 +0200" value="HKCategoryValueNotApplicable">
+  <MetadataEntry key="HKHeartRateEventThreshold" value="40 count/min"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierHeadache" sourceName="Health" sourceVersion="26.0" creationDate="2025-09-16 17:36:44 +0200" startDate="2025-09-16 09:36:00 +0200" endDate="2025-09-16 17:36:00 +0200" value="HKCategoryValueSeverityUnspecified">
+  <MetadataEntry key="HKWasUserEntered" value="1"/>
+ </Record>
+<Record type="HKCategoryTypeIdentifierAudioExposureEvent" sourceName="Apple Watch" sourceVersion="1" device="&lt;&lt;HKDevice: 0x66e4ce8e0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" creationDate="2025-09-19 13:05:39 +0200" startDate="2025-09-19 13:02:55 +0200" endDate="2025-09-19 13:05:39 +0200" value="HKCategoryValueEnvironmentalAudioExposureEventMomentaryLimit">
+  <MetadataEntry key="HKMetadataKeyAudioExposureLevel" value="99.179 dBASPL"/>
+ </Record>
+<Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="42.15357124209404" durationUnit="min" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e4ce8e0&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" creationDate="2025-09-14 20:17:55 +0200" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200">
+  <MetadataEntry key="HKIndoorWorkout" value="0"/>
+  <MetadataEntry key="HKElevationAscended" value="487 cm"/>
+  <MetadataEntry key="HKWeatherHumidity" value="6000 %"/>
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+  <MetadataEntry key="HKWeatherTemperature" value="70.1251 degF"/>
+  <MetadataEntry key="HKAverageMETs" value="8.59791 kcal/hr·kg"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 19:35:34 +0200" duration="7.936658177773158" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 19:35:34 +0200" duration="12.54362081885338" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 19:43:30 +0200" duration="7.634543577829997" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 19:48:07 +0200" duration="12.5405935883522" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 19:51:08 +0200" duration="7.802465357383093" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 19:58:56 +0200" duration="7.604363503058751" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 20:00:39 +0200" duration="12.20341158310572" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 20:06:33 +0200" duration="7.63350826104482" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 20:12:51 +0200" duration="4.871857053041458" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypeSegment" date="2025-09-14 20:14:11 +0200" duration="3.547944166262945" durationUnit="min"/>
+  <WorkoutEvent type="HKWorkoutEventTypePause" date="2025-09-14 20:14:21 +0200"/>
+  <WorkoutEvent type="HKWorkoutEventTypeResume" date="2025-09-14 20:14:25 +0200"/>
+  <WorkoutEvent type="HKWorkoutEventTypePause" date="2025-09-14 20:17:47 +0200"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierStepCount" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" sum="6721.8" unit="count"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierRunningGroundContactTime" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" average="311.682" minimum="294" maximum="333" unit="ms"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierRunningPower" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" average="165.225" minimum="91" maximum="195" unit="W"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierActiveEnergyBurned" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" sum="379.053" unit="kcal"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierBasalEnergyBurned" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" sum="66.6007" unit="kcal"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierRunningVerticalOscillation" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" average="8.75532" minimum="8.1" maximum="9.8" unit="cm"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierRunningSpeed" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" average="7.76315" minimum="4.14191" maximum="8.72521" unit="km/hr"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierRunningStrideLength" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" average="0.816462" minimum="0.76" maximum="0.91" unit="m"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierDistanceWalkingRunning" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" sum="5.44517" unit="km"/>
+  <WorkoutStatistics type="HKQuantityTypeIdentifierHeartRate" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:47 +0200" average="147.655" minimum="89" maximum="167" unit="count/min"/>
+  <WorkoutRoute sourceName="Apple Watch" sourceVersion="26.0" creationDate="2025-09-14 20:17:57 +0200" startDate="2025-09-14 19:35:34 +0200" endDate="2025-09-14 20:17:46 +0200">
+   <MetadataEntry key="HKMetadataKeySyncVersion" value="2"/>
+   <MetadataEntry key="HKMetadataKeySyncIdentifier" value="E4635BC4-4D5B-4BC6-BBE7-2D66786DB269"/>
+   <FileReference path="/workout-routes/route_2025-09-14_8.17pm.gpx"/>
+  </WorkoutRoute>
+  <MetadataEntry key="HKIndoorWorkout" value="0"/>
+  <MetadataEntry key="HKElevationAscended" value="487 cm"/>
+  <MetadataEntry key="HKWeatherHumidity" value="6000 %"/>
+  <MetadataEntry key="HKTimeZone" value="Europe/Berlin"/>
+  <MetadataEntry key="HKWeatherTemperature" value="70.1251 degF"/>
+  <MetadataEntry key="HKAverageMETs" value="8.59791 kcal/hr·kg"/>
+ </Workout>
+<ActivitySummary dateComponents="2025-09-11" activeEnergyBurned="238.706" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="0" appleExerciseTimeGoal="30" appleStandHours="1" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-12" activeEnergyBurned="515.667" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="50" appleExerciseTimeGoal="30" appleStandHours="12" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-13" activeEnergyBurned="311.333" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="14" appleExerciseTimeGoal="30" appleStandHours="8" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-14" activeEnergyBurned="689.419" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="58" appleExerciseTimeGoal="30" appleStandHours="6" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-15" activeEnergyBurned="648.351" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="58" appleExerciseTimeGoal="30" appleStandHours="12" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-16" activeEnergyBurned="955.382" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="113" appleExerciseTimeGoal="30" appleStandHours="12" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-17" activeEnergyBurned="564.806" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="54" appleExerciseTimeGoal="30" appleStandHours="11" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-18" activeEnergyBurned="609.438" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="64" appleExerciseTimeGoal="30" appleStandHours="15" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-19" activeEnergyBurned="336.703" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="36" appleExerciseTimeGoal="30" appleStandHours="8" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-20" activeEnergyBurned="616.23" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="37" appleExerciseTimeGoal="30" appleStandHours="13" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-21" activeEnergyBurned="383.846" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="19" appleExerciseTimeGoal="30" appleStandHours="13" appleStandHoursGoal="10"/>
+<ActivitySummary dateComponents="2025-09-22" activeEnergyBurned="569.377" activeEnergyBurnedGoal="400" activeEnergyBurnedUnit="kcal" appleMoveTime="0" appleMoveTimeGoal="0" appleExerciseTime="25" appleExerciseTimeGoal="30" appleStandHours="13" appleStandHoursGoal="10"/>
+<Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Apple Watch" sourceVersion="26.0" device="&lt;&lt;HKDevice: 0x66e958a80&gt;, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,2, software:26.0, creation date:2025-09-11 15:25:46 +0000&gt;" unit="ms" creationDate="2025-09-11 17:54:52 +0200" startDate="2025-09-11 17:53:52 +0200" endDate="2025-09-11 17:54:51 +0200" value="47.7291">
+  <MetadataEntry key="HKAlgorithmVersion" value="2"/>
+  <HeartRateVariabilityMetadataList>
+   <InstantaneousBeatsPerMinute bpm="55" time="17:53:53,69"/>
+   <InstantaneousBeatsPerMinute bpm="53" time="17:53:54,81"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:53:55,88"/>
+   <InstantaneousBeatsPerMinute bpm="53" time="17:53:57,01"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:53:58,09"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:53:59,17"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:54:00,23"/>
+   <InstantaneousBeatsPerMinute bpm="57" time="17:54:01,28"/>
+   <InstantaneousBeatsPerMinute bpm="54" time="17:54:02,39"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:54:03,46"/>
+   <InstantaneousBeatsPerMinute bpm="55" time="17:54:04,55"/>
+   <InstantaneousBeatsPerMinute bpm="57" time="17:54:05,61"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:54:06,68"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:54:07,76"/>
+   <InstantaneousBeatsPerMinute bpm="57" time="17:54:08,80"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:54:09,87"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:54:10,94"/>
+   <InstantaneousBeatsPerMinute bpm="58" time="17:54:11,97"/>
+   <InstantaneousBeatsPerMinute bpm="58" time="17:54:13,00"/>
+   <InstantaneousBeatsPerMinute bpm="60" time="17:54:14,01"/>
+   <InstantaneousBeatsPerMinute bpm="60" time="17:54:15,01"/>
+   <InstantaneousBeatsPerMinute bpm="58" time="17:54:16,04"/>
+   <InstantaneousBeatsPerMinute bpm="60" time="17:54:17,04"/>
+   <InstantaneousBeatsPerMinute bpm="61" time="17:54:18,02"/>
+   <InstantaneousBeatsPerMinute bpm="59" time="17:54:19,03"/>
+   <InstantaneousBeatsPerMinute bpm="62" time="17:54:19,99"/>
+   <InstantaneousBeatsPerMinute bpm="58" time="17:54:21,04"/>
+   <InstantaneousBeatsPerMinute bpm="57" time="17:54:22,09"/>
+   <InstantaneousBeatsPerMinute bpm="58" time="17:54:23,13"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:54:24,20"/>
+   <InstantaneousBeatsPerMinute bpm="59" time="17:54:25,21"/>
+   <InstantaneousBeatsPerMinute bpm="59" time="17:54:26,24"/>
+   <InstantaneousBeatsPerMinute bpm="65" time="17:54:27,17"/>
+   <InstantaneousBeatsPerMinute bpm="60" time="17:54:28,17"/>
+   <InstantaneousBeatsPerMinute bpm="58" time="17:54:29,20"/>
+   <InstantaneousBeatsPerMinute bpm="59" time="17:54:30,22"/>
+   <InstantaneousBeatsPerMinute bpm="55" time="17:54:31,32"/>
+   <InstantaneousBeatsPerMinute bpm="57" time="17:54:32,37"/>
+   <InstantaneousBeatsPerMinute bpm="56" time="17:54:33,45"/>
+   <InstantaneousBeatsPerMinute bpm="57" time="17:54:34,49"/>
+   <InstantaneousBeatsPerMinute bpm="58" time="17:54:35,53"/>
+   <InstantaneousBeatsPerMinute bpm="58" time="17:54:36,56"/>
+   <InstantaneousBeatsPerMinute bpm="62" time="17:54:37,53"/>
+   <InstantaneousBeatsPerMinute bpm="62" time="17:54:38,49"/>
+   <InstantaneousBeatsPerMinute bpm="63" time="17:54:39,44"/>
+   <InstantaneousBeatsPerMinute bpm="60" time="17:54:40,44"/>
+   <InstantaneousBeatsPerMinute bpm="59" time="17:54:41,45"/>
+   <InstantaneousBeatsPerMinute bpm="62" time="17:54:42,42"/>
+   <InstantaneousBeatsPerMinute bpm="60" time="17:54:43,42"/>
+   <InstantaneousBeatsPerMinute bpm="62" time="17:54:44,38"/>
+   <InstantaneousBeatsPerMinute bpm="65" time="17:54:45,31"/>
+   <InstantaneousBeatsPerMinute bpm="73" time="17:54:46,13"/>
+   <InstantaneousBeatsPerMinute bpm="77" time="17:54:46,90"/>
+   <InstantaneousBeatsPerMinute bpm="75" time="17:54:47,71"/>
+   <InstantaneousBeatsPerMinute bpm="61" time="17:54:48,69"/>
+   <InstantaneousBeatsPerMinute bpm="59" time="17:54:49,70"/>
+   <InstantaneousBeatsPerMinute bpm="61" time="17:54:50,68"/>
+   <InstantaneousBeatsPerMinute bpm="60" time="17:54:51,68"/>
+  </HeartRateVariabilityMetadataList>
+ </Record>
+</HealthData>

@@ -1,0 +1,259 @@
+# Observation and episode kinds, grouped by domain (medicine / lifestyle / sports).
+#
+# Unknown Apple types fall through: domain=other, daily_aggregate=mean,
+# display=the identifier's short name. Unlisted workout types do the same
+# until a block is added here.
+#
+# To add a kind, copy a block and set domain, daily_aggregate, and display.
+# Embedded default is this file. Per-archive override:
+#   <archive root>/config/kinds.toml
+
+# ---------------------------------------------------------------------------
+# medicine — clinical events and vitals. Lab and medication kinds join this
+# domain with their adapters.
+# ---------------------------------------------------------------------------
+
+[HKCategoryTypeIdentifierHeadache]
+domain = "medicine"
+daily_aggregate = "count"
+display = "Headache"
+
+[HKCategoryTypeIdentifierLowHeartRateEvent]
+domain = "medicine"
+daily_aggregate = "count"
+display = "Low heart rate event"
+
+[HKQuantityTypeIdentifierOxygenSaturation]
+domain = "medicine"
+daily_aggregate = "mean"
+display = "Blood oxygen"
+
+[HKQuantityTypeIdentifierRespiratoryRate]
+domain = "medicine"
+daily_aggregate = "mean"
+display = "Respiratory rate"
+
+# ---------------------------------------------------------------------------
+# lifestyle
+# ---------------------------------------------------------------------------
+
+[HKCategoryTypeIdentifierSleepAnalysis]
+domain = "lifestyle"
+daily_aggregate = "count"
+display = "Sleep"
+
+[HKDataTypeSleepDurationGoal]
+domain = "lifestyle"
+daily_aggregate = "latest"
+display = "Sleep duration goal"
+
+[HKCategoryTypeIdentifierMindfulSession]
+domain = "lifestyle"
+daily_aggregate = "count"
+display = "Mindful minutes"
+
+[HKQuantityTypeIdentifierDietaryCaffeine]
+domain = "lifestyle"
+daily_aggregate = "sum"
+display = "Caffeine"
+
+[HKQuantityTypeIdentifierBodyMass]
+domain = "lifestyle"
+daily_aggregate = "latest"
+display = "Weight"
+
+[HKQuantityTypeIdentifierHeight]
+domain = "lifestyle"
+daily_aggregate = "latest"
+display = "Height"
+
+[HKQuantityTypeIdentifierTimeInDaylight]
+domain = "lifestyle"
+daily_aggregate = "sum"
+display = "Time in daylight"
+
+[HKQuantityTypeIdentifierHeadphoneAudioExposure]
+domain = "lifestyle"
+daily_aggregate = "mean"
+display = "Headphone audio"
+
+[HKQuantityTypeIdentifierEnvironmentalAudioExposure]
+domain = "lifestyle"
+daily_aggregate = "mean"
+display = "Environmental audio"
+
+[HKQuantityTypeIdentifierEnvironmentalSoundReduction]
+domain = "lifestyle"
+daily_aggregate = "mean"
+display = "Sound reduction"
+
+[HKCategoryTypeIdentifierAudioExposureEvent]
+domain = "lifestyle"
+daily_aggregate = "count"
+display = "Loud environment event"
+
+# ---------------------------------------------------------------------------
+# sports
+# ---------------------------------------------------------------------------
+
+[HKQuantityTypeIdentifierStepCount]
+domain = "sports"
+daily_aggregate = "sum"
+display = "Steps"
+
+[HKQuantityTypeIdentifierDistanceWalkingRunning]
+domain = "sports"
+daily_aggregate = "sum"
+display = "Walking + running distance"
+
+[HKQuantityTypeIdentifierDistanceCycling]
+domain = "sports"
+daily_aggregate = "sum"
+display = "Cycling distance"
+
+[HKQuantityTypeIdentifierFlightsClimbed]
+domain = "sports"
+daily_aggregate = "sum"
+display = "Flights climbed"
+
+[HKQuantityTypeIdentifierActiveEnergyBurned]
+domain = "sports"
+daily_aggregate = "sum"
+display = "Active energy"
+
+[HKQuantityTypeIdentifierBasalEnergyBurned]
+domain = "sports"
+daily_aggregate = "sum"
+display = "Resting energy"
+
+[HKQuantityTypeIdentifierAppleExerciseTime]
+domain = "sports"
+daily_aggregate = "sum"
+display = "Exercise time"
+
+[HKQuantityTypeIdentifierAppleStandTime]
+domain = "sports"
+daily_aggregate = "sum"
+display = "Stand time"
+
+[HKCategoryTypeIdentifierAppleStandHour]
+domain = "sports"
+daily_aggregate = "count"
+display = "Stand hours"
+
+[HKQuantityTypeIdentifierHeartRate]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Heart rate"
+
+[HKQuantityTypeIdentifierRestingHeartRate]
+domain = "sports"
+daily_aggregate = "latest"
+display = "Resting heart rate"
+
+[HKQuantityTypeIdentifierWalkingHeartRateAverage]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Walking heart rate"
+
+[HKQuantityTypeIdentifierHeartRateVariabilitySDNN]
+domain = "sports"
+daily_aggregate = "mean"
+display = "HRV (SDNN)"
+
+[HKQuantityTypeIdentifierHeartRateRecoveryOneMinute]
+domain = "sports"
+daily_aggregate = "mean"
+display = "HR recovery (1 min)"
+
+[HKQuantityTypeIdentifierVO2Max]
+domain = "sports"
+daily_aggregate = "latest"
+display = "VO2 max"
+
+[HKQuantityTypeIdentifierPhysicalEffort]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Physical effort"
+
+[HKQuantityTypeIdentifierWalkingSpeed]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Walking speed"
+
+[HKQuantityTypeIdentifierWalkingStepLength]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Step length"
+
+[HKQuantityTypeIdentifierWalkingAsymmetryPercentage]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Walking asymmetry"
+
+[HKQuantityTypeIdentifierWalkingDoubleSupportPercentage]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Double support"
+
+[HKQuantityTypeIdentifierAppleWalkingSteadiness]
+domain = "sports"
+daily_aggregate = "latest"
+display = "Walking steadiness"
+
+[HKQuantityTypeIdentifierSixMinuteWalkTestDistance]
+domain = "sports"
+daily_aggregate = "latest"
+display = "Six-minute walk"
+
+[HKQuantityTypeIdentifierStairAscentSpeed]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Stair ascent speed"
+
+[HKQuantityTypeIdentifierStairDescentSpeed]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Stair descent speed"
+
+[HKQuantityTypeIdentifierRunningSpeed]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Running speed"
+
+[HKQuantityTypeIdentifierRunningPower]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Running power"
+
+[HKQuantityTypeIdentifierRunningStrideLength]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Running stride"
+
+[HKQuantityTypeIdentifierRunningGroundContactTime]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Ground contact time"
+
+[HKQuantityTypeIdentifierRunningVerticalOscillation]
+domain = "sports"
+daily_aggregate = "mean"
+display = "Vertical oscillation"
+
+[HKWorkoutActivityTypeRunning]
+domain = "sports"
+daily_aggregate = "count"
+display = "Running"
+
+[HKWorkoutActivityTypeHiking]
+domain = "sports"
+daily_aggregate = "count"
+display = "Hiking"
+
+[ActivitySummary]
+domain = "sports"
+daily_aggregate = "latest"
+display = "Activity rings"
+
+# No [other] entries on purpose. Unknown / new Apple types fall through.

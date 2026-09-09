@@ -1,0 +1,21 @@
+{{define "domain"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<h2>{{.Title}}</h2>
+
+{{if eq .View "medicine"}}
+<div class="zone-band" aria-hidden="true">
+  <span class="z-low"></span>
+  <span class="z-mid"></span>
+  <span class="z-high"></span>
+</div>
+<p class="muted zone-cap">Personal band: below 10th / usual / above 90th. Labs will use this once they exist. Copy stays “unusual for you” only.</p>
+{{end}}
+
+{{if .Empty}}<p class="lead">{{.Empty}}</p>{{end}}
+
+{{if .Cards}}
+<div class="inset">
+  {{range .Cards}}{{template "card" .}}{{end}}
+</div>
+{{end}}
+{{end}}

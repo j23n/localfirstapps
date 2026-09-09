@@ -1,0 +1,43 @@
+{{define "today"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<h2>Today</h2>
+{{if .On}}
+<p class="sub">{{longdate .On}}</p>
+<form class="jump" method="get" action="/">
+  <div class="pager">
+    <a href="/?on={{.Prev}}">Prev</a>
+    <input type="date" name="on" value="{{.On}}" aria-label="Jump to date" onchange="this.form.submit()">
+    <a href="/?on={{.Next}}">Next</a>
+  </div>
+</form>
+{{if .GapLine}}<a class="banner" href="/gaps"><strong>Gaps</strong> {{.GapLine}}</a>{{end}}
+{{end}}
+{{if .Empty}}<p class="lead">{{.Empty}}</p>{{end}}
+
+{{if or .Favs .WantWorkouts}}
+<h3>Favourites</h3>
+{{if .WantWorkouts}}
+{{if .Workouts}}
+{{range .Workouts}}
+{{template "workout" .}}
+{{end}}
+{{else}}
+<p class="empty">No workout this day. An imported activity would appear here.</p>
+{{end}}
+{{end}}
+{{if .Favs}}
+<div class="favs">
+  {{range .Favs}}{{template "card" .}}{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{range .Groups}}
+<h3>{{.Label}}</h3>
+<div class="inset">
+  {{range .Cards}}{{template "card" .}}{{end}}
+</div>
+{{end}}
+
+<p class="note"><a href="/all">Browse every kind</a> · <a href="/blobs">Files</a></p>
+{{end}}

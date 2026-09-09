@@ -1,0 +1,55 @@
+{{define "gaps"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<h2>Gaps</h2>
+{{if .Gaps}}
+<div class="banner">
+  <strong>{{.Gaps.Overall.MissingN}} days missing</strong>
+  Overall {{.Gaps.Overall.First}} · {{.Gaps.Overall.Last}}
+  · {{.Gaps.Overall.PresentN}} days with data
+  · span {{.Gaps.Overall.SpanDays}} days
+</div>
+<p class="lead">An unnoticed hole means the archive has failed at its job. Days are local ({{.Offset}}).</p>
+{{if .Gaps.Kind}}
+<h3>{{display .Gaps.Kind.Kind}}</h3>
+<p>{{.Gaps.Kind.MissingN}} missing of {{.Gaps.Kind.SpanDays}} days
+  ({{.Gaps.Kind.First}} · {{.Gaps.Kind.Last}}).</p>
+{{end}}
+<form class="filters" method="get" action="/gaps">
+  <label>Kind
+    <select name="kind">
+      <option value="">overall</option>
+      {{range .Kinds}}
+      <option value="{{.Kind}}"{{if eq $.Gaps.Selected .Kind}} selected{{end}}>{{display .Kind}}</option>
+      {{end}}
+    </select>
+  </label>
+  <button class="btn" type="submit">Show</button>
+</form>
+<h3>Per type</h3>
+<div class="inset">
+<table>
+  <thead><tr><th>Kind</th><th class="num">Present</th><th class="num">Missing</th><th>Span</th></tr></thead>
+  <tbody>
+    {{range .Gaps.PerKind}}
+    <tr class="kind-row hue-{{hue .Kind}}">
+      <td><span class="ico" aria-hidden="true">{{icon .Kind}}</span> <a href="/gaps?kind={{.Kind}}">{{display .Kind}}</a></td>
+      <td class="num">{{.PresentN}}</td>
+      <td class="num">{{.MissingN}}</td>
+      <td class="num muted">{{.First}} · {{.Last}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+</div>
+{{if .Gaps.Sample}}
+<h3>Missing days (first 40)</h3>
+<ul class="day-list">
+  {{range .Gaps.Sample}}
+  <li class="num"><a href="/?on={{.}}">{{.}}</a></li>
+  {{end}}
+</ul>
+{{end}}
+{{else}}
+<p class="empty">No data to scan. Import a source and rebuild to fill this list.</p>
+{{end}}
+{{end}}
