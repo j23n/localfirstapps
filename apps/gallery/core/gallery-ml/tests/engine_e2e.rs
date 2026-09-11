@@ -44,7 +44,7 @@ impl Fixture {
         let engine = TaggingEngine::open(
             dir.path().join("gallery-cache.sqlite"),
             test_pack_dir(),
-            Arc::new(StdVfs),
+            Arc::new(StdVfs::new()),
         )
         .expect("test pack must load");
         Fixture { dir, engine }
@@ -434,7 +434,7 @@ fn a_pack_bump_replaces_objects_and_scenes() {
     let engine = TaggingEngine::open(
         f.dir.path().join("cache2.sqlite"),
         tightened.path(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     engine.enqueue(&f.paths(&["gradient.jpg"])).unwrap();
@@ -452,7 +452,7 @@ fn a_pack_bump_replaces_objects_and_scenes() {
     let engine = TaggingEngine::open(
         f.dir.path().join("cache3.sqlite"),
         far.path(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     engine.enqueue(&f.paths(&["gradient.jpg"])).unwrap();
@@ -516,7 +516,7 @@ fn a_photo_with_no_tags_still_gets_a_version_stamp() {
     let engine = TaggingEngine::open(
         f.dir.path().join("c.sqlite"),
         unreachable.path(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     engine.enqueue(&f.paths(PHOTOS)).unwrap();
@@ -554,7 +554,7 @@ fn an_empty_result_still_retracts_tags_from_an_existing_sidecar() {
     let engine = TaggingEngine::open(
         f.dir.path().join("c2.sqlite"),
         unreachable.path(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     engine.enqueue(&f.paths(&["gradient.jpg"])).unwrap();
@@ -578,7 +578,7 @@ fn a_tampered_pack_file_is_refused() {
     std::fs::write(dir.path().join("encoder.onnx"), bytes).unwrap();
 
     let cache = tempfile::tempdir().unwrap();
-    let err = TaggingEngine::open(cache.path().join("c.sqlite"), dir.path(), Arc::new(StdVfs))
+    let err = TaggingEngine::open(cache.path().join("c.sqlite"), dir.path(), Arc::new(StdVfs::new()))
         .unwrap_err();
     assert!(
         matches!(err, gallery_ml::MlError::PackHashMismatch { .. }),
@@ -907,7 +907,7 @@ fn perf_probe_on_camera_sized_jpegs() {
     let engine = TaggingEngine::open(
         dir.path().join("c.sqlite"),
         test_pack_dir(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     engine.enqueue(&paths).unwrap();
@@ -976,7 +976,7 @@ fn the_engine_reads_and_writes_only_through_the_vfs() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("gradient.jpg"), fixture("gradient.jpg")).unwrap();
     let vfs = Arc::new(CountingVfs {
-        inner: StdVfs,
+        inner: StdVfs::new(),
         writes: AtomicUsize::new(0),
         reads: AtomicUsize::new(0),
     });
@@ -1164,7 +1164,7 @@ fn an_edit_between_the_hash_and_the_decode_does_not_poison_the_cache() {
         &cache_path,
         test_pack_dir(),
         Arc::new(SwappingVfs {
-            inner: StdVfs,
+            inner: StdVfs::new(),
             target: path.clone(),
             replacement: decoded.clone(),
         }),
@@ -1220,7 +1220,7 @@ fn a_panicking_encoder_fails_the_run_instead_of_unwinding_out_of_it() {
             input_size: 64,
             embedding_dim: 64,
         }),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     engine.enqueue(std::slice::from_ref(&path)).unwrap();
@@ -1247,7 +1247,7 @@ fn a_panicking_encoder_fails_the_run_instead_of_unwinding_out_of_it() {
     let engine = TaggingEngine::open(
         dir.path().join("c.sqlite"),
         test_pack_dir(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     let summary = engine
@@ -1263,7 +1263,7 @@ fn a_panicking_encoder_fails_the_run_instead_of_unwinding_out_of_it() {
 fn a_run_that_fails_before_it_starts_still_reports_finished() {
     let dir = tempfile::tempdir().unwrap();
     let cache_path = dir.path().join("c.sqlite");
-    let engine = TaggingEngine::open(&cache_path, test_pack_dir(), Arc::new(StdVfs)).unwrap();
+    let engine = TaggingEngine::open(&cache_path, test_pack_dir(), Arc::new(StdVfs::new())).unwrap();
 
     // Pull the queue table out from under the open engine: every pre-scope
     // statement (`reclaim_abandoned`, the re-stat pass, `claimable`) now fails.
@@ -1390,7 +1390,7 @@ fn a_labels_only_pack_bump_re_scores_from_cached_embeddings() {
             CacheDb::open(&cache_path).unwrap(),
             ModelPack::load(test_pack_dir()).unwrap(),
             Arc::clone(&first) as Arc<dyn gallery_ml::ImageEncoder>,
-            Arc::new(StdVfs),
+            Arc::new(StdVfs::new()),
         )
         .unwrap();
         engine.enqueue(&paths).unwrap();
@@ -1409,7 +1409,7 @@ fn a_labels_only_pack_bump_re_scores_from_cached_embeddings() {
         CacheDb::open(&cache_path).unwrap(),
         ModelPack::load(rebuilt.path()).unwrap(),
         Arc::clone(&second) as Arc<dyn gallery_ml::ImageEncoder>,
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     // `with_encoder` stales every row from the previous pack, so this run
@@ -1526,7 +1526,7 @@ fn moving_the_decoder_generation_re_opens_skipped_rows_without_touching_embeddin
 
     let pack = ModelPack::load(test_pack_dir()).unwrap();
     let key = pack.embedding_model_key();
-    let hash = gallery_ml::hash::content_hash(&StdVfs, &scored, &|| false)
+    let hash = gallery_ml::hash::content_hash(&StdVfs::new(), &scored, &|| false)
         .unwrap()
         .expect("the tagged photo hashed");
     let before = cache
@@ -1602,7 +1602,7 @@ fn a_run_scoped_to_a_root_leaves_other_roots_alone() {
     let engine = TaggingEngine::open(
         dir.path().join("c.sqlite"),
         test_pack_dir(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     let in_scope = current.join("gradient.jpg").to_string_lossy().into_owned();

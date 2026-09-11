@@ -45,7 +45,7 @@ impl Fixture {
         let engine = FaceEngine::open(
             dir.path().join("gallery-cache.sqlite"),
             face_pack_dir(),
-            Arc::new(StdVfs),
+            Arc::new(StdVfs::new()),
         )
         .expect("face pack must load");
         Fixture { dir, engine }
@@ -372,7 +372,7 @@ fn swapping_the_face_models_clears_the_faces_but_not_the_tagging_queue() {
     let engine = FaceEngine::open(
         f.dir.path().join("gallery-cache.sqlite"),
         swapped.path(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     assert_eq!(engine.library_stats().unwrap().faces, 0);
@@ -547,7 +547,7 @@ fn a_run_scoped_to_a_root_leaves_other_roots_alone() {
     let engine = FaceEngine::open(
         dir.path().join("c.sqlite"),
         face_pack_dir(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     let in_scope = current.join(BRIGHT).to_string_lossy().into_owned();
@@ -761,7 +761,7 @@ fn a_tagging_only_pack_makes_the_face_engine_unavailable() {
     let err = FaceEngine::open(
         dir.path().join("c.sqlite"),
         test_pack_dir(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap_err();
     assert!(
@@ -779,7 +779,7 @@ fn a_tagging_only_pack_makes_the_face_engine_unavailable() {
     let engine = gallery_ml::TaggingEngine::open(
         dir.path().join("c.sqlite"),
         test_pack_dir(),
-        Arc::new(StdVfs),
+        Arc::new(StdVfs::new()),
     )
     .unwrap();
     let photo = dir.path().join("gradient.jpg");
@@ -808,8 +808,8 @@ fn tagging_and_faces_run_over_the_same_cache_without_interfering() {
     let cache_path = dir.path().join("c.sqlite");
 
     let tagging =
-        gallery_ml::TaggingEngine::open(&cache_path, face_pack_dir(), Arc::new(StdVfs)).unwrap();
-    let faces = FaceEngine::open(&cache_path, face_pack_dir(), Arc::new(StdVfs)).unwrap();
+        gallery_ml::TaggingEngine::open(&cache_path, face_pack_dir(), Arc::new(StdVfs::new())).unwrap();
+    let faces = FaceEngine::open(&cache_path, face_pack_dir(), Arc::new(StdVfs::new())).unwrap();
 
     tagging.enqueue(&paths).unwrap();
     faces.enqueue(&paths).unwrap();
