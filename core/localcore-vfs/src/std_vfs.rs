@@ -25,7 +25,7 @@ fn record_unsupported_name(name: OsString) {
     UNSUPPORTED_NAMES.with(|c| c.borrow_mut().push(name));
 }
 
-use crate::{Entry, EntryKind, FileTime, ReadSeek, Stat, Vfs, VfsError, VfsResult, TEMP_PREFIX};
+use crate::{Entry, EntryKind, FileTime, ReadSeek, Stat, Vfs, VfsError, VfsResult};
 
 /// Monotonic suffix so two writers in one process never pick the same temp
 /// name. Combined with the pid this is enough — the temp file lives for
@@ -36,13 +36,23 @@ static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 ///
 /// Paths are used verbatim: no root, no sandboxing, no normalization. On iOS
 /// the caller has already started the security scope for the enclosing folder.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct StdVfs;
+/// `temp_prefix` is the name prefix [`Vfs::write_atomic`] uses for sibling
+/// temps; [`Vfs::list`] skips those names so a concurrent scan never sees
+/// a half-written file.
+#[derive(Debug, Clone, Copy)]
+pub struct StdVfs {
+    temp_prefix: &'static str,
+}
 
 impl StdVfs {
     /// Construct one. Stateless; cloning is free.
-    pub fn new() -> Self {
-        StdVfs
+    pub fn new(temp_prefix: &'static str) -> Self {
+        StdVfs { temp_prefix }
+    }
+
+    /// Prefix [`Vfs::write_atomic`] uses for sibling temp files.
+    pub fn temp_prefix(&self) -> &str {
+        self.temp_prefix
     }
 }
 
@@ -83,12 +93,12 @@ fn resolve_symlink(path: &Path) -> VfsResult<PathBuf> {
     })
 }
 
-/// `foo/bar.xmp` → `foo/.gallery-tmp-<pid>-<n>.xmp`.
+/// `foo/bar.xmp` → `foo/<temp_prefix><pid>-<n>-<nanos>`.
 ///
 /// The temp file is a sibling so the rename stays within one filesystem, and
-/// its name is dot-prefixed so a concurrent scan skips it the way it skips
-/// every other dotfile.
-fn temp_sibling(path: &Path) -> VfsResult<PathBuf> {
+/// its name is skipped by [`StdVfs::list`] so a concurrent scan never sees
+/// a half-written file.
+fn temp_sibling(path: &Path, temp_prefix: &str) -> VfsResult<PathBuf> {
     let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
     let parent = match parent {
         Some(p) => p.to_path_buf(),
@@ -105,7 +115,7 @@ fn temp_sibling(path: &Path) -> VfsResult<PathBuf> {
         .map(|d| d.subsec_nanos())
         .unwrap_or(0);
     Ok(parent.join(format!(
-        "{TEMP_PREFIX}{}-{}-{}",
+        "{temp_prefix}{}-{}-{}",
         std::process::id(),
         n,
         nanos
@@ -168,7 +178,7 @@ impl Vfs for StdVfs {
                 record_unsupported_name(item.file_name());
                 continue;
             };
-            if name.starts_with(TEMP_PREFIX) {
+            if name.starts_with(self.temp_prefix) {
                 continue;
             }
             // `DirEntry::metadata` does not traverse symlinks, so a link is
@@ -241,7 +251,7 @@ impl Vfs for StdVfs {
 
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
         let target = resolve_symlink(Path::new(path))?;
-        let temp = temp_sibling(&target)?;
+        let temp = temp_sibling(&target, self.temp_prefix)?;
         let temp_str = temp.display().to_string();
 
         // Permissions of the file we are about to replace. A fresh temp file
@@ -291,6 +301,19 @@ impl Vfs for StdVfs {
     fn exists(&self, path: &str) -> bool {
         fs::metadata(path).is_ok()
     }
+
+    fn remove(&self, path: &str) -> VfsResult<()> {
+        let md = fs::symlink_metadata(path).map_err(|e| VfsError::from_io(path, &e))?;
+        if md.is_dir() {
+            fs::remove_dir(path).map_err(|e| VfsError::from_io(path, &e))
+        } else {
+            fs::remove_file(path).map_err(|e| VfsError::from_io(path, &e))
+        }
+    }
+
+    fn rename(&self, from: &str, to: &str) -> VfsResult<()> {
+        fs::rename(from, to).map_err(|e| VfsError::from_io(from, &e))
+    }
 }
 
 #[cfg(test)]
@@ -298,17 +321,23 @@ mod tests {
     use super::*;
     use crate::tests::assert_vfs_contract;
 
+    const PREFIX: &str = ".gallery-tmp-";
+
+    fn vfs() -> StdVfs {
+        StdVfs::new(PREFIX)
+    }
+
     #[test]
     fn satisfies_the_vfs_contract() {
         let dir = tempfile::tempdir().unwrap();
-        assert_vfs_contract(&StdVfs, dir.path().to_str().unwrap());
+        assert_vfs_contract(&vfs(), dir.path().to_str().unwrap());
     }
 
     #[test]
     fn write_atomic_leaves_no_temp_files_behind() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("a.xmp");
-        StdVfs.write_atomic(p.to_str().unwrap(), b"x").unwrap();
+        vfs().write_atomic(p.to_str().unwrap(), b"x").unwrap();
         let entries: Vec<_> = fs::read_dir(dir.path())
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
@@ -321,7 +350,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("a.xmp");
         fs::write(&p, b"old contents, longer").unwrap();
-        StdVfs.write_atomic(p.to_str().unwrap(), b"new").unwrap();
+        vfs().write_atomic(p.to_str().unwrap(), b"new").unwrap();
         assert_eq!(fs::read(&p).unwrap(), b"new");
     }
 
@@ -329,19 +358,19 @@ mod tests {
     fn write_atomic_into_a_missing_directory_reports_not_found() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("nope").join("a.xmp");
-        let err = StdVfs.write_atomic(p.to_str().unwrap(), b"x").unwrap_err();
+        let err = vfs().write_atomic(p.to_str().unwrap(), b"x").unwrap_err();
         assert!(matches!(err, VfsError::NotFound { .. }), "{err:?}");
     }
 
     #[test]
     fn write_atomic_rejects_a_path_without_a_parent() {
-        let err = StdVfs.write_atomic("", b"x").unwrap_err();
+        let err = vfs().write_atomic("", b"x").unwrap_err();
         assert!(matches!(err, VfsError::InvalidPath { .. }), "{err:?}");
     }
 
     #[test]
     fn open_reports_not_found_for_a_missing_file() {
-        let Err(err) = StdVfs.open("/definitely/not/here.xmp") else {
+        let Err(err) = vfs().open("/definitely/not/here.xmp") else {
             panic!("expected an error opening a missing file");
         };
         assert!(matches!(err, VfsError::NotFound { .. }), "{err:?}");
@@ -357,7 +386,7 @@ mod tests {
         fs::write(&p, b"old").unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
 
-        StdVfs.write_atomic(p.to_str().unwrap(), b"new").unwrap();
+        vfs().write_atomic(p.to_str().unwrap(), b"new").unwrap();
 
         let mode = fs::metadata(&p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "the replacement widened the file's mode");
@@ -373,7 +402,7 @@ mod tests {
         fs::write(&real, b"old").unwrap();
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        StdVfs.write_atomic(link.to_str().unwrap(), b"new").unwrap();
+        vfs().write_atomic(link.to_str().unwrap(), b"new").unwrap();
 
         assert!(
             fs::symlink_metadata(&link)
@@ -398,8 +427,20 @@ mod tests {
         std::os::unix::fs::symlink(&b, &a).unwrap();
         std::os::unix::fs::symlink(&a, &b).unwrap();
 
-        let err = StdVfs.write_atomic(a.to_str().unwrap(), b"x").unwrap_err();
+        let err = vfs().write_atomic(a.to_str().unwrap(), b"x").unwrap_err();
         assert!(matches!(err, VfsError::InvalidPath { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn list_skips_names_starting_with_the_configured_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("keep.jpg"), b"xx").unwrap();
+        fs::write(dir.path().join(format!("{PREFIX}leftover")), b"tmp").unwrap();
+        let listing = vfs().list(dir.path().to_str().unwrap()).unwrap();
+        assert_eq!(
+            listing.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            vec!["keep.jpg"]
+        );
     }
 
     #[test]
@@ -409,7 +450,7 @@ mod tests {
         fs::write(dir.path().join(".hidden.jpg"), b"y").unwrap();
         fs::create_dir(dir.path().join("Sub")).unwrap();
 
-        let mut listing = StdVfs.list(dir.path().to_str().unwrap()).unwrap();
+        let mut listing = vfs().list(dir.path().to_str().unwrap()).unwrap();
         listing.sort_by(|a, b| a.name.cmp(&b.name));
         let named: Vec<(&str, EntryKind, u64)> = listing
             .iter()
@@ -434,7 +475,7 @@ mod tests {
         fs::create_dir(dir.path().join("real")).unwrap();
         std::os::unix::fs::symlink(dir.path().join("real"), dir.path().join("link")).unwrap();
 
-        let listing = StdVfs.list(dir.path().to_str().unwrap()).unwrap();
+        let listing = vfs().list(dir.path().to_str().unwrap()).unwrap();
         let link = listing.iter().find(|e| e.name == "link").unwrap();
         assert_eq!(
             link.kind,
@@ -453,11 +494,11 @@ mod tests {
         let link = dir.path().join("link");
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        let entry = StdVfs.stat_entry(link.to_str().unwrap()).unwrap();
+        let entry = vfs().stat_entry(link.to_str().unwrap()).unwrap();
         assert_eq!(entry.kind, EntryKind::Symlink, "the link is still a link");
         assert_eq!(
             entry.modified,
-            StdVfs.stat_entry(real.to_str().unwrap()).unwrap().modified,
+            vfs().stat_entry(real.to_str().unwrap()).unwrap().modified,
             "…but its times come from what it points at"
         );
     }
@@ -482,7 +523,7 @@ mod tests {
             .unwrap();
         std::os::unix::fs::symlink(&real, dir.path().join("linked.jpg")).unwrap();
 
-        let listing = StdVfs.list(dir.path().to_str().unwrap()).unwrap();
+        let listing = vfs().list(dir.path().to_str().unwrap()).unwrap();
         let link = listing.iter().find(|e| e.name == "linked.jpg").unwrap();
         assert_eq!(link.kind, EntryKind::Symlink, "still reported as a link");
         assert_eq!(link.size, 4096, "the link's own size is the path length");
@@ -495,7 +536,7 @@ mod tests {
         // rather than dropping out of the listing.
         std::os::unix::fs::symlink(dir.path().join("gone.jpg"), dir.path().join("dangling.jpg"))
             .unwrap();
-        let listing = StdVfs.list(dir.path().to_str().unwrap()).unwrap();
+        let listing = vfs().list(dir.path().to_str().unwrap()).unwrap();
         let dangling = listing.iter().find(|e| e.name == "dangling.jpg").unwrap();
         assert_eq!(dangling.kind, EntryKind::Symlink);
         assert!(dangling.modified.is_some());
@@ -525,7 +566,7 @@ mod tests {
         // Root ignores the permission bits, so the precondition has to be
         // checked rather than assumed.
         let stat_fails = fs::metadata(inner.join("a.jpg")).is_err();
-        let listed = StdVfs.list(inner.to_str().unwrap());
+        let listed = vfs().list(inner.to_str().unwrap());
         fs::set_permissions(&inner, fs::Permissions::from_mode(0o700)).unwrap();
 
         if !stat_fails {
@@ -554,7 +595,7 @@ mod tests {
             .set_modified(stamp)
             .unwrap();
 
-        let listing = StdVfs.list(dir.path().to_str().unwrap()).unwrap();
+        let listing = vfs().list(dir.path().to_str().unwrap()).unwrap();
         let entry = &listing[0];
         assert_eq!(entry.modified.unwrap().secs, 1_600_000_000);
         assert_eq!(entry.modified.unwrap().subsec_nanos, 400_000_000);
@@ -570,8 +611,8 @@ mod tests {
 
     #[test]
     fn temp_siblings_are_unique_and_adjacent() {
-        let a = temp_sibling(Path::new("/x/y/IMG.jpg.xmp")).unwrap();
-        let b = temp_sibling(Path::new("/x/y/IMG.jpg.xmp")).unwrap();
+        let a = temp_sibling(Path::new("/x/y/IMG.jpg.xmp"), PREFIX).unwrap();
+        let b = temp_sibling(Path::new("/x/y/IMG.jpg.xmp"), PREFIX).unwrap();
         assert_ne!(a, b);
         assert_eq!(a.parent(), Some(Path::new("/x/y")));
         assert!(a
@@ -592,7 +633,7 @@ mod tests {
         let weird = std::ffi::OsString::from_vec(vec![0xff, 0xfe, b'.', b'j', b'p', b'g']);
         fs::write(dir.path().join(&weird), b"yy").unwrap();
 
-        let listing = StdVfs.list(dir.path().to_str().unwrap()).unwrap();
+        let listing = vfs().list(dir.path().to_str().unwrap()).unwrap();
         assert_eq!(listing.len(), 1);
         assert_eq!(listing[0].name, "ok.jpg");
         let skipped = take_unsupported_names();

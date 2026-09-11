@@ -576,9 +576,10 @@ is the Phase 6 brief at `apps/health/reference/web-ui/`. Charts are one
 new ADR 0004 kind (plot IR as the payload), amended when a shell needs
 the binding — not a Chart.js port.
 
-**Next is the ADR review, then Phase 2.** Read 0001–0008 against this
-tree, then extract `localcore-vfs` (ProviderAttrs off the trait). The
-graph stays red on `gallery-geo` until `localcore-geo` exists.
+**Phase 2 has started.** `core/` exists and `localcore-vfs` is extracted
+(`ProviderAttrs` off the `Vfs` trait; temp prefix is a parameter). The
+graph stays red on `gallery-geo` until `localcore-geo` exists. Still
+ahead: drop `ProviderProbe` from UniFFI, then the remaining verticals.
 
 Still not done, and not Phase 2: redirect READMEs on the old standalone
 GitHub remotes; a Mac `xcodebuild` of the three iOS shells.

@@ -2089,7 +2089,7 @@ fn info_box(photo: &PhotoFile) -> gtk::Box {
         box_.append(&tags);
     }
 
-    let sidecar = if sidecar_exists(&StdVfs, photo.path()) {
+    let sidecar = if sidecar_exists(&StdVfs::new(), photo.path()) {
         sidecar_path(photo.path())
     } else {
         "No sidecar on disk".into()

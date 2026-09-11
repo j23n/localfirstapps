@@ -66,15 +66,15 @@ fn walking_ten_thousand_files() {
     let root = temp.path().to_str().unwrap();
 
     let start = Instant::now();
-    let cold = scan(&StdVfs, root, &ScanInput::default());
+    let cold = scan(&StdVfs::new(), root, &ScanInput::default());
     let full_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     let start = Instant::now();
-    let light = scan(&StdVfs, root, &cache_of(&cold, true));
+    let light = scan(&StdVfs::new(), root, &cache_of(&cold, true));
     let light_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     let start = Instant::now();
-    let warm_full = scan(&StdVfs, root, &cache_of(&cold, false));
+    let warm_full = scan(&StdVfs::new(), root, &cache_of(&cold, false));
     let warm_full_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     assert_eq!(cold.flat_photos.len(), FOLDERS * FILES_PER_FOLDER);

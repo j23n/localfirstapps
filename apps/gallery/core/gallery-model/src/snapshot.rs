@@ -354,9 +354,11 @@ mod tests {
             download_status: DownloadStatus::Local,
         }]);
         let bytes = save(&with).unwrap();
-        assert!(String::from_utf8(bytes.clone())
-            .unwrap()
-            .contains("\"downloadStatus\":\"local\""));
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        assert!(
+            !text.contains("downloadStatus"),
+            "local is the default and is omitted on write: {text}"
+        );
         assert_eq!(load(&bytes).unwrap(), with);
     }
 

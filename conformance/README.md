@@ -39,8 +39,7 @@ python3 conformance/source/check.py --self-test
 Production Swift/Go must not import `FileProvider` or `MetricKit`, or
 name `NSFileProvider*`, `ubiquitousItem*`, or `MXMetric*`. Generated
 `GalleryCore.swift`, the Linux UniFFI shim, `vendor/`, and
-`apps/health/reference/web-ui/` are excluded. Rust `Vfs::probe_provider`
-stays until Phase 2.
+`apps/health/reference/web-ui/` are excluded.
 
 `.github/workflows/conformance.yml` runs this next to the graph check.
 

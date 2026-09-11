@@ -145,7 +145,7 @@ final class ScannerConformanceTests: XCTestCase {
             "Junk/orphan.xmp is a sidecar with no photo: no row, no photo, no complaint.",
             "The sidecar manifest keys on the LOWERCASED full basename, so B.JPG finds B.JPG.xmp.",
             "totalPhotoCount is recursive (root = 15) while photoCount is the folder's own; Empty/ still becomes a node, with coverPhotoSource \"none\".",
-            "versionHasContentIdentifier is true here: APFS populates fileContentIdentifierKey, so ContentVersion.sameContent compares identifiers rather than (mtime, size). On a provider that leaves it nil the other branch runs — both are live paths.",
+            "versionHasContentIdentifier is false here: the scanner no longer probes a content identifier, so ContentVersion.sameContent compares (mtime, size).",
             "PhotoLocality is `local` for everything: LocalOnlyProbe never marks a file remote.",
         ],
         "2-light-after-mutations": [

@@ -57,7 +57,7 @@ use gallery_model::snapshot::{
     self, ContentVersion, DownloadStatus, LibrarySnapshot, SidecarCandidate, SnapshotError,
 };
 use gallery_scan::{scan_with_hooks, ScanInput};
-use gallery_vfs::{ProviderAttrs, StdVfs, Vfs};
+use gallery_vfs::{StdVfs, Vfs};
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -192,67 +192,6 @@ pub trait ProviderProbe: Send + Sync {
 pub trait ScanProgressListener: Send + Sync {
     /// Photos discovered so far.
     fn on_progress(&self, discovered: u32);
-}
-
-/// [`StdVfs`] with the provider attributes the platform layer supplies.
-///
-/// Everything byte- or directory-shaped goes to `std::fs`; only
-/// [`Vfs::probe_provider`] crosses back into Swift.
-struct ProbingVfs {
-    inner: StdVfs,
-    probe: Arc<dyn ProviderProbe>,
-    /// Batches discarded because the foreign reply was the wrong length. Kept
-    /// here rather than in `ScanStats` because this is where a mis-sized reply
-    /// is caught — the core below never sees one.
-    mismatches: AtomicU64,
-}
-
-impl Vfs for ProbingVfs {
-    fn open(&self, path: &str) -> gallery_vfs::VfsResult<Box<dyn gallery_vfs::ReadSeek + Send>> {
-        self.inner.open(path)
-    }
-    fn stat(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Stat> {
-        self.inner.stat(path)
-    }
-    fn list(&self, dir: &str) -> gallery_vfs::VfsResult<Vec<gallery_vfs::Entry>> {
-        self.inner.list(dir)
-    }
-    fn stat_entry(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Entry> {
-        self.inner.stat_entry(path)
-    }
-    fn write_atomic(&self, path: &str, bytes: &[u8]) -> gallery_vfs::VfsResult<()> {
-        self.inner.write_atomic(path, bytes)
-    }
-    fn exists(&self, path: &str) -> bool {
-        self.inner.exists(path)
-    }
-    /// The answers are paired with the request **positionally**, so a reply of
-    /// the wrong length is not a partial answer — it is an answer whose
-    /// alignment is unknown. Trusting the prefix would hand file `i`'s
-    /// placeholder flag and content identifier to whatever file happens to sit
-    /// at index `i` of a filtered reply, which is a wrong `.remote` badge and a
-    /// sidecar-cache entry keyed to the wrong bytes.
-    ///
-    /// So a mis-sized batch is discarded whole and every path in it reads as a
-    /// plain local file — the same degradation a failed `resourceValues`
-    /// already produced, applied to the batch instead of to one file. The scan
-    /// still completes; the count surfaces in `ScanTimings.probe_mismatches`.
-    fn probe_provider(&self, paths: &[String]) -> Vec<ProviderAttrs> {
-        let answers = self.probe.probe(paths.to_vec());
-        if answers.len() != paths.len() {
-            self.mismatches.fetch_add(1, Ordering::Relaxed);
-            return vec![ProviderAttrs::default(); paths.len()];
-        }
-        answers
-            .into_iter()
-            .map(|a| ProviderAttrs {
-                is_file_provider: a.is_file_provider,
-                is_placeholder: a.is_placeholder,
-                content_version: a.content_version,
-                intended_size: a.intended_size,
-            })
-            .collect()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -492,7 +431,9 @@ pub struct SnapshotRecord {
 /// it has already cancelled is the Swift side's job, and `CoreScanner` does it.
 #[derive(uniffi::Object)]
 pub struct ScannerSession {
-    probe: Arc<dyn ProviderProbe>,
+    /// Kept so `ScannerSession(probe:)` still compiles. Scan ignores it.
+    #[allow(dead_code)]
+    probe: Option<Arc<dyn ProviderProbe>>,
     /// Generation handed to the next run. Monotonic, never reused.
     next_generation: AtomicU64,
     /// Generation of the run in flight; `IDLE` when none is.
@@ -533,7 +474,18 @@ impl ScannerSession {
     #[uniffi::constructor]
     pub fn new(probe: Arc<dyn ProviderProbe>) -> Arc<Self> {
         Arc::new(ScannerSession {
-            probe,
+            probe: Some(probe),
+            next_generation: AtomicU64::new(IDLE + 1),
+            running_generation: AtomicU64::new(IDLE),
+            cancelled_generation: AtomicU64::new(IDLE),
+        })
+    }
+
+    /// A session that does not take a platform probe. Scan is always local.
+    #[uniffi::constructor]
+    pub fn without_probe() -> Arc<Self> {
+        Arc::new(ScannerSession {
+            probe: None,
             next_generation: AtomicU64::new(IDLE + 1),
             running_generation: AtomicU64::new(IDLE),
             cancelled_generation: AtomicU64::new(IDLE),
@@ -544,8 +496,8 @@ impl ScannerSession {
     ///
     /// **Blocking, and single-threaded by design.** The caller runs it off the
     /// main actor; the core does not spawn for it, because the whole point of
-    /// the call is the answer. Progress and provider probes fire on this
-    /// thread.
+    /// the call is the answer. Progress fires on this thread. The constructor
+    /// probe, if any, is ignored.
     pub fn scan(
         &self,
         root: String,
@@ -560,11 +512,7 @@ impl ScannerSession {
         };
         let started = std::time::Instant::now();
 
-        let vfs = ProbingVfs {
-            inner: StdVfs::new(),
-            probe: Arc::clone(&self.probe),
-            mismatches: AtomicU64::new(0),
-        };
+        let vfs = StdVfs::new();
         let input = ScanInput {
             reuse_cached: request.reuse_cached,
             cached_photos: request
@@ -594,11 +542,7 @@ impl ScannerSession {
         )
         .ok_or(ScanError::Cancelled)?;
 
-        Ok(outcome_to_record(
-            outcome,
-            started.elapsed(),
-            vfs.mismatches.load(Ordering::Acquire),
-        ))
+        Ok(outcome_to_record(outcome, started.elapsed(), 0))
     }
 
     /// Ask the in-flight walk to stop. Returns immediately; the blocked
@@ -1221,27 +1165,11 @@ fn outcome_to_record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicBool;
 
     struct AllLocal;
     impl ProviderProbe for AllLocal {
         fn probe(&self, paths: Vec<String>) -> Vec<VfsProviderAttrs> {
             vec![VfsProviderAttrs::default(); paths.len()]
-        }
-    }
-
-    struct AllRemote;
-    impl ProviderProbe for AllRemote {
-        fn probe(&self, paths: Vec<String>) -> Vec<VfsProviderAttrs> {
-            paths
-                .iter()
-                .map(|p| VfsProviderAttrs {
-                    is_file_provider: true,
-                    is_placeholder: p.ends_with("b.jpg"),
-                    content_version: Some(format!("v:{p}")),
-                    intended_size: None,
-                })
-                .collect()
         }
     }
 
@@ -1290,38 +1218,6 @@ mod tests {
         assert!(out.sidecar_manifest[0].sidecar_path.ends_with("b.jpg.xmp"));
         assert_eq!(out.timings.slow_path, 3);
         assert_eq!(out.timings.cache_hits, 0);
-    }
-
-    #[test]
-    fn provider_attributes_come_from_the_foreign_probe() {
-        let dir = library();
-        let session = ScannerSession::new(Arc::new(AllRemote));
-        let out = session
-            .scan(
-                dir.path().to_str().unwrap().to_string(),
-                empty_request(),
-                None,
-            )
-            .unwrap();
-
-        let b = out
-            .flat_photos
-            .iter()
-            .find(|p| p.path.ends_with("b.jpg"))
-            .unwrap();
-        assert_eq!(b.locality, ScanLocality::Remote { downloaded: false });
-        let a = out
-            .flat_photos
-            .iter()
-            .find(|p| p.path.ends_with("a.jpg"))
-            .unwrap();
-        assert_eq!(a.locality, ScanLocality::Remote { downloaded: true });
-        assert!(out.sidecar_manifest[0]
-            .current_version
-            .content_identifier
-            .as_deref()
-            .unwrap()
-            .starts_with("v:"));
     }
 
     /// The point of feeding the cache back in: a second pass reuses it and
@@ -1377,54 +1273,38 @@ mod tests {
         );
     }
 
-    /// Cancel means "stop the run that is happening", so it has to be
-    /// observed from a thread that is not the one blocked inside `scan`.
+    /// Cancel means "stop the run that is happening". Progress fires after
+    /// each directory that accumulated a batch; cancelling there is observed
+    /// at the next directory boundary, before the walk finishes.
     #[test]
     fn a_cancel_mid_walk_returns_the_typed_error_and_no_tree() {
-        /// Signals when the walk has reached its first directory, then waits.
-        struct Handshake {
-            entered: std::sync::mpsc::SyncSender<()>,
-            released: Arc<AtomicBool>,
-        }
-        impl ProviderProbe for Handshake {
-            fn probe(&self, paths: Vec<String>) -> Vec<VfsProviderAttrs> {
-                let _ = self.entered.try_send(());
-                while !self.released.load(Ordering::Acquire) {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                }
-                vec![VfsProviderAttrs::default(); paths.len()]
+        struct CancelOnFirst(Arc<ScannerSession>);
+        impl ScanProgressListener for CancelOnFirst {
+            fn on_progress(&self, _discovered: u32) {
+                self.0.cancel();
             }
         }
 
-        let dir = library();
+        // 500 photos in the root so the first progress callback fires before
+        // the leftover subdirectory is walked.
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..500 {
+            std::fs::write(dir.path().join(format!("{i:03}.jpg")), b"x").unwrap();
+        }
+        std::fs::create_dir(dir.path().join("Sub")).unwrap();
+        std::fs::write(dir.path().join("Sub/z.jpg"), b"z").unwrap();
         let root = dir.path().to_str().unwrap().to_string();
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        let released = Arc::new(AtomicBool::new(false));
-        let session = ScannerSession::new(Arc::new(Handshake {
-            entered: tx,
-            released: Arc::clone(&released),
-        }));
 
-        let worker = {
-            let session = Arc::clone(&session);
-            std::thread::spawn(move || session.scan(root, empty_request(), None))
-        };
-        rx.recv().expect("the walk never reached a directory");
-        session.cancel();
-        released.store(true, Ordering::Release);
-
-        assert_eq!(worker.join().unwrap(), Err(ScanError::Cancelled));
+        let session = ScannerSession::without_probe();
+        let listener = Arc::new(CancelOnFirst(Arc::clone(&session)));
+        let err = session
+            .scan(root.clone(), empty_request(), Some(listener))
+            .unwrap_err();
+        assert_eq!(err, ScanError::Cancelled);
 
         // …and the next `scan` takes a new generation, so one cancel does not
         // wedge the session.
-        released.store(true, Ordering::Release);
-        assert!(session
-            .scan(
-                dir.path().to_str().unwrap().to_string(),
-                empty_request(),
-                None
-            )
-            .is_ok());
+        assert!(session.scan(root, empty_request(), None).is_ok());
     }
 
     /// Cancellation is scoped to the run it was asked for. A `cancel()` with
@@ -1458,55 +1338,6 @@ mod tests {
         // The run that *is* named still stops — that is
         // `a_cancel_mid_walk_returns_the_typed_error_and_no_tree`, which shares
         // this session type and proves the guard is a scope, not an off switch.
-    }
-
-    /// A probe that answers the wrong number of rows has unknown alignment,
-    /// so none of it can be believed — not even the prefix a `zip` would take.
-    #[test]
-    fn a_mis_sized_probe_reply_is_discarded_whole() {
-        /// Drops the first answer, so every remaining row lines up with the
-        /// *wrong* path.
-        struct Misaligned;
-        impl ProviderProbe for Misaligned {
-            fn probe(&self, paths: Vec<String>) -> Vec<VfsProviderAttrs> {
-                paths
-                    .iter()
-                    .skip(1)
-                    .map(|p| VfsProviderAttrs {
-                        is_file_provider: true,
-                        is_placeholder: true,
-                        content_version: Some(format!("v:{p}")),
-                        intended_size: Some(4_096),
-                    })
-                    .collect()
-            }
-        }
-
-        let dir = library();
-        let session = ScannerSession::new(Arc::new(Misaligned));
-        let out = session
-            .scan(
-                dir.path().to_str().unwrap().to_string(),
-                empty_request(),
-                None,
-            )
-            .unwrap();
-
-        assert_eq!(out.flat_photos.len(), 3, "the scan still completes");
-        assert!(
-            out.flat_photos
-                .iter()
-                .all(|p| p.locality == ScanLocality::Local),
-            "a mis-aligned reply must not decide any photo's locality"
-        );
-        assert!(out.sidecar_manifest[0]
-            .current_version
-            .content_identifier
-            .is_none());
-        assert!(
-            out.timings.probe_mismatches > 0,
-            "the discard has to be visible in the scan-totals line"
-        );
     }
 
     #[test]

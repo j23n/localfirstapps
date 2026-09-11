@@ -2,12 +2,11 @@
 
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use gallery_vfs::{Entry, ProviderAttrs, ReadSeek, Stat, StdVfs, Vfs, VfsResult};
+use gallery_vfs::{Entry, ReadSeek, Stat, StdVfs, Vfs, VfsResult};
 use serde::Deserialize;
 
 /// The fixture directory, shared with `LocalGalleryTests` and `gallery-model`.
@@ -155,27 +154,16 @@ fn parse_iso_utc(raw: &str) -> SystemTime {
 // The VFS
 // ---------------------------------------------------------------------------
 
-/// [`StdVfs`] plus the one thing APFS gives the Swift baseline and `std::fs`
-/// does not: a per-file content identifier.
-///
-/// The fixture pins `versionHasContentIdentifier: true`, because
-/// `NSURLFileContentIdentifierKey` is populated on APFS and
-/// `ContentVersion.sameContent` then compares identifiers rather than
-/// `(mtime, size)`. `StdVfs` reports `None` by design — provider awareness
-/// belongs to the platform implementation — so the runner supplies the inode,
-/// which is what that key is on a local volume. This is a stand-in for the
-/// iOS `Vfs`, not a shortcut around the assertion: without it the manifest
-/// rows would be compared with that field permanently false.
+/// [`StdVfs`] under the name the conformance runner used when it still
+/// stuffed APFS inodes into a provider probe. Sidecar
+/// `content_identifier` is always `None` now; the fixture pins
+/// `versionHasContentIdentifier: false`.
 pub struct ApfsLikeVfs(pub StdVfs);
 
 impl ApfsLikeVfs {
     pub fn new() -> Self {
         ApfsLikeVfs(StdVfs::new())
     }
-}
-
-fn content_identifier(path: &str) -> Option<String> {
-    fs::metadata(path).ok().map(|md| md.ino().to_string())
 }
 
 impl Vfs for ApfsLikeVfs {
@@ -193,21 +181,6 @@ impl Vfs for ApfsLikeVfs {
 
     fn stat_entry(&self, path: &str) -> VfsResult<Entry> {
         self.0.stat_entry(path)
-    }
-
-    fn probe_provider(&self, paths: &[String]) -> Vec<ProviderAttrs> {
-        paths
-            .iter()
-            .map(|path| ProviderAttrs {
-                is_file_provider: false,
-                is_placeholder: false,
-                content_version: content_identifier(path),
-                // APFS populates `totalFileSizeKey`, and for a local file it
-                // is the same number `stat` reports — so this vends it, and
-                // the fixture values are unchanged by its existence.
-                intended_size: fs::metadata(path).ok().map(|md| md.len() as i64),
-            })
-            .collect()
     }
 
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {

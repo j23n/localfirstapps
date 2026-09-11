@@ -592,7 +592,7 @@ fn open_tagging_session(
     model_pack_dir: String,
     decoder: Option<Arc<dyn crate::HeicDecoder>>,
 ) -> Result<Arc<TaggingSession>, TaggingError> {
-    let mut engine = TaggingEngine::open(&cache_db_path, &model_pack_dir, Arc::new(StdVfs))?;
+    let mut engine = TaggingEngine::open(&cache_db_path, &model_pack_dir, Arc::new(StdVfs::new()))?;
     if let Some(decoder) = decoder {
         engine = engine.with_heic_decoder(Arc::new(crate::heic::HeicDecoderAdapter(decoder)));
     }

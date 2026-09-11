@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = []  # commit 1 adds localcore-vfs
+members = ["localcore-vfs"]
 
 [workspace.package]
 version = "0.1.0"

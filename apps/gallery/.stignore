@@ -1,0 +1,2 @@
+# ADR 0002 R3 — Vfs temp prefix must not sync.
+.gallery-tmp-*

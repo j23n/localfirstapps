@@ -194,7 +194,7 @@ pub fn open_library_with_commit(
     }
 
     let _ = take_unsupported_names();
-    let vfs = StdVfs;
+    let vfs = StdVfs::new();
     let (cached, snapshot_reuse) = load_snapshot_for(root);
     let cached_photos = cached
         .as_ref()
@@ -355,7 +355,7 @@ fn overlay_sidecar_state(
     state: LibraryState,
     only_paths: Option<&[String]>,
 ) -> Result<LibraryState, HostError> {
-    let vfs = StdVfs;
+    let vfs = StdVfs::new();
     let filter: Option<HashMap<&str, ()>> =
         only_paths.map(|paths| paths.iter().map(|p| (p.as_str(), ())).collect());
     let mut photos = state.index.photos().to_vec();
@@ -945,7 +945,7 @@ mod tests {
         let path = dir.path().join("a.jpg");
         std::fs::write(&path, crate::decode::tests_jpeg()).unwrap();
         let root = dir.path().to_str().unwrap();
-        let vfs = StdVfs;
+        let vfs = StdVfs::new();
         let cold = scan(&vfs, root, &ScanInput::default());
         assert_eq!(cold.flat_photos.len(), 1);
         let mut cached = HashMap::new();

@@ -1,5 +1,5 @@
 [package]
-name = "gallery-vfs"
+name = "localcore-vfs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,6 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-localcore-vfs = { path = "../../../../core/localcore-vfs" }
 
 [dev-dependencies]
 tempfile = "3"

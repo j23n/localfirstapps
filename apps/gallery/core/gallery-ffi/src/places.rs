@@ -117,7 +117,7 @@ pub fn write_places(image_path: String, place: PlaceWrite) -> Result<bool, Place
         sublocation: place.sublocation,
         country_code: place.country_code,
     };
-    let vfs = StdVfs;
+    let vfs = StdVfs::new();
     // Three tries: the first collision is a tagging/face write landing in the
     // same second, the second is unlucky, the third is something else.
     let mut last = None;

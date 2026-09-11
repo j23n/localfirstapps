@@ -204,6 +204,35 @@ impl Vfs for MemVfs {
                 path: path.to_string(),
             })
     }
+
+    fn remove(&self, path: &str) -> VfsResult<()> {
+        let mut files = self.files.lock().unwrap_or_else(PoisonError::into_inner);
+        if files.remove(path).is_none() {
+            return Err(VfsError::NotFound {
+                path: path.to_string(),
+            });
+        }
+        drop(files);
+        self.times
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(path);
+        Ok(())
+    }
+
+    fn rename(&self, from: &str, to: &str) -> VfsResult<()> {
+        let mut files = self.files.lock().unwrap_or_else(PoisonError::into_inner);
+        let bytes = files.remove(from).ok_or_else(|| VfsError::NotFound {
+            path: from.to_string(),
+        })?;
+        files.insert(to.to_string(), bytes);
+        drop(files);
+        let mut times = self.times.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(t) = times.remove(from) {
+            times.insert(to.to_string(), t);
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

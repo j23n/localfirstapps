@@ -5,8 +5,8 @@ Decision B (Phase 1): no FileProvider / NSFileProvider* / ubiquitousItem*
 / MetricKit / MXMetric* in production Swift or Go.
 
 Excluded on purpose:
-- Generated UniFFI (`GalleryCore.swift`) — `VfsProviderAttrs` stays until
-  Phase 2 lifts it off `Vfs`.
+- Generated UniFFI (`GalleryCore.swift`) — `VfsProviderAttrs` remains on
+  the FFI surface until a later Phase 2 commit drops `ProviderProbe`.
 - `apps/gallery/linux/swift-shim/` — copy of the same generated surface.
 - `apps/health/reference/web-ui/` — preserved brief, not the product.
 - `vendor/` — third-party Go.
