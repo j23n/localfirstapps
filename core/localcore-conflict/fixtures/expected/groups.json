@@ -1,0 +1,100 @@
+{
+  "gallery-minimal": [
+    {
+      "canonical_name": "photo.heic",
+      "copies": [
+        {
+          "path": "photo.sync-conflict-20200901-120000-PHONE01.heic",
+          "name": "photo.sync-conflict-20200901-120000-PHONE01.heic",
+          "base_stem": "photo",
+          "extension": "heic",
+          "date": "20200901",
+          "time": "120000",
+          "origin_device": "PHONE01"
+        },
+        {
+          "path": "photo.sync-conflict-20200902-130000-LAPTOP02.heic",
+          "name": "photo.sync-conflict-20200902-130000-LAPTOP02.heic",
+          "base_stem": "photo",
+          "extension": "heic",
+          "date": "20200902",
+          "time": "130000",
+          "origin_device": "LAPTOP02"
+        }
+      ]
+    },
+    {
+      "canonical_name": "photo.heic.xmp",
+      "copies": [
+        {
+          "path": "photo.heic.sync-conflict-20200901-120000-PHONE01.xmp",
+          "name": "photo.heic.sync-conflict-20200901-120000-PHONE01.xmp",
+          "base_stem": "photo.heic",
+          "extension": "xmp",
+          "date": "20200901",
+          "time": "120000",
+          "origin_device": "PHONE01"
+        },
+        {
+          "path": "photo.heic.sync-conflict-20200903-090000-LAPTOP02.xmp",
+          "name": "photo.heic.sync-conflict-20200903-090000-LAPTOP02.xmp",
+          "base_stem": "photo.heic",
+          "extension": "xmp",
+          "date": "20200903",
+          "time": "090000",
+          "origin_device": "LAPTOP02"
+        }
+      ]
+    }
+  ],
+  "contacts-minimal": [
+    {
+      "canonical_name": "alice.vcf",
+      "copies": [
+        {
+          "path": "alice.sync-conflict-20200901-120000-PHONE01.vcf",
+          "name": "alice.sync-conflict-20200901-120000-PHONE01.vcf",
+          "base_stem": "alice",
+          "extension": "vcf",
+          "date": "20200901",
+          "time": "120000",
+          "origin_device": "PHONE01"
+        },
+        {
+          "path": "alice.sync-conflict-20200901-140000-LAPTOP02.vcf",
+          "name": "alice.sync-conflict-20200901-140000-LAPTOP02.vcf",
+          "base_stem": "alice",
+          "extension": "vcf",
+          "date": "20200901",
+          "time": "140000",
+          "origin_device": "LAPTOP02"
+        }
+      ]
+    }
+  ],
+  "music-minimal": [
+    {
+      "canonical_name": "playlist.m3u",
+      "copies": [
+        {
+          "path": "playlist.sync-conflict-20200901-120000-PHONE01.m3u",
+          "name": "playlist.sync-conflict-20200901-120000-PHONE01.m3u",
+          "base_stem": "playlist",
+          "extension": "m3u",
+          "date": "20200901",
+          "time": "120000",
+          "origin_device": "PHONE01"
+        },
+        {
+          "path": "playlist.sync-conflict-20200904-160000-LAPTOP02.m3u",
+          "name": "playlist.sync-conflict-20200904-160000-LAPTOP02.m3u",
+          "base_stem": "playlist",
+          "extension": "m3u",
+          "date": "20200904",
+          "time": "160000",
+          "origin_device": "LAPTOP02"
+        }
+      ]
+    }
+  ]
+}
