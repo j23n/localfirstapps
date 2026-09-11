@@ -7,6 +7,11 @@ This workspace holds `localcore-*` crates (ADR 0001 R9):
 
 Gallery remains at `apps/gallery/core` until later verticals move here.
 
+`.github/workflows/rust.yml` is the crate gate: `cargo test --locked
+--workspace --all-targets` on this workspace (`localcore` job) and on
+`apps/gallery/core` (`gallery-core` job). It does not run gallery Linux
+GTK tests, clippy/deny, or iOS xcodebuild.
+
 ## 20k scan harness
 
 There is no 20k tree in this repo. Walk an external library through

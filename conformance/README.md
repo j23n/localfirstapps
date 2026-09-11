@@ -39,6 +39,8 @@ name `NSFileProvider*`, `ubiquitousItem*`, or `MXMetric*`. Generated
 `apps/health/reference/web-ui/` are excluded.
 
 `.github/workflows/conformance.yml` runs this next to the graph check.
+Crate tests are a separate gate: `.github/workflows/rust.yml`
+(`localcore` and `gallery-core`).
 
 ## Display records — ADR 0003 R6
 
