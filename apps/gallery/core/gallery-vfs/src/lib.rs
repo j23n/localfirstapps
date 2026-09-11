@@ -11,49 +11,50 @@ pub use localcore_vfs::{
 pub const TEMP_PREFIX: &str = ".gallery-tmp-";
 
 /// [`localcore_vfs::StdVfs`] pinned to [`TEMP_PREFIX`].
-#[derive(Debug, Clone, Copy)]
-pub struct StdVfs(localcore_vfs::StdVfs);
+///
+/// Zero-sized so `&StdVfs` works in rustdoc and tests the way the pre-extract
+/// unit struct did. `StdVfs::new()` is the same value.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StdVfs;
 
 impl StdVfs {
     /// Construct one. Stateless; cloning is free.
     pub fn new() -> Self {
-        Self(localcore_vfs::StdVfs::new(TEMP_PREFIX))
+        Self
     }
-}
 
-impl Default for StdVfs {
-    fn default() -> Self {
-        Self::new()
+    pub(crate) fn inner(self) -> localcore_vfs::StdVfs {
+        localcore_vfs::StdVfs::new(TEMP_PREFIX)
     }
 }
 
 impl Vfs for StdVfs {
     fn open(&self, path: &str) -> VfsResult<Box<dyn ReadSeek + Send>> {
-        self.0.open(path)
+        self.inner().open(path)
     }
     fn stat(&self, path: &str) -> VfsResult<Stat> {
-        self.0.stat(path)
+        self.inner().stat(path)
     }
     fn list(&self, dir: &str) -> VfsResult<Vec<Entry>> {
-        self.0.list(dir)
+        self.inner().list(dir)
     }
     fn stat_entry(&self, path: &str) -> VfsResult<Entry> {
-        self.0.stat_entry(path)
+        self.inner().stat_entry(path)
     }
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
-        self.0.write_atomic(path, bytes)
+        self.inner().write_atomic(path, bytes)
     }
     fn exists(&self, path: &str) -> bool {
-        self.0.exists(path)
+        self.inner().exists(path)
     }
     fn read(&self, path: &str) -> VfsResult<Vec<u8>> {
-        self.0.read(path)
+        self.inner().read(path)
     }
     fn remove(&self, path: &str) -> VfsResult<()> {
-        self.0.remove(path)
+        self.inner().remove(path)
     }
     fn rename(&self, from: &str, to: &str) -> VfsResult<()> {
-        self.0.rename(from, to)
+        self.inner().rename(from, to)
     }
 }
 
@@ -63,7 +64,7 @@ mod tests {
 
     #[test]
     fn facade_std_vfs_uses_the_gallery_prefix() {
-        let vfs = StdVfs::new();
-        assert_eq!(vfs.0.temp_prefix(), TEMP_PREFIX);
+        assert_eq!(StdVfs.inner().temp_prefix(), TEMP_PREFIX);
+        assert_eq!(StdVfs::new().inner().temp_prefix(), TEMP_PREFIX);
     }
 }
