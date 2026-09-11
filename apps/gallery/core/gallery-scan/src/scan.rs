@@ -45,19 +45,14 @@ use gallery_model::date::AppleDate;
 use gallery_model::file_url::{join, stem};
 use gallery_model::photo::{PhotoFile, PhotoFolder, PhotoLocality, StableId};
 use gallery_model::snapshot::{ContentVersion, DownloadStatus, SidecarCandidate};
-use gallery_vfs::{Entry, EntryKind, FileTime, Vfs, VfsError};
+use gallery_vfs::{FileTime, Vfs};
+use localcore_walk::{
+    decomposed, walk_with_hooks, ConflictGroup, WalkDirectory, WalkFile, WalkOutcome,
+};
 
 use crate::classify::{
-    classify, image_stem_key, is_hidden, sidecar_for, sidecar_owner_key, video_stem, MediaKind,
+    classify, image_stem_key, sidecar_for, sidecar_owner_key, video_stem, MediaKind,
 };
-use crate::order::localized_standard_compare;
-use crate::path_form::decomposed;
-
-/// How many photos are discovered between progress callbacks.
-///
-/// The callback hops to the main actor and invalidates `@Observable` state;
-/// firing per file made the hops dominate the walk on a 20k library.
-const PROGRESS_BATCH: usize = 500;
 
 /// What the caller knows before the scan starts.
 #[derive(Default)]
@@ -128,6 +123,12 @@ pub struct ScanOutcome {
     pub failed_directory_paths: Vec<String>,
     /// Timings and cache-hit counters for the scan-totals log line.
     pub stats: ScanStats,
+    /// Syncthing conflict copies, grouped by surviving basename.
+    ///
+    /// Never photos, never assigned a [`StableId`], never sidecar-manifest
+    /// owners. Empty when the tree has none — the scanner-conformance
+    /// fixture is that case.
+    pub conflict_groups: Vec<ConflictGroup>,
 }
 
 /// Walk `root` and produce the tree, the flat list, and the diff against the
@@ -136,8 +137,8 @@ pub fn scan(vfs: &dyn Vfs, root: &str, input: &ScanInput) -> ScanOutcome {
     scan_with_progress(vfs, root, input, None)
 }
 
-/// [`scan`], with a callback invoked every [`PROGRESS_BATCH`] photos and once
-/// at the end with the true total.
+/// [`scan`], with a callback invoked during the walk and once at the end
+/// with the true photo total.
 ///
 /// The callback runs on the scanning thread and must not call back into the
 /// core — the VFS is already re-entrant from the platform side, and a second
@@ -166,34 +167,25 @@ pub fn scan_with_hooks(
     on_progress: Option<&dyn Fn(usize)>,
     cancelled: Option<&dyn Fn() -> bool>,
 ) -> Option<ScanOutcome> {
-    let mut walk = Walk::new(input);
-    let mut stack: Vec<(String, Option<usize>)> = vec![(root.to_string(), None)];
-
-    while let Some((dir, parent)) = stack.pop() {
-        if cancelled.is_some_and(|c| c()) {
-            return None;
-        }
-        let Some(mut subdirs) = walk.visit_directory(vfs, &dir, parent) else {
-            // `NotFound`: no node, no failed-directory record. Cached photos
-            // under it fall into `removed_paths` in `finish()`.
-            continue;
-        };
-        if let Some(callback) = on_progress {
-            walk.report(callback, false);
-        }
-        // Sorted ascending, pushed in reverse, so they pop ascending. Swift
-        // sorts descending and pushes in order; same result, said once.
-        subdirs.sort_by(|a, b| localized_standard_compare(&a.0, &b.0));
-        let node_index = walk.nodes.len() - 1;
-        for (_, path) in subdirs.into_iter().rev() {
-            stack.push((path, Some(node_index)));
-        }
-    }
-
+    let walked = walk_with_hooks(
+        vfs,
+        root,
+        &is_gallery_content,
+        on_progress,
+        cancelled,
+    )?;
+    let outcome = Walk::assemble(input, walked);
+    // Walk progress counts *content* files (images, videos, sidecars). The
+    // scan callback's documented total is photos, so finish on that number.
     if let Some(callback) = on_progress {
-        walk.report(callback, true);
+        callback(outcome.flat_photos.len());
     }
-    Some(walk.finish())
+    Some(outcome)
+}
+
+/// Image / video / sidecar — today's tables in [`crate::classify`].
+fn is_gallery_content(name: &str) -> bool {
+    !matches!(classify(name), MediaKind::Skipped)
 }
 
 /// One file the classify pass kept.
@@ -242,8 +234,6 @@ struct Walk<'a> {
     added_paths: Vec<String>,
     modified_paths: Vec<String>,
     seen_paths: HashSet<String>,
-    failed_directory_paths: Vec<String>,
-    progress_tick: usize,
     stats: ScanStats,
 }
 
@@ -258,126 +248,57 @@ impl<'a> Walk<'a> {
             added_paths: Vec::new(),
             modified_paths: Vec::new(),
             seen_paths: HashSet::new(),
-            failed_directory_paths: Vec::new(),
-            progress_tick: 0,
             stats: ScanStats::default(),
         }
     }
 
-    fn report(&mut self, callback: &dyn Fn(usize), force: bool) {
-        if force || self.progress_tick >= PROGRESS_BATCH {
-            callback(self.flat_photos.len());
-            self.progress_tick = 0;
+    /// Classify walked files and build `PhotoFile`s / sidecar rows.
+    fn assemble(input: &'a ScanInput, walked: WalkOutcome) -> ScanOutcome {
+        let mut walk = Walk::new(input);
+        for dir in &walked.directories {
+            walk.ingest_directory(dir, &walked.files);
         }
+        walk.finish(walked)
     }
 
-    /// Visit one directory, append its node, and return its subdirectories as
-    /// `(name, path)` pairs for the caller to order and push.
-    ///
-    /// `None` means the directory is gone (`NotFound`): no node is appended
-    /// and the caller must not look up a node index.
-    fn visit_directory(
-        &mut self,
-        vfs: &dyn Vfs,
-        dir: &str,
-        parent_index: Option<usize>,
-    ) -> Option<Vec<(String, String)>> {
-        let mut photos: Vec<PhotoFile> = Vec::new();
-        let mut subdirs: Vec<(String, String)> = Vec::new();
-
-        self.stats.folders += 1;
-        let listing_started = std::time::Instant::now();
-        let listing = vfs.list(dir);
-        self.stats.list_micros += listing_started.elapsed().as_micros() as u64;
-
-        match listing {
-            Ok(entries) => {
-                let (files, sidecars) = self.classify_pass(vfs, dir, entries, &mut subdirs);
-                photos = self.build_photos(files, &sidecars);
-            }
-            Err(VfsError::NotFound { .. }) => {
-                // The directory is gone, not briefly unreadable. Recording it
-                // as a failed directory would carry its cached photos forward
-                // forever, and emitting a node would make a missing root look
-                // like an empty folder. Unseen photos under it are not under
-                // a failed prefix, so `finish()` already puts them in
-                // `removed_paths`.
-                return None;
-            }
-            Err(_) => {
-                // Transient listing failure (permission, provider, I/O). The
-                // Store learns about it through `failed_directory_paths`,
-                // which is also what keeps the subtree's photos alive.
-                self.failed_directory_paths.push(decomposed(dir));
-            }
-        }
-
-        // The folder's own timestamps. One call per *directory* — where the
-        // Swift baseline calls `dirURL.resourceValues(forKeys:)`, not the
-        // per-file chatter docs/adr/0002 is about.
-        let dir_entry = vfs.stat_entry(dir).ok();
-        let node_index = self.nodes.len();
+    fn ingest_directory(&mut self, dir: &WalkDirectory, all_files: &[WalkFile]) {
+        let files: Vec<&WalkFile> = dir
+            .file_indices
+            .iter()
+            .map(|&i| &all_files[i])
+            .collect();
+        let (scan_files, sidecars) = self.classify_files(&files);
+        let photos = self.build_photos(scan_files, &sidecars);
         self.nodes.push(ScanNode {
-            path: dir.to_string(),
-            name: gallery_model::file_url::last_component(dir).to_string(),
+            path: dir.path.clone(),
+            name: dir.name.clone(),
             photos: photos.clone(),
-            child_indices: Vec::new(),
-            date_modified: dir_entry.as_ref().and_then(|e| e.modified).map(apple_date),
-            date_created: dir_entry.as_ref().and_then(|e| e.created).map(apple_date),
+            child_indices: dir.child_indices.clone(),
+            date_modified: dir.mtime.map(apple_date),
+            date_created: dir.created.map(apple_date),
         });
-        if let Some(parent) = parent_index {
-            self.nodes[parent].child_indices.push(node_index);
-        }
-        self.progress_tick += photos.len();
         self.flat_photos.extend(photos);
-        Some(subdirs)
     }
 
-    /// First pass: sort the listing into media files, sidecars and
-    /// subdirectories.
-    fn classify_pass(
+    /// Sort one directory's content files into media and sidecars.
+    ///
+    /// The walk already applied symlink policy, skipped dotfiles, and
+    /// pulled conflict copies out of the content stream.
+    fn classify_files<'b>(
         &self,
-        vfs: &dyn Vfs,
-        dir: &str,
-        entries: Vec<Entry>,
-        subdirs: &mut Vec<(String, String)>,
-    ) -> (Vec<ScanFile>, HashMap<String, Entry>) {
+        entries: &[&'b WalkFile],
+    ) -> (Vec<ScanFile>, HashMap<String, &'b WalkFile>) {
         let mut files = Vec::new();
         // Lowercased full basename → the `.xmp` entry beside it.
-        let mut sidecars: HashMap<String, Entry> = HashMap::new();
+        let mut sidecars: HashMap<String, &'b WalkFile> = HashMap::new();
 
         for entry in entries {
-            if is_hidden(&entry.name) {
-                continue;
-            }
-            let path = join(dir, &entry.name);
-
             if classify(&entry.name) == MediaKind::Sidecar {
                 // Recorded without a stat; the manifest reads its size and
                 // mtime straight off this listing row. Both `<photo>.xmp`
                 // and Lightroom `<stem>.xmp` land here; lookup prefers the
                 // canonical key.
-                sidecars.insert(sidecar_owner_key(&entry.name), entry);
-                continue;
-            }
-
-            // A symlink is resolved only far enough to decide whether it is a
-            // directory. Directory symlinks are not descended — that is how a
-            // walk would leave the selected root or close a cycle. File
-            // symlinks fall through and are scanned as media; their size and
-            // times already follow the target (see [`Entry::size`]). The
-            // selected root may itself be a symlink: it is the start path,
-            // never a child entry.
-            let is_dir = match entry.kind {
-                EntryKind::Dir => true,
-                EntryKind::Symlink => vfs.stat(&path).map(|s| s.is_dir).unwrap_or(false),
-                EntryKind::File => false,
-            };
-            if is_dir {
-                if entry.kind == EntryKind::Symlink {
-                    continue;
-                }
-                subdirs.push((entry.name, path));
+                sidecars.insert(sidecar_owner_key(&entry.name), *entry);
                 continue;
             }
             let (is_image, is_video) = match classify(&entry.name) {
@@ -389,18 +310,18 @@ impl<'a> Walk<'a> {
             // Substituting the cached values made `unchanged` compare the
             // cache to itself, so a light scan could never see a rewrite.
             let file_size = entry.size as i64;
-            let mod_date = entry.modified.map(apple_date);
+            let mod_date = entry.mtime.map(apple_date);
             files.push(ScanFile {
-                unchanged: self.input.cached_photos.get(&path).is_some_and(|c| {
+                unchanged: self.input.cached_photos.get(&entry.path).is_some_and(|c| {
                     c.file_size == file_size && c.file_modification_date == mod_date
                 }),
-                path,
+                path: entry.path.clone(),
                 file_size,
                 mod_date,
                 creation_date: entry.created.map(apple_date),
                 is_image,
                 is_video,
-                name: entry.name,
+                name: entry.name.clone(),
             });
         }
         (files, sidecars)
@@ -411,7 +332,7 @@ impl<'a> Walk<'a> {
     fn build_photos(
         &mut self,
         files: Vec<ScanFile>,
-        sidecars: &HashMap<String, Entry>,
+        sidecars: &HashMap<String, &WalkFile>,
     ) -> Vec<PhotoFile> {
         // First video wins a contested stem, matching `uniquingKeysWith`.
         let mut video_by_stem: HashMap<String, String> = HashMap::new();
@@ -559,7 +480,7 @@ impl<'a> Walk<'a> {
 
     /// One manifest row, reusing the cached one when the sidecar listing
     /// still matches.
-    fn push_sidecar_row(&mut self, file: &ScanFile, photo: &PhotoFile, sidecar: &Entry) {
+    fn push_sidecar_row(&mut self, file: &ScanFile, photo: &PhotoFile, sidecar: &WalkFile) {
         if let Some(cached) = self.input.cached_sidecar_manifest.get(&photo.id) {
             if sidecar_listing_matches(cached, sidecar) {
                 self.sidecar_manifest.push(cached.clone());
@@ -572,14 +493,14 @@ impl<'a> Walk<'a> {
             sidecar_url: gallery_model::photo::FileUrl::new(sidecar_path),
             current_version: ContentVersion {
                 content_identifier: None,
-                modification_date: sidecar.modified.map(apple_date),
+                modification_date: sidecar.mtime.map(apple_date),
                 size: Some(sidecar.size as i64),
             },
             download_status: DownloadStatus::Local,
         });
     }
 
-    fn finish(self) -> ScanOutcome {
+    fn finish(self, walked: WalkOutcome) -> ScanOutcome {
         let Walk {
             input,
             nodes,
@@ -589,10 +510,13 @@ impl<'a> Walk<'a> {
             added_paths,
             modified_paths,
             seen_paths,
-            failed_directory_paths,
             stats,
-            ..
         } = self;
+        let failed_directory_paths = walked.failed_directory_paths;
+        let conflict_groups = walked.conflict_groups;
+        let mut stats = stats;
+        stats.folders = walked.stats.folders;
+        stats.list_micros = walked.stats.list_micros;
 
         // Anything cached and unseen was moved, removed or unmounted — unless
         // it lives under a directory whose listing failed, in which case it is
@@ -624,6 +548,7 @@ impl<'a> Walk<'a> {
             modified_paths,
             failed_directory_paths,
             stats,
+            conflict_groups,
         }
     }
 }
@@ -670,8 +595,8 @@ fn apple_date(t: FileTime) -> AppleDate {
 ///
 /// Size and mtime come off `list()`. A real rewrite updates mtime, which
 /// is the listing field we stored faithfully.
-fn sidecar_listing_matches(cached: &SidecarCandidate, listing: &Entry) -> bool {
-    if cached.current_version.modification_date != listing.modified.map(apple_date) {
+fn sidecar_listing_matches(cached: &SidecarCandidate, listing: &WalkFile) -> bool {
+    if cached.current_version.modification_date != listing.mtime.map(apple_date) {
         return false;
     }
     match cached.current_version.size {
@@ -692,7 +617,7 @@ fn parent_of(path: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gallery_vfs::{MemVfs, StdVfs};
+    use gallery_vfs::{Entry, MemVfs, StdVfs, VfsError};
 
     fn library() -> MemVfs {
         let vfs = MemVfs::new();
@@ -760,6 +685,10 @@ mod tests {
         assert!(out.needs_enrichment);
         assert_eq!(out.added_paths.len(), 5);
         assert!(out.removed_paths.is_empty() && out.modified_paths.is_empty());
+        assert!(
+            out.conflict_groups.is_empty(),
+            "a tree without Syncthing copies must report empty groups"
+        );
     }
 
     #[test]
@@ -1257,5 +1186,86 @@ mod tests {
         assert_eq!(parent_of("/a/b/c.jpg"), "/a/b");
         assert_eq!(parent_of("/c.jpg"), "/");
         assert_eq!(parent_of("c.jpg"), "/");
+    }
+
+    fn gallery_minimal() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../core/localcore-conflict/fixtures/trees/gallery-minimal")
+    }
+
+    #[test]
+    fn syncthing_copies_in_gallery_minimal_are_not_photos_or_sidecar_owners() {
+        let root = gallery_minimal();
+        assert!(
+            root.join("photo.heic").is_file(),
+            "fixture missing: {}",
+            root.display()
+        );
+        let out = scan(
+            &StdVfs::new(),
+            root.to_str().unwrap(),
+            &ScanInput::default(),
+        );
+
+        let names: Vec<&str> = out
+            .flat_photos
+            .iter()
+            .map(|p| gallery_model::file_url::last_component(p.path()))
+            .collect();
+        assert_eq!(
+            names,
+            vec!["photo.heic"],
+            "surviving photo.heic is the only photo; conflict heics are not: {names:?}"
+        );
+        assert!(
+            out.flat_photos
+                .iter()
+                .all(|p| !p.path().contains("sync-conflict")),
+            "conflict copies must not appear in flat_photos: {:?}",
+            paths(&out.flat_photos)
+        );
+        assert_eq!(
+            out.flat_photos[0].id,
+            StableId::for_photo(out.flat_photos[0].path()),
+            "the surviving photo still gets a StableId"
+        );
+
+        assert_eq!(out.sidecar_manifest.len(), 1);
+        assert!(
+            out.sidecar_manifest[0]
+                .sidecar_url
+                .path()
+                .ends_with("photo.heic.xmp"),
+            "{:?}",
+            out.sidecar_manifest[0].sidecar_url.path()
+        );
+        assert!(
+            out.sidecar_manifest
+                .iter()
+                .all(|row| !row.sidecar_url.path().contains("sync-conflict")),
+            "xmp conflict copies are not sidecar rows: {:?}",
+            out.sidecar_manifest
+                .iter()
+                .map(|r| r.sidecar_url.path())
+                .collect::<Vec<_>>()
+        );
+
+        let canonical: Vec<&str> = out
+            .conflict_groups
+            .iter()
+            .map(|g| g.canonical_name.as_str())
+            .collect();
+        assert_eq!(canonical, vec!["photo.heic", "photo.heic.xmp"]);
+        let copies = out
+            .conflict_groups
+            .iter()
+            .flat_map(|g| g.copies.iter())
+            .count();
+        assert_eq!(copies, 4);
+        assert!(out.conflict_groups.iter().all(|g| {
+            g.copies
+                .iter()
+                .all(|c| c.name.contains(".sync-conflict-"))
+        }));
     }
 }

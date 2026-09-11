@@ -4,8 +4,8 @@
 //! Scan **policy** — light/full/auto resolution, the 48-hour promotion, the
 //! dedupe of concurrent requests, the two-phase ordering, and the
 //! sidecar-sync / memories / widget steps that follow a scan — stays in
-//! `GalleryStore+Scanning.swift`. This crate walks the tree and reports what
-//! it found; deciding *when* to walk it is somebody else's job.
+//! `GalleryStore+Scanning.swift`. `localcore-walk` walks the tree; this crate
+//! classifies what it found. Deciding *when* to walk is somebody else's job.
 //!
 //! ```no_run
 //! use gallery_scan::{scan, ScanInput};
@@ -16,6 +16,10 @@
 //! ```
 //!
 //! # What is pinned here rather than decided here
+//!
+//! Traversal lives in `localcore-walk`. This crate classifies the walked
+//! files (image / video / sidecar) and builds `PhotoFile`s. Conflict copies
+//! never become photos.
 //!
 //! The conformance fixtures in `core/fixtures/scan-conformance/` are the spec.
 //! Several pinned oddities remain — a standalone video's lowercased filename,
@@ -29,10 +33,10 @@
 #![warn(missing_docs)]
 
 pub mod classify;
-pub mod order;
-pub mod path_form;
 pub mod scan;
 
 pub use classify::{classify, MediaKind, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
-pub use order::localized_standard_compare;
+pub use localcore_walk::{
+    decomposed, localized_standard_compare, order, path_form, ConflictCopy, ConflictGroup,
+};
 pub use scan::{scan, scan_with_hooks, scan_with_progress, ScanInput, ScanOutcome, ScanStats};
