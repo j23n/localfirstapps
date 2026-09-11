@@ -22,7 +22,8 @@ import Foundation
 // MARK: - The algorithm under test (mirror of PhotoFile.swift)
 
 func derive(_ input: String) -> UUID {
-    let digest = SHA256.hash(data: Data(input.utf8))
+    let nfc = input.precomposedStringWithCanonicalMapping
+    let digest = SHA256.hash(data: Data(nfc.utf8))
     var bytes = Array(digest.prefix(16))
     bytes[6] = (bytes[6] & 0x0F) | 0x50   // version 5
     bytes[8] = (bytes[8] & 0x3F) | 0x80   // variant RFC 4122
@@ -86,9 +87,9 @@ var vectors: [Vector] = [
     .init(label: "dot-segment-unstandardized", input: "\(base)/./IMG_0001.jpg"),
     .init(label: "double-separators", input: "//Users//j//Pictures//IMG_0001.jpg"),
 
-    // Unicode: NFC vs NFD of the same visible name are *distinct* vectors.
-    // APFS hands back decomposed names; other platforms hand back whatever was
-    // written. Phase 0 only pins today's behaviour (no normalization).
+    // Unicode: NFC vs NFD of the same visible name stay as distinct *inputs*
+    // so the fixture is not vacuous, but after M1 they share one UUID
+    // (`precomposedStringWithCanonicalMapping` before SHA-256).
     .init(label: "nfc-cafe", input: "\(base)/\(cafeNFC)/IMG_0001.jpg"),
     .init(label: "nfd-cafe", input: "\(base)/\(cafeNFD)/IMG_0001.jpg"),
     .init(label: "nfc-zurich", input: "\(base)/\(zurichNFC) 2019/IMG_0001.jpg"),

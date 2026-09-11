@@ -1,0 +1,11 @@
+{
+  "comment": "ADR 0005 R19 survival fixture for M1 (NFC identity). Pre-M1 hashed UTF-8 path bytes as stored, so NFC and NFD of one name were different UUIDs. Post-M1 derive(nfd) == derive(nfc) == the new id. Caches keyed by old_uuid — thumbnails, widget JSON, library_cache ids — must be rebuilt from the stored path via migrate_id; this crate does not rewrite them. Release note: thumbnail files named by the old UUID are orphans until the next scan/rebuild.",
+  "entries": [
+    {
+      "label": "nfd-cafe",
+      "path": "/Users/j/Pictures/Cafe\u0301/IMG_0001.jpg",
+      "nfc_twin": "/Users/j/Pictures/Caf\u00e9/IMG_0001.jpg",
+      "old_uuid": "30d974e4-3610-5519-ac6e-c053ae920638"
+    }
+  ]
+}

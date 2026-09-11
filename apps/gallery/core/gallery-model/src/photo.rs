@@ -27,8 +27,9 @@ pub struct StableId(pub Uuid);
 impl StableId {
     /// The id Swift derives for a photo: `StableUUID.derive(url.standardized.path)`.
     ///
-    /// The **on-disk** path spelling, not a normalized one. NFC and NFD names
-    /// derive different ids and that is pinned by `stable_uuid_vectors.json`.
+    /// The caller still passes the **on-disk** path spelling. `derive` NFC-normalises
+    /// before hashing (M1 / ADR 0002 R4), so NFC and NFD names share one id —
+    /// pinned by `stable_uuid_vectors.json`.
     pub fn for_photo(path: &str) -> Self {
         StableId(stable_uuid::derive(path))
     }

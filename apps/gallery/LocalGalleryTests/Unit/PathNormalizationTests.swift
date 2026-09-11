@@ -12,7 +12,7 @@ import XCTest
 /// compares `unicodeScalars`, never strings.
 ///
 /// Companion to `stable_uuid_vectors.json`, which pins that NFC and NFD derive
-/// *different* ids. This file pins which of the two the app actually feeds in.
+/// the *same* id after M1. This file pins which spelling the app feeds in.
 final class PathNormalizationTests: XCTestCase {
 
     private var temp: TempDir!
@@ -101,11 +101,11 @@ final class PathNormalizationTests: XCTestCase {
                        "the second write reused the first entry, and the NFD spelling still opens it")
     }
 
-    /// The consequence for Phase 3: `PhotoFile.stableID` hashes the on-disk
-    /// bytes, so the id of an externally-created NFC file is the NFC id — not
-    /// the NFD one you would get by round-tripping the name through
-    /// `standardizedFileURL`.
-    func testStableIDHashesTheOnDiskSpelling() throws {
+    /// After M1, `StableUUID.derive` NFC-normalises before hashing, so the
+    /// on-disk NFC spelling, a decomposed path, and `standardizedFileURL.path`
+    /// all produce the same id. The accessors still disagree on *bytes*;
+    /// identity no longer does.
+    func testStableIDUnifiesCompositionForms() throws {
         try createByteExact(nfc, in: temp.url, contents: "x")
         let url = try XCTUnwrap(try FileManager.default.contentsOfDirectory(
             at: temp.url, includingPropertiesForKeys: nil
@@ -113,11 +113,11 @@ final class PathNormalizationTests: XCTestCase {
 
         XCTAssertEqual(PhotoFile.stableID(for: url),
                        StableUUID.derive(from: temp.url.path + "/" + nfc))
-        XCTAssertNotEqual(PhotoFile.stableID(for: url),
-                          StableUUID.derive(from: temp.url.path + "/" + nfd),
-                          "if these were equal the whole NFC/NFD distinction would be moot")
-        XCTAssertNotEqual(PhotoFile.stableID(for: url),
-                          StableUUID.derive(from: url.standardizedFileURL.path),
-                          "standardizedFileURL would have produced a DIFFERENT id — do not use it for identity")
+        XCTAssertEqual(PhotoFile.stableID(for: url),
+                       StableUUID.derive(from: temp.url.path + "/" + nfd),
+                       "M1: NFC and NFD of the same path must share one id")
+        XCTAssertEqual(PhotoFile.stableID(for: url),
+                       StableUUID.derive(from: url.standardizedFileURL.path),
+                       "standardizedFileURL is NFD; derive NFC-normalises it back")
     }
 }

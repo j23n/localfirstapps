@@ -74,7 +74,8 @@ pub fn core_version() -> String {
 /// Rust-side `StableUUID.derive`, rendered lowercase hyphenated.
 ///
 /// The caller passes an already-standardized path string (Swift:
-/// `url.standardized.path`) — this function does no normalization of its own.
+/// `url.standardized.path`). Unicode NFC is applied inside
+/// `localcore_id::derive` (ADR 0002 R4 / M1).
 #[uniffi::export]
 pub fn stable_uuid(input: String) -> String {
     gallery_model::stable_uuid::derive(&input).to_string()
