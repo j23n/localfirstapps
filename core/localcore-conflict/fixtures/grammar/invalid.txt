@@ -1,0 +1,32 @@
+# Specified non-matches.
+photo.sync-conflict.heic
+photo.conflict-20200901-120000-DEV.heic
+photo.jpg
+.sync-conflict-20200901-120000-DEV.heic
+
+# Surviving originals from the minimal trees (never copies).
+photo.heic
+photo.heic.xmp
+alice.vcf
+playlist.m3u
+
+# Incomplete marker / missing pieces.
+photo.sync-conflict-20200901.heic
+photo.sync-conflict-20200901-120000.heic
+photo.sync-conflict-20200901-120000-.heic
+sync-conflict-20200901-120000-DEV.heic
+
+# Wrong date/time width.
+photo.sync-conflict-2020901-120000-DEV.heic
+photo.sync-conflict-20200901-12000-DEV.heic
+
+# Device must start with alphanumeric (health-event spirit).
+photo.sync-conflict-20200901-120000--DEV.heic
+photo.sync-conflict-20200901-120000-.DEV.heic
+photo.sync-conflict-20200901-120000-_DEV.heic
+
+# Marker is case-sensitive; Syncthing always writes lowercase.
+photo.SYNC-CONFLICT-20200901-120000-DEV.heic
+
+# Ordinary health log month file (basename only).
+2026-09.ndjson

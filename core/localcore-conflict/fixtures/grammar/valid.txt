@@ -1,0 +1,21 @@
+# Syncthing inserts the marker before the final extension (ADR 0005 R7).
+IMG_1234.sync-conflict-20200901-120000-DEVICEABC.heic
+alice.sync-conflict-20200901-120000-DEVICEABC.vcf
+photo.jpg.sync-conflict-20200901-120000-DEVICEABC.xmp
+playlist.sync-conflict-20200901-120000-DEVICEABC.m3u
+
+# Names that appear in the minimal trees.
+photo.sync-conflict-20200901-120000-PHONE01.heic
+photo.sync-conflict-20200902-130000-LAPTOP02.heic
+photo.heic.sync-conflict-20200901-120000-PHONE01.xmp
+photo.heic.sync-conflict-20200903-090000-LAPTOP02.xmp
+alice.sync-conflict-20200901-120000-PHONE01.vcf
+alice.sync-conflict-20200901-140000-LAPTOP02.vcf
+playlist.sync-conflict-20200901-120000-PHONE01.m3u
+playlist.sync-conflict-20200904-160000-LAPTOP02.m3u
+
+# Device charset is the health-event charset: [A-Za-z0-9][A-Za-z0-9._-]*
+note.sync-conflict-20200901-120000-A.vcf
+note.sync-conflict-20200901-120000-A.b_c-1.vcf
+dotted.name.v2.sync-conflict-20210102-030405-Dev_1.jpg
+IMG_1234.sync-conflict-20200901-120000-DEVICEABC.HEIC
