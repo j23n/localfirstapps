@@ -65,6 +65,28 @@ struct ContactsStoreFileSystemTests {
         #expect(store.lastSyncedAt != nil)
     }
 
+    @Test("loadContacts excludes Syncthing conflict copies")
+    func loadExcludesConflictCopies() async throws {
+        let folder = try makeTempFolder()
+        defer { cleanup(folder) }
+
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nX-LOCALCONTACTS-ID:lcid-1\r\nEND:VCARD\r\n",
+            named: "alice.vcf", in: folder
+        )
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice Conflict\r\nX-LOCALCONTACTS-ID:lcid-conflict\r\nEND:VCARD\r\n",
+            named: "alice.sync-conflict-20200901-120000-PHONE01.vcf", in: folder
+        )
+
+        let store = makeStore(folder: folder)
+        await store.loadContacts()
+
+        #expect(store.contacts.count == 1)
+        #expect(store.contacts.first?.fullName == "Alice")
+        #expect(store.contacts.first?.fileName == "alice.vcf")
+    }
+
     @Test("loadContacts ignores non-vcf files")
     func loadIgnoresOtherFiles() async throws {
         let folder = try makeTempFolder()

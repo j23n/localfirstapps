@@ -209,6 +209,22 @@ final class MetadataLoaderTests {
         #expect(playlist.trackURLs == [])
     }
 
+    // MARK: - conflict copies are never collected
+
+    @Test func collectAudioFiles_excludesConflictCopies() throws {
+        try touch("song.mp3")
+        try touch("song.sync-conflict-20200901-120000-PHONE01.mp3")
+        let files = try #require(MetadataLoader.collectAudioFiles(in: tempDir))
+        #expect(Set(files.map(\.lastPathComponent)) == ["song.mp3"])
+    }
+
+    @Test func collectPlaylistFiles_excludesConflictCopies() throws {
+        try writePlaylist("#EXTM3U\n", name: "list.m3u")
+        try writePlaylist("#EXTM3U\n", name: "list.sync-conflict-20200901-120000-PHONE01.m3u")
+        let files = MetadataLoader.collectPlaylistFiles(in: tempDir)
+        #expect(Set(files.map(\.lastPathComponent)) == ["list.m3u"])
+    }
+
     // MARK: - scanFolder empty vs inaccessible
 
     @Test func scanFolder_emptyDirectoryIsSuccessEmpty() async {

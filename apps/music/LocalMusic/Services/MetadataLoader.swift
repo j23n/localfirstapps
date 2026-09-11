@@ -106,7 +106,7 @@ struct MetadataLoader {
     /// for security-scoped access), unlike `FileManager.enumerator` which
     /// resolves symlinks and can produce `/private/var/...` paths that fall
     /// outside the security scope.
-    private static func collectAudioFiles(in directory: URL) -> [URL]? {
+    static func collectAudioFiles(in directory: URL) -> [URL]? {
         let fm = FileManager.default
         guard let rootContents = try? fm.contentsOfDirectory(
             at: directory,
@@ -141,7 +141,8 @@ struct MetadataLoader {
             let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
             if isDir {
                 stack.append(item)
-            } else if extensions.contains(item.pathExtension.lowercased()) {
+            } else if extensions.contains(item.pathExtension.lowercased()),
+                      !SyncConflict.isConflictName(item.lastPathComponent) {
                 files.append(item)
             }
         }
@@ -385,7 +386,7 @@ struct MetadataLoader {
 
     /// Iterative walk; nested listing failures are skipped. Same
     /// `contentsOfDirectory` rationale as `collectAudioFiles`.
-    private static func collectPlaylistFiles(in directory: URL) -> [URL] {
+    static func collectPlaylistFiles(in directory: URL) -> [URL] {
         let fm = FileManager.default
         guard let rootContents = try? fm.contentsOfDirectory(
             at: directory,
