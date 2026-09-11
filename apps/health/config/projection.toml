@@ -1,0 +1,5 @@
+# Projection knobs. Not part of the event log.
+# Override per archive at <archive root>/config/projection.toml.
+# Pauses shorter than this (seconds) count toward paused time
+# but do not split the route.
+pause_threshold_s = 60

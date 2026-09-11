@@ -1,0 +1,23 @@
+.DS_Store
+
+# Live archive data (and the locally built `archive` binary) — never commit
+/archive
+/archive/
+
+# Local scratch
+/_debug/
+
+# SQLite residue
+*.db
+*.db-wal
+*.db-shm
+
+# Full Apple Health exports (complete medical history)
+/data/
+*.zip
+/export.xml
+/export_cda.xml
+
+# Portable export output
+/export/
+/exports/

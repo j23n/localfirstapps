@@ -1,0 +1,12 @@
+{{define "all"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<h2>All</h2>
+<p class="lead">Every kind, including unclassified.</p>
+{{range .Groups}}
+<h3>{{.Label}}</h3>
+<div class="inset">
+  {{range .Cards}}{{template "card" .}}{{end}}
+</div>
+{{end}}
+{{if .Empty}}<p class="lead">{{.Empty}}</p>{{end}}
+{{end}}

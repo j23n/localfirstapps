@@ -1,0 +1,9 @@
+# UI preferences. Not part of the event log.
+# "workout" is a blanket token: every HKWorkoutActivityType* session.
+favourites = [
+  "workout",
+  "HKQuantityTypeIdentifierStepCount",
+  "HKQuantityTypeIdentifierHeartRate",
+  "HKCategoryTypeIdentifierSleepAnalysis",
+  "HKQuantityTypeIdentifierRestingHeartRate",
+]

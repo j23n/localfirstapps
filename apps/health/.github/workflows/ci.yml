@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "1"
+  GOFLAGS: "-mod=vendor"
+
+jobs:
+  lint:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: C compiler
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+      - name: gofmt
+        run: |
+          out="$(find . -name '*.go' ! -path './vendor/*' -print0 | xargs -0 gofmt -l)"
+          if [ -n "$out" ]; then
+            printf '%s\n' "$out"
+            exit 1
+          fi
+      - name: changelog script
+        run: ./scripts/changelog-notes_test.sh
+      - name: vet
+        run: go vet ./...
+      - name: govulncheck
+        env:
+          GOFLAGS: ""
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          govulncheck ./...
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-26.04
+            title: linux-amd64
+          - os: ubuntu-26.04-arm
+            title: linux-arm64
+          - os: macos-14
+            title: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: C compiler (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+      - name: build
+        run: go build ./...
+      - name: test
+        run: go test ./...
