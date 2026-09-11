@@ -1,0 +1,19 @@
+[package]
+name = "localcore-walk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Generic directory walk with a caller-supplied content predicate (ADR 0002 R5/R7)"
+
+[dependencies]
+localcore-conflict = { path = "../localcore-conflict" }
+localcore-vfs = { path = "../localcore-vfs" }
+# Failed-directory paths are decomposed: Swift emits them through
+# `standardizedFileURL.path`, and carry-forward prefix checks compare
+# against that same form.
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
