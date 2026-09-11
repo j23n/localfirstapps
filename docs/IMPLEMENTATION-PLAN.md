@@ -153,8 +153,7 @@ SHAs changed; `git log apps/<name>` keeps the original commits. The
 standalone GitHub remotes still need redirect READMEs — that is left
 to do, not done here.
 
-Current tree (Phase 2 will extract `core/` and `shells/` from inside the
-apps; they are not lifted yet):
+Current tree (`core/` is extracted; `shells/` is still Phase 3):
 
 ```
 .agents/            agent instructions (CONVENTIONS.md retired in 0.2)
@@ -163,7 +162,8 @@ docs/               index.html style.css screenshots/   (Pages source)
   IMPLEMENTATION-PLAN.md
 docker/
 mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
-conformance/        graph check (ADR 0002 R13); starts red
+conformance/        graph check (ADR 0002 R13) is green; R6 is expected-red
+core/               localcore-{vfs,walk,id,conflict,queue,log,blob,geo}
 apps/gallery/       was localgallery (Swift + core/ + linux/)
 apps/contacts/      was localcontacts
 apps/music/         was localmusic
@@ -217,13 +217,11 @@ Xcode-free refresh. `openssl-devel` is now a required agent-image
 package — `ort` → `ureq` → `native-tls` on the host build.
 
 **0.5 The conformance harness, graph check first — done.**
-`conformance/graph/check.py` walks `apps/gallery/core/Cargo.lock` (and
-`core/Cargo.lock` once Phase 2 extracts it) against
-`conformance/graph/allowlist.toml`. One entry: `ort` / `ort-sys`,
-build-time, `ORT_LIB_LOCATION`. It is **red** — `gallery-geo` → `ureq`.
-`.github/workflows/conformance.yml` asserts that exact finding so a
-second networking crate cannot hide behind the known one. A source grep
-would have certified the Nominatim client as clean.
+`conformance/graph/check.py` walks both `core/Cargo.lock` and
+`apps/gallery/core/Cargo.lock` against `conformance/graph/allowlist.toml`.
+One entry: `ort` / `ort-sys`, build-time, `ORT_LIB_LOCATION`. Phase 2
+deleted `gallery-geo`; the check is **green**. R6 stays expected-red
+(`conformance/r6/expected.txt`) until gallery-ffi is rewritten.
 
 **0.6 Three spikes — answered.** Written answers live in `docs/spec/spikes/`.
 
@@ -576,10 +574,27 @@ is the Phase 6 brief at `apps/health/reference/web-ui/`. Charts are one
 new ADR 0004 kind (plot IR as the payload), amended when a shell needs
 the binding — not a Chart.js port.
 
-**Phase 2 has started.** `core/` exists and `localcore-vfs` is extracted
-(`ProviderAttrs` off the `Vfs` trait; temp prefix is a parameter). The
-graph stays red on `gallery-geo` until `localcore-geo` exists. Still
-ahead: the remaining verticals (`ProviderProbe` is off the UniFFI surface).
+**Phase 2 extract is on `main`. Milestone B is not closed.**
 
-Still not done, and not Phase 2: redirect READMEs on the old standalone
-GitHub remotes; a Mac `xcodebuild` of the three iOS shells.
+On Linux: `localcore-{vfs,walk,id,conflict,queue,log,blob,geo}` exist;
+`gallery-geo` / Nominatim are gone; the graph check is green; conflict
+copies are not content in gallery, contacts, or music; `ProviderProbe`
+is off the UniFFI surface; ADR 0003 R6 is pinned expected-red; a 20k
+`scan_tree` harness exists (no tree in-repo, not CI-gated).
+
+Honest M1–M3 scope, not the full table above:
+
+- **M1** NFC-normalises in `localcore-id` and Swift. Survival fixture
+  passes. Thumbnail / widget / library-cache keys are not rewritten.
+- **M2** dual-writes UserDefaults and `{library}/.gallery/log`. The
+  dump fixture migrates. UserDefaults remains authority until cutover.
+- **M3** is a pack-rekey survival fixture only. `buffalo_sc` is not
+  swapped for SFace + YuNet.
+
+Still open for B: a measured 20k-tree cost replay; conflict **R8 merge
+policy** (detection/exclude only today); queueing places / thumbs /
+EXIF (ADR 0006 R1); iOS `xcodebuild`. Health Go `internal/log` and
+`internal/blobs` stay until Phase 6.
+
+Still not Phase 2: redirect READMEs on the old standalone GitHub
+remotes. Phase 3 is `shell-kit` + localcontacts, after B.
