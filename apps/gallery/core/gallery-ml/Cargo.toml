@@ -16,6 +16,7 @@ ort-backend = ["dep:ort"]
 [dependencies]
 gallery-meta = { path = "../gallery-meta" }
 gallery-vfs = { path = "../gallery-vfs" }
+localcore-queue = { path = "../../../../core/localcore-queue" }
 
 # --- determinism-critical, pinned to an exact version ---------------------
 # Every crate in the decode → orient → resize → tensor path is pinned to a

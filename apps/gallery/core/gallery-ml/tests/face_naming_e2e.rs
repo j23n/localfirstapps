@@ -54,7 +54,7 @@ impl Fixture {
         let engine = FaceEngine::open(
             dir.path().join("gallery-cache.sqlite"),
             face_pack_dir(),
-            Arc::new(StdVfs),
+            Arc::new(StdVfs::new()),
         )
         .expect("face pack must load");
         Fixture { dir, engine }
@@ -74,7 +74,7 @@ impl Fixture {
         let mut pack = ModelPack::load(face_pack_dir()).unwrap();
         mutate(&mut pack.manifest.faces.as_mut().unwrap().clustering);
         let cache = CacheDb::open(dir.path().join("gallery-cache.sqlite")).unwrap();
-        let engine = FaceEngine::open_with_pack(cache, pack, Arc::new(StdVfs)).unwrap();
+        let engine = FaceEngine::open_with_pack(cache, pack, Arc::new(StdVfs::new())).unwrap();
         Fixture { dir, engine }
     }
 
@@ -1645,7 +1645,7 @@ fn a_sidecar_write_error_fails_the_queue_row_and_counts_sidecars_failed() {
     let engine = FaceEngine::open(
         dir.path().join("gallery-cache.sqlite"),
         face_pack_dir(),
-        Arc::new(SidecarWriteFailVfs { inner: StdVfs }),
+        Arc::new(SidecarWriteFailVfs { inner: StdVfs::new() }),
     )
     .expect("face pack must load");
     let paths: Vec<String> = PHOTOS

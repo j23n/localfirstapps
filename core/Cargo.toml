@@ -5,6 +5,7 @@ members = [
     "localcore-conflict",
     "localcore-id",
     "localcore-log",
+    "localcore-queue",
     "localcore-vfs",
     "localcore-walk",
 ]

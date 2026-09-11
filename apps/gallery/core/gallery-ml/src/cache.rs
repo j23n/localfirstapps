@@ -57,10 +57,11 @@
 //! ships no face models must leave `ml_work` alone, and a face-model swap must
 //! not re-tag anything. So `face_work` is its own table with its own states,
 //! retries and staleness — but *identical* mechanics, down to the
-//! conditional-claim discipline. Rather than copy 300 lines of SQL with one
-//! word changed, both are driven through [`Queue`], a compile-time constant
-//! naming the table and its result-count column. Every SQL string is built from
-//! `&'static str`s only; nothing user-supplied ever reaches `format!`.
+//! conditional-claim discipline. Both are driven through
+//! [`localcore_queue::Queue`], a compile-time constant naming the table and
+//! its result-count column. SQL and the state machine live in
+//! `localcore-queue`; this module opens the file, migrates embeddings /
+//! faces / clusters, and maps capability-specific [`ErrorCode`]s.
 //!
 //! # Concurrency
 //!
@@ -75,7 +76,11 @@ use std::sync::Mutex;
 
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension, TransactionBehavior};
 
+use localcore_queue::Queue;
+
 use crate::error::{ErrorCode, MlError, MlResult};
+
+pub use localcore_queue::{DoneRowStat, Stats, WorkState, BUSY_TIMEOUT_MS, MAX_RETRIES};
 
 /// Schema version stored in `meta`. Bump when [`MIGRATIONS`] grows.
 pub const SCHEMA_VERSION: u32 = 5;
@@ -248,70 +253,11 @@ const MIGRATIONS: &[&str] = &[
     "#,
 ];
 
-/// One of the two work queues. See the module docs.
-///
-/// Both fields are compile-time literals — they are interpolated into SQL, and
-/// nothing else in this module ever is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Queue {
-    table: &'static str,
-    count_col: &'static str,
-}
-
 /// The Phase 1 tagging queue.
-const TAGGING: Queue = Queue {
-    table: "ml_work",
-    count_col: "tag_count",
-};
+const TAGGING: Queue = Queue::new("ml_work", "tag_count");
 
 /// The Phase 2 face queue.
-const FACES: Queue = Queue {
-    table: "face_work",
-    count_col: "face_count",
-};
-
-/// Lifecycle of one photo in a work queue.
-///
-/// Discriminants are persisted, so they are append-only in the same way
-/// [`ErrorCode`]'s are.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(i64)]
-pub enum WorkState {
-    /// Enqueued, nothing done yet.
-    Pending = 0,
-    /// Being hashed / processed right now. A row left here by an app kill is
-    /// reclaimed as [`WorkState::Pending`] at the next [`CacheDb::open`].
-    Hashing = 1,
-    /// Processed successfully under `model_pack`.
-    Done = 2,
-    /// Failed; see `error_code` and `retry_count`.
-    Failed = 3,
-    /// Was `Done`, but under a model pack that is no longer current.
-    Stale = 4,
-    /// Not an image format this build can decode. Not a failure — re-running
-    /// will not help, and it must not show up in a "3 photos failed" summary.
-    Skipped = 5,
-}
-
-impl WorkState {
-    /// The persisted integer.
-    pub fn as_i64(self) -> i64 {
-        self as i64
-    }
-
-    /// Inverse of [`WorkState::as_i64`]; unknown values read as
-    /// [`WorkState::Pending`] so a downgrade re-does work rather than losing it.
-    pub fn from_i64(v: i64) -> WorkState {
-        match v {
-            1 => WorkState::Hashing,
-            2 => WorkState::Done,
-            3 => WorkState::Failed,
-            4 => WorkState::Stale,
-            5 => WorkState::Skipped,
-            _ => WorkState::Pending,
-        }
-    }
-}
+const FACES: Queue = Queue::new("face_work", "face_count");
 
 /// What a cluster is to the user.
 ///
@@ -351,22 +297,6 @@ impl ClusterState {
     }
 }
 
-/// Queue counts, as reported to the UI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Stats {
-    /// Rows waiting to be processed, including `stale` and retryable `failed`.
-    pub pending: u64,
-    /// Rows processed under the current pack.
-    pub done: u64,
-    /// Rows that failed and are out of retries.
-    pub failed: u64,
-    /// Rows skipped as an unsupported format.
-    pub skipped: u64,
-    /// Rows whose result count is non-zero: tags written for the tagging queue,
-    /// faces found for the face queue.
-    pub tagged: u64,
-}
-
 /// What the face tables hold, as reported to the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FaceLibraryStats {
@@ -384,21 +314,6 @@ pub struct FaceLibraryStats {
     pub rejected_clusters: u64,
     /// Outstanding merge proposals.
     pub merge_proposals: u64,
-}
-
-/// The file identity a `done` row was decided against.
-///
-/// Recorded by [`CacheDb::finish_done`] and compared by the engine at the start
-/// of every run: one `stat` per row, no hashing, and an in-place edit stops
-/// being invisible.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DoneRowStat {
-    /// Absolute image path.
-    pub path: String,
-    /// Size in bytes at the time it was processed.
-    pub size: u64,
-    /// Last-modified time in whole seconds, when the platform reported one.
-    pub modified_unix: Option<i64>,
 }
 
 /// One row of a work queue.
@@ -514,23 +429,6 @@ pub struct ClusterRow {
     pub pinned: bool,
 }
 
-/// How many times a row is retried before it counts as permanently failed.
-///
-/// There is no time-based backoff: runs are user-initiated and the natural
-/// spacing between them is the backoff. The counter exists so a systematically
-/// bad file stops costing a full decode on every "Tag now".
-pub const MAX_RETRIES: u32 = 3;
-
-/// How long a statement waits for the other engine's write lock before it gives
-/// up with `SQLITE_BUSY`.
-///
-/// Five seconds. Every write this crate makes is a few small rows inside one
-/// transaction — microseconds of lock — so the only way to wait this long is
-/// for something to be genuinely wedged, and reporting that is more useful than
-/// waiting longer. The number is deliberately far above the real contention and
-/// far below anything a user would sit through.
-pub const BUSY_TIMEOUT_MS: u64 = 5_000;
-
 /// The cache database.
 #[derive(Debug)]
 pub struct CacheDb {
@@ -637,11 +535,9 @@ impl CacheDb {
 /// handful of small rows, so waiting is always the better answer than failing
 /// a photo.
 fn apply_connection_pragmas(conn: &Connection) -> rusqlite::Result<()> {
-    // `journal_mode` returns a row, so it needs `query_row`, not `execute`.
-    let _: String = conn.query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))?;
-    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    localcore_queue::configure_connection(conn)?;
+    // Face clusters use ON DELETE CASCADE; the queue crate does not.
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.busy_timeout(std::time::Duration::from_millis(BUSY_TIMEOUT_MS))?;
     Ok(())
 }
 
@@ -818,320 +714,20 @@ fn quarantine_derived_cache(path: &Path, cause: &MlError) -> MlResult<()> {
 // ---------------------------------------------------------------------------
 // Work queues
 //
-// One implementation, two tables. The `q_*` free functions hold the SQL; the
-// `CacheDb` methods below are the two named views onto it.
+// SQL lives in localcore-queue. These helpers map the generic row onto
+// gallery's ErrorCode-bearing WorkItem; CacheDb methods below are the two
+// named views (tagging / faces).
 // ---------------------------------------------------------------------------
 
-fn q_reclaim_abandoned(conn: &Connection, q: Queue) -> MlResult<usize> {
-    Ok(conn.execute(
-        &format!(
-            "UPDATE {} SET state = ?1, updated_at = ?2 WHERE state = ?3",
-            q.table
-        ),
-        params![
-            WorkState::Pending.as_i64(),
-            now_unix(),
-            WorkState::Hashing.as_i64()
-        ],
-    )?)
-}
-
-fn q_reopen_skipped(conn: &Connection, q: Queue, current: u32) -> MlResult<usize> {
-    Ok(conn.execute(
-        &format!(
-            "UPDATE {} SET state = ?1, error_code = 0, retry_count = 0, updated_at = ?2
-             WHERE state = ?3 AND (decoder_version IS NULL OR decoder_version <> ?4)",
-            q.table
-        ),
-        params![
-            WorkState::Pending.as_i64(),
-            now_unix(),
-            WorkState::Skipped.as_i64(),
-            current as i64
-        ],
-    )?)
-}
-
-fn q_done_rows_with_stat(conn: &Connection, q: Queue) -> MlResult<Vec<DoneRowStat>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT path, file_size, file_mtime FROM {} WHERE state = ?1
-         AND file_size IS NOT NULL",
-        q.table
-    ))?;
-    let rows = stmt.query_map(params![WorkState::Done.as_i64()], |r| {
-        Ok(DoneRowStat {
-            path: r.get(0)?,
-            size: r.get::<_, i64>(1)?.max(0) as u64,
-            modified_unix: r.get(2)?,
-        })
-    })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-}
-
-fn q_mark_stale(conn: &Connection, q: Queue, path: &str) -> MlResult<usize> {
-    Ok(conn.execute(
-        &format!(
-            "UPDATE {} SET state = ?1, updated_at = ?2 WHERE path = ?3 AND state = ?4",
-            q.table
-        ),
-        params![
-            WorkState::Stale.as_i64(),
-            now_unix(),
-            path,
-            WorkState::Done.as_i64()
-        ],
-    )?)
-}
-
-fn q_enqueue(conn: &mut Connection, q: Queue, paths: &[String]) -> MlResult<usize> {
-    let tx = conn.transaction()?;
-    let now = now_unix();
-    let mut inserted = 0usize;
-    {
-        let mut stmt = tx.prepare(&format!(
-            "INSERT INTO {} (path, state, updated_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(path) DO NOTHING",
-            q.table
-        ))?;
-        for path in paths {
-            inserted += stmt.execute(params![path, WorkState::Pending.as_i64(), now])?;
-        }
+fn work_item_from_queue(item: localcore_queue::WorkItem) -> WorkItem {
+    WorkItem {
+        path: item.path,
+        content_hash: item.content_hash,
+        state: item.state,
+        model_pack: item.model_pack,
+        error_code: ErrorCode::from_i64(item.error_code),
+        retry_count: item.retry_count,
     }
-    tx.commit()?;
-    Ok(inserted)
-}
-
-fn q_mark_stale_for_pack(conn: &Connection, q: Queue, pack: &str) -> MlResult<usize> {
-    Ok(conn.execute(
-        &format!(
-            "UPDATE {} SET state = ?1, updated_at = ?2
-             WHERE state = ?3 AND (model_pack IS NULL OR model_pack <> ?4)",
-            q.table
-        ),
-        params![
-            WorkState::Stale.as_i64(),
-            now_unix(),
-            WorkState::Done.as_i64(),
-            pack
-        ],
-    )?)
-}
-
-fn q_claimable(
-    conn: &Connection,
-    q: Queue,
-    limit: usize,
-    root_prefix: Option<&str>,
-) -> MlResult<Vec<WorkItem>> {
-    // `substr(path, 1, length(?)) = ?` rather than LIKE/GLOB: both of those
-    // give `%`, `_`, `[` and `*` meaning, and a library folder may contain
-    // any of them.
-    let sql = format!(
-        "SELECT path, content_hash, state, model_pack, error_code, retry_count
-         FROM {}
-         WHERE (state IN (?1, ?2) OR (state = ?3 AND retry_count < ?4))
-           AND (?6 IS NULL OR substr(path, 1, length(?6)) = ?6)
-         ORDER BY updated_at, path
-         LIMIT ?5",
-        q.table
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(
-        params![
-            WorkState::Pending.as_i64(),
-            WorkState::Stale.as_i64(),
-            WorkState::Failed.as_i64(),
-            MAX_RETRIES,
-            if limit == 0 { -1i64 } else { limit as i64 },
-            root_prefix,
-        ],
-        row_to_item,
-    )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-}
-
-fn q_item(conn: &Connection, q: Queue, path: &str) -> MlResult<Option<WorkItem>> {
-    Ok(conn
-        .query_row(
-            &format!(
-                "SELECT path, content_hash, state, model_pack, error_code, retry_count
-                 FROM {} WHERE path = ?1",
-                q.table
-            ),
-            params![path],
-            row_to_item,
-        )
-        .optional()?)
-}
-
-fn q_begin(conn: &Connection, q: Queue, path: &str) -> MlResult<bool> {
-    let n = conn.execute(
-        &format!(
-            "UPDATE {} SET state = ?1, updated_at = ?2
-             WHERE path = ?3 AND state IN (?4, ?5, ?6)",
-            q.table
-        ),
-        params![
-            WorkState::Hashing.as_i64(),
-            now_unix(),
-            path,
-            WorkState::Pending.as_i64(),
-            WorkState::Stale.as_i64(),
-            WorkState::Failed.as_i64()
-        ],
-    )?;
-    Ok(n > 0)
-}
-
-fn q_set_content_hash(conn: &Connection, q: Queue, path: &str, hash: &[u8; 32]) -> MlResult<bool> {
-    let n = conn.execute(
-        &format!(
-            "UPDATE {} SET content_hash = ?1, updated_at = ?2 WHERE path = ?3 AND state = ?4",
-            q.table
-        ),
-        params![
-            hash.as_slice(),
-            now_unix(),
-            path,
-            WorkState::Hashing.as_i64()
-        ],
-    )?;
-    Ok(n > 0)
-}
-
-fn q_finish_done(
-    conn: &Connection,
-    q: Queue,
-    path: &str,
-    pack: &str,
-    count: usize,
-    stat: Option<(u64, Option<i64>)>,
-) -> MlResult<bool> {
-    let n = conn.execute(
-        &format!(
-            "UPDATE {}
-             SET state = ?1, model_pack = ?2, {} = ?3, error_code = 0,
-                 retry_count = 0, updated_at = ?4, file_size = ?6, file_mtime = ?7
-             WHERE path = ?5 AND state = ?8",
-            q.table, q.count_col
-        ),
-        params![
-            WorkState::Done.as_i64(),
-            pack,
-            count as i64,
-            now_unix(),
-            path,
-            stat.map(|(size, _)| size as i64),
-            stat.and_then(|(_, mtime)| mtime),
-            WorkState::Hashing.as_i64()
-        ],
-    )?;
-    Ok(n > 0)
-}
-
-fn q_finish_failed(conn: &Connection, q: Queue, path: &str, code: ErrorCode) -> MlResult<bool> {
-    let n = conn.execute(
-        &format!(
-            "UPDATE {}
-             SET state = ?1, error_code = ?2, retry_count = retry_count + 1, updated_at = ?3
-             WHERE path = ?4 AND state = ?5",
-            q.table
-        ),
-        params![
-            WorkState::Failed.as_i64(),
-            code.as_i64(),
-            now_unix(),
-            path,
-            WorkState::Hashing.as_i64()
-        ],
-    )?;
-    Ok(n > 0)
-}
-
-fn q_finish_skipped(
-    conn: &Connection,
-    q: Queue,
-    path: &str,
-    decoder_version: u32,
-) -> MlResult<bool> {
-    let n = conn.execute(
-        &format!(
-            "UPDATE {} SET state = ?1, error_code = ?2, updated_at = ?3,
-                 decoder_version = ?5
-             WHERE path = ?4 AND state = ?6",
-            q.table
-        ),
-        params![
-            WorkState::Skipped.as_i64(),
-            ErrorCode::UnsupportedFormat.as_i64(),
-            now_unix(),
-            path,
-            decoder_version as i64,
-            WorkState::Hashing.as_i64()
-        ],
-    )?;
-    Ok(n > 0)
-}
-
-fn q_release(conn: &Connection, q: Queue, path: &str) -> MlResult<()> {
-    conn.execute(
-        &format!(
-            "UPDATE {} SET state = ?1, updated_at = ?2 WHERE path = ?3 AND state = ?4",
-            q.table
-        ),
-        params![
-            WorkState::Pending.as_i64(),
-            now_unix(),
-            path,
-            WorkState::Hashing.as_i64()
-        ],
-    )?;
-    Ok(())
-}
-
-fn q_stats(conn: &Connection, q: Queue) -> MlResult<Stats> {
-    let mut stats = Stats::default();
-    let mut stmt = conn.prepare(&format!(
-        "SELECT state, COUNT(*), SUM({} > 0) FROM {} GROUP BY state",
-        q.count_col, q.table
-    ))?;
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            WorkState::from_i64(r.get(0)?),
-            r.get::<_, i64>(1)? as u64,
-            r.get::<_, Option<i64>>(2)?.unwrap_or(0) as u64,
-        ))
-    })?;
-    for row in rows {
-        let (state, count, tagged) = row?;
-        match state {
-            WorkState::Pending | WorkState::Hashing | WorkState::Stale => stats.pending += count,
-            WorkState::Done => {
-                stats.done += count;
-                stats.tagged += tagged;
-            }
-            WorkState::Failed => stats.failed += count,
-            WorkState::Skipped => stats.skipped += count,
-        }
-    }
-    // A `failed` row with retries left is still work to do; count it in
-    // both places so "pending" matches what a run would actually attempt.
-    let retryable: u64 = conn.query_row(
-        &format!(
-            "SELECT COUNT(*) FROM {} WHERE state = ?1 AND retry_count < ?2",
-            q.table
-        ),
-        params![WorkState::Failed.as_i64(), MAX_RETRIES],
-        |r| r.get::<_, i64>(0).map(|v| v as u64),
-    )?;
-    stats.pending += retryable;
-    stats.failed -= retryable.min(stats.failed);
-    Ok(stats)
-}
-
-fn q_reset(conn: &Connection, q: Queue) -> MlResult<()> {
-    conn.execute(&format!("DELETE FROM {}", q.table), [])?;
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1143,13 +739,13 @@ impl CacheDb {
     ///
     /// A `hashing` row can only exist because something died holding it: a
     /// killed process, or a worker thread that panicked mid-photo. Called at
-    /// [`CacheDb::open`] **and** at the start of every run — the app holds one
-    /// session for its whole lifetime, so "at open" alone stranded a row for
-    /// the rest of the process.
+    /// the start of every run — not at [`CacheDb::open`]. Two engines share
+    /// this file; an opener cannot tell an abandoned row from one the other
+    /// engine is holding.
     ///
     /// Safe to call between runs only: a run in flight owns its `hashing` rows.
     pub fn reclaim_abandoned(&self) -> MlResult<usize> {
-        q_reclaim_abandoned(&self.lock(), TAGGING)
+        Ok(localcore_queue::reclaim_abandoned(&self.lock(), TAGGING)?)
     }
 
     /// Re-open `skipped` rows decided by a different decoder generation.
@@ -1162,7 +758,7 @@ impl CacheDb {
     ///
     /// Returns how many rows were re-opened.
     pub fn reopen_skipped_for_decoder(&self, current: u32) -> MlResult<usize> {
-        q_reopen_skipped(&self.lock(), TAGGING, current)
+        Ok(localcore_queue::reopen_skipped(&self.lock(), TAGGING, current)?)
     }
 
     /// Every `done` row that recorded a stat, so a run can spot in-place edits.
@@ -1172,12 +768,12 @@ impl CacheDb {
     /// schema upgrade would be a worse answer than leaving them until the next
     /// real change.
     pub fn done_rows_with_stat(&self) -> MlResult<Vec<DoneRowStat>> {
-        q_done_rows_with_stat(&self.lock(), TAGGING)
+        Ok(localcore_queue::done_rows_with_stat(&self.lock(), TAGGING)?)
     }
 
     /// Demote one `done` row to `stale` because its bytes moved under us.
     pub fn mark_stale(&self, path: &str) -> MlResult<usize> {
-        q_mark_stale(&self.lock(), TAGGING, path)
+        Ok(localcore_queue::mark_stale(&self.lock(), TAGGING, path)?)
     }
 
     /// Add `paths` to the queue, idempotently, in one transaction.
@@ -1185,7 +781,7 @@ impl CacheDb {
     /// A path already present keeps its state — re-enqueuing a `done` photo
     /// must not re-tag it. Returns how many rows were newly inserted.
     pub fn enqueue(&self, paths: &[String]) -> MlResult<usize> {
-        q_enqueue(&mut self.lock(), TAGGING, paths)
+        Ok(localcore_queue::enqueue(&mut self.lock(), TAGGING, paths)?)
     }
 
     /// Mark every `done` row whose `model_pack` differs from `pack` as stale.
@@ -1194,7 +790,7 @@ impl CacheDb {
     /// them" (overview, model packs) — the embeddings stay, so a downgrade back
     /// to the old pack is nearly free.
     pub fn mark_stale_for_pack(&self, pack: &str) -> MlResult<usize> {
-        q_mark_stale_for_pack(&self.lock(), TAGGING, pack)
+        Ok(localcore_queue::mark_stale_for_pack(&self.lock(), TAGGING, pack)?)
     }
 
     /// Paths that a run should process, oldest-enqueued first.
@@ -1210,12 +806,15 @@ impl CacheDb {
     /// deliberate: an out-of-scope row is not a failure and must not burn a
     /// retry. It simply waits, in case the user switches back.
     pub fn claimable(&self, limit: usize, root_prefix: Option<&str>) -> MlResult<Vec<WorkItem>> {
-        q_claimable(&self.lock(), TAGGING, limit, root_prefix)
+        Ok(localcore_queue::claimable(&self.lock(), TAGGING, limit, root_prefix)?
+            .into_iter()
+            .map(work_item_from_queue)
+            .collect())
     }
 
     /// One row by path.
     pub fn item(&self, path: &str) -> MlResult<Option<WorkItem>> {
-        q_item(&self.lock(), TAGGING, path)
+        Ok(localcore_queue::item(&self.lock(), TAGGING, path)?.map(work_item_from_queue))
     }
 
     /// Move a row to `hashing`, claiming it for this worker.
@@ -1228,14 +827,14 @@ impl CacheDb {
     /// all: no decode, and above all no sidecar write on behalf of a row it
     /// does not own.
     pub fn begin(&self, path: &str) -> MlResult<bool> {
-        q_begin(&self.lock(), TAGGING, path)
+        Ok(localcore_queue::begin(&self.lock(), TAGGING, path)?)
     }
 
     /// Record the content hash of a row being processed.
     ///
     /// Returns whether the row is still ours; see [`CacheDb::begin`].
     pub fn set_content_hash(&self, path: &str, hash: &[u8; 32]) -> MlResult<bool> {
-        q_set_content_hash(&self.lock(), TAGGING, path, hash)
+        Ok(localcore_queue::set_content_hash(&self.lock(), TAGGING, path, hash)?)
     }
 
     /// Mark a row tagged under `pack` with `tag_count` tags, clearing any
@@ -1250,36 +849,54 @@ impl CacheDb {
         tag_count: usize,
         stat: Option<(u64, Option<i64>)>,
     ) -> MlResult<bool> {
-        q_finish_done(&self.lock(), TAGGING, path, pack, tag_count, stat)
+        Ok(localcore_queue::finish_done(
+            &self.lock(),
+            TAGGING,
+            path,
+            pack,
+            tag_count,
+            stat,
+        )?)
     }
 
     /// Mark a row failed, incrementing its retry counter.
     pub fn finish_failed(&self, path: &str, code: ErrorCode) -> MlResult<bool> {
-        q_finish_failed(&self.lock(), TAGGING, path, code)
+        Ok(localcore_queue::finish_failed(
+            &self.lock(),
+            TAGGING,
+            path,
+            code.as_i64(),
+        )?)
     }
 
     /// Mark a row as a format this build does not handle, stamping the decoder
     /// generation that said so (see [`CacheDb::reopen_skipped_for_decoder`]).
     pub fn finish_skipped(&self, path: &str, decoder_version: u32) -> MlResult<bool> {
-        q_finish_skipped(&self.lock(), TAGGING, path, decoder_version)
+        Ok(localcore_queue::finish_skipped(
+            &self.lock(),
+            TAGGING,
+            path,
+            ErrorCode::UnsupportedFormat.as_i64(),
+            decoder_version,
+        )?)
     }
 
     /// Release a claimed row back to `pending` without counting a failure.
     /// Used when a run is cancelled with photos in flight.
     pub fn release(&self, path: &str) -> MlResult<()> {
-        q_release(&self.lock(), TAGGING, path)
+        Ok(localcore_queue::release(&self.lock(), TAGGING, path)?)
     }
 
     /// Queue counts.
     pub fn stats(&self) -> MlResult<Stats> {
-        q_stats(&self.lock(), TAGGING)
+        Ok(localcore_queue::stats(&self.lock(), TAGGING)?)
     }
 
     /// Drop every queue row, keeping cached embeddings.
     ///
     /// This is "re-tag everything" without paying for inference again.
     pub fn reset_queue(&self) -> MlResult<()> {
-        q_reset(&self.lock(), TAGGING)
+        Ok(localcore_queue::reset(&self.lock(), TAGGING)?)
     }
 
     /// Cached embedding for `(content_hash, model)`.
@@ -1317,32 +934,32 @@ impl CacheDb {
 impl CacheDb {
     /// [`CacheDb::reclaim_abandoned`] for the face queue.
     pub fn face_reclaim_abandoned(&self) -> MlResult<usize> {
-        q_reclaim_abandoned(&self.lock(), FACES)
+        Ok(localcore_queue::reclaim_abandoned(&self.lock(), FACES)?)
     }
 
     /// [`CacheDb::reopen_skipped_for_decoder`] for the face queue.
     pub fn face_reopen_skipped_for_decoder(&self, current: u32) -> MlResult<usize> {
-        q_reopen_skipped(&self.lock(), FACES, current)
+        Ok(localcore_queue::reopen_skipped(&self.lock(), FACES, current)?)
     }
 
     /// [`CacheDb::done_rows_with_stat`] for the face queue.
     pub fn face_done_rows_with_stat(&self) -> MlResult<Vec<DoneRowStat>> {
-        q_done_rows_with_stat(&self.lock(), FACES)
+        Ok(localcore_queue::done_rows_with_stat(&self.lock(), FACES)?)
     }
 
     /// [`CacheDb::mark_stale`] for the face queue.
     pub fn face_mark_stale(&self, path: &str) -> MlResult<usize> {
-        q_mark_stale(&self.lock(), FACES, path)
+        Ok(localcore_queue::mark_stale(&self.lock(), FACES, path)?)
     }
 
     /// [`CacheDb::enqueue`] for the face queue.
     pub fn face_enqueue(&self, paths: &[String]) -> MlResult<usize> {
-        q_enqueue(&mut self.lock(), FACES, paths)
+        Ok(localcore_queue::enqueue(&mut self.lock(), FACES, paths)?)
     }
 
     /// [`CacheDb::mark_stale_for_pack`] for the face queue.
     pub fn face_mark_stale_for_pack(&self, pack: &str) -> MlResult<usize> {
-        q_mark_stale_for_pack(&self.lock(), FACES, pack)
+        Ok(localcore_queue::mark_stale_for_pack(&self.lock(), FACES, pack)?)
     }
 
     /// [`CacheDb::claimable`] for the face queue.
@@ -1351,22 +968,25 @@ impl CacheDb {
         limit: usize,
         root_prefix: Option<&str>,
     ) -> MlResult<Vec<WorkItem>> {
-        q_claimable(&self.lock(), FACES, limit, root_prefix)
+        Ok(localcore_queue::claimable(&self.lock(), FACES, limit, root_prefix)?
+            .into_iter()
+            .map(work_item_from_queue)
+            .collect())
     }
 
     /// [`CacheDb::item`] for the face queue.
     pub fn face_item(&self, path: &str) -> MlResult<Option<WorkItem>> {
-        q_item(&self.lock(), FACES, path)
+        Ok(localcore_queue::item(&self.lock(), FACES, path)?.map(work_item_from_queue))
     }
 
     /// [`CacheDb::begin`] for the face queue.
     pub fn face_begin(&self, path: &str) -> MlResult<bool> {
-        q_begin(&self.lock(), FACES, path)
+        Ok(localcore_queue::begin(&self.lock(), FACES, path)?)
     }
 
     /// [`CacheDb::set_content_hash`] for the face queue.
     pub fn face_set_content_hash(&self, path: &str, hash: &[u8; 32]) -> MlResult<bool> {
-        q_set_content_hash(&self.lock(), FACES, path, hash)
+        Ok(localcore_queue::set_content_hash(&self.lock(), FACES, path, hash)?)
     }
 
     /// [`CacheDb::finish_done`] for the face queue.
@@ -1377,33 +997,51 @@ impl CacheDb {
         face_count: usize,
         stat: Option<(u64, Option<i64>)>,
     ) -> MlResult<bool> {
-        q_finish_done(&self.lock(), FACES, path, pack, face_count, stat)
+        Ok(localcore_queue::finish_done(
+            &self.lock(),
+            FACES,
+            path,
+            pack,
+            face_count,
+            stat,
+        )?)
     }
 
     /// [`CacheDb::finish_failed`] for the face queue.
     pub fn face_finish_failed(&self, path: &str, code: ErrorCode) -> MlResult<bool> {
-        q_finish_failed(&self.lock(), FACES, path, code)
+        Ok(localcore_queue::finish_failed(
+            &self.lock(),
+            FACES,
+            path,
+            code.as_i64(),
+        )?)
     }
 
     /// [`CacheDb::finish_skipped`] for the face queue.
     pub fn face_finish_skipped(&self, path: &str, decoder_version: u32) -> MlResult<bool> {
-        q_finish_skipped(&self.lock(), FACES, path, decoder_version)
+        Ok(localcore_queue::finish_skipped(
+            &self.lock(),
+            FACES,
+            path,
+            ErrorCode::UnsupportedFormat.as_i64(),
+            decoder_version,
+        )?)
     }
 
     /// [`CacheDb::release`] for the face queue.
     pub fn face_release(&self, path: &str) -> MlResult<()> {
-        q_release(&self.lock(), FACES, path)
+        Ok(localcore_queue::release(&self.lock(), FACES, path)?)
     }
 
     /// [`CacheDb::stats`] for the face queue. `tagged` counts photos that have
     /// at least one face.
     pub fn face_stats(&self) -> MlResult<Stats> {
-        q_stats(&self.lock(), FACES)
+        Ok(localcore_queue::stats(&self.lock(), FACES)?)
     }
 
     /// Drop every face queue row, keeping detections and clusters.
     pub fn face_reset_queue(&self) -> MlResult<()> {
-        q_reset(&self.lock(), FACES)
+        Ok(localcore_queue::reset(&self.lock(), FACES)?)
     }
 }
 
@@ -2308,18 +1946,6 @@ fn decode_vec(dim: i64, bytes: &[u8]) -> Option<Vec<f32>> {
             .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
             .collect(),
     )
-}
-
-fn row_to_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<WorkItem> {
-    let hash: Option<Vec<u8>> = r.get(1)?;
-    Ok(WorkItem {
-        path: r.get(0)?,
-        content_hash: hash.and_then(|h| <[u8; 32]>::try_from(h.as_slice()).ok()),
-        state: WorkState::from_i64(r.get(2)?),
-        model_pack: r.get(3)?,
-        error_code: ErrorCode::from_i64(r.get(4)?),
-        retry_count: r.get::<_, i64>(5)?.max(0) as u32,
-    })
 }
 
 /// Whole seconds since the Unix epoch; 0 if the clock is before 1970.

@@ -529,6 +529,7 @@ dependencies = [
  "heif-oxide",
  "image",
  "kamadak-exif",
+ "localcore-queue",
  "ort",
  "rusqlite",
  "serde",
@@ -900,6 +901,13 @@ version = "0.1.0"
 dependencies = [
  "sha2",
  "uuid",
+]
+
+[[package]]
+name = "localcore-queue"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
 ]
 
 [[package]]
