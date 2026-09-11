@@ -1,5 +1,8 @@
 # LocalContacts
 
+Lives at `apps/contacts` in the localfiles monorepo. Commands below are
+from that directory.
+
 A file-based contact manager for iOS. Your contacts are stored as plain vCard (.vcf) files in a folder you control — not locked into any service or cloud platform.
 
 ## Why

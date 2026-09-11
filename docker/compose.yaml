@@ -1,7 +1,7 @@
 # Agent workspace for the localfiles family.
 #
-#   cd localapps/docker
-#   ./bootstrap.sh                     # once: write .env, check the checkouts
+#   cd docker
+#   ./bootstrap.sh                     # once: write .env, check the checkout
 #   docker compose build
 #   docker compose up -d               # long-lived container
 #   docker compose exec agent bash     # a shell in it; run this twice for two agents
@@ -18,8 +18,8 @@
 # Host layout this assumes:
 #
 #   ~/localfiles/            <- WORKSPACE, mounted at /work
-#     localapps/docker/       <- this file
-#     localgallery/ localcontacts/ localmusic/ localhealth/
+#     docker/                <- this file
+#     apps/{gallery,contacts,music,health}/
 #
 # There is no agent-home directory any more. See the volumes block.
 
@@ -49,9 +49,7 @@ services:
     command: ["sleep", "infinity"]
     userns_mode: "keep-id"
     volumes:
-      # The repos. One mount, not five: an agent asked to make localmusic
-      # conform to an ADR has to be able to read the ADR, and cross-repo greps
-      # are most of what the coordination repo is for.
+      # The monorepo. Spec, docker, and all four apps.
       - "${WORKSPACE:?set WORKSPACE in .env}:/work:z"
 
       # --- credentials and state, as named volumes -----------------------

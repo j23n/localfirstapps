@@ -6,19 +6,20 @@
 # written from inside the container.
 set -euo pipefail
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # localapps/docker
-workspace="$(cd "$here/../.." && pwd)"                  # ~/localfiles
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # docker/
+workspace="$(cd "$here/.." && pwd)"                     # monorepo root
 env_file="$here/.env"
 
 echo "workspace: $workspace"
 
 missing=()
-for r in localapps localgallery localcontacts localmusic localhealth; do
-  [ -d "$workspace/$r/.git" ] || missing+=("$r")
+[ -d "$workspace/.git" ] || missing+=("monorepo .git")
+for r in gallery contacts music health; do
+  [ -d "$workspace/apps/$r" ] || missing+=("apps/$r")
 done
 if [ ${#missing[@]} -gt 0 ]; then
-  echo "note: not a git checkout under $workspace: ${missing[*]}" >&2
-  echo "      clone them there, or set WORKSPACE in .env to where they are." >&2
+  echo "note: missing under $workspace: ${missing[*]}" >&2
+  echo "      set WORKSPACE in .env to the monorepo root." >&2
 fi
 
 if [ -f "$env_file" ]; then

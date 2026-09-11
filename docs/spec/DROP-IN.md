@@ -1,11 +1,5 @@
 # Dropping this in
 
-Nothing in the five repositories has changed yet. Everything here was written
-against them read-only. This page says where each file goes and what to run
-first.
-
-## Where it goes, today
-
 Phase 0.1 is done. This repository is the monorepo. The four apps live at
 `apps/{gallery,contacts,music,health}`. The Pages site is `docs/`; the
 specification is `docs/spec/`.
@@ -23,8 +17,9 @@ apps/music/
 apps/health/
 ```
 
-The standalone `localgallery`, `localcontacts`, `localmusic`, and
-`localhealth` repositories are archived read-only with redirect READMEs.
+The standalone GitHub remotes (`localgallery`, `localcontacts`,
+`localmusic`, `localhealth`) still need redirect READMEs. That is not
+done in this tree.
 
 ## What to read, in order
 

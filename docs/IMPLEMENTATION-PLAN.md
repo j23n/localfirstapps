@@ -150,7 +150,8 @@ No app behaviour changes. Nothing here blocks on a Mac.
 `apps/{gallery,contacts,music,health}`
 
 SHAs changed; `git log apps/<name>` keeps the original commits. The
-standalone clones are archived read-only with redirect READMEs.
+standalone GitHub remotes still need redirect READMEs — that is left
+to do, not done here.
 
 Current tree (Phase 2 will extract `core/` and `shells/` from inside the
 apps; they are not lifted yet):

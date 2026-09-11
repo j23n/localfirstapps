@@ -1,5 +1,8 @@
 # archive
 
+Lives at `apps/health` in the localfiles monorepo. Commands below are
+from that directory.
+
 A local-only, single-user, append-only personal health archive. Apple Health
 exports are the historical baseline and the canonical type vocabulary. Nothing
 in this program talks to the network.

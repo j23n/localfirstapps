@@ -1,9 +1,9 @@
 # localfiles — architecture specification
 
 The goal state for the localfiles family. These documents describe what the
-system **is**, not how to get there from where the code stands today. Handed
-to an implementer alongside the repositories, they are intended to be
-sufficient to begin work without further design decisions.
+system **is**, not how to get there from where the code stands today. They
+live in this monorepo at `docs/spec/` and are intended to be sufficient to
+begin work without further design decisions.
 
 **Revision r2.** The decisions this revision changed are listed at the end.
 

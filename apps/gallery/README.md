@@ -1,5 +1,8 @@
 # LocalGallery
 
+Lives at `apps/gallery` in the localfiles monorepo. Commands below are
+from that directory.
+
 A folder-backed photo and video gallery for iOS and Linux. You pick a
 directory of files; the apps browse it in place. Nothing is imported
 into a private library.

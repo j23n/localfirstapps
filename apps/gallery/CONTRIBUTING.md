@@ -1,7 +1,8 @@
 # Contributing
 
-LocalGallery is a folder-backed photo app: iOS (SwiftUI + UniFFI) and
-Linux (GTK4 / libadwaita) share the Rust core under `core/`.
+This tree is `apps/gallery` in the localfiles monorepo. LocalGallery is a
+folder-backed photo app: iOS (SwiftUI + UniFFI) and Linux (GTK4 /
+libadwaita) share the Rust core under `core/`.
 
 ## Current-state docs
 

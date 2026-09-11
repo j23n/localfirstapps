@@ -1,10 +1,10 @@
 # Agent workspace
 
-A container with all five localfiles repos mounted, the toolchains to build
-the portable halves of them, and no credentials in the image.
+A container with the localfiles monorepo mounted, the toolchains to build
+the portable halves of the apps, and no credentials in the image.
 
 ```
-cd localapps/docker
+cd docker
 ./bootstrap.sh                      # once: writes .env
 docker compose build
 docker compose up -d
@@ -27,20 +27,21 @@ claude                              # /login on first run
 ## Host layout it assumes
 
 ```
-~/localfiles/
-  localapps/docker/   <- here
-  localgallery/  localcontacts/  localmusic/  localhealth/
+~/localfiles/          <- the monorepo, mounted at /work
+  docker/              <- here
+  apps/{gallery,contacts,music,health}/
+  docs/
 ```
 
-`bootstrap.sh` derives `WORKSPACE` from its own location. If your checkouts
-live elsewhere, edit `WORKSPACE` in `.env`. There is no `agent-home/` any
-more — see below.
+`bootstrap.sh` derives `WORKSPACE` from its own location (the directory
+above `docker/`). If the checkout lives elsewhere, edit `WORKSPACE` in
+`.env`. There is no `agent-home/` any more — see below.
 
 ## What is mounted, and why that way
 
 | | Container path | Why |
 |---|---|---|
-| bind `$WORKSPACE` | `/work` | One mount, not five. Cross-repo reads are the point of a coordination repo. |
+| bind `$WORKSPACE` | `/work` | The monorepo. Spec, docker, and all four apps. |
 | volume `ssh` | `/home/agent/.ssh` | keys, `known_hosts` |
 | volume `config` | `/home/agent/.config` | `gh` login, git global config, agent CLI config |
 | volume `claude` | `/home/agent/.claude` | Claude Code state — it does not use XDG |
@@ -103,12 +104,12 @@ meanwhile.
 
 ## What it can and cannot build
 
-Builds and tests here: every Rust crate in `localgallery/core`, the GTK shell
-in `localgallery/linux`, and all of `localhealth` (cgo + sqlite).
+Builds and tests here: every Rust crate in `apps/gallery/core`, the GTK shell
+in `apps/gallery/linux`, and all of `apps/health` (cgo + sqlite).
 
 Cannot, ever: `xcodegen`, `xcodebuild`, the iOS slices of
-`GalleryCore.xcframework`, and therefore every Swift test in localgallery,
-localcontacts and localmusic. Those need Xcode on a Mac. An agent that changes
+`GalleryCore.xcframework`, and therefore every Swift test in gallery,
+contacts and music. Those need Xcode on a Mac. An agent that changes
 Swift here has written unverified code and must say so.
 
 First `cargo build` needs the network: crates.io plus the ~85 MB prebuilt ONNX
@@ -137,9 +138,9 @@ else, and you never have to wonder what else it opened. Do not copy an
 existing personal key into the volume — that throws away the only thing this
 posture has going for it.
 
-Same reasoning for `gh auth login`: authorise it for the five localfiles repos
+Same reasoning for `gh auth login`: authorise it for this monorepo
 and nothing more. If you would rather use a token, a fine-grained PAT with
-contents + pull-requests write on those five repos can be exported as
+contents + pull-requests write on this repo can be exported as
 `GH_TOKEN` before `compose up` — but note that `gh` ignores its stored login
 whenever `GH_TOKEN` is set, so it is one or the other.
 
