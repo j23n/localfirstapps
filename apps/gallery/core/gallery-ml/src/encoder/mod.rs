@@ -1,0 +1,104 @@
+//! The inference seam.
+//!
+//! [`ImageEncoder`] is deliberately the narrowest trait that still lets the
+//! backend be swapped: tensor in, embedding out. It exists because the
+//! onnxruntime cross-compile is the one dependency in this program with a
+//! plausible failure mode nobody controls (overview, cross-cutting risks:
+//! "`tract` escape hatch behind the inference trait").
+//!
+//! # Which backend ships
+//!
+//! `ort` (ONNX Runtime 1.28 via `ort` 2.0.0-rc.13), CPU execution provider
+//! only, and it is the crate default. pyke publishes a prebuilt static
+//! `libonnxruntime.a` for `aarch64-apple-ios-sim`, so the escape hatch stayed
+//! shut; `cargo build -p gallery-ml --target aarch64-apple-ios-sim` links.
+//!
+//! # Threading
+//!
+//! Intra-op threads are pinned to 1 and inter-op parallelism is off, per the
+//! overview's model-pack rules. Parallelism lives one level up, across photos,
+//! in [`crate::TaggingEngine`]. Two reasons, both about determinism: a
+//! multi-threaded GEMM reduces in nondeterministic order, and a thread pool
+//! per session times four workers is a thread explosion on a phone.
+//!
+//! ORT's `Session::run` takes `&mut self`, so a shared session has to be
+//! behind a mutex. The engine used to keep one session per worker so
+//! inference could overlap. Each session copies the weights — 143 MB for
+//! MobileCLIP — and four of them jetsam a phone. [`crate::INFERENCE_SESSIONS`]
+//! is therefore 1: decode stays parallel, inference serializes. See
+//! [`ort_backend::OrtEncoder`].
+
+#[cfg(feature = "ort-backend")]
+pub mod ort_backend;
+
+#[cfg(feature = "ort-backend")]
+pub use ort_backend::{OrtEncoder, OrtModel};
+
+use crate::error::MlResult;
+use crate::preprocess::Tensor;
+
+/// Turns a preprocessed tensor into an embedding vector.
+///
+/// Implementations must be `Send + Sync`: the engine shares one encoder across
+/// its worker threads and calls [`ImageEncoder::embed`] from all of them
+/// concurrently.
+pub trait ImageEncoder: Send + Sync {
+    /// Run the encoder. The returned vector is **not** required to be
+    /// normalized — [`crate::tagger`] normalizes before scoring.
+    fn embed(&self, tensor: &Tensor) -> MlResult<Vec<f32>>;
+
+    /// Square input edge the encoder expects, in pixels.
+    fn input_size(&self) -> u32;
+
+    /// Length of the embeddings this encoder produces.
+    fn embedding_dim(&self) -> usize;
+
+    /// Short identifier for logs and error messages.
+    fn backend_name(&self) -> &'static str;
+}
+
+/// One named output of a [`MultiOutputModel`] run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelOutput {
+    /// The output's dimensions, outermost first.
+    pub shape: Vec<usize>,
+    /// Row-major values.
+    pub data: Vec<f32>,
+}
+
+impl ModelOutput {
+    /// Total element count.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Whether the output carries no values.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+}
+
+/// A model with more than one output — the face detector, and nothing else so
+/// far.
+///
+/// Separate from [`ImageEncoder`] rather than a generalization of it because
+/// the two have different contracts: an encoder promises exactly one vector of
+/// a length the manifest declares, and 90% of this crate's call sites want that
+/// promise. A detector promises a *set* of tensors whose shapes depend on the
+/// input geometry, and only [`crate::face::detect`] knows how to read them.
+///
+/// Implementations must be `Send + Sync`; the face engine shares one across its
+/// workers.
+pub trait MultiOutputModel: Send + Sync {
+    /// Feed `tensor` in under `input_name` and return the named `outputs`, in
+    /// the order asked for.
+    fn run(
+        &self,
+        input_name: &str,
+        tensor: &Tensor,
+        outputs: &[String],
+    ) -> MlResult<Vec<ModelOutput>>;
+
+    /// Short identifier for logs and error messages.
+    fn backend_name(&self) -> &'static str;
+}

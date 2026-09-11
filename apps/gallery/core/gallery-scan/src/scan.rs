@@ -1,0 +1,1622 @@
+//! The traversal. A port of `FolderScanner.scan`, behaviour for behaviour.
+//!
+//! # The two modes
+//!
+//! **Full** (`reuse_cached: false`) rebuilds every `PhotoFile`; cached
+//! metadata is still carried forward for unchanged files so enrichment does
+//! not re-run.
+//!
+//! **Light** (`reuse_cached: true`) reuses the cached `PhotoFile` verbatim
+//! when the listing's size and mtime still match the cache, refreshing only
+//! `filename` and the live-photo pairing. Those two listing fields are
+//! already on the directory row — the light path must not `stat` per file
+//! and must not call [`Vfs::probe_provider`] for a hit.
+//!
+//! # What a light scan can and cannot see
+//!
+//! A light scan compares each cached photo to the current listing size and
+//! mtime. A rewrite that changes either is `modified` (fixture `a.jpg`).
+//! Neither mode hashes content, so a rewrite that preserves size *and*
+//! mtime is invisible to both (`Unicode/emoji 🌵 cactus.jpg` in the fixture).
+//!
+//! Cached sidecar manifest rows are reused only when the sidecar is still
+//! in the listing *and* that listing's size/mtime still match the cached
+//! row. A deleted `.xmp` drops out because it is gone from the listing; a
+//! rewritten `.xmp` rebuilds the row. An unchanged library still crosses
+//! the provider boundary **zero** times — the listing comparison is the
+//! whole signal, and a cache hit never probes.
+//!
+//! # The carry-forward
+//!
+//! A directory whose listing throws a *transient* error (`PermissionDenied`,
+//! other I/O) is recorded in `failed_directory_paths`, its photos are absent
+//! from `flat_photos`, and — critically — they are **excluded from
+//! `removed_paths`**. The Store keeps its cached copies, so a transient
+//! provider error cannot wipe a subtree's tags and enrichment. The directory
+//! still becomes a photo-less node: it is stat-able even when it is not
+//! listable.
+//!
+//! `NotFound` is deletion, not a transient error. The directory is not
+//! recorded as failed, no scan node is emitted for it, and cached photos
+//! under it fall into `removed_paths`. A missing root produces
+//! `root_folder: None` and an empty photo list.
+
+use std::collections::{HashMap, HashSet};
+
+use gallery_model::date::AppleDate;
+use gallery_model::file_url::{join, stem};
+use gallery_model::photo::{PhotoFile, PhotoFolder, PhotoLocality, StableId};
+use gallery_model::snapshot::{ContentVersion, DownloadStatus, SidecarCandidate};
+use gallery_vfs::{Entry, EntryKind, FileTime, ProviderAttrs, Vfs, VfsError};
+
+use crate::classify::{
+    classify, image_stem_key, is_hidden, sidecar_for, sidecar_owner_key, video_stem, MediaKind,
+};
+use crate::order::localized_standard_compare;
+use crate::path_form::decomposed;
+
+/// How many photos are discovered between progress callbacks.
+///
+/// The callback hops to the main actor and invalidates `@Observable` state;
+/// firing per file made the hops dominate the walk on a 20k library.
+const PROGRESS_BATCH: usize = 500;
+
+/// What the caller knows before the scan starts.
+#[derive(Default)]
+pub struct ScanInput {
+    /// Reuse cached `PhotoFile`s for unchanged paths — the light scan.
+    pub reuse_cached: bool,
+    /// Previous scan's photos, keyed by path.
+    pub cached_photos: HashMap<String, PhotoFile>,
+    /// Previous scan's sidecar rows, keyed by photo id. A hit here is what
+    /// lets a light scan skip re-probing a `.xmp` — the single most expensive
+    /// thing a scan does on a provider-backed library.
+    pub cached_sidecar_manifest: HashMap<StableId, SidecarCandidate>,
+}
+
+/// Where a pass spent its time, and how often the fast path engaged.
+///
+/// Not decoration: `Scan totals: … probe=…ms hits=… slow=…` is the line
+/// docs/adr/0002 measures the acceptance gates from, and
+/// the numbers behind it now live on this side of the boundary. `hits + slow`
+/// must equal the photo count; a light scan with a high `slow` means the cache
+/// lookup is not engaging, which is the failure the counters exist to catch.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScanStats {
+    /// Directories visited, listable or not.
+    pub folders: u64,
+    /// Wall time inside [`Vfs::list`].
+    pub list_micros: u64,
+    /// Wall time inside [`Vfs::probe_provider`] — the whole of Finding 1.
+    pub probe_micros: u64,
+    /// Paths handed to [`Vfs::probe_provider`], across every batch.
+    pub probed_paths: u64,
+    /// Batched probe calls made. One per directory that needed one; zero for
+    /// a light scan over an unchanged library.
+    pub probe_batches: u64,
+    /// Probe batches whose reply did not have one row per requested path, and
+    /// were therefore discarded whole. Always zero in a healthy app; non-zero
+    /// means the platform probe is broken and every file in those directories
+    /// is being reported as plain local storage.
+    pub probe_mismatches: u64,
+    /// Photos reused verbatim from the cache.
+    pub cache_hits: u64,
+    /// Photos rebuilt.
+    pub slow_path: u64,
+}
+
+/// Everything one pass produces.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScanOutcome {
+    /// The tree, or `None` when the root does not exist (`NotFound`). An
+    /// unlistable root (`PermissionDenied` / other I/O) still produces an
+    /// empty node and a `failed_directory_paths` entry.
+    pub root_folder: Option<PhotoFolder>,
+    /// Every photo, in traversal order.
+    pub flat_photos: Vec<PhotoFile>,
+    /// Whether anything needs an enrichment pass.
+    pub needs_enrichment: bool,
+    /// One row per image that has a `<basename>.xmp` beside it.
+    pub sidecar_manifest: Vec<SidecarCandidate>,
+    /// Paths seen now and absent from the cache.
+    pub added_paths: Vec<String>,
+    /// Paths in the cache and not seen now — **excluding** anything under a
+    /// failed directory.
+    pub removed_paths: Vec<String>,
+    /// Paths whose size or mtime changed. Disjoint from `added_paths`.
+    pub modified_paths: Vec<String>,
+    /// **Decomposed** paths of directories whose listing failed with a
+    /// transient error (`PermissionDenied`, other I/O). NFD because Swift
+    /// emits them through `standardizedFileURL.path` and the Store's prefix
+    /// check compares against that same form. `NotFound` is omitted — that
+    /// directory is gone, not unreadable.
+    pub failed_directory_paths: Vec<String>,
+    /// Timings and cache-hit counters for the scan-totals log line.
+    pub stats: ScanStats,
+}
+
+/// Walk `root` and produce the tree, the flat list, and the diff against the
+/// cache.
+pub fn scan(vfs: &dyn Vfs, root: &str, input: &ScanInput) -> ScanOutcome {
+    scan_with_progress(vfs, root, input, None)
+}
+
+/// [`scan`], with a callback invoked every [`PROGRESS_BATCH`] photos and once
+/// at the end with the true total.
+///
+/// The callback runs on the scanning thread and must not call back into the
+/// core — the VFS is already re-entrant from the platform side, and a second
+/// hop through it is how a synchronous callback bridge deadlocks.
+pub fn scan_with_progress(
+    vfs: &dyn Vfs,
+    root: &str,
+    input: &ScanInput,
+    on_progress: Option<&dyn Fn(usize)>,
+) -> ScanOutcome {
+    scan_with_hooks(vfs, root, input, on_progress, None)
+        .expect("a scan with no cancel hook cannot be cancelled")
+}
+
+/// [`scan_with_progress`], plus a cancellation hook checked at every directory
+/// boundary.
+///
+/// `None` means the caller asked to stop. There is deliberately **no partial
+/// outcome**: a half-walked tree is indistinguishable from a library whose
+/// second half was deleted, and the Store's `apply(_:)` would happily persist
+/// it. Refusing to hand one back is the only way to make that unrepresentable.
+pub fn scan_with_hooks(
+    vfs: &dyn Vfs,
+    root: &str,
+    input: &ScanInput,
+    on_progress: Option<&dyn Fn(usize)>,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Option<ScanOutcome> {
+    let mut walk = Walk::new(input);
+    let mut stack: Vec<(String, Option<usize>)> = vec![(root.to_string(), None)];
+
+    while let Some((dir, parent)) = stack.pop() {
+        if cancelled.is_some_and(|c| c()) {
+            return None;
+        }
+        let Some(mut subdirs) = walk.visit_directory(vfs, &dir, parent) else {
+            // `NotFound`: no node, no failed-directory record. Cached photos
+            // under it fall into `removed_paths` in `finish()`.
+            continue;
+        };
+        if let Some(callback) = on_progress {
+            walk.report(callback, false);
+        }
+        // Sorted ascending, pushed in reverse, so they pop ascending. Swift
+        // sorts descending and pushes in order; same result, said once.
+        subdirs.sort_by(|a, b| localized_standard_compare(&a.0, &b.0));
+        let node_index = walk.nodes.len() - 1;
+        for (_, path) in subdirs.into_iter().rev() {
+            stack.push((path, Some(node_index)));
+        }
+    }
+
+    if let Some(callback) = on_progress {
+        walk.report(callback, true);
+    }
+    Some(walk.finish())
+}
+
+/// One file the classify pass kept.
+struct ScanFile {
+    path: String,
+    name: String,
+    file_size: i64,
+    mod_date: Option<AppleDate>,
+    creation_date: Option<AppleDate>,
+    is_image: bool,
+    is_video: bool,
+    /// Whether the cache holds this path with the same size *and* mtime.
+    ///
+    /// Computed once, in the classify pass, because four later decisions turn
+    /// on it: the added/modified accounting, whether the cached `PhotoFile` is
+    /// reused verbatim, whether the cached sidecar row is reused, and — the
+    /// reason it is hoisted here — whether this file is worth a provider probe
+    /// at all.
+    unchanged: bool,
+}
+
+impl ScanFile {
+    /// `reuse_cached && unchanged`: the light-scan fast path, which touches
+    /// neither the file nor the provider.
+    fn reusable(&self, input: &ScanInput) -> bool {
+        input.reuse_cached && self.unchanged
+    }
+}
+
+/// A folder node before the tree is assembled. Flat, indexed by
+/// `parent_index`, so the recursive `PhotoFolder` is built in one second pass
+/// with no intermediate copies.
+struct ScanNode {
+    path: String,
+    name: String,
+    photos: Vec<PhotoFile>,
+    child_indices: Vec<usize>,
+    date_modified: Option<AppleDate>,
+    date_created: Option<AppleDate>,
+}
+
+struct Walk<'a> {
+    input: &'a ScanInput,
+    nodes: Vec<ScanNode>,
+    flat_photos: Vec<PhotoFile>,
+    needs_enrichment: bool,
+    sidecar_manifest: Vec<SidecarCandidate>,
+    added_paths: Vec<String>,
+    modified_paths: Vec<String>,
+    seen_paths: HashSet<String>,
+    failed_directory_paths: Vec<String>,
+    progress_tick: usize,
+    stats: ScanStats,
+}
+
+impl<'a> Walk<'a> {
+    fn new(input: &'a ScanInput) -> Self {
+        Walk {
+            input,
+            nodes: Vec::new(),
+            flat_photos: Vec::new(),
+            needs_enrichment: false,
+            sidecar_manifest: Vec::new(),
+            added_paths: Vec::new(),
+            modified_paths: Vec::new(),
+            seen_paths: HashSet::new(),
+            failed_directory_paths: Vec::new(),
+            progress_tick: 0,
+            stats: ScanStats::default(),
+        }
+    }
+
+    fn report(&mut self, callback: &dyn Fn(usize), force: bool) {
+        if force || self.progress_tick >= PROGRESS_BATCH {
+            callback(self.flat_photos.len());
+            self.progress_tick = 0;
+        }
+    }
+
+    /// Visit one directory, append its node, and return its subdirectories as
+    /// `(name, path)` pairs for the caller to order and push.
+    ///
+    /// `None` means the directory is gone (`NotFound`): no node is appended
+    /// and the caller must not look up a node index.
+    fn visit_directory(
+        &mut self,
+        vfs: &dyn Vfs,
+        dir: &str,
+        parent_index: Option<usize>,
+    ) -> Option<Vec<(String, String)>> {
+        let mut photos: Vec<PhotoFile> = Vec::new();
+        let mut subdirs: Vec<(String, String)> = Vec::new();
+
+        self.stats.folders += 1;
+        let listing_started = std::time::Instant::now();
+        let listing = vfs.list(dir);
+        self.stats.list_micros += listing_started.elapsed().as_micros() as u64;
+
+        match listing {
+            Ok(entries) => {
+                let (files, sidecars) = self.classify_pass(vfs, dir, entries, &mut subdirs);
+                photos = self.build_photos(vfs, dir, files, &sidecars);
+            }
+            Err(VfsError::NotFound { .. }) => {
+                // The directory is gone, not briefly unreadable. Recording it
+                // as a failed directory would carry its cached photos forward
+                // forever, and emitting a node would make a missing root look
+                // like an empty folder. Unseen photos under it are not under
+                // a failed prefix, so `finish()` already puts them in
+                // `removed_paths`.
+                return None;
+            }
+            Err(_) => {
+                // Transient listing failure (permission, provider, I/O). The
+                // Store learns about it through `failed_directory_paths`,
+                // which is also what keeps the subtree's photos alive.
+                self.failed_directory_paths.push(decomposed(dir));
+            }
+        }
+
+        // The folder's own timestamps. One call per *directory* — where the
+        // Swift baseline calls `dirURL.resourceValues(forKeys:)`, not the
+        // per-file chatter docs/adr/0002 is about.
+        let dir_entry = vfs.stat_entry(dir).ok();
+        let node_index = self.nodes.len();
+        self.nodes.push(ScanNode {
+            path: dir.to_string(),
+            name: gallery_model::file_url::last_component(dir).to_string(),
+            photos: photos.clone(),
+            child_indices: Vec::new(),
+            date_modified: dir_entry.as_ref().and_then(|e| e.modified).map(apple_date),
+            date_created: dir_entry.as_ref().and_then(|e| e.created).map(apple_date),
+        });
+        if let Some(parent) = parent_index {
+            self.nodes[parent].child_indices.push(node_index);
+        }
+        self.progress_tick += photos.len();
+        self.flat_photos.extend(photos);
+        Some(subdirs)
+    }
+
+    /// First pass: sort the listing into media files, sidecars and
+    /// subdirectories.
+    fn classify_pass(
+        &self,
+        vfs: &dyn Vfs,
+        dir: &str,
+        entries: Vec<Entry>,
+        subdirs: &mut Vec<(String, String)>,
+    ) -> (Vec<ScanFile>, HashMap<String, Entry>) {
+        let mut files = Vec::new();
+        // Lowercased full basename → the `.xmp` entry beside it.
+        let mut sidecars: HashMap<String, Entry> = HashMap::new();
+
+        for entry in entries {
+            if is_hidden(&entry.name) {
+                continue;
+            }
+            let path = join(dir, &entry.name);
+
+            if classify(&entry.name) == MediaKind::Sidecar {
+                // Recorded without a stat; the manifest reads its size and
+                // mtime straight off this listing row. Both `<photo>.xmp`
+                // and Lightroom `<stem>.xmp` land here; lookup prefers the
+                // canonical key.
+                sidecars.insert(sidecar_owner_key(&entry.name), entry);
+                continue;
+            }
+
+            // A symlink is resolved only far enough to decide whether it is a
+            // directory. Directory symlinks are not descended — that is how a
+            // walk would leave the selected root or close a cycle. File
+            // symlinks fall through and are scanned as media; their size and
+            // times already follow the target (see [`Entry::size`]). The
+            // selected root may itself be a symlink: it is the start path,
+            // never a child entry.
+            let is_dir = match entry.kind {
+                EntryKind::Dir => true,
+                EntryKind::Symlink => vfs.stat(&path).map(|s| s.is_dir).unwrap_or(false),
+                EntryKind::File => false,
+            };
+            if is_dir {
+                if entry.kind == EntryKind::Symlink {
+                    continue;
+                }
+                subdirs.push((entry.name, path));
+                continue;
+            }
+            let (is_image, is_video) = match classify(&entry.name) {
+                MediaKind::Image => (true, false),
+                MediaKind::Video => (false, true),
+                _ => continue,
+            };
+            // Listing size and mtime, always — including the light path.
+            // Substituting the cached values made `unchanged` compare the
+            // cache to itself, so a light scan could never see a rewrite.
+            let file_size = entry.size as i64;
+            let mod_date = entry.modified.map(apple_date);
+            files.push(ScanFile {
+                unchanged: self.input.cached_photos.get(&path).is_some_and(|c| {
+                    c.file_size == file_size && c.file_modification_date == mod_date
+                }),
+                path,
+                file_size,
+                mod_date,
+                creation_date: entry.created.map(apple_date),
+                is_image,
+                is_video,
+                name: entry.name,
+            });
+        }
+        (files, sidecars)
+    }
+
+    /// Second and third passes: pair live photos, then build one `PhotoFile`
+    /// per image and per *standalone* video.
+    ///
+    /// Between the two sits the provider probe — one batched call for the
+    /// whole directory, covering exactly the files and sidecars that are about
+    /// to take a slow path. Emission stays strictly serial afterwards, so the
+    /// output does not depend on how the platform ran the batch.
+    fn build_photos(
+        &mut self,
+        vfs: &dyn Vfs,
+        dir: &str,
+        files: Vec<ScanFile>,
+        sidecars: &HashMap<String, Entry>,
+    ) -> Vec<PhotoFile> {
+        // First video wins a contested stem, matching `uniquingKeysWith`.
+        let mut video_by_stem: HashMap<String, String> = HashMap::new();
+        for file in files.iter().filter(|f| f.is_video) {
+            video_by_stem
+                .entry(video_stem(&file.name))
+                .or_insert_with(|| file.path.clone());
+        }
+        let image_stems: HashSet<String> = files
+            .iter()
+            .filter(|f| f.is_image)
+            .map(|f| image_stem_key(&f.name))
+            .collect();
+
+        let probes = self.probe_directory(vfs, dir, &files, sidecars, &image_stems);
+
+        let mut photos = Vec::new();
+
+        for file in files.iter().filter(|f| f.is_image) {
+            self.seen_paths.insert(file.path.clone());
+            // The image branch keeps the stem's original case.
+            let filename = stem(&file.name).to_string();
+            let live = video_by_stem.get(&filename.to_lowercase()).cloned();
+            let photo = self.photo_for(file, filename, live, false, &probes);
+
+            // The sidecar manifest is emitted **only here**, inside the image
+            // loop. That is why `Clip.MOV.xmp` never produces a row: a video
+            // can never carry a sidecar through a scan (landmine 23).
+            if let Some(sidecar) = sidecar_for(&file.name, sidecars) {
+                self.push_sidecar_row(file, &photo, sidecar, &probes);
+            }
+            photos.push(photo);
+        }
+
+        for file in files.iter().filter(|f| f.is_video) {
+            let key = video_stem(&file.name);
+            if image_stems.contains(&key) {
+                continue; // paired: it belongs to its image, not to itself
+            }
+            self.seen_paths.insert(file.path.clone());
+            // …and the video branch reuses the pairing key, which is
+            // lowercased. `Clip.MOV` becomes `clip` (landmine 22).
+            let photo = self.photo_for(file, key, None, true, &probes);
+            photos.push(photo);
+        }
+
+        photos
+    }
+
+    /// One provider round trip for the whole directory.
+    ///
+    /// The set is built to match the Swift baseline's probe calls file for
+    /// file: a photo is probed when it is about to be rebuilt, and a sidecar
+    /// when its manifest row is about to be re-derived. A light scan over an
+    /// unchanged library therefore asks for **nothing** and never crosses the
+    /// boundary at all — the difference between a two-second rescan and a
+    /// four-minute one.
+    ///
+    /// Paired videos are excluded because they never become photos, and so
+    /// were never probed before either.
+    fn probe_directory(
+        &mut self,
+        vfs: &dyn Vfs,
+        dir: &str,
+        files: &[ScanFile],
+        sidecars: &HashMap<String, Entry>,
+        image_stems: &HashSet<String>,
+    ) -> HashMap<String, ProviderAttrs> {
+        let mut wanted: Vec<String> = Vec::new();
+        for file in files {
+            if file.is_video && image_stems.contains(&video_stem(&file.name)) {
+                continue;
+            }
+            if !file.reusable(self.input) {
+                wanted.push(file.path.clone());
+            }
+            if !file.is_image {
+                continue;
+            }
+            let Some(sidecar) = sidecar_for(&file.name, sidecars) else {
+                continue;
+            };
+            // Probe the sidecar only when its listing no longer matches the
+            // cached row. A hit here is what keeps a zero-change light scan
+            // off the provider entirely — each `.xmp` probe is the expensive
+            // XPC round trip docs/adr/0002 exists to avoid.
+            if !self.sidecar_row_reusable(&file.path, sidecar) {
+                wanted.push(join(dir, &sidecar.name));
+            }
+        }
+        if wanted.is_empty() {
+            return HashMap::new();
+        }
+        let started = std::time::Instant::now();
+        let answers = vfs.probe_provider(&wanted);
+        self.stats.probe_micros += started.elapsed().as_micros() as u64;
+        self.stats.probe_batches += 1;
+        self.stats.probed_paths += wanted.len() as u64;
+        // `zip` would stop at the shorter side, which is only the right answer
+        // if the reply is a *prefix* of the request. Nothing guarantees that: a
+        // reply of the wrong length is a reply whose alignment is unknown, and
+        // pairing it anyway gives one file another file's placeholder flag and
+        // content identifier. Discard the batch instead — every path in it then
+        // reads as plain local storage, the same degradation a failed
+        // `resourceValues` always produced.
+        if answers.len() != wanted.len() {
+            self.stats.probe_mismatches += 1;
+            return HashMap::new();
+        }
+        wanted.into_iter().zip(answers).collect()
+    }
+
+    /// Build (or reuse) the `PhotoFile` for one file, and record it in the
+    /// added/modified accounting.
+    fn photo_for(
+        &mut self,
+        file: &ScanFile,
+        filename: String,
+        live: Option<String>,
+        is_video: bool,
+        probes: &HashMap<String, ProviderAttrs>,
+    ) -> PhotoFile {
+        let cached = self.input.cached_photos.get(&file.path);
+        let unchanged = file.unchanged;
+
+        let photo = if file.reusable(self.input) {
+            // Verbatim, except for the two things that can change without the
+            // photo's own bytes changing.
+            let mut photo = cached.expect("unchanged implies cached").clone();
+            photo.filename = filename;
+            photo.live_photo_video_url = live.map(gallery_model::photo::FileUrl::new);
+            self.stats.cache_hits += 1;
+            photo
+        } else {
+            let attrs = probes.get(&file.path).cloned().unwrap_or_default();
+            self.stats.slow_path += 1;
+            self.rebuild(file, filename, live, is_video, cached, &attrs)
+        };
+
+        if cached.is_none() {
+            self.added_paths.push(file.path.clone());
+            self.needs_enrichment = true;
+        } else if !unchanged {
+            self.modified_paths.push(file.path.clone());
+            self.needs_enrichment = true;
+        }
+        photo
+    }
+
+    /// The slow path: a fresh `PhotoFile`, with whatever the cache can still
+    /// contribute.
+    fn rebuild(
+        &mut self,
+        file: &ScanFile,
+        filename: String,
+        live: Option<String>,
+        is_video: bool,
+        cached: Option<&PhotoFile>,
+        attrs: &ProviderAttrs,
+    ) -> PhotoFile {
+        let unchanged = file.unchanged;
+        // The scanner never opens a file, so there is no EXIF here. An
+        // unchanged file keeps its cached date; anything else falls back to
+        // the earlier of the filesystem's two dates — creation is when the
+        // file appeared on *this* volume (a download), modification is often
+        // preserved from the original (AirDrop, chat saves), so the earlier
+        // one is closer to when the photo was taken.
+        let date_taken = unchanged
+            .then(|| cached.and_then(|c| c.date_taken))
+            .flatten()
+            .or_else(|| AppleDate::earliest(file.creation_date, file.mod_date));
+
+        let locality = if attrs.is_file_provider {
+            PhotoLocality::Remote {
+                downloaded: !attrs.is_placeholder,
+            }
+        } else {
+            PhotoLocality::Local
+        };
+        // A former placeholder whose bytes have arrived needs a real EXIF
+        // pass: its first enrichment ran against a byteless file.
+        let became_downloaded = matches!(
+            cached.map(|c| c.locality),
+            Some(PhotoLocality::Remote { downloaded: false })
+        ) && !attrs.is_placeholder;
+
+        let cached_enriched = cached.and_then(|c| c.enriched_file_date);
+        let stale = !unchanged
+            || cached_enriched.is_none()
+            || file.mod_date != cached_enriched
+            || became_downloaded;
+        if stale {
+            self.needs_enrichment = true;
+        }
+
+        PhotoFile {
+            id: StableId::for_photo(&file.path),
+            url: gallery_model::photo::FileUrl::new(file.path.clone()),
+            filename,
+            file_size: file.file_size,
+            date_taken,
+            date_from_metadata: false,
+            is_video,
+            live_photo_video_url: live.map(gallery_model::photo::FileUrl::new),
+            hierarchical_tags: unchanged
+                .then(|| cached.map(|c| c.hierarchical_tags.clone()))
+                .flatten()
+                .unwrap_or_default(),
+            country_code: unchanged
+                .then(|| cached.and_then(|c| c.country_code.clone()))
+                .flatten(),
+            enriched_file_date: if stale { None } else { cached_enriched },
+            file_modification_date: file.mod_date,
+            gps_latitude: unchanged
+                .then(|| cached.and_then(|c| c.gps_latitude))
+                .flatten(),
+            gps_longitude: unchanged
+                .then(|| cached.and_then(|c| c.gps_longitude))
+                .flatten(),
+            face_regions: unchanged
+                .then(|| cached.map(|c| c.face_regions.clone()))
+                .flatten()
+                .unwrap_or_default(),
+            locality,
+            sidecar_status: gallery_model::photo::SidecarStatus::Absent,
+        }
+    }
+
+    /// Cached sidecar row is reusable when the listing's size and mtime still
+    /// describe it. That check is the whole optimisation: re-probing every
+    /// `.xmp` cost 257 of the 259 seconds a zero-change light scan used to
+    /// take, and it must not run for an unchanged library.
+    ///
+    /// A *deleted* sidecar never reaches here — it is absent from the
+    /// listing. A rewritten sidecar fails the listing match and is rebuilt.
+    fn sidecar_row_reusable(&self, photo_path: &str, sidecar: &Entry) -> bool {
+        self.input
+            .cached_sidecar_manifest
+            .get(&StableId::for_photo(photo_path))
+            .is_some_and(|cached| sidecar_listing_matches(cached, sidecar))
+    }
+
+    /// One manifest row, reusing the cached one when the sidecar listing
+    /// still matches.
+    fn push_sidecar_row(
+        &mut self,
+        file: &ScanFile,
+        photo: &PhotoFile,
+        sidecar: &Entry,
+        probes: &HashMap<String, ProviderAttrs>,
+    ) {
+        if let Some(cached) = self.input.cached_sidecar_manifest.get(&photo.id) {
+            if sidecar_listing_matches(cached, sidecar) {
+                self.sidecar_manifest.push(cached.clone());
+                return;
+            }
+        }
+        let sidecar_path = join(parent_of(&file.path), &sidecar.name);
+        let attrs = probes.get(&sidecar_path).cloned().unwrap_or_default();
+        self.sidecar_manifest.push(SidecarCandidate {
+            photo_id: photo.id,
+            sidecar_url: gallery_model::photo::FileUrl::new(sidecar_path),
+            current_version: ContentVersion {
+                content_identifier: attrs.content_version,
+                modification_date: sidecar.modified.map(apple_date),
+                // `totalFileSize ?? fileSize`, which is what the Swift baseline
+                // wrote here. The two differ only for a placeholder, whose
+                // `st_size` is a stub — and this value is compared against the
+                // sidecar cache to decide whether an `.xmp` needs re-fetching,
+                // so recording the stub would make every placeholder sidecar in
+                // the library look changed on the first scan after the upgrade
+                // and re-download the lot.
+                size: attrs.intended_size.or(Some(sidecar.size as i64)),
+            },
+            download_status: if attrs.is_placeholder {
+                DownloadStatus::Placeholder
+            } else {
+                DownloadStatus::Local
+            },
+        });
+    }
+
+    fn finish(self) -> ScanOutcome {
+        let Walk {
+            input,
+            nodes,
+            flat_photos,
+            needs_enrichment,
+            sidecar_manifest,
+            added_paths,
+            modified_paths,
+            seen_paths,
+            failed_directory_paths,
+            stats,
+            ..
+        } = self;
+
+        // Anything cached and unseen was moved, removed or unmounted — unless
+        // it lives under a directory whose listing failed, in which case it is
+        // merely invisible this pass and must not be reported as gone.
+        let mut removed_paths: Vec<String> = Vec::new();
+        for path in input.cached_photos.keys() {
+            if seen_paths.contains(path) {
+                continue;
+            }
+            let normalized = decomposed(path);
+            if failed_directory_paths
+                .iter()
+                .any(|failed| normalized.starts_with(&format!("{failed}/")))
+            {
+                continue;
+            }
+            removed_paths.push(path.clone());
+        }
+
+        let root_folder = (!nodes.is_empty()).then(|| build_folder(&nodes, 0));
+
+        ScanOutcome {
+            root_folder,
+            flat_photos,
+            needs_enrichment,
+            sidecar_manifest,
+            added_paths,
+            removed_paths,
+            modified_paths,
+            failed_directory_paths,
+            stats,
+        }
+    }
+}
+
+/// Assemble the recursive tree from the flat node list.
+fn build_folder(nodes: &[ScanNode], index: usize) -> PhotoFolder {
+    let node = &nodes[index];
+    let subfolders: Vec<PhotoFolder> = node
+        .child_indices
+        .iter()
+        .map(|&child| build_folder(nodes, child))
+        .collect();
+
+    let total =
+        node.photos.len() as i64 + subfolders.iter().map(|f| f.total_photo_count).sum::<i64>();
+
+    // `photos.first`, else the first subfolder that has a cover. Within-folder
+    // order is unspecified, so *which* photo this is, is unspecified too — the
+    // fixture records the rule, not the URL.
+    let cover = node
+        .photos
+        .first()
+        .map(|p| p.url.clone())
+        .or_else(|| subfolders.iter().find_map(|f| f.cover_photo_url.clone()));
+
+    PhotoFolder {
+        id: StableId::for_folder(&node.path),
+        url: gallery_model::photo::FileUrl::new(node.path.clone()),
+        name: node.name.clone(),
+        subfolders,
+        photos: node.photos.clone(),
+        cover_photo_url: cover,
+        total_photo_count: total,
+        date_modified: node.date_modified,
+        date_created: node.date_created,
+    }
+}
+
+fn apple_date(t: FileTime) -> AppleDate {
+    AppleDate::from_unix(t.secs, t.subsec_nanos)
+}
+
+/// Whether a cached sidecar row still describes this listing entry.
+///
+/// Size and mtime come off `list()`, so this never needs a provider probe.
+/// Placeholder rows record `intended_size` rather than the listing stub; a
+/// stub-vs-intended mismatch is **not** treated as a change — the listing
+/// cannot see the intended size, and treating it as one would re-probe
+/// every placeholder sidecar on every light scan. A real rewrite updates
+/// mtime, which is the listing field we stored faithfully.
+fn sidecar_listing_matches(cached: &SidecarCandidate, listing: &Entry) -> bool {
+    if cached.current_version.modification_date != listing.modified.map(apple_date) {
+        return false;
+    }
+    match cached.current_version.size {
+        Some(size) if size == listing.size as i64 => true,
+        Some(_) => true,
+        None => false,
+    }
+}
+
+/// Everything up to the last `/`. `"/"` for a top-level path.
+fn parent_of(path: &str) -> &str {
+    match path.rfind('/') {
+        Some(0) | None => "/",
+        Some(i) => &path[..i],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gallery_vfs::{MemVfs, StdVfs};
+
+    fn library() -> MemVfs {
+        let vfs = MemVfs::new();
+        vfs.insert_at("/lib/a.jpg", vec![0u8; 10], FileTime::new(1000, 0));
+        vfs.insert_at("/lib/B.JPG", vec![0u8; 11], FileTime::new(1001, 0));
+        vfs.insert_at("/lib/B.JPG.xmp", vec![0u8; 5], FileTime::new(1002, 0));
+        vfs.insert_at("/lib/Nested/n.jpg", vec![0u8; 12], FileTime::new(1003, 0));
+        vfs.insert_at("/lib/Media/Clip.MOV", vec![0u8; 13], FileTime::new(1004, 0));
+        vfs.insert_at(
+            "/lib/Media/IMG_1.jpg",
+            vec![0u8; 14],
+            FileTime::new(1005, 0),
+        );
+        vfs.insert_at(
+            "/lib/Media/IMG_1.mov",
+            vec![0u8; 15],
+            FileTime::new(1006, 0),
+        );
+        vfs.insert_at("/lib/Junk/readme.txt", vec![0u8; 3], FileTime::new(1007, 0));
+        vfs.insert_at(
+            "/lib/Junk/.hidden.jpg",
+            vec![0u8; 3],
+            FileTime::new(1008, 0),
+        );
+        vfs
+    }
+
+    fn paths(photos: &[PhotoFile]) -> Vec<&str> {
+        let mut out: Vec<&str> = photos.iter().map(|p| p.path()).collect();
+        out.sort_unstable();
+        out
+    }
+
+    fn cache(outcome: &ScanOutcome) -> ScanInput {
+        ScanInput {
+            reuse_cached: true,
+            cached_photos: outcome
+                .flat_photos
+                .iter()
+                .map(|p| (p.path().to_string(), p.clone()))
+                .collect(),
+            cached_sidecar_manifest: outcome
+                .sidecar_manifest
+                .iter()
+                .map(|r| (r.photo_id, r.clone()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_cold_scan_finds_the_media_and_skips_everything_else() {
+        let vfs = library();
+        let out = scan(&vfs, "/lib", &ScanInput::default());
+        assert_eq!(
+            paths(&out.flat_photos),
+            vec![
+                "/lib/B.JPG",
+                "/lib/Media/Clip.MOV",
+                "/lib/Media/IMG_1.jpg",
+                "/lib/Nested/n.jpg",
+                "/lib/a.jpg",
+            ],
+            "readme.txt, .hidden.jpg and the paired IMG_1.mov are not photos"
+        );
+        assert!(out.needs_enrichment);
+        assert_eq!(out.added_paths.len(), 5);
+        assert!(out.removed_paths.is_empty() && out.modified_paths.is_empty());
+    }
+
+    #[test]
+    fn a_paired_movie_belongs_to_its_image_and_a_lone_one_does_not() {
+        let out = scan(&library(), "/lib", &ScanInput::default());
+        let image = out
+            .flat_photos
+            .iter()
+            .find(|p| p.path() == "/lib/Media/IMG_1.jpg")
+            .unwrap();
+        assert_eq!(
+            image.live_photo_video_url.as_ref().map(|u| u.path()),
+            Some("/lib/Media/IMG_1.mov")
+        );
+        let clip = out
+            .flat_photos
+            .iter()
+            .find(|p| p.path() == "/lib/Media/Clip.MOV")
+            .unwrap();
+        assert!(clip.is_video);
+        assert_eq!(
+            clip.filename, "clip",
+            "the standalone-video stem is lowercased"
+        );
+    }
+
+    #[test]
+    fn folders_come_out_in_localized_standard_order_with_recursive_counts() {
+        let out = scan(&library(), "/lib", &ScanInput::default());
+        let root = out.root_folder.unwrap();
+        assert_eq!(
+            root.subfolders
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Junk", "Media", "Nested"]
+        );
+        assert_eq!(root.total_photo_count, 5);
+        assert_eq!(root.photos.len(), 2);
+        assert!(root.date_modified.is_some() && root.date_created.is_some());
+        let junk = &root.subfolders[0];
+        assert_eq!(junk.total_photo_count, 0);
+        assert_eq!(junk.cover_photo_url, None);
+    }
+
+    #[test]
+    fn only_images_get_sidecar_rows_and_they_key_on_the_full_basename() {
+        let vfs = library();
+        // A sidecar next to the standalone video, which must be ignored.
+        vfs.insert_at(
+            "/lib/Media/Clip.MOV.xmp",
+            vec![0u8; 7],
+            FileTime::new(1009, 0),
+        );
+        let out = scan(&vfs, "/lib", &ScanInput::default());
+        assert_eq!(out.sidecar_manifest.len(), 1);
+        let row = &out.sidecar_manifest[0];
+        assert_eq!(row.sidecar_url.path(), "/lib/B.JPG.xmp");
+        assert_eq!(row.current_version.size, Some(5));
+        assert_eq!(row.download_status, DownloadStatus::Local);
+    }
+
+    #[test]
+    fn a_light_scan_sees_a_size_or_mtime_change_from_the_listing() {
+        let vfs = library();
+        let cold = scan(&vfs, "/lib", &ScanInput::default());
+        // Bigger *and* newer — the strongest change signal there is.
+        vfs.insert_at("/lib/a.jpg", vec![0u8; 999], FileTime::new(9999, 0));
+
+        let light = scan(&vfs, "/lib", &cache(&cold));
+        assert_eq!(
+            light.modified_paths,
+            vec!["/lib/a.jpg"],
+            "light compares the listing's size and mtime, not the cached ones"
+        );
+        let a = light
+            .flat_photos
+            .iter()
+            .find(|p| p.path() == "/lib/a.jpg")
+            .unwrap();
+        assert_eq!(a.file_size, 999);
+
+        let full = scan(
+            &vfs,
+            "/lib",
+            &ScanInput {
+                reuse_cached: false,
+                ..cache(&cold)
+            },
+        );
+        assert_eq!(full.modified_paths, vec!["/lib/a.jpg"]);
+    }
+
+    #[test]
+    fn neither_scan_kind_notices_a_same_size_same_mtime_rewrite() {
+        let vfs = library();
+        let cold = scan(&vfs, "/lib", &ScanInput::default());
+        vfs.insert_at("/lib/a.jpg", vec![7u8; 10], FileTime::new(1000, 0));
+        for reuse_cached in [true, false] {
+            let out = scan(
+                &vfs,
+                "/lib",
+                &ScanInput {
+                    reuse_cached,
+                    ..cache(&cold)
+                },
+            );
+            assert!(
+                out.modified_paths.is_empty(),
+                "reuse_cached = {reuse_cached}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_deleted_photo_is_reported_removed() {
+        let vfs = library();
+        let cold = scan(&vfs, "/lib", &ScanInput::default());
+        let vfs2 = MemVfs::new();
+        for path in vfs.paths() {
+            if path != "/lib/Nested/n.jpg" {
+                vfs2.insert(&path, vfs.read(&path).unwrap());
+            }
+        }
+        let out = scan(&vfs2, "/lib", &cache(&cold));
+        assert_eq!(out.removed_paths, vec!["/lib/Nested/n.jpg"]);
+    }
+
+    #[test]
+    fn a_light_scan_refreshes_pairing_without_rebuilding_the_photo() {
+        let vfs = library();
+        let mut cold = scan(&vfs, "/lib", &ScanInput::default());
+        // Decorate the cached entry with things only enrichment sets, so a
+        // rebuild would be visible.
+        for photo in &mut cold.flat_photos {
+            photo.date_from_metadata = true;
+            photo.country_code = Some("IT".into());
+        }
+        let out = scan(&vfs, "/lib", &cache(&cold));
+        let a = out
+            .flat_photos
+            .iter()
+            .find(|p| p.path() == "/lib/a.jpg")
+            .unwrap();
+        assert!(a.date_from_metadata, "the cached PhotoFile was rebuilt");
+        assert_eq!(a.country_code.as_deref(), Some("IT"));
+    }
+
+    #[test]
+    fn sub_second_mtimes_participate_in_the_change_signal() {
+        // Truncating to whole seconds here would make this rewrite invisible
+        // to both scan kinds, which is not the pinned behaviour.
+        let vfs = MemVfs::new();
+        vfs.insert_at("/lib/a.jpg", vec![0u8; 10], FileTime::new(1000, 0));
+        let cold = scan(&vfs, "/lib", &ScanInput::default());
+        vfs.insert_at(
+            "/lib/a.jpg",
+            vec![0u8; 10],
+            FileTime::new(1000, 500_000_000),
+        );
+        for reuse_cached in [true, false] {
+            let out = scan(
+                &vfs,
+                "/lib",
+                &ScanInput {
+                    reuse_cached,
+                    ..cache(&cold)
+                },
+            );
+            assert_eq!(
+                out.modified_paths,
+                vec!["/lib/a.jpg"],
+                "reuse_cached = {reuse_cached}"
+            );
+        }
+    }
+
+    #[test]
+    fn progress_is_reported_at_least_once_with_the_true_total() {
+        let vfs = library();
+        let seen = std::cell::RefCell::new(Vec::new());
+        let out = scan_with_progress(
+            &vfs,
+            "/lib",
+            &ScanInput::default(),
+            Some(&|n| seen.borrow_mut().push(n)),
+        );
+        assert_eq!(seen.borrow().last().copied(), Some(out.flat_photos.len()));
+    }
+
+    #[test]
+    fn a_missing_root_produces_no_tree_and_no_photos() {
+        let vfs = MemVfs::new();
+        vfs.insert("/other/a.jpg", vec![0u8; 1]);
+        let out = scan(&vfs, "/lib", &ScanInput::default());
+        assert!(out.flat_photos.is_empty());
+        assert!(
+            out.failed_directory_paths.is_empty(),
+            "NotFound is deletion, not a transient listing failure"
+        );
+        assert!(
+            out.root_folder.is_none(),
+            "a missing root must not look like an empty folder"
+        );
+    }
+
+    #[test]
+    fn a_cached_photo_under_a_missing_root_is_removed() {
+        let vfs = library();
+        let cold = scan(&vfs, "/lib", &ScanInput::default());
+        let empty = MemVfs::new();
+        let out = scan(&empty, "/lib", &cache(&cold));
+        assert!(out.root_folder.is_none());
+        assert!(out.flat_photos.is_empty());
+        assert!(out.failed_directory_paths.is_empty());
+        assert!(
+            out.removed_paths.contains(&"/lib/a.jpg".to_string()),
+            "cached photos under a gone root must look like deletions, not a carry-forward: {:?}",
+            out.removed_paths
+        );
+        assert_eq!(out.removed_paths.len(), cold.flat_photos.len());
+    }
+
+    /// chmod on [`MemVfs`] is a no-op, so this wraps it and answers
+    /// [`VfsError::PermissionDenied`] for one subdirectory — the same
+    /// shape the platform VFS produces for an unreadable folder.
+    #[test]
+    fn a_permission_denied_listing_still_records_a_failed_directory() {
+        struct DeniedVfs {
+            inner: MemVfs,
+            denied: String,
+        }
+        impl Vfs for DeniedVfs {
+            fn open(
+                &self,
+                path: &str,
+            ) -> gallery_vfs::VfsResult<Box<dyn gallery_vfs::ReadSeek + Send>> {
+                self.inner.open(path)
+            }
+            fn stat(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Stat> {
+                self.inner.stat(path)
+            }
+            fn list(&self, dir: &str) -> gallery_vfs::VfsResult<Vec<Entry>> {
+                if dir == self.denied {
+                    return Err(VfsError::PermissionDenied {
+                        path: dir.to_string(),
+                    });
+                }
+                self.inner.list(dir)
+            }
+            fn stat_entry(&self, path: &str) -> gallery_vfs::VfsResult<Entry> {
+                self.inner.stat_entry(path)
+            }
+            fn write_atomic(&self, path: &str, bytes: &[u8]) -> gallery_vfs::VfsResult<()> {
+                self.inner.write_atomic(path, bytes)
+            }
+            fn exists(&self, path: &str) -> bool {
+                self.inner.exists(path)
+            }
+        }
+
+        let cold = scan(&library(), "/lib", &ScanInput::default());
+        let vfs = DeniedVfs {
+            inner: library(),
+            denied: "/lib/Nested".into(),
+        };
+        let out = scan(&vfs, "/lib", &cache(&cold));
+        assert_eq!(out.failed_directory_paths, vec!["/lib/Nested"]);
+        assert!(
+            !out.removed_paths
+                .iter()
+                .any(|p| p.starts_with("/lib/Nested/")),
+            "a transient I/O error must not look like a deletion: {:?}",
+            out.removed_paths
+        );
+        assert!(
+            !out.flat_photos
+                .iter()
+                .any(|p| p.path() == "/lib/Nested/n.jpg"),
+            "the unlistable directory contributes no photos this pass"
+        );
+        assert!(out.root_folder.is_some());
+    }
+
+    /// A [`MemVfs`] that records every provider batch and answers them the way
+    /// a file provider would.
+    struct ProbingVfs {
+        inner: MemVfs,
+        batches: std::sync::Mutex<Vec<Vec<String>>>,
+        placeholders: HashSet<String>,
+    }
+
+    impl ProbingVfs {
+        fn new(inner: MemVfs, placeholders: &[&str]) -> Self {
+            ProbingVfs {
+                inner,
+                batches: std::sync::Mutex::new(Vec::new()),
+                placeholders: placeholders.iter().map(|s| s.to_string()).collect(),
+            }
+        }
+
+        fn probed(&self) -> Vec<String> {
+            let guard = self.batches.lock().unwrap();
+            let mut all: Vec<String> = guard.iter().flatten().cloned().collect();
+            all.sort();
+            all
+        }
+    }
+
+    impl Vfs for ProbingVfs {
+        fn open(
+            &self,
+            path: &str,
+        ) -> gallery_vfs::VfsResult<Box<dyn gallery_vfs::ReadSeek + Send>> {
+            self.inner.open(path)
+        }
+        fn stat(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Stat> {
+            self.inner.stat(path)
+        }
+        fn list(&self, dir: &str) -> gallery_vfs::VfsResult<Vec<Entry>> {
+            self.inner.list(dir)
+        }
+        fn stat_entry(&self, path: &str) -> gallery_vfs::VfsResult<Entry> {
+            self.inner.stat_entry(path)
+        }
+        fn write_atomic(&self, path: &str, bytes: &[u8]) -> gallery_vfs::VfsResult<()> {
+            self.inner.write_atomic(path, bytes)
+        }
+        fn exists(&self, path: &str) -> bool {
+            self.inner.exists(path)
+        }
+        fn probe_provider(&self, paths: &[String]) -> Vec<ProviderAttrs> {
+            self.batches.lock().unwrap().push(paths.to_vec());
+            paths
+                .iter()
+                .map(|p| ProviderAttrs {
+                    is_file_provider: true,
+                    is_placeholder: self.placeholders.contains(p),
+                    content_version: Some(format!("cv:{p}")),
+                    // A placeholder's bytes are elsewhere: `stat` sees a stub,
+                    // the provider knows the real size.
+                    intended_size: self.placeholders.contains(p).then_some(9_999),
+                })
+                .collect()
+        }
+    }
+
+    /// `ContentVersion.size` is the sidecar cache's change signal, and the
+    /// Swift baseline wrote `totalFileSize ?? fileSize` into it. Writing the
+    /// on-disk stub size for a placeholder instead makes every placeholder
+    /// `.xmp` in the library read as changed on the first scan after the
+    /// upgrade — and re-fetch, which is the cost docs/adr/0002 exists
+    /// to avoid.
+    #[test]
+    fn a_placeholder_sidecar_records_its_intended_size_not_its_stub() {
+        let vfs = ProbingVfs::new(library(), &["/lib/B.JPG.xmp"]);
+        let out = scan(&vfs, "/lib", &ScanInput::default());
+        let row = &out.sidecar_manifest[0];
+        assert_eq!(row.sidecar_url.path(), "/lib/B.JPG.xmp");
+        assert_eq!(
+            row.current_version.size,
+            Some(9_999),
+            "the stub size would churn the sidecar cache"
+        );
+        assert_eq!(row.download_status, DownloadStatus::Placeholder);
+
+        // A local sidecar has no intended size to prefer, so the listing's own
+        // size stands — which is what the two agree on anyway.
+        let local = ProbingVfs::new(library(), &[]);
+        let out = scan(&local, "/lib", &ScanInput::default());
+        assert_eq!(out.sidecar_manifest[0].current_version.size, Some(5));
+    }
+
+    #[test]
+    fn a_cold_scan_probes_every_photo_and_every_sidecar_exactly_once() {
+        let vfs = ProbingVfs::new(library(), &[]);
+        let out = scan(&vfs, "/lib", &ScanInput::default());
+
+        assert_eq!(
+            vfs.probed(),
+            vec![
+                "/lib/B.JPG",
+                "/lib/B.JPG.xmp",
+                "/lib/Media/Clip.MOV",
+                "/lib/Media/IMG_1.jpg",
+                "/lib/Nested/n.jpg",
+                "/lib/a.jpg",
+            ],
+            "the paired IMG_1.mov is never a photo, so it was never probed"
+        );
+        // One batch per directory that needed one — never one per file, and
+        // none at all for `Junk/`, which holds no media.
+        assert_eq!(out.stats.probe_batches, 3);
+        assert_eq!(out.stats.probed_paths, 6);
+        assert_eq!(out.stats.slow_path, 5);
+        assert_eq!(out.stats.cache_hits, 0);
+
+        // …and the answers land where they belong.
+        let a = out
+            .flat_photos
+            .iter()
+            .find(|p| p.path() == "/lib/a.jpg")
+            .unwrap();
+        assert_eq!(a.locality, PhotoLocality::Remote { downloaded: true });
+        assert_eq!(
+            out.sidecar_manifest[0].current_version.content_identifier,
+            Some("cv:/lib/B.JPG.xmp".to_string())
+        );
+    }
+
+    #[test]
+    fn a_placeholder_photo_comes_back_undownloaded() {
+        let vfs = ProbingVfs::new(library(), &["/lib/a.jpg"]);
+        let out = scan(&vfs, "/lib", &ScanInput::default());
+        let a = out
+            .flat_photos
+            .iter()
+            .find(|p| p.path() == "/lib/a.jpg")
+            .unwrap();
+        assert_eq!(a.locality, PhotoLocality::Remote { downloaded: false });
+    }
+
+    /// The whole reason the probe is batched rather than folded into `list`:
+    /// the light path must not pay for it at all. A zero-change light scan
+    /// over a provider-backed library used to cost 259 s of exactly this.
+    #[test]
+    fn a_light_scan_over_an_unchanged_library_probes_nothing() {
+        let cold_vfs = ProbingVfs::new(library(), &[]);
+        let cold = scan(&cold_vfs, "/lib", &ScanInput::default());
+
+        let vfs = ProbingVfs::new(library(), &[]);
+        let light = scan(&vfs, "/lib", &cache(&cold));
+
+        assert!(vfs.probed().is_empty(), "{:?}", vfs.probed());
+        assert_eq!(light.stats.probe_batches, 0);
+        assert_eq!(light.stats.cache_hits, 5);
+        assert_eq!(light.stats.slow_path, 0);
+        // The manifest still comes out, from the cached rows.
+        assert_eq!(light.sidecar_manifest.len(), 1);
+        assert_eq!(light.sidecar_manifest, cold.sidecar_manifest);
+    }
+
+    #[test]
+    fn a_light_scan_probes_only_the_files_it_has_to_rebuild() {
+        let cold_vfs = ProbingVfs::new(library(), &[]);
+        let cold = scan(&cold_vfs, "/lib", &ScanInput::default());
+
+        let inner = library();
+        inner.insert_at("/lib/Nested/new.jpg", vec![0u8; 4], FileTime::new(2000, 0));
+        let vfs = ProbingVfs::new(inner, &[]);
+        let light = scan(&vfs, "/lib", &cache(&cold));
+
+        assert_eq!(vfs.probed(), vec!["/lib/Nested/new.jpg"]);
+        assert_eq!(light.stats.probe_batches, 1);
+        assert_eq!(light.stats.cache_hits, 5);
+        assert_eq!(light.stats.slow_path, 1);
+    }
+
+    /// A mis-sized reply is a platform bug, not a reason to lose the tree —
+    /// **and not a reason to trust its prefix**. The answers are paired
+    /// positionally, so a reply of the wrong length has unknown alignment;
+    /// zipping it would give one photo another photo's placeholder flag and
+    /// content identifier. The whole batch degrades to plain local storage
+    /// instead, which is what a failed `resourceValues` always meant, and the
+    /// event is counted so the scan-totals line can show it.
+    #[test]
+    fn a_short_probe_reply_degrades_to_local_instead_of_failing() {
+        struct ShortVfs(MemVfs);
+        impl Vfs for ShortVfs {
+            fn open(
+                &self,
+                path: &str,
+            ) -> gallery_vfs::VfsResult<Box<dyn gallery_vfs::ReadSeek + Send>> {
+                self.0.open(path)
+            }
+            fn stat(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Stat> {
+                self.0.stat(path)
+            }
+            fn list(&self, dir: &str) -> gallery_vfs::VfsResult<Vec<Entry>> {
+                self.0.list(dir)
+            }
+            fn stat_entry(&self, path: &str) -> gallery_vfs::VfsResult<Entry> {
+                self.0.stat_entry(path)
+            }
+            fn write_atomic(&self, path: &str, bytes: &[u8]) -> gallery_vfs::VfsResult<()> {
+                self.0.write_atomic(path, bytes)
+            }
+            fn exists(&self, path: &str) -> bool {
+                self.0.exists(path)
+            }
+            fn probe_provider(&self, paths: &[String]) -> Vec<ProviderAttrs> {
+                // One row short, and the *first* one dropped — so a `zip`
+                // would slide every answer onto the wrong path rather than
+                // merely losing the tail.
+                paths
+                    .iter()
+                    .skip(1)
+                    .map(|p| ProviderAttrs {
+                        is_file_provider: true,
+                        is_placeholder: p.ends_with("a.jpg"),
+                        content_version: Some(format!("cv:{p}")),
+                        intended_size: Some(9_999),
+                    })
+                    .collect()
+            }
+        }
+        let out = scan(&ShortVfs(library()), "/lib", &ScanInput::default());
+        assert_eq!(out.flat_photos.len(), 5);
+        assert!(
+            out.flat_photos
+                .iter()
+                .all(|p| p.locality == PhotoLocality::Local),
+            "a mis-aligned reply must not be believed for any path"
+        );
+        assert!(
+            out.sidecar_manifest
+                .iter()
+                .all(|r| r.current_version.content_identifier.is_none()),
+            "…including the sidecar rows, which key the sidecar cache"
+        );
+        assert_eq!(
+            out.stats.probe_mismatches, 3,
+            "one per directory that probed"
+        );
+        assert_eq!(out.stats.probe_batches, 3);
+    }
+
+    /// A reply of the *right* length is believed, which is what makes the
+    /// mismatch check a guard rather than a blanket refusal to probe.
+    #[test]
+    fn a_correctly_sized_reply_is_still_used() {
+        let vfs = ProbingVfs::new(library(), &["/lib/a.jpg"]);
+        let out = scan(&vfs, "/lib", &ScanInput::default());
+        assert_eq!(out.stats.probe_mismatches, 0);
+        assert!(out
+            .flat_photos
+            .iter()
+            .any(|p| p.locality == PhotoLocality::Remote { downloaded: false }));
+    }
+
+    #[test]
+    fn a_cancelled_scan_hands_back_nothing_rather_than_half_a_tree() {
+        let vfs = library();
+        assert_eq!(
+            scan_with_hooks(&vfs, "/lib", &ScanInput::default(), None, Some(&|| true)),
+            None,
+            "a partial tree would look like a library whose second half was deleted"
+        );
+        // …and a hook that never fires is the same as no hook at all.
+        let out = scan_with_hooks(&vfs, "/lib", &ScanInput::default(), None, Some(&|| false));
+        assert_eq!(out.unwrap().flat_photos.len(), 5);
+    }
+
+    #[test]
+    fn a_light_scan_rebuilds_a_modified_sidecar_and_probes_only_that_row() {
+        let cold_vfs = ProbingVfs::new(library(), &[]);
+        let cold = scan(&cold_vfs, "/lib", &ScanInput::default());
+        assert_eq!(cold.sidecar_manifest[0].current_version.size, Some(5));
+
+        let inner = library();
+        inner.insert_at("/lib/B.JPG.xmp", vec![0u8; 50], FileTime::new(9999, 0));
+        let vfs = ProbingVfs::new(inner, &[]);
+        let light = scan(&vfs, "/lib", &cache(&cold));
+
+        assert_eq!(
+            vfs.probed(),
+            vec!["/lib/B.JPG.xmp"],
+            "the photo is unchanged; only the sidecar listing moved"
+        );
+        assert_eq!(light.stats.probe_batches, 1);
+        assert_eq!(light.stats.cache_hits, 5);
+        assert_eq!(light.stats.slow_path, 0);
+        assert_eq!(light.sidecar_manifest[0].current_version.size, Some(50));
+        assert_ne!(light.sidecar_manifest, cold.sidecar_manifest);
+    }
+
+    #[test]
+    fn a_deleted_sidecar_drops_out_of_the_manifest_without_a_probe() {
+        let vfs = MemVfs::new();
+        vfs.insert_at("/lib/B.JPG", vec![0u8; 11], FileTime::new(1001, 0));
+        vfs.insert_at("/lib/B.JPG.xmp", vec![0u8; 5], FileTime::new(1002, 0));
+        let cold_vfs = ProbingVfs::new(vfs, &[]);
+        let cold = scan(&cold_vfs, "/lib", &ScanInput::default());
+        assert_eq!(cold.sidecar_manifest.len(), 1);
+
+        let gone = MemVfs::new();
+        gone.insert_at("/lib/B.JPG", vec![0u8; 11], FileTime::new(1001, 0));
+        let vfs = ProbingVfs::new(gone, &[]);
+        let light = scan(&vfs, "/lib", &cache(&cold));
+
+        assert!(
+            light.sidecar_manifest.is_empty(),
+            "{:?}",
+            light.sidecar_manifest
+        );
+        assert!(vfs.probed().is_empty(), "{:?}", vfs.probed());
+        assert_eq!(light.stats.probe_batches, 0);
+        assert_eq!(light.stats.cache_hits, 1);
+    }
+
+    #[test]
+    fn a_placeholder_sidecar_does_not_force_a_reprobe_when_mtime_matches() {
+        // Cached `ContentVersion.size` is intended_size (9999); the listing
+        // still reports the stub (5). Treating that as a change would probe
+        // every placeholder sidecar on every light scan.
+        let cold_vfs = ProbingVfs::new(library(), &["/lib/B.JPG.xmp"]);
+        let cold = scan(&cold_vfs, "/lib", &ScanInput::default());
+        assert_eq!(cold.sidecar_manifest[0].current_version.size, Some(9_999));
+
+        let vfs = ProbingVfs::new(library(), &["/lib/B.JPG.xmp"]);
+        let light = scan(&vfs, "/lib", &cache(&cold));
+        assert!(vfs.probed().is_empty(), "{:?}", vfs.probed());
+        assert_eq!(light.stats.probe_batches, 0);
+        assert_eq!(light.sidecar_manifest, cold.sidecar_manifest);
+    }
+
+    #[test]
+    fn a_lightroom_sidecar_is_accepted_and_loses_to_the_canonical_form() {
+        let alt = MemVfs::new();
+        alt.insert_at("/lib/shot.jpg", vec![0u8; 8], FileTime::new(1, 0));
+        alt.insert_at("/lib/shot.xmp", vec![0u8; 3], FileTime::new(2, 0));
+        let out = scan(&alt, "/lib", &ScanInput::default());
+        assert_eq!(out.sidecar_manifest.len(), 1);
+        assert_eq!(out.sidecar_manifest[0].sidecar_url.path(), "/lib/shot.xmp");
+        assert_eq!(out.sidecar_manifest[0].current_version.size, Some(3));
+
+        let both = MemVfs::new();
+        both.insert_at("/lib/shot.jpg", vec![0u8; 8], FileTime::new(1, 0));
+        both.insert_at("/lib/shot.xmp", vec![0u8; 3], FileTime::new(2, 0));
+        both.insert_at("/lib/shot.jpg.xmp", vec![0u8; 7], FileTime::new(3, 0));
+        let out = scan(&both, "/lib", &ScanInput::default());
+        assert_eq!(out.sidecar_manifest.len(), 1);
+        assert_eq!(
+            out.sidecar_manifest[0].sidecar_url.path(),
+            "/lib/shot.jpg.xmp",
+            "canonical <basename>.xmp wins when both spellings exist"
+        );
+        assert_eq!(out.sidecar_manifest[0].current_version.size, Some(7));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_symlink_loop_is_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("a.jpg"), vec![0u8; 10]).unwrap();
+        std::os::unix::fs::symlink(&root, root.join("loop")).unwrap();
+        std::os::unix::fs::symlink(root.join("b"), root.join("cycle_a")).unwrap();
+        std::os::unix::fs::symlink(root.join("cycle_a"), root.join("b")).unwrap();
+
+        let out = scan(&StdVfs, root.to_str().unwrap(), &ScanInput::default());
+        assert_eq!(
+            out.flat_photos.len(),
+            1,
+            "loop descendants must not be walked: {:?}",
+            paths(&out.flat_photos)
+        );
+        assert!(out.flat_photos[0].path().ends_with("/a.jpg"));
+        assert!(out
+            .flat_photos
+            .iter()
+            .all(|p| !p.path().contains("/loop/") && !p.path().contains("/cycle_")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_symlink_outside_the_root_is_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(root.join("inside.jpg"), vec![0u8; 4]).unwrap();
+        std::fs::write(outside.join("secret.jpg"), vec![0u8; 8]).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
+
+        let out = scan(&StdVfs, root.to_str().unwrap(), &ScanInput::default());
+        let found = paths(&out.flat_photos);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].ends_with("/inside.jpg"), "{found:?}");
+        assert!(
+            found
+                .iter()
+                .all(|p| !p.contains("secret") && !p.contains("/escape/")),
+            "{found:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_media_file_and_a_symlinked_root_are_still_scanned() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        let link_root = dir.path().join("link");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("orig.jpg"), vec![0u8; 12]).unwrap();
+        std::os::unix::fs::symlink(real.join("orig.jpg"), real.join("alias.jpg")).unwrap();
+        std::os::unix::fs::symlink(&real, &link_root).unwrap();
+
+        let via_link = scan(&StdVfs, link_root.to_str().unwrap(), &ScanInput::default());
+        let names: Vec<&str> = via_link
+            .flat_photos
+            .iter()
+            .map(|p| gallery_model::file_url::last_component(p.path()))
+            .collect();
+        assert!(names.contains(&"orig.jpg"), "{names:?}");
+        assert!(names.contains(&"alias.jpg"), "{names:?}");
+        assert_eq!(
+            via_link
+                .flat_photos
+                .iter()
+                .find(|p| p.path().ends_with("alias.jpg"))
+                .unwrap()
+                .file_size,
+            12,
+            "file-symlink size follows the target"
+        );
+    }
+
+    #[test]
+    fn parents_are_everything_before_the_last_separator() {
+        assert_eq!(parent_of("/a/b/c.jpg"), "/a/b");
+        assert_eq!(parent_of("/c.jpg"), "/");
+        assert_eq!(parent_of("c.jpg"), "/");
+    }
+}

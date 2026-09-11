@@ -1,0 +1,93 @@
+import Foundation
+
+/// Which of two face groups survives a merge, and what to tell the user about
+/// it.
+///
+/// The core's `merge(into:from:)` is directional; *which* id wins is
+/// `faceMergeDirection` in the core, so every UI answers it the same way.
+///
+/// The rule, in order:
+///
+/// 1. A **named** group survives an unnamed one. Naming is the human decision
+///    in this feature; nothing the user typed should be dropped in favour of a
+///    group nobody has looked at.
+/// 2. Between two named groups, the one with more faces survives, and
+///    `droppedName` says whose name is going. That is the smaller retraction:
+///    fewer photos change what they claim.
+/// 3. Between two unnamed groups, the larger survives, for the same reason.
+///
+/// Size ties break on the lower id so the answer does not depend on which order
+/// the list happened to be in.
+struct MergeDirection: Equatable {
+    /// The group that keeps its id, its name and everything merged into it.
+    let survivor: FaceService.Cluster
+    /// The group that disappears.
+    let absorbed: FaceService.Cluster
+
+    init(survivor: FaceService.Cluster, absorbed: FaceService.Cluster) {
+        self.survivor = survivor
+        self.absorbed = absorbed
+    }
+
+    /// Nil when the two are the same group — the core refuses that, and a
+    /// button that cannot work should not be drawn.
+    init?(_ a: FaceService.Cluster, _ b: FaceService.Cluster) {
+        guard let decided = faceMergeDirection(
+            a: FaceMergeCandidate(id: a.id, name: a.name, size: UInt32(clamping: a.size)),
+            b: FaceMergeCandidate(id: b.id, name: b.name, size: UInt32(clamping: b.size))
+        ) else { return nil }
+        let survivor = decided.survivorId == a.id ? a : b
+        let absorbed = decided.absorbedId == a.id ? a : b
+        self.init(survivor: survivor, absorbed: absorbed)
+    }
+
+    /// The name this merge takes back, when there is one. Only a *second*,
+    /// different name is dropped: two groups of one person named the same thing
+    /// lose nothing, and an unnamed group has nothing to lose.
+    var droppedName: String? {
+        guard let absorbed = absorbed.name, absorbed != survivor.name else { return nil }
+        return absorbed
+    }
+
+    /// Always names the outcome, so the button says what will exist afterwards
+    /// rather than what is being done to what.
+    var buttonLabel: String {
+        guard let name = survivor.name else { return "Merge Groups" }
+        return "Merge into \(name)"
+    }
+
+    /// The sentence under the button. Says the retraction out loud when there
+    /// is one — a merge that silently un-names somebody is the failure this
+    /// whole feature has to avoid.
+    var confirmation: String {
+        let faces = survivor.size + absorbed.size
+        if let dropped = droppedName, let kept = survivor.name {
+            return "“\(dropped)” is dropped and those photos are tagged \(kept) instead. One group of \(faces) faces."
+        }
+        if let kept = survivor.name {
+            return "\(absorbed.size == 1 ? "1 face" : "\(absorbed.size) faces") join \(kept), and their photos gain the tag. One group of \(faces) faces."
+        }
+        return "One group of \(faces) faces, still unnamed. Nothing is written to a sidecar until you name it."
+    }
+}
+
+/// Whether a typed person name should save this group or merge it into one
+/// that already carries that name.
+enum FaceClusterNaming {
+    static func mergeTarget(
+        typed: String,
+        clusterID: Int64,
+        currentName: String?,
+        named: [FaceService.Cluster]
+    ) -> FaceService.Cluster? {
+        let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let currentName, currentName.localizedCaseInsensitiveCompare(trimmed) == .orderedSame {
+            return nil
+        }
+        return named.first {
+            $0.id != clusterID
+                && $0.name?.localizedCaseInsensitiveCompare(trimmed) == .orderedSame
+        }
+    }
+}

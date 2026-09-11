@@ -1,0 +1,261 @@
+name: LocalGallery
+options:
+  bundleIdPrefix: com.j23n.localgallery
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    DEVELOPMENT_TEAM: HN22UT76EY
+    # cargo (pre-build) needs ~/.cargo, rustup, core/target, and the ORT
+    # cache. git rev-list for the build number needs .git/objects, not just
+    # HEAD. Xcode has no per-script sandbox exception.
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    # GalleryCore.xcframework carries arm64 device + arm64 simulator slices
+    # (no x86_64 sim). Debug builds already use the active arch, but Release
+    # builds both and would fail to link an Intel sim. Remove this once
+    # build_core.sh lipos in an x86_64 slice — until then, building the
+    # simulator app requires an Apple Silicon Mac.
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+
+schemes:
+  # Declaring any scheme here stops Xcode auto-creating one per target, so the
+  # main scheme has to be spelled out — it is the one `xcodebuild test` uses.
+  LocalGallery:
+    build:
+      targets:
+        LocalGallery: all
+        LocalGalleryTests: [test]
+    test:
+      targets:
+        - LocalGalleryTests
+  # Temporary scheme for headless profiling (UI tests only, Release) — remove
+  # after profiling.
+  LocalGalleryPerf:
+    build:
+      targets:
+        LocalGallery: all
+        LocalGalleryUITests: [test]
+    test:
+      config: Release
+      targets:
+        - LocalGalleryUITests
+
+targets:
+  LocalGallery:
+    type: application
+    platform: iOS
+    sources:
+      - path: LocalGallery
+        excludes:
+          - Info.plist
+          - LocalGallery.entitlements
+          - GalleryCore-Bridging-Header.h
+          # Bindings live in build/core/Generated. A stray copy here is how
+          # Swift checksums can disagree with the xcframework this build
+          # just linked (UniFFI fatalError at launch).
+          - GalleryCore.swift
+      # Written by the Build Rust Core pre-build phase from the dylib that
+      # same phase just compiled. Compile Sources waits on this file.
+      - path: build/core/Generated
+      # The on-device model pack (~157 MB), staged by
+      # `./scripts/prepare_pack.sh` — run it before `xcodegen` too. A folder
+      # reference, so it lands verbatim as `LocalGallery.app/pack/<version>/`
+      # and the app reads it in place: the core only ever reads and hashes a
+      # pack, so a read-only bundle is a valid location and there is nothing to
+      # copy into Application Support on first launch. The version-named
+      # directory inside is what `PackResolver` compares against an imported
+      # pack, which is why `pack` is the enumerated root rather than the pack.
+      - path: build/pack
+        type: folder
+        buildPhase: resources
+    info:
+      path: LocalGallery/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIApplicationSupportsIndirectInputEvents: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~iphone:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleURLTypes:
+          - CFBundleURLName: com.j23n.localgallery.app
+            CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - localgallery
+        NSContactsUsageDescription: "LocalGallery uses your contacts to surface birthday memories for the people in your photos. Names are matched only against your photo tags — nothing leaves the device."
+        UIBackgroundModes:
+          - fetch
+        # Required so the system folder picker (SwiftUI `.fileImporter`,
+        # which presents `UIDocumentPickerViewController`) enables third-party
+        # file providers (Google Drive, Proton Drive, Cryptomator, Dropbox).
+        # Without this key the system assumes the app wants documents copied
+        # into its sandbox; providers that vend folders only via streaming
+        # (most third-party clouds) get grayed out.
+        LSSupportsOpeningDocumentsInPlace: true
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.j23n.localgallery.app.dailyMemories
+          - com.j23n.localgallery.app.sidecarRefresh
+          # iOS 26+ continued-processing task that keeps the slideshow video
+          # export alive when the app is backgrounded (VideoExportShield).
+          - com.j23n.localgallery.app.videoExport
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localgallery.app
+        MARKETING_VERSION: "1.0.0"
+        # Fallback only. The post-build script overwrites the *built*
+        # CFBundleVersion with `git rev-list --count HEAD` (same as
+        # j23n/localcontacts). Source Info.plists stay on this token.
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_ENTITLEMENTS: LocalGallery/LocalGallery.entitlements
+        # The Rust core links ONNX Runtime (via gallery-ml → `ort`).
+        # `scripts/build_core.sh` merges `libonnxruntime.a` into the
+        # xcframework's static library, but an archive can't carry link
+        # requirements — these are the two `ort-sys` asks for that the app has
+        # to state itself. ORT is C++ (`-lc++`) and its Apple build references
+        # CoreML symbols even with the CPU execution provider.
+        OTHER_LDFLAGS: -lc++ -framework CoreML
+        # UniFFI C decls. Same header bindgen just wrote — not the
+        # xcframework clang module, which Xcode caches across core rebuilds
+        # and then hides new symbols (HeicDecoder FFI "not in scope").
+        SWIFT_OBJC_BRIDGING_HEADER: LocalGallery/GalleryCore-Bridging-Header.h
+    preBuildScripts:
+      - name: Build Rust Core
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+        shell: /bin/bash
+        # So Compile Sources waits for bindgen instead of type-checking
+        # ImageIOHeicDecoder.swift against a stale GalleryCore.swift.
+        # Do not list the xcframework here: ProcessXCFramework already
+        # depends on it, and a script output on the same file is a cycle.
+        outputFiles:
+          - $(SRCROOT)/build/core/Generated/GalleryCore.swift
+          - $(SRCROOT)/build/core/headers/GalleryCoreFFI.h
+        script: |
+          set -euo pipefail
+          exec /bin/bash "$SRCROOT/scripts/build_core.sh"
+    postBuildScripts:
+      - name: Set Build Number from Git
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+        shell: /bin/bash
+        script: |
+          set -euo pipefail
+          exec /bin/bash "$SRCROOT/scripts/set_build_number.sh"
+    dependencies:
+      - target: LocalGalleryWidgets
+      # Static library — linked, never embedded. Device + simulator arm64 slices.
+      - framework: build/core/GalleryCore.xcframework
+        embed: false
+
+  LocalGalleryWidgets:
+    type: app-extension
+    platform: iOS
+    # The Shared/ files (SharedContainer, WidgetSnapshot, WidgetDeepLink,
+    # WidgetRotation) are intentionally compiled into both the host app and
+    # this extension target. Each target gets its own copy — they cross
+    # process boundaries only via the JSON files in the App Group container,
+    # never as in-memory references.
+    sources:
+      - path: LocalGalleryWidgets
+        excludes:
+          - Info.plist
+          - LocalGalleryWidgets.entitlements
+      - path: LocalGallery/Shared
+    info:
+      path: LocalGalleryWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: LocalGallery
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localgallery.app.widgets
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_ENTITLEMENTS: LocalGalleryWidgets/LocalGalleryWidgets.entitlements
+        SKIP_INSTALL: "YES"
+    postBuildScripts:
+      - name: Set Build Number from Git
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+        shell: /bin/bash
+        script: |
+          set -euo pipefail
+          exec /bin/bash "$SRCROOT/scripts/set_build_number.sh"
+
+  # Temporary headless profiling driver — remove after profiling.
+  LocalGalleryUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: LocalGalleryUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localgallery.app.uitests
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: LocalGallery
+
+  LocalGalleryTests:
+    type: bundle.unit-test
+    platform: iOS
+    # Tests use `@testable import LocalGallery` to reach the Shared/ types
+    # — don't add `LocalGallery/Shared` here or every type would clash.
+    sources:
+      - path: LocalGalleryTests
+      # The Rust core's own test model pack + image fixtures, referenced in
+      # place (folder references, copied verbatim) rather than duplicated —
+      # `TaggingSessionTests` runs the real FFI end to end against them and
+      # must not drift from what `cargo test` uses. The pack is ~16 KB: a real
+      # MobileCLIP pack is never bundled into a test target.
+      - path: core/gallery-ml/tests/testpack
+        type: folder
+        buildPhase: resources
+      # The face-capable (schema 2) test pack, for FaceSessionTests. Same
+      # deal: referenced in place so the simulator runs the same synthetic
+      # detector/embedder `cargo test` does. ~30 KB.
+      - path: core/gallery-ml/tests/facepack
+        type: folder
+        buildPhase: resources
+      - path: core/gallery-ml/tests/fixtures
+        type: folder
+        buildPhase: resources
+      # Phase-3 scanner/metadata conformance fixtures: the adversarial asset
+      # tree plus the three committed expectation JSONs. Referenced in place
+      # for the same reason as the packs above — the Rust port reads the very
+      # same files from the repo (core/gallery-meta/tests/conformance_fixtures.rs),
+      # so there is exactly one copy of the spec. ~70 KB.
+      - path: core/fixtures/scan-conformance
+        type: folder
+        buildPhase: resources
+      # Phase-4 memories/indexes conformance fixtures: SeededRNG vectors, the
+      # MemoryEngine scenario set, the widget's scheduled-days horizon, and the
+      # SearchIndex/TagIndex expectations. Same folder-reference arrangement —
+      # one copy of the spec, read here and by
+      # core/gallery-model/tests/memories_conformance_fixtures.rs.
+      - path: core/fixtures/memories-conformance
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localgallery.app.tests
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: LocalGallery

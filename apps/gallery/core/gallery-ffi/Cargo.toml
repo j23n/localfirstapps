@@ -1,0 +1,30 @@
+[package]
+name = "gallery-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "gallery_ffi"
+# `staticlib` is what the app links (via GalleryCore.xcframework); `cdylib` is
+# what `uniffi-bindgen` reads the interface metadata out of. `lib` keeps the
+# crate usable from Rust tests.
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[dependencies]
+gallery-index = { path = "../gallery-index" }
+gallery-memories = { path = "../gallery-memories" }
+gallery-meta = { path = "../gallery-meta" }
+gallery-ml = { path = "../gallery-ml" }
+gallery-geo = { path = "../gallery-geo" }
+gallery-session = { path = "../gallery-session" }
+gallery-model = { path = "../gallery-model" }
+gallery-scan = { path = "../gallery-scan" }
+gallery-vfs = { path = "../gallery-vfs" }
+uniffi = { workspace = true }
+uuid = { version = "1", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"

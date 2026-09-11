@@ -1,0 +1,415 @@
+//! Tag-path helpers and the casing rules from schema §3.
+
+use unicode_normalization::UnicodeNormalization;
+
+use crate::error::{MetaError, MetaResult};
+
+/// Unicode NFC — the one normalization form this crate compares in.
+///
+/// # Policy
+///
+/// `Café` has two legal spellings: NFC (`é` as one code point) and NFD (`e` +
+/// combining acute). They render identically, and no user will ever accept
+/// that their library contains both `Places/Café` and `Places/Café`. macOS
+/// hands out NFD from its filesystem APIs, so a tagger that lifted a keyword
+/// from a filename really does produce the other form. So:
+///
+/// 1. **Requested tags are NFC-normalized on entry** ([`normalize_tag`]). The
+///    crate's own output is therefore always NFC.
+/// 2. **Comparisons against entries already in a sidecar are made on NFC
+///    forms** — "is this tag already here", "is this the leaf I claimed", "is
+///    this the entry I must retract". An NFD entry in the file matches the NFC
+///    tag we hold, so nothing duplicates and no claim is orphaned.
+/// 3. **Entries the crate is not editing are never rewritten.** Normalization
+///    is a comparison rule, not a rewrite rule: a human's NFD keyword keeps its
+///    bytes. Preservation outranks tidiness (crate doc).
+///
+/// The one place bytes do change is the crate's own `Core*` sentinel, which is
+/// rewritten wholesale from the NFC values it now holds — that is our field to
+/// normalize.
+pub fn nfc(value: &str) -> String {
+    value.nfc().collect()
+}
+
+/// NFC plus lowercase: the key `dc:subject` leaves are compared on.
+///
+/// Keyword matching in this ecosystem is case-insensitive by convention (the
+/// planner has always compared leaves that way), and the retraction path has to
+/// use exactly the same rule as the claim path or a leaf whose case drifted
+/// after we claimed it would be dropped from `CoreSubjects` while surviving in
+/// the file — an orphaned claim that nothing ever cleans up.
+pub fn nfc_lower(value: &str) -> String {
+    nfc(value).to_lowercase()
+}
+
+/// `Places/Italy/Rome` → `Rome`. A flat tag comes back unchanged.
+pub fn leaf_of(tag: &str) -> &str {
+    match tag.rsplit_once('/') {
+        Some((_, leaf)) => leaf,
+        None => tag,
+    }
+}
+
+/// `Objects/Animal/Dog` → `Objects|Animal|Dog`, the `lr:hierarchicalSubject`
+/// form (schema §1.1).
+pub fn to_lr_path(tag: &str) -> String {
+    tag.replace('/', "|")
+}
+
+/// Top-level root of a hierarchical tag: `Objects/Animal/Dog` → `Objects`.
+pub fn root_of(tag: &str) -> &str {
+    match tag.split_once('/') {
+        Some((root, _)) => root,
+        None => tag,
+    }
+}
+
+/// The root the *tagger* is forbidden to touch — face recognition owns it
+/// (schema §2.1). [`normalize_tag`] rejects it so Phase 1 cannot wander in by
+/// accident; the face half reaches it through [`normalize_person`], which is
+/// the deliberate door.
+pub const PEOPLE_ROOT: &str = "People";
+/// The reverse-geocoding root (schema §2.2). A single nested
+/// `Places/<Country>[/<Region>[/<City>[/<Neighborhood>]]]` path.
+pub const PLACES_ROOT: &str = "Places";
+/// Content tags the tagger owns and replaces on each write.
+pub const OBJECTS_ROOT: &str = "Objects";
+/// Scene tags the tagger owns and replaces on each write.
+pub const SCENES_ROOT: &str = "Scenes";
+
+/// Whether `tag` is an `Objects/*` or `Scenes/*` path the tagger replaces.
+///
+/// Accepts either `/` or `|` so the same check works on `digiKam:TagsList`
+/// and `lr:hierarchicalSubject`.
+pub fn is_content_tag(tag: &str) -> bool {
+    let root = tag.split(['/', '|']).next().unwrap_or(tag);
+    root.eq_ignore_ascii_case(OBJECTS_ROOT) || root.eq_ignore_ascii_case(SCENES_ROOT)
+}
+
+/// Characters that occupy no space when rendered.
+///
+/// Not stripped — a zero-width joiner between two Devanagari letters, or
+/// between the parts of an emoji sequence, is part of the text and removing it
+/// changes the word. They are only *counted*: a "name" made of nothing else is
+/// a name the user cannot see, cannot retype, and cannot tell apart from the
+/// next one, so it is refused rather than turned into an invisible `People/`
+/// tag.
+///
+/// Whitespace counts as invisible here too. `split_whitespace` has already
+/// removed the runs that Unicode calls whitespace by the time this is asked,
+/// but the bidi and format characters below are *not* whitespace and survive it.
+fn is_invisible(c: char) -> bool {
+    c.is_whitespace()
+        || matches!(c,
+            '\u{00AD}'                 // soft hyphen
+            | '\u{200B}'..='\u{200F}'  // zero-width space/NJ/J, LRM, RLM
+            | '\u{202A}'..='\u{202E}'  // bidi embedding and override
+            | '\u{2060}'..='\u{2064}'  // word joiner, invisible operators
+            | '\u{2066}'..='\u{2069}'  // bidi isolates
+            | '\u{FEFF}'               // zero-width no-break space / BOM
+        )
+}
+
+/// Normalize a person's name for the `People/<Name>` root.
+///
+/// NFC-composes, trims, and collapses internal whitespace runs. Rejects:
+///
+/// * an empty name, and one with nothing visible left in it ([`is_invisible`]);
+/// * control characters;
+/// * `/` — a slash would silently create a deeper path
+///   (`People/Alice/Smith`), which is a different tag and a different person as
+///   far as every consumer is concerned;
+/// * `|` — the separator [`to_lr_path`] uses. `Alice|Bob` would go into
+///   `lr:hierarchicalSubject` as `People|Alice|Bob`, which Lightroom reads as a
+///   *person named Bob under a category named Alice*. The name would be one
+///   person to digiKam and another to Lightroom, from one keystroke.
+///
+/// Everything else Unicode offers is a legal name: CJK, diacritics, RTL scripts
+/// and the joiners the scripts that need them are written with.
+///
+/// # Why this does not titlecase
+///
+/// [`normalize_tag`] titlecases every segment because taxonomy leaves come out
+/// of a model pack and their casing is the crate's to normalize. A person's
+/// name is *typed by the user*, is matched against their address book by
+/// `ContactLinker`, and has casing the user meant: `bell hooks`, `van Gogh`,
+/// `d'Arcy`. Titlecasing it in English default mode would also uppercase
+/// exactly the particles that carry meaning in other languages (§3 documents
+/// that `del` becomes `Del`). Preservation outranks tidiness here too.
+pub fn normalize_person(name: &str) -> MetaResult<String> {
+    let reject = |reason: &str| MetaError::InvalidTag {
+        tag: name.to_string(),
+        reason: reason.into(),
+    };
+    if name.chars().any(|c| c.is_control()) {
+        return Err(reject("contains control characters"));
+    }
+    if name.contains('/') {
+        return Err(reject("a person name cannot contain '/'"));
+    }
+    if name.contains('|') {
+        return Err(reject("a person name cannot contain '|'"));
+    }
+    let composed = nfc(name);
+    let collapsed = composed.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return Err(reject("empty after normalization"));
+    }
+    if collapsed.chars().all(is_invisible) {
+        return Err(reject("no visible characters"));
+    }
+    Ok(collapsed)
+}
+
+/// `Alice` → `People/Alice`. The name must already be [`normalize_person`]'d.
+pub fn person_tag(name: &str) -> String {
+    format!("{PEOPLE_ROOT}/{name}")
+}
+
+/// Normalize a requested tag: NFC-compose it, trim each segment, collapse
+/// internal runs of whitespace, titlecase every segment (§3), drop empty
+/// segments.
+///
+/// Rejects a tag that ends up empty, or that targets `People/` — Phase 1 has
+/// no business there.
+pub fn normalize_tag(tag: &str) -> MetaResult<String> {
+    if tag.chars().any(|c| c.is_control()) {
+        return Err(MetaError::InvalidTag {
+            tag: tag.to_string(),
+            reason: "contains control characters".into(),
+        });
+    }
+    // NFC first, so titlecasing sees a composed `é` rather than a bare `e`
+    // followed by a combining mark — and so the whole crate has exactly one
+    // spelling of every tag it produces (see [`nfc`]).
+    let composed = nfc(tag);
+    let segments: Vec<String> = composed
+        .split('/')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(titlecase_segment)
+        .collect();
+    if segments.is_empty() {
+        return Err(MetaError::InvalidTag {
+            tag: tag.to_string(),
+            reason: "empty after normalization".into(),
+        });
+    }
+    let normalized = segments.join("/");
+    if root_of(&normalized) == PEOPLE_ROOT {
+        return Err(MetaError::InvalidTag {
+            tag: tag.to_string(),
+            reason: "People/* is owned by face recognition, not the tagger".into(),
+        });
+    }
+    Ok(normalized)
+}
+
+/// English small words the `titlecase` PyPI library keeps lowercase when they
+/// are neither the first nor the last word (schema §3).
+///
+/// photo-tools runs that library in default English mode, so non-English small
+/// words (`del`, `de`, `la`) are *uppercased* — matched here by omission.
+const SMALL_WORDS: &[&str] = &[
+    "a", "an", "and", "as", "at", "but", "by", "en", "for", "if", "in", "of", "on", "or", "the",
+    "to", "v", "v.", "via", "vs", "vs.",
+];
+
+/// Titlecase one path segment.
+///
+/// A deliberately conservative subset of the `titlecase` library: a word that
+/// already carries an internal capital (`McDonald`, `iPhone`, `Roma I`) is left
+/// alone, so pre-cased taxonomy leaves from the model pack pass through
+/// untouched and only sloppy input gets fixed. Full parity with the Python
+/// library is neither achievable nor needed — the tagger's label set ships
+/// already cased.
+pub fn titlecase_segment(segment: &str) -> String {
+    let words: Vec<&str> = segment.split_whitespace().collect();
+    let last = words.len().saturating_sub(1);
+    words
+        .iter()
+        .enumerate()
+        .map(|(i, word)| titlecase_word(word, i == 0 || i == last))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn titlecase_word(word: &str, forced: bool) -> String {
+    // Anything with a capital past the first character is intentional casing
+    // somebody else chose. Leave it.
+    if word.chars().skip(1).any(char::is_uppercase) {
+        return word.to_string();
+    }
+    if !forced && SMALL_WORDS.contains(&word.to_lowercase().as_str()) {
+        return word.to_lowercase();
+    }
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Normalize, deduplicate and sort a requested tag list.
+///
+/// Sorting is what makes output deterministic: the ML tagger hands tags over in
+/// score order, and cross-architecture float drift reorders near-ties without
+/// changing the set. Sorting the set means the same *set* always serializes to
+/// the same bytes (determinism doctrine, overview §5).
+pub fn normalize_tag_list(tags: &[String]) -> MetaResult<Vec<String>> {
+    let mut out: Vec<String> = tags
+        .iter()
+        .map(|t| normalize_tag(t))
+        .collect::<MetaResult<Vec<_>>>()?;
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leaf_and_root_split_at_the_right_end() {
+        assert_eq!(leaf_of("Places/Italy/Rome"), "Rome");
+        assert_eq!(leaf_of("Rome"), "Rome");
+        assert_eq!(root_of("Places/Italy/Rome"), "Places");
+        assert_eq!(root_of("Rome"), "Rome");
+    }
+
+    #[test]
+    fn lr_paths_use_the_pipe_separator() {
+        assert_eq!(to_lr_path("Objects/Animal/Dog"), "Objects|Animal|Dog");
+    }
+
+    #[test]
+    fn content_tags_are_objects_and_scenes() {
+        assert!(is_content_tag("Objects/Animal/Dog"));
+        assert!(is_content_tag("Scenes|Urban|Street"));
+        assert!(!is_content_tag("People/Ada"));
+        assert!(!is_content_tag("Places/Italy"));
+        assert!(!is_content_tag("Landmarks/Colosseum"));
+        assert!(!is_content_tag("Holiday"));
+    }
+
+    #[test]
+    fn normalization_titlecases_and_collapses() {
+        assert_eq!(
+            normalize_tag("objects/animal/dog").unwrap(),
+            "Objects/Animal/Dog"
+        );
+        assert_eq!(
+            normalize_tag("  Objects / Animal / Dog ").unwrap(),
+            "Objects/Animal/Dog"
+        );
+        assert_eq!(normalize_tag("Objects//Dog").unwrap(), "Objects/Dog");
+    }
+
+    #[test]
+    fn normalization_matches_the_schema_doc_examples() {
+        assert_eq!(titlecase_segment("rome"), "Rome");
+        assert_eq!(titlecase_segment("municipio roma i"), "Municipio Roma I");
+        assert_eq!(titlecase_segment("state of the art"), "State of the Art");
+        // Default English mode uppercases non-English small words (§3).
+        assert_eq!(
+            titlecase_segment("città del vaticano"),
+            "Città Del Vaticano"
+        );
+    }
+
+    #[test]
+    fn pre_cased_taxonomy_leaves_survive_untouched() {
+        for s in ["Dog", "Hot Air Balloon", "McDonald's", "T-Shirt", "Roma I"] {
+            assert_eq!(titlecase_segment(s), s);
+        }
+    }
+
+    #[test]
+    fn people_tags_are_rejected() {
+        let err = normalize_tag("People/Alice").unwrap_err();
+        assert!(matches!(err, MetaError::InvalidTag { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn empty_and_control_tags_are_rejected() {
+        assert!(normalize_tag("").is_err());
+        assert!(normalize_tag("///").is_err());
+        assert!(normalize_tag("Objects/\u{0}Dog").is_err());
+    }
+
+    #[test]
+    fn person_names_keep_the_casing_the_user_typed() {
+        assert_eq!(normalize_person("bell hooks").unwrap(), "bell hooks");
+        assert_eq!(
+            normalize_person("  Ada   Lovelace ").unwrap(),
+            "Ada Lovelace"
+        );
+        assert_eq!(
+            normalize_person("Vincent van Gogh").unwrap(),
+            "Vincent van Gogh"
+        );
+        // NFD in, NFC out — the whole crate compares one spelling (see `nfc`).
+        assert_eq!(normalize_person("Cafe\u{301}").unwrap(), "Café");
+    }
+
+    #[test]
+    fn person_names_reject_what_would_change_their_identity() {
+        for bad in [
+            "",
+            "   ",
+            "Alice/Smith",
+            "Ali\u{0}ce",
+            // A forged Lightroom hierarchy: `People|Alice|Bob` reads as "Bob,
+            // inside Alice" to every reader of `lr:hierarchicalSubject`.
+            "Alice|Bob",
+            "|",
+            // Nothing anybody can see, retype, or tell from the next one.
+            "\u{200B}",
+            "\u{200B}\u{200C}\u{FEFF}",
+            "\u{202E}\u{2066}",
+            "\u{00AD}",
+        ] {
+            assert!(normalize_person(bad).is_err(), "{bad:?} should be rejected");
+        }
+    }
+
+    /// The rejection above must not take the world's actual names with it.
+    #[test]
+    fn person_names_in_every_script_are_still_names() {
+        for good in [
+            "李明",
+            "Ægir Þórsson",
+            "José María",
+            "أحمد بن سعيد",
+            "דוד בן-גוריון",
+            "Ольга",
+            // A zero-width joiner *between* letters is part of the word, not a
+            // way to write an invisible name.
+            "क\u{200D}ष",
+            "bell hooks",
+        ] {
+            assert!(normalize_person(good).is_ok(), "{good:?} was rejected");
+        }
+    }
+
+    #[test]
+    fn a_person_tag_lives_under_the_people_root() {
+        assert_eq!(person_tag("Alice"), "People/Alice");
+        assert_eq!(root_of(&person_tag("Alice")), PEOPLE_ROOT);
+        assert_eq!(leaf_of(&person_tag("Ada Lovelace")), "Ada Lovelace");
+    }
+
+    #[test]
+    fn tag_lists_come_back_sorted_and_deduped() {
+        let input = vec![
+            "Scenes/Urban/Street".to_string(),
+            "objects/animal/dog".to_string(),
+            "Objects/Animal/Dog".to_string(),
+        ];
+        assert_eq!(
+            normalize_tag_list(&input).unwrap(),
+            vec!["Objects/Animal/Dog", "Scenes/Urban/Street"]
+        );
+    }
+}

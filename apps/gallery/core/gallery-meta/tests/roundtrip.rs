@@ -1,0 +1,958 @@
+//! Preservation is the whole product. These tests assert that nothing the core
+//! does not own can be damaged by a write.
+
+mod common;
+
+use common::{fixture, fixture_str, FIXTURES};
+use gallery_meta::model::SidecarView;
+use gallery_meta::xml::{parse, serialize};
+use gallery_meta::{apply_tags, read_view, TagWriteRequest};
+
+fn request(tags: &[&str]) -> TagWriteRequest {
+    TagWriteRequest::new(
+        tags.iter().map(|s| s.to_string()),
+        "mobileclip-s2-2026.1",
+        "2026-08-03T10:00:00Z",
+    )
+}
+
+fn apply(bytes: &[u8], tags: &[&str]) -> Vec<u8> {
+    apply_tags(Some(bytes), &request(tags))
+        .expect("apply")
+        .bytes
+}
+
+// ---------------------------------------------------------------------------
+// Parse → serialize
+// ---------------------------------------------------------------------------
+
+#[test]
+fn every_fixture_survives_parse_and_serialize_unchanged() {
+    for name in FIXTURES {
+        let original = fixture(name);
+        let doc = parse(&original).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(
+            serialize(&doc),
+            original,
+            "{name} did not round trip byte-for-byte"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------
+
+#[test]
+fn photo_tools_fixture_reads_back_the_documented_fields() {
+    let view = read_view(&fixture("phototools.jpg.xmp")).unwrap();
+    assert_eq!(
+        view.tags_list,
+        vec![
+            "Places/Italy/Lazio/Rome/Municipio Roma I",
+            "Landmarks/Colosseum",
+            "Objects/Structure/Balustrade",
+            "Scenes/Urban/Building",
+        ]
+    );
+    assert!(view.subject.contains(&"Colosseum".to_string()));
+    assert_eq!(view.hierarchical_subject.len(), 4);
+    assert_eq!(view.photo_tools.tagger_version.as_deref(), Some("2026.4"));
+    assert_eq!(view.photo_tools.country_code.as_deref(), Some("IT"));
+    assert_eq!(view.photo_tools.ocr_text, vec!["Way Out", "Pizza Roma"]);
+    assert!(view.photo_tools.ocr_ran.is_some());
+    assert_eq!(
+        view.photo_tools.clip_model.as_deref(),
+        Some("ViT-B-32/laion2b_s34b_b79k")
+    );
+    assert_eq!(
+        view.photo_tools.clip_embedding.as_deref(),
+        Some("AAAAPwAAAD8AAIA/")
+    );
+    assert!(!view.core.is_present());
+}
+
+#[test]
+fn digikam_fixture_reads_back_people_and_regions() {
+    let view = read_view(&fixture("digikam.jpg.xmp")).unwrap();
+    assert_eq!(view.people_tags(), vec!["People/Alice", "People/Bob"]);
+    assert_eq!(view.person_in_image, vec!["Alice", "Bob"]);
+    assert_eq!(view.regions.len(), 2);
+    assert_eq!(view.regions[0].name.as_deref(), Some("Alice"));
+    assert_eq!(view.regions[0].kind.as_deref(), Some("Face"));
+    assert!((view.regions[0].center_x - 0.4).abs() < 1e-9);
+    assert!((view.regions[1].height - 0.14).abs() < 1e-9);
+}
+
+#[test]
+fn unconventional_prefixes_and_containers_still_read() {
+    let view = read_view(&fixture("weird_rdf.jpg.xmp")).unwrap();
+    // dc:subject bound to `dcx:` and serialized as a Seq rather than a Bag.
+    assert_eq!(view.subject, vec!["Trattoria Da Enzo & Sons", "Carla"]);
+    // digiKam:TagsList as a Bag, one entry inside CDATA.
+    assert_eq!(view.tags_list, vec!["People/Carla", "Places/Italy/Lazio"]);
+    // Attribute-form scalars.
+    assert_eq!(view.photo_tools.country_code.as_deref(), Some("IT"));
+    assert_eq!(view.photo_tools.tagger_version.as_deref(), Some("2026.4"));
+    // Region entirely in attribute form on a self-closing element.
+    assert_eq!(view.regions.len(), 1);
+    assert_eq!(view.regions[0].name.as_deref(), Some("Carla"));
+    assert!((view.regions[0].width - 0.08).abs() < 1e-9);
+}
+
+#[test]
+fn an_empty_packet_reads_as_empty_rather_than_failing() {
+    let view = read_view(&fixture("minimal.jpg.xmp")).unwrap();
+    assert_eq!(view, SidecarView::default());
+}
+
+// ---------------------------------------------------------------------------
+// Writing: preservation
+// ---------------------------------------------------------------------------
+
+/// The fields the core must never touch, before and after a write.
+fn untouched_projection(view: &SidecarView) -> impl std::fmt::Debug + PartialEq + '_ {
+    let mut photo_tools = view.photo_tools.clone();
+    photo_tools.tagger_version = None;
+    photo_tools.tagged_at = None;
+    (
+        view.person_in_image.clone(),
+        view.regions.clone(),
+        photo_tools,
+        view.people_tags()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[test]
+fn writing_tags_leaves_every_foreign_field_alone() {
+    for name in FIXTURES {
+        let original = fixture(name);
+        let before = read_view(&original).unwrap();
+        let after_bytes = apply(&original, &["Objects/Animal/Dog", "Scenes/Nature/Forest"]);
+        let after = read_view(&after_bytes).unwrap();
+        assert_eq!(
+            untouched_projection(&before),
+            untouched_projection(&after),
+            "{name}: a field the core does not own changed"
+        );
+    }
+}
+
+#[test]
+fn people_places_landmarks_and_foreign_objects_scenes_survive_a_write() {
+    for name in FIXTURES {
+        let original = fixture(name);
+        let before = read_view(&original).unwrap();
+        let after = read_view(&apply(&original, &["Objects/Animal/Dog"])).unwrap();
+        for tag in &before.tags_list {
+            assert!(after.tags_list.contains(tag), "{name}: lost tag {tag}");
+        }
+        for subject in &before.subject {
+            assert!(
+                after.subject.contains(subject),
+                "{name}: lost subject {subject}"
+            );
+        }
+        for lr in &before.hierarchical_subject {
+            assert!(
+                after.hierarchical_subject.contains(lr),
+                "{name}: lost hierarchicalSubject {lr}"
+            );
+        }
+        // Pre-existing Objects/Scenes were never ours to claim.
+        for tag in &before.tags_list {
+            if gallery_meta::is_content_tag(tag) {
+                assert!(
+                    !after.core.tags.iter().any(|t| t == tag),
+                    "{name}: claimed foreign tag {tag}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn structural_blocks_the_core_ignores_come_through_verbatim() {
+    // The MWG region block and the IPTC ImageRegion block are the two places
+    // where a naive rewriter would do damage; assert on the raw text, not just
+    // the parsed projection.
+    let original = fixture_str("digikam.jpg.xmp");
+    let region_block = {
+        let start = original.find("<mwg-rs:Regions").unwrap();
+        let end = original.find("</mwg-rs:Regions>").unwrap();
+        original[start..end].to_string()
+    };
+    let after = String::from_utf8(apply(original.as_bytes(), &["Objects/Animal/Dog"])).unwrap();
+    assert!(
+        after.contains(&region_block),
+        "MWG region block was rewritten"
+    );
+
+    let pt = fixture_str("phototools.jpg.xmp");
+    let ocr_block = {
+        let start = pt.find("<Iptc4xmpExt:ImageRegion>").unwrap();
+        let end = pt.find("</Iptc4xmpExt:ImageRegion>").unwrap();
+        pt[start..end].to_string()
+    };
+    let after_pt = String::from_utf8(apply(pt.as_bytes(), &["Objects/Animal/Dog"])).unwrap();
+    assert!(
+        after_pt.contains(&ocr_block),
+        "IPTC ImageRegion block was rewritten"
+    );
+}
+
+#[test]
+fn tagger_version_is_the_pack_version() {
+    let out = apply_tags(None, &request(&["Objects/Animal/Dog"]))
+        .unwrap()
+        .bytes;
+    let view = read_view(&out).unwrap();
+    assert_eq!(
+        view.photo_tools.tagger_version.as_deref(),
+        Some("mobileclip-s2-2026.1")
+    );
+    assert_eq!(
+        view.photo_tools.tagged_at.as_deref(),
+        Some("2026-08-03T10:00:00Z")
+    );
+
+    let after = read_view(&apply(
+        &fixture("phototools.jpg.xmp"),
+        &["Objects/Animal/Dog"],
+    ))
+    .unwrap();
+    assert_eq!(
+        after.photo_tools.tagger_version.as_deref(),
+        Some("mobileclip-s2-2026.1")
+    );
+}
+
+#[test]
+fn clip_fields_are_written_when_the_request_carries_them() {
+    let request = request(&["Objects/Animal/Dog"]).with_clip(
+        "AAAAPwAAAD8AAIA/",
+        "mobileclip-s2-2026.1",
+        "2026-08-03T10:00:00Z",
+    );
+    let out = apply_tags(None, &request).unwrap().bytes;
+    let view = read_view(&out).unwrap();
+    assert_eq!(
+        view.photo_tools.clip_embedding.as_deref(),
+        Some("AAAAPwAAAD8AAIA/")
+    );
+    assert_eq!(
+        view.photo_tools.clip_model.as_deref(),
+        Some("mobileclip-s2-2026.1")
+    );
+    assert_eq!(
+        view.photo_tools.clip_timestamp.as_deref(),
+        Some("2026-08-03T10:00:00Z")
+    );
+    // A re-run with the same vector must not churn the sidecar — even
+    // when the caller stamps a later `CLIPTimestamp`.
+    let later = request.clone().with_clip(
+        "AAAAPwAAAD8AAIA/",
+        "mobileclip-s2-2026.1",
+        "2026-08-04T00:00:00Z",
+    );
+    let again = apply_tags(Some(&out), &later).unwrap();
+    assert!(!again.changed, "an unchanged CLIP write rewrote the file");
+}
+
+#[test]
+fn the_writer_reuses_the_files_own_prefixes_instead_of_imposing_its_own() {
+    let after = String::from_utf8(apply(
+        &fixture("weird_rdf.jpg.xmp"),
+        &["Objects/Animal/Dog"],
+    ))
+    .unwrap();
+    assert!(after.contains("<dcx:subject>"), "{after}");
+    assert!(!after.contains("<dc:subject>"), "{after}");
+    assert!(!after.contains("xmlns:dc="), "{after}");
+    assert!(after.contains("<dk:TagsList>"), "{after}");
+    assert!(!after.contains("xmlns:digiKam"), "{after}");
+    // The tag landed in the file's own Bag, not a new container.
+    let view = read_view(after.as_bytes()).unwrap();
+    assert_eq!(
+        view.tags_list,
+        vec!["People/Carla", "Places/Italy/Lazio", "Objects/Animal/Dog"]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Writing: the keyword fan-out (schema §1.1)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_tag_fans_out_to_all_three_sidecar_keyword_fields() {
+    let out = apply(&fixture("minimal.jpg.xmp"), &["Objects/Animal/Dog"]);
+    let view = read_view(&out).unwrap();
+    assert_eq!(view.tags_list, vec!["Objects/Animal/Dog"]);
+    assert_eq!(view.hierarchical_subject, vec!["Objects|Animal|Dog"]);
+    assert_eq!(view.subject, vec!["Dog"]);
+}
+
+#[test]
+fn iptc_keywords_are_not_attempted_in_a_sidecar() {
+    // An XMP sidecar has no IIM section; photo-tools drops the write too (§1.4).
+    let out =
+        String::from_utf8(apply(&fixture("minimal.jpg.xmp"), &["Objects/Animal/Dog"])).unwrap();
+    assert!(!out.contains("Keywords"), "{out}");
+}
+
+#[test]
+fn person_in_image_is_never_written() {
+    // People/* is digiKam's (schema §2.1) and PersonInImage is its projection.
+    let before = read_view(&fixture("digikam.jpg.xmp")).unwrap();
+    let after = read_view(&apply(&fixture("digikam.jpg.xmp"), &["Objects/Animal/Dog"])).unwrap();
+    assert_eq!(before.person_in_image, after.person_in_image);
+}
+
+#[test]
+fn people_tags_are_rejected_outright() {
+    let err = apply_tags(
+        Some(&fixture("minimal.jpg.xmp")),
+        &request(&["People/Mallory"]),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, gallery_meta::MetaError::InvalidTag { .. }),
+        "{err:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Writing: ownership and retraction
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_retracted_tag_is_removed_from_all_three_fields() {
+    let base = fixture("minimal.jpg.xmp");
+    let first = apply(&base, &["Objects/Animal/Dog", "Scenes/Nature/Forest"]);
+    let second = apply(&first, &["Objects/Animal/Dog"]);
+    let view = read_view(&second).unwrap();
+    assert_eq!(view.tags_list, vec!["Objects/Animal/Dog"]);
+    assert_eq!(view.hierarchical_subject, vec!["Objects|Animal|Dog"]);
+    assert_eq!(view.subject, vec!["Dog"]);
+    assert_eq!(view.core.tags, vec!["Objects/Animal/Dog"]);
+    assert_eq!(view.core.subjects, vec!["Dog"]);
+}
+
+#[test]
+fn foreign_objects_and_scenes_are_preserved_and_only_owned_ones_are_replaced() {
+    let base = fixture("phototools.jpg.xmp");
+    let first = apply_tags(Some(&base), &request(&["Objects/Animal/Dog"])).unwrap();
+    let view = read_view(&first.bytes).unwrap();
+    assert!(view.tags_list.contains(&"Objects/Animal/Dog".to_string()));
+    assert!(
+        view.tags_list
+            .contains(&"Objects/Structure/Balustrade".to_string()),
+        "photo-tools Objects/* must survive: {:?}",
+        view.tags_list
+    );
+    assert!(
+        view.tags_list
+            .contains(&"Scenes/Urban/Building".to_string()),
+        "photo-tools Scenes/* must survive: {:?}",
+        view.tags_list
+    );
+    assert!(view
+        .tags_list
+        .contains(&"Places/Italy/Lazio/Rome/Municipio Roma I".to_string()));
+    assert!(view.tags_list.contains(&"Landmarks/Colosseum".to_string()));
+    assert_eq!(view.core.tags, vec!["Objects/Animal/Dog"]);
+    assert!(
+        !view
+            .core
+            .tags
+            .iter()
+            .any(|t| t.contains("Balustrade") || t.contains("Building")),
+        "foreign Objects/Scenes must not be claimed: {:?}",
+        view.core.tags
+    );
+
+    let second = apply(&first.bytes, &[]);
+    let view = read_view(&second).unwrap();
+    assert!(!view.tags_list.contains(&"Objects/Animal/Dog".to_string()));
+    assert!(view
+        .tags_list
+        .contains(&"Objects/Structure/Balustrade".to_string()));
+    assert!(view
+        .tags_list
+        .contains(&"Scenes/Urban/Building".to_string()));
+    assert!(view
+        .tags_list
+        .contains(&"Places/Italy/Lazio/Rome/Municipio Roma I".to_string()));
+    assert!(view.core.tags.is_empty());
+}
+
+#[test]
+fn a_human_keyword_that_shares_a_leaf_is_not_collateral_damage() {
+    // Someone typed the bare keyword "Dog" by hand. We then tag
+    // Objects/Animal/Dog (whose leaf is also "Dog") and later retract it.
+    let base = apply(&fixture("minimal.jpg.xmp"), &[]);
+    let mut doc = String::from_utf8(base).unwrap();
+    doc = doc.replace(
+        "</rdf:RDF>",
+        " <rdf:Description rdf:about=''\n  xmlns:dc='http://purl.org/dc/elements/1.1/'>\n  <dc:subject>\n   <rdf:Bag>\n    <rdf:li>Dog</rdf:li>\n   </rdf:Bag>\n  </dc:subject>\n </rdf:Description>\n</rdf:RDF>",
+    );
+
+    let tagged = apply(doc.as_bytes(), &["Objects/Animal/Dog"]);
+    let tagged_view = read_view(&tagged).unwrap();
+    assert_eq!(tagged_view.subject, vec!["Dog"], "no duplicate leaf");
+    assert!(
+        tagged_view.core.subjects.is_empty(),
+        "the pre-existing leaf must not be claimed: {:?}",
+        tagged_view.core.subjects
+    );
+
+    let retracted = apply(&tagged, &[]);
+    let view = read_view(&retracted).unwrap();
+    assert_eq!(view.subject, vec!["Dog"], "human keyword was deleted");
+    assert!(view.tags_list.is_empty());
+}
+
+#[test]
+fn a_leaf_shared_by_two_owned_tags_survives_retracting_only_one() {
+    let base = fixture("minimal.jpg.xmp");
+    let first = apply(&base, &["Objects/Animal/Dog", "Scenes/Urban/Dog"]);
+    let view = read_view(&first).unwrap();
+    assert_eq!(view.subject, vec!["Dog"], "leaf written once");
+
+    let second = apply(&first, &["Scenes/Urban/Dog"]);
+    let view = read_view(&second).unwrap();
+    assert_eq!(view.tags_list, vec!["Scenes/Urban/Dog"]);
+    assert_eq!(view.subject, vec!["Dog"], "leaf still needed");
+}
+
+#[test]
+fn retracting_everything_keeps_every_tag_we_did_not_insert() {
+    let base = fixture("phototools.jpg.xmp");
+    let before = read_view(&base).unwrap();
+    let tagged = apply(&base, &["Objects/Animal/Dog"]);
+    let cleared = apply(&tagged, &[]);
+    let view = read_view(&cleared).unwrap();
+    for tag in &before.tags_list {
+        assert!(
+            view.tags_list.contains(tag),
+            "retraction deleted a foreign tag: {tag}"
+        );
+    }
+    assert!(!view.tags_list.contains(&"Objects/Animal/Dog".to_string()));
+    assert!(view.core.tags.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Determinism and idempotence
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_same_request_produces_the_same_bytes() {
+    for name in FIXTURES {
+        let original = fixture(name);
+        let a = apply(&original, &["Scenes/Nature/Forest", "Objects/Animal/Dog"]);
+        let b = apply(&original, &["Scenes/Nature/Forest", "Objects/Animal/Dog"]);
+        assert_eq!(a, b, "{name}: not deterministic");
+    }
+}
+
+#[test]
+fn tag_order_does_not_affect_the_output_bytes() {
+    // The tagger emits tags in score order; float drift across architectures
+    // reorders near-ties. The bytes must not care (determinism doctrine).
+    let original = fixture("minimal.jpg.xmp");
+    let a = apply(&original, &["Scenes/Nature/Forest", "Objects/Animal/Dog"]);
+    let b = apply(&original, &["Objects/Animal/Dog", "Scenes/Nature/Forest"]);
+    assert_eq!(a, b);
+}
+
+#[test]
+fn a_second_identical_run_is_a_no_op() {
+    for name in FIXTURES {
+        let original = fixture(name);
+        let first = apply_tags(Some(&original), &request(&["Objects/Animal/Dog"])).unwrap();
+        assert!(first.changed, "{name}: first run should change the file");
+
+        // A later run with a different timestamp must still be a no-op — the
+        // timestamp is only refreshed when something actually changes.
+        let later = TagWriteRequest::new(
+            ["Objects/Animal/Dog".to_string()],
+            "mobileclip-s2-2026.1",
+            "2027-01-01T00:00:00Z",
+        );
+        let second = apply_tags(Some(&first.bytes), &later).unwrap();
+        assert!(!second.changed, "{name}: second run rewrote the file");
+        assert_eq!(second.bytes, first.bytes, "{name}");
+    }
+}
+
+#[test]
+fn a_new_model_pack_refreshes_the_sentinel_even_with_identical_tags() {
+    let first = apply_tags(
+        Some(&fixture("minimal.jpg.xmp")),
+        &request(&["Objects/Animal/Dog"]),
+    )
+    .unwrap();
+    let upgraded = TagWriteRequest::new(
+        ["Objects/Animal/Dog".to_string()],
+        "mobileclip-s2-2027.1",
+        "2027-01-01T00:00:00Z",
+    );
+    let second = apply_tags(Some(&first.bytes), &upgraded).unwrap();
+    assert!(second.changed);
+    let view = read_view(&second.bytes).unwrap();
+    assert_eq!(
+        view.core.model_pack.as_deref(),
+        Some("mobileclip-s2-2027.1")
+    );
+    assert_eq!(
+        view.photo_tools.tagger_version.as_deref(),
+        Some("mobileclip-s2-2027.1")
+    );
+    assert_eq!(view.core.tagged_at.as_deref(), Some("2027-01-01T00:00:00Z"));
+}
+
+// ---------------------------------------------------------------------------
+// Creating a sidecar from nothing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_created_sidecar_is_a_well_formed_xmp_packet() {
+    let applied = apply_tags(None, &request(&["Objects/Animal/Dog"])).unwrap();
+    assert!(applied.created);
+    let text = String::from_utf8(applied.bytes.clone()).unwrap();
+    assert!(text.starts_with("<?xpacket begin="), "{text}");
+    assert!(
+        text.contains("<x:xmpmeta xmlns:x='adobe:ns:meta/'"),
+        "{text}"
+    );
+    assert!(
+        text.contains("<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>"),
+        "{text}"
+    );
+    assert!(text.trim_end().ends_with("<?xpacket end='w'?>"), "{text}");
+
+    // And it survives its own round trip.
+    let doc = parse(&applied.bytes).unwrap();
+    assert_eq!(serialize(&doc), applied.bytes);
+}
+
+#[test]
+fn empty_bytes_are_treated_as_a_missing_sidecar() {
+    let applied = apply_tags(Some(b"   \n"), &request(&["Objects/Animal/Dog"])).unwrap();
+    assert!(applied.created);
+    assert_eq!(read_view(&applied.bytes).unwrap().tags_list.len(), 1);
+}
+
+#[test]
+fn a_non_xmp_document_is_refused_rather_than_clobbered() {
+    let err = apply_tags(
+        Some(b"<html><body>hi</body></html>"),
+        &request(&["Objects/Animal/Dog"]),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, gallery_meta::MetaError::NotAnXmpPacket { .. }),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn an_emptied_list_property_is_removed_rather_than_left_blank() {
+    // `<dc:subject><rdf:Bag></rdf:Bag></dc:subject>` is not "no keywords" to
+    // exiftool — it reads the whitespace between the tags as the value. Remove
+    // the property, and the Description around it if that empties it.
+    let tagged = apply_tags(None, &request(&["Objects/Animal/Dog"]))
+        .unwrap()
+        .bytes;
+    let cleared = String::from_utf8(apply(&tagged, &[])).unwrap();
+
+    for absent in [
+        "dc:subject",
+        "digiKam:TagsList",
+        "lr:hierarchicalSubject",
+        "CoreTags",
+        "CoreSubjects",
+        "xmlns:dc",
+    ] {
+        assert!(!cleared.contains(absent), "{absent} survived:\n{cleared}");
+    }
+    // The sentinel itself stays, now claiming nothing.
+    assert!(cleared.contains("<phototools:CoreAgent>localgallery-core"));
+}
+
+#[test]
+fn tag_and_retract_cycles_do_not_accumulate_whitespace() {
+    let base = fixture("phototools.jpg.xmp");
+    let mut state = base.clone();
+    let mut snapshots = Vec::new();
+    for _ in 0..3 {
+        state = apply(&state, &["Objects/Animal/Dog", "Scenes/Nature/Forest"]);
+        snapshots.push(state.clone());
+        state = apply(&state, &[]);
+        snapshots.push(state.clone());
+    }
+    assert_eq!(snapshots[0], snapshots[2], "tagged form drifted");
+    assert_eq!(snapshots[2], snapshots[4], "tagged form drifted");
+    assert_eq!(snapshots[1], snapshots[3], "retracted form drifted");
+    assert_eq!(snapshots[3], snapshots[5], "retracted form drifted");
+}
+
+#[test]
+fn the_created_layout_matches_exiftools_house_style() {
+    // Not a correctness requirement, but a diff against an exiftool-written
+    // sidecar should be about content, not whitespace.
+    let text = String::from_utf8(
+        apply_tags(None, &request(&["Objects/Animal/Dog"]))
+            .unwrap()
+            .bytes,
+    )
+    .unwrap();
+    assert!(
+        text.contains("\n\n <rdf:Description rdf:about=''\n  xmlns:dc='http://purl.org/dc/elements/1.1/'>\n  <dc:subject>\n   <rdf:Bag>\n    <rdf:li>Dog</rdf:li>\n   </rdf:Bag>\n  </dc:subject>\n </rdf:Description>"),
+        "{text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Ownership: lr:hierarchicalSubject (CoreHierarchical)
+// ---------------------------------------------------------------------------
+
+/// A packet carrying only `lr:hierarchicalSubject` — Lightroom's shape, with no
+/// `digiKam:TagsList` beside it.
+fn lightroom_only(entries: &[&str]) -> Vec<u8> {
+    let lis: String = entries
+        .iter()
+        .map(|e| format!("    <rdf:li>{e}</rdf:li>\n"))
+        .collect();
+    format!(
+        "<?xpacket begin='\u{feff}' id='W5M0MpCehiHzreSzNTczkc9d'?>\n\
+<x:xmpmeta xmlns:x='adobe:ns:meta/' x:xmptk='Image::ExifTool 13.55'>\n\
+<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\n\n\
+ <rdf:Description rdf:about=''\n  xmlns:lr='http://ns.adobe.com/lightroom/1.0/'>\n\
+  <lr:hierarchicalSubject>\n   <rdf:Bag>\n{lis}   </rdf:Bag>\n  </lr:hierarchicalSubject>\n\
+ </rdf:Description>\n</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end='w'?>\n"
+    )
+    .into_bytes()
+}
+
+#[test]
+fn a_lightroom_hierarchical_entry_the_core_did_not_write_is_never_retracted() {
+    // Lightroom wrote `Objects|Animal|Dog` and no digiKam:TagsList. The core
+    // then tags the same path — which it *does* have to add to TagsList — and
+    // later stops asking for it. The user's lr entry must survive.
+    let base = lightroom_only(&["Objects|Animal|Dog"]);
+    let tagged = apply_tags(Some(&base), &request(&["Objects/Animal/Dog"])).unwrap();
+    let view = read_view(&tagged.bytes).unwrap();
+    assert_eq!(
+        view.hierarchical_subject,
+        vec!["Objects|Animal|Dog"],
+        "the entry was duplicated"
+    );
+    assert!(
+        view.core.hierarchical.is_empty(),
+        "a pre-existing lr entry must not be claimed: {:?}",
+        view.core.hierarchical
+    );
+
+    let cleared = apply(&tagged.bytes, &[]);
+    let view = read_view(&cleared).unwrap();
+    assert_eq!(
+        view.hierarchical_subject,
+        vec!["Objects|Animal|Dog"],
+        "the user's lr:hierarchicalSubject entry was deleted"
+    );
+    assert!(view.tags_list.is_empty(), "our own TagsList entry stayed");
+}
+
+#[test]
+fn an_lr_entry_the_core_did_write_is_recorded_and_retracted() {
+    let base = fixture("minimal.jpg.xmp");
+    let tagged = apply(&base, &["Objects/Animal/Dog"]);
+    let view = read_view(&tagged).unwrap();
+    assert_eq!(view.core.hierarchical, vec!["Objects|Animal|Dog"]);
+
+    let cleared = apply(&tagged, &[]);
+    let view = read_view(&cleared).unwrap();
+    assert!(view.hierarchical_subject.is_empty(), "{view:?}");
+    assert!(view.core.hierarchical.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Repeated properties (several rdf:Description blocks about the same subject)
+// ---------------------------------------------------------------------------
+
+/// A packet whose `body` is dropped straight into `rdf:RDF`.
+fn packet(body: &str) -> Vec<u8> {
+    format!(
+        "<?xpacket begin='\u{feff}' id='W5M0MpCehiHzreSzNTczkc9d'?>\n\
+<x:xmpmeta xmlns:x='adobe:ns:meta/' x:xmptk='Image::ExifTool 13.55'>\n\
+<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\n{body}\n\
+</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end='w'?>\n"
+    )
+    .into_bytes()
+}
+
+fn split_list(ns_attr: &str, prop: &str, kind: &str, first: &str, second: &str) -> Vec<u8> {
+    packet(&format!(
+        " <rdf:Description rdf:about=''\n  {ns_attr}>\n  <{prop}>\n   <rdf:{kind}>\n\
+    <rdf:li>{first}</rdf:li>\n   </rdf:{kind}>\n  </{prop}>\n </rdf:Description>\n\n\
+ <rdf:Description rdf:about=''\n  {ns_attr}>\n  <{prop}>\n   <rdf:{kind}>\n\
+    <rdf:li>{second}</rdf:li>\n   </rdf:{kind}>\n  </{prop}>\n </rdf:Description>"
+    ))
+}
+
+#[test]
+fn a_dc_subject_split_across_two_descriptions_reads_as_one_list() {
+    let bytes = split_list(
+        "xmlns:dc='http://purl.org/dc/elements/1.1/'",
+        "dc:subject",
+        "Bag",
+        "Alice",
+        "Dog",
+    );
+    let view = read_view(&bytes).unwrap();
+    assert_eq!(view.subject, vec!["Alice", "Dog"]);
+}
+
+#[test]
+fn a_keyword_in_a_later_description_is_never_claimed_or_deleted() {
+    // "Dog" lives in the *second* dc:subject block. A reader that keeps only
+    // the last occurrence would miss "Alice"; one that keeps only the first
+    // would miss "Dog" and let the core claim a human's keyword.
+    let bytes = split_list(
+        "xmlns:dc='http://purl.org/dc/elements/1.1/'",
+        "dc:subject",
+        "Bag",
+        "Alice",
+        "Dog",
+    );
+    let tagged = apply_tags(Some(&bytes), &request(&["Objects/Animal/Dog"])).unwrap();
+    let view = read_view(&tagged.bytes).unwrap();
+    assert!(
+        view.core.subjects.is_empty(),
+        "claimed a keyword it did not write: {:?}",
+        view.core.subjects
+    );
+    assert_eq!(view.subject, vec!["Alice", "Dog"], "leaf was duplicated");
+
+    let cleared = apply(&tagged.bytes, &[]);
+    let view = read_view(&cleared).unwrap();
+    assert_eq!(
+        view.subject,
+        vec!["Alice", "Dog"],
+        "a human keyword vanished"
+    );
+}
+
+#[test]
+fn a_retraction_sweeps_every_occurrence_of_a_split_tags_list() {
+    // Both blocks carry an entry the core owns. Removing from the first
+    // occurrence only would leave the second behind while CoreTags forgot it.
+    let base = packet(
+        " <rdf:Description rdf:about=''\n  xmlns:digiKam='http://www.digikam.org/ns/1.0/'>\n\
+  <digiKam:TagsList>\n   <rdf:Seq>\n    <rdf:li>Objects/Animal/Dog</rdf:li>\n\
+   </rdf:Seq>\n  </digiKam:TagsList>\n </rdf:Description>",
+    );
+    // First run claims nothing (the tag is already there), so seed ownership by
+    // asking for a second tag that lands in the same (first) block, then split
+    // the file by hand so the owned entry sits in a later Description too.
+    let tagged = apply(&base, &["Scenes/Nature/Forest"]);
+    let text = String::from_utf8(tagged).unwrap();
+    let split = text.replace(
+        "</rdf:RDF>",
+        " <rdf:Description rdf:about=''\n  xmlns:digiKam='http://www.digikam.org/ns/1.0/'>\n\
+  <digiKam:TagsList>\n   <rdf:Seq>\n    <rdf:li>Scenes/Nature/Forest</rdf:li>\n\
+   </rdf:Seq>\n  </digiKam:TagsList>\n </rdf:Description>\n</rdf:RDF>",
+    );
+    assert_eq!(
+        read_view(split.as_bytes()).unwrap().tags_list,
+        vec![
+            "Objects/Animal/Dog",
+            "Scenes/Nature/Forest",
+            "Scenes/Nature/Forest"
+        ]
+    );
+
+    let cleared = apply(split.as_bytes(), &[]);
+    let view = read_view(&cleared).unwrap();
+    assert_eq!(
+        view.tags_list,
+        vec!["Objects/Animal/Dog"],
+        "an owned entry survived in a later Description: {view:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Attribute-form array properties
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_attribute_form_keyword_list_is_read_rather_than_ignored() {
+    let bytes = packet(
+        " <rdf:Description rdf:about=''\n  xmlns:dc='http://purl.org/dc/elements/1.1/'\n\
+  xmlns:digiKam='http://www.digikam.org/ns/1.0/'\n\
+  dc:subject='Dog'\n  digiKam:TagsList='Objects/Animal/Dog'/>",
+    );
+    let view = read_view(&bytes).unwrap();
+    assert_eq!(view.subject, vec!["Dog"]);
+    assert_eq!(view.tags_list, vec!["Objects/Animal/Dog"]);
+}
+
+#[test]
+fn writing_migrates_an_attribute_form_list_instead_of_duplicating_it() {
+    // Input carries `dc:subject` on the tag. A writer blind to that form emits
+    // an element-form `dc:subject` beside it, and the file then says two
+    // different things about the same property.
+    let bytes = packet(
+        " <rdf:Description rdf:about=''\n  xmlns:dc='http://purl.org/dc/elements/1.1/'\n\
+  dc:subject='Alice'/>",
+    );
+    let out = apply(&bytes, &["Objects/Animal/Dog"]);
+    let text = String::from_utf8(out.clone()).unwrap();
+
+    assert!(
+        !text.contains("dc:subject='Alice'"),
+        "attribute survived:\n{text}"
+    );
+    assert_eq!(
+        text.matches("<dc:subject>").count(),
+        1,
+        "the property was written twice:\n{text}"
+    );
+    let view = read_view(&out).unwrap();
+    assert_eq!(view.subject, vec!["Alice", "Dog"]);
+    assert_eq!(
+        view.core.subjects,
+        vec!["Dog"],
+        "the migrated human keyword must not be claimed"
+    );
+
+    // And the human's keyword survives a full retraction.
+    let cleared = apply(&out, &[]);
+    assert_eq!(read_view(&cleared).unwrap().subject, vec!["Alice"]);
+}
+
+// ---------------------------------------------------------------------------
+// Unicode normalization and case drift
+// ---------------------------------------------------------------------------
+
+/// `Café` with a precomposed `é` (NFC) and with `e` + combining acute (NFD).
+/// Objects/Scenes so the tagger planner actually sees the path; Places is
+/// not a tagging write.
+const NFC_CAFE: &str = "Objects/Caf\u{e9}";
+const NFD_CAFE: &str = "Objects/Cafe\u{301}";
+
+#[test]
+fn an_nfd_tag_already_in_the_file_is_matched_not_duplicated() {
+    // macOS hands NFD out of its filesystem APIs, so a tagger that lifted a
+    // keyword from a filename really does write the decomposed form. Adding the
+    // composed spelling of the same word must not produce a second entry, and
+    // a pre-existing value must not be claimed.
+    let base = packet(&format!(
+        " <rdf:Description rdf:about=''\n  xmlns:digiKam='http://www.digikam.org/ns/1.0/'>\n\
+  <digiKam:TagsList>\n   <rdf:Seq>\n    <rdf:li>{NFD_CAFE}</rdf:li>\n\
+   </rdf:Seq>\n  </digiKam:TagsList>\n </rdf:Description>"
+    ));
+    let out = apply(&base, &[NFC_CAFE]);
+    let view = read_view(&out).unwrap();
+    assert_eq!(view.tags_list.len(), 1, "the tag was duplicated: {view:?}");
+    assert!(
+        view.core.tags.is_empty(),
+        "an entry already in the file was claimed: {:?}",
+        view.core.tags
+    );
+
+    // Its bytes are untouched: normalization is a comparison rule, not a
+    // rewrite rule.
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains(NFD_CAFE), "existing bytes were re-normalized");
+
+    // And it survives a full retraction — we never owned it.
+    let cleared = apply(&text.into_bytes(), &[]);
+    assert_eq!(read_view(&cleared).unwrap().tags_list, vec![NFD_CAFE]);
+}
+
+#[test]
+fn a_requested_tag_is_normalized_to_nfc_on_the_way_in() {
+    let out = apply(&fixture("minimal.jpg.xmp"), &[NFD_CAFE]);
+    let view = read_view(&out).unwrap();
+    assert_eq!(view.tags_list, vec![NFC_CAFE]);
+    assert_eq!(view.core.tags, vec![NFC_CAFE]);
+    // Both spellings of the same request produce the same bytes.
+    assert_eq!(apply(&fixture("minimal.jpg.xmp"), &[NFC_CAFE]), out);
+}
+
+#[test]
+fn an_owned_nfd_entry_is_retracted_without_rewriting_its_neighbors() {
+    // We wrote NFC; another tool re-spelled our entry as NFD. Retraction
+    // must still match, using the same NFC comparison the claim used.
+    let tagged = apply(&fixture("minimal.jpg.xmp"), &[NFC_CAFE]);
+    let drifted = String::from_utf8(tagged)
+        .unwrap()
+        .replace(NFC_CAFE, NFD_CAFE);
+    assert_eq!(
+        read_view(drifted.as_bytes()).unwrap().tags_list,
+        vec![NFD_CAFE]
+    );
+
+    let cleared = apply(drifted.as_bytes(), &[]);
+    let view = read_view(&cleared).unwrap();
+    assert!(
+        view.tags_list.is_empty(),
+        "the owned NFD entry survived: {view:?}"
+    );
+    assert!(view.core.tags.is_empty());
+}
+
+#[test]
+fn a_leaf_whose_case_drifted_is_still_retracted_and_never_orphaned() {
+    // We claim "Dog". Another tool then rewrites the keyword as "dog" — the
+    // planner compares leaves case-insensitively, so it still counts it as
+    // ours. The removal has to use the same rule, or CoreSubjects drops the
+    // claim while the entry stays in the file forever.
+    let tagged = apply(&fixture("minimal.jpg.xmp"), &["Objects/Animal/Dog"]);
+    let drifted = String::from_utf8(tagged)
+        .unwrap()
+        .replace("<rdf:li>Dog</rdf:li>", "<rdf:li>dog</rdf:li>");
+    assert_eq!(read_view(drifted.as_bytes()).unwrap().subject, vec!["dog"]);
+
+    let cleared = apply(drifted.as_bytes(), &[]);
+    let view = read_view(&cleared).unwrap();
+    assert!(
+        view.subject.is_empty(),
+        "the claimed leaf survived with nothing claiming it: {view:?}"
+    );
+    assert!(view.core.subjects.is_empty());
+}
+
+#[test]
+fn a_leading_utf8_bom_survives_a_write() {
+    // Some Windows XMP writers require the BOM and some readers key off it.
+    // Dropping it silently rewrites the first three bytes of a file we were
+    // asked to preserve.
+    let mut base = "\u{feff}".as_bytes().to_vec();
+    base.extend_from_slice(&fixture("phototools.jpg.xmp"));
+    assert_eq!(
+        serialize(&parse(&base).unwrap()),
+        base,
+        "round trip lost it"
+    );
+
+    let out = apply(&base, &["Objects/Animal/Dog"]);
+    assert!(
+        out.starts_with(&[0xEF, 0xBB, 0xBF]),
+        "the BOM was dropped by the write"
+    );
+    assert_eq!(
+        read_view(&out)
+            .unwrap()
+            .tags_list
+            .last()
+            .map(String::as_str),
+        Some("Objects/Animal/Dog")
+    );
+}
