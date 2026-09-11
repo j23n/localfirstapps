@@ -573,6 +573,23 @@ final class GalleryStore {
 
     func startAccessingFolder(_ url: URL) {
         bookmarks.startAccessing(url)
+        attachPersonLog(to: url)
+    }
+
+    /// One-shot UserDefaults → `.gallery/log` once a library folder exists.
+    private func attachPersonLog(to url: URL) {
+        let snapshot = PersonLog.Snapshot(
+            hiddenPeople: Array(people.hiddenPeople),
+            pinnedPeople: people.featuredPeople,
+            featuredPhotoByPerson: Dictionary(
+                uniqueKeysWithValues: people.featuredPhotoByPerson.map { ($0.key, $0.value.uuidString) }
+            ),
+            mePersonPath: people.mePersonPath,
+            personContactLinks: personContactLinks
+        )
+        if let state = people.attachLibrary(url, snapshot: snapshot) {
+            personContactLinks = state.personLinks()
+        }
     }
 
     func saveBookmark(for url: URL) {
@@ -641,6 +658,10 @@ final class GalleryStore {
     /// the contact's birthday).
     func linkPerson(_ personPath: String, toContactID contactID: String) {
         personContactLinks[personPath] = .manual(contactID: contactID)
+        people.appendPersonEvent("person_contact_link_set", [
+            ("path", .string(personPath)),
+            ("contact", .string(contactID)),
+        ])
         Log.contacts.info("Linked '\(Log.r.person(personPath))' to contact \(Log.r.contact(contactID))")
         memories.forceRegenerate()
     }
@@ -649,6 +670,10 @@ final class GalleryStore {
     /// auto-match by name does not re-apply.
     func unlinkPerson(_ personPath: String) {
         personContactLinks[personPath] = .disabled
+        people.appendPersonEvent("person_contact_link_set", [
+            ("path", .string(personPath)),
+            ("disabled", .bool(true)),
+        ])
         Log.contacts.info("Unlinked '\(Log.r.person(personPath))' (auto-match disabled)")
         memories.forceRegenerate()
     }
@@ -656,18 +681,19 @@ final class GalleryStore {
     /// Forget any manual override — auto-match by name resumes for this person.
     func resetPersonLink(_ personPath: String) {
         personContactLinks.removeValue(forKey: personPath)
+        people.appendPersonEvent("person_contact_link_clear", [
+            ("path", .string(personPath)),
+        ])
         Log.contacts.info("Reset link for '\(Log.r.person(personPath))' (auto-match restored)")
         memories.forceRegenerate()
     }
 
     /// Move every persisted decision about a person onto their new tag path.
     ///
-    /// Wired to `faces.onPersonRenamed`, so it runs between the core reporting
-    /// the sidecars written and the rescan that publishes the new `People/`
-    /// tag. `PeopleStore` owns four of the five keys; the fifth is here, because
-    /// `personContactLinks` is also keyed by path — a renamed person would
-    /// otherwise lose a manual contact link, or an explicit "no birthdays for
-    /// this person", and fall back to auto-matching under the new name.
+    /// `people.renamePerson` appends `person_renamed` (the replayed operation)
+    /// and still rewrites the four local keys. The fifth key lives here;
+    /// dual-write keeps UserDefaults in sync for this process while replay
+    /// migrates every device identically (ADR 0005 R14).
     private func migratePersonState(from old: String, to new: String) {
         guard old != new else { return }
         people.renamePerson(from: old, to: new)

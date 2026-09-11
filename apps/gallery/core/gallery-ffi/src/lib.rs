@@ -18,6 +18,7 @@
 //!   functions over an inputs snapshot; [`MemoryGenerator`] holds the
 //!   cancel flag.
 //! * [`places`]: offline place lookup and Places sidecar writes.
+//! * [`person_log`]: person-state append / read / project / UserDefaults migrate.
 //!
 //! Tagging and face sessions share one cache file: [`support`] holds
 //! the run-thread mechanics both are built on.
@@ -27,6 +28,7 @@ uniffi::setup_scaffolding!("GalleryCore");
 pub mod faces;
 pub mod heic;
 pub mod library;
+pub mod person_log;
 pub mod places;
 pub mod scanner;
 mod support;
@@ -44,6 +46,10 @@ pub use library::{
     scheduled_memory_horizon_days, LibraryIndex, LibraryIndexSummary, LibraryTagSuggestions,
     MemoryContact, MemoryDateEntry, MemoryGenerationInputs, MemoryGenerator, MemoryKind,
     MemoryLeafFolder, MemoryPersonLink, MemoryRecord, ScheduledMemoryRecord, TagSuggestionRecord,
+};
+pub use person_log::{
+    person_log_append, person_log_migrate_from_snapshot, person_log_project, person_log_read,
+    PersonKeyedString, PersonLogError, PersonStateRecord, GALLERY_STATE_DIR,
 };
 pub use places::{
     is_strict_places_prefix, library_watch_refresh_interval_ms, nominatim_lookup, place_from_parts,

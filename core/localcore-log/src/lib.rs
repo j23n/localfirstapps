@@ -5,7 +5,8 @@
 //!
 //! Ported from health `internal/log` + `internal/event`. Gallery person-state
 //! types are accepted in the schema so one log serves both consumers. The Go
-//! packages stay until Phase 6; UserDefaults migration is M2.
+//! packages stay until Phase 6. Gallery writes under `{library}/.gallery`
+//! (M2); this crate's `root` is that directory.
 
 #![forbid(unsafe_code)]
 
@@ -22,14 +23,18 @@ pub mod event;
 pub mod gallery;
 
 pub use event::{
-    known_type, now_utc, parse_blob_import, valid_device, BlobImport, Event, TS_FORMAT,
-    TYPE_BLOB_IMPORT, TYPE_EXTRACTION, TYPE_FEATURED_PHOTO_CLEAR, TYPE_FEATURED_PHOTO_SET,
-    TYPE_MEDITATION, TYPE_MED_EVENT, TYPE_MED_START, TYPE_MED_STOP, TYPE_NOTE, TYPE_OBSERVATION,
-    TYPE_PERSON_CONTACT_LINK_CLEAR, TYPE_PERSON_CONTACT_LINK_SET, TYPE_PERSON_FEATURED,
-    TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_CLEAR, TYPE_PERSON_ME_SET, TYPE_PERSON_RENAMED,
-    TYPE_PERSON_UNFEATURED, TYPE_PERSON_UNHIDDEN, TYPE_RETRACT, TYPE_SUPERSEDE,
+    known_type, new_event_id, now_utc, parse_blob_import, ts_with_nanos, valid_device, BlobImport,
+    Event, TS_FORMAT, TYPE_BLOB_IMPORT, TYPE_EXTRACTION, TYPE_FEATURED_PHOTO_CLEAR,
+    TYPE_FEATURED_PHOTO_SET, TYPE_MEDITATION, TYPE_MED_EVENT, TYPE_MED_START, TYPE_MED_STOP,
+    TYPE_NOTE, TYPE_OBSERVATION, TYPE_PERSON_CONTACT_LINK_CLEAR, TYPE_PERSON_CONTACT_LINK_SET,
+    TYPE_PERSON_FEATURED, TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_CLEAR, TYPE_PERSON_ME_SET,
+    TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED, TYPE_PERSON_UNHIDDEN, TYPE_RETRACT,
+    TYPE_SUPERSEDE,
 };
-pub use gallery::{project_people, PeopleState};
+pub use gallery::{
+    append_person, is_person_event_type, migrate_from_snapshot, migrate_from_snapshot_json,
+    project_people, project_people_at, PersonSnapshot, PeopleState,
+};
 
 /// A final line that lacks a trailing newline and is not valid JSON.
 ///
@@ -238,6 +243,11 @@ fn read_file(path: &Path) -> Result<Vec<Event>> {
         offset += n as u64;
     }
     Ok(out)
+}
+
+/// `read_all` as a JSON array. Used by the gallery FFI read helper.
+pub fn read_all_json(root: impl AsRef<Path>) -> Result<String> {
+    Ok(serde_json::to_string(&read_all(root)?)?)
 }
 
 /// Whether a `blob_import` for `sha256` already exists.
