@@ -1,12 +1,16 @@
 # core
 
-This workspace holds `localcore-*` crates (ADR 0001 R9). Gallery remains
-at `apps/gallery/core` until later verticals move here.
+This workspace holds `localcore-*` crates (ADR 0001 R9):
+
+`localcore-vfs`, `localcore-id`, `localcore-walk`, `localcore-conflict`,
+`localcore-queue`, `localcore-log`, `localcore-blob`.
+
+Gallery remains at `apps/gallery/core` until later verticals move here.
 
 ## 20k scan harness
 
-There is no 20k tree in this repo, and `localcore-walk` is not on this
-branch. Walk an external library through `gallery-scan`:
+There is no 20k tree in this repo. Walk an external library through
+`gallery-scan` (which now uses `localcore-walk`):
 
 ```
 cd apps/gallery/core
