@@ -363,9 +363,8 @@ copy_if_changed "$STAGING/${MODULE}FFI.h" "$HEADERS_DIR/${MODULE}FFI.h"
 # Do not install a clang module named GalleryCoreFFI. Xcode caches it.
 rm -f "$HEADERS_DIR/module.modulemap"
 APP_BINDINGS="$ROOT/LocalGallery/$MODULE.swift"
-if [[ -e "$APP_BINDINGS" ]]; then
-    copy_if_changed "$GENERATED_DIR/$MODULE.swift" "$APP_BINDINGS"
-fi
+copy_if_changed "$GENERATED_DIR/$MODULE.swift" "$APP_BINDINGS"
+copy_if_changed "$HEADERS_DIR/${MODULE}FFI.h" "$ROOT/LocalGallery/${MODULE}FFI.h"
 if [[ -n "${MODULE_CACHE_DIR:-}" ]]; then
     rm -rf "$MODULE_CACHE_DIR"/GalleryCoreFFI-* 2>/dev/null || true
 fi

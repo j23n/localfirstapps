@@ -1,10 +1,14 @@
 # Xcode
 DerivedData/
 build/
-# UniFFI Swift — written by scripts/build_core.sh. A checked-in or
-# hand-copied LocalGallery/GalleryCore.swift will not match a newly
-# built xcframework (checksum mismatch at launch).
-LocalGallery/GalleryCore.swift
+# UniFFI Swift is committed at LocalGallery/GalleryCore.swift so Linux
+# and CI can compile it without Xcode. The hazard this line used to
+# prevent is still real: a hand-edit, or a Swift file that does not
+# match the xcframework this build just linked, fatalErrors at launch
+# (checksum mismatch). The bindings-drift CI job regenerates and fails
+# on that — that is what answers the hazard. Do not hand-edit the
+# committed file; run scripts/generate_bindings.sh.
+# LocalGallery/GalleryCore.swift
 *.xcuserdata
 *.xcworkspace
 
@@ -14,6 +18,7 @@ LocalGallery.xcodeproj
 # Rust core (Cargo.lock is committed on purpose — this is an app, not a lib)
 core/target/
 linux/target/
+linux/swift-shim/.build/
 
 # Python (scripts/build_model_pack — the script is committed, its venv is not)
 __pycache__/

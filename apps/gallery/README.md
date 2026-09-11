@@ -69,11 +69,13 @@ xcodegen
 open LocalGallery.xcodeproj
 ```
 
-`xcodegen` lists `build/core/Generated/GalleryCore.swift`; it does not
-run UniFFI. If that file is stale, Xcode reports missing `HeicDecoder`
-and similar. `./scripts/build_core.sh` regenerates it. The LocalGallery
-target's **Build Rust Core** phase runs the same script; pass
-`--release` only when you invoke it from the CLI.
+UniFFI Swift is committed at `LocalGallery/GalleryCore.swift` (and the
+C header next to it). `./scripts/build_core.sh` regenerates both from
+the dylib it just built; `./scripts/generate_bindings.sh` is the
+Xcode-free path Linux and CI use. The bindings-drift job fails if
+those files do not match a fresh bindgen. Do not hand-edit them.
+The LocalGallery target's **Build Rust Core** phase runs
+`build_core.sh`; pass `--release` only when you invoke it from the CLI.
 
 The first `build_core.sh` on a machine downloads a static ONNX Runtime
 (~85 MB) into `~/Library/Caches/ort.pyke.io/`. Offline:

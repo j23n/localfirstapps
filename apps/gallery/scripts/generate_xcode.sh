@@ -2,11 +2,12 @@
 #
 # Bootstrap a clean checkout for Xcode: optional model pack, Rust bindings /
 # xcframework, then the Xcode project. Order matters — `xcodegen` lists
-# `build/core/Generated/GalleryCore.swift` and `GalleryCore.xcframework`,
-# which `build_core.sh` creates, and `build/pack` as a folder resource.
+# the committed `LocalGallery/GalleryCore.swift` and
+# `GalleryCore.xcframework`, which `build_core.sh` refreshes, and
+# `build/pack` as a folder resource.
 #
 # `xcodegen` alone does not emit HeicDecoder / writePlaces — those live in
-# build/core/Generated/GalleryCore.swift, which build_core.sh refreshes.
+# LocalGallery/GalleryCore.swift, which build_core.sh refreshes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

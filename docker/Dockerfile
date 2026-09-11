@@ -355,8 +355,10 @@ RUN dnf install -y --skip-unavailable --setopt=install_weak_deps=False \
         gdk-pixbuf2-devel \
         graphene-devel \
         sqlite-devel \
+        openssl-devel \
         perl-Image-ExifTool \
         desktop-file-utils \
+        swift-lang \
     && dnf clean all && rm -rf /var/cache/dnf
 
 # Assert the toolchain, for the same reason and in the same shape as stage 1.
@@ -379,9 +381,15 @@ RUN set -euo pipefail; \
       echo "       against this Fedora release and fix the dnf line above." >&2; \
       exit 1; \
     fi; \
-    for m in gtk4 libadwaita-1 glib-2.0 pango cairo gdk-pixbuf-2.0 graphene-1.0 sqlite3; do \
+    for m in gtk4 libadwaita-1 glib-2.0 pango cairo gdk-pixbuf-2.0 graphene-1.0 sqlite3 openssl; do \
       pkg-config --exists "$m" || { echo "FATAL: no pkg-config module '$m' — the -devel package for it is missing or renamed" >&2; exit 1; }; \
-    done
+    done; \
+    if command -v swift >/dev/null; then \
+      echo "swift: $(swift --version 2>/dev/null | head -1)"; \
+    else \
+      echo "note: optional tool not packaged in this Fedora: swift" >&2; \
+      echo "      linux/swift-shim/build.sh needs it (Phase 0.4 compile signal)." >&2; \
+    fi
 
 USER agent
 

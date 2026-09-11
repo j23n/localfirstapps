@@ -204,13 +204,16 @@ file is gone. Spec is in `docs/spec/`.
 XcodeGen 2.46.0 via the existing checksummed installer. Work-item
 routing lives in `.agents/ROUTING.md` (plan §6).
 
-**0.4 Commit the bindings, and give Linux a compile signal.** Commit the
-generated UniFFI Swift; CI regenerates and fails on drift. **Replace the
-`.gitignore` comment that forbids this** rather than deleting the line — it
-records a real hazard (checksum mismatch against a stale xcframework) and the
-CI job is what answers it. Then add the part r1 was missing: a Linux
-`swift build` shim against a Linux-built `libgallery_ffi.so`, so the Fedora
-fleet gets a compile signal instead of a reference document.
+**0.4 Commit the bindings, and give Linux a compile signal — done.**
+Generated UniFFI Swift is committed at
+`apps/gallery/LocalGallery/GalleryCore.swift` (plus the C header). The
+`.gitignore` comment that forbade this is replaced, not deleted — the
+hazard (checksum mismatch against a stale xcframework) is still real;
+`.github/workflows/bindings.yml` regenerates and fails on drift. Linux
+gets `apps/gallery/linux/swift-shim/` (`swift build` against a host
+`libgallery_ffi.so`) and `scripts/generate_bindings.sh` as the
+Xcode-free refresh. `openssl-devel` is now a required agent-image
+package — `ort` → `ureq` → `native-tls` on the host build.
 
 **0.5 The conformance harness, graph check first.**
 `conformance/` plus a CI job. The **first** check is ADR 0002 R13's
@@ -548,9 +551,8 @@ It changes no behaviour a user would name except removing cloud placeholders
 and crash reporting, it deletes ~6,500 lines, and it ends with the ADRs
 sitting in a repository whose structure they describe.
 
-**0.1–0.3 are done.** Next is **0.4 — commit the UniFFI bindings** and a
-Linux `swift build` shim, then 0.5 the conformance harness red, then
-Phase 1 deletions. Read the specification against the cleaned tree and
-only afterwards start Phase 2. Reviewing ADRs against a codebase that
-still contains the code they retire is the mental overhead this ordering
-exists to remove.
+**0.1–0.4 are done.** Next is **0.5 — the conformance harness**, graph
+check first, starting red. Then Phase 1 deletions. Read the
+specification against the cleaned tree and only afterwards start Phase
+2. Reviewing ADRs against a codebase that still contains the code they
+retire is the mental overhead this ordering exists to remove.

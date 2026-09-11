@@ -56,13 +56,8 @@ targets:
           - Info.plist
           - LocalGallery.entitlements
           - GalleryCore-Bridging-Header.h
-          # Bindings live in build/core/Generated. A stray copy here is how
-          # Swift checksums can disagree with the xcframework this build
-          # just linked (UniFFI fatalError at launch).
-          - GalleryCore.swift
-      # Written by the Build Rust Core pre-build phase from the dylib that
-      # same phase just compiled. Compile Sources waits on this file.
-      - path: build/core/Generated
+      # Committed UniFFI Swift. The pre-build phase regenerates it from
+      # the dylib it just built; CI fails if that output drifts.
       # The on-device model pack (~157 MB), staged by
       # `./scripts/prepare_pack.sh` — run it before `xcodegen` too. A folder
       # reference, so it lands verbatim as `LocalGallery.app/pack/<version>/`
@@ -143,8 +138,8 @@ targets:
         # Do not list the xcframework here: ProcessXCFramework already
         # depends on it, and a script output on the same file is a cycle.
         outputFiles:
-          - $(SRCROOT)/build/core/Generated/GalleryCore.swift
-          - $(SRCROOT)/build/core/headers/GalleryCoreFFI.h
+          - $(SRCROOT)/LocalGallery/GalleryCore.swift
+          - $(SRCROOT)/LocalGallery/GalleryCoreFFI.h
         script: |
           set -euo pipefail
           exec /bin/bash "$SRCROOT/scripts/build_core.sh"

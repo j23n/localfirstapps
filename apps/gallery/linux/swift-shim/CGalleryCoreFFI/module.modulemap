@@ -1,0 +1,5 @@
+module GalleryCoreFFI {
+    header "GalleryCoreFFI.h"
+    link "gallery_ffi"
+    export *
+}

@@ -36,9 +36,10 @@ done in this tree.
 The 0.6 spikes are answered in `docs/spec/spikes/`. Recorded decisions:
 SFace + YuNet; no Flatpak and no portal; ISA drift assumed negligible.
 
-**Next is Phase 0.4 — commit the UniFFI bindings** and a Linux
-`swift build` shim against `libgallery_ffi.so`. Then 0.5 the conformance
-harness (graph check first, starts red).
+**Next is Phase 0.5 — the conformance harness** (`conformance/` plus a
+CI job). The first check is ADR 0002 R13's dependency-graph check with
+its one-entry allowlist (`ort`, build-time, `ORT_LIB_LOCATION`). It
+starts **red**. Then Phase 1 deletions.
 
 ## The one thing not to do
 
