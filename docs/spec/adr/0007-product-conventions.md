@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-11 (no Flatpak / portal)
+- Revised: 2026-09-11 (r2); 2026-09-11 (no Flatpak / portal); 2026-09-11 (0.2: CONVENTIONS.md deleted)
 
 ## Scope
 
@@ -57,7 +57,17 @@ knowable, and is cancellable.
 
 **R6.** Each app has its own name, icon and accent colour, and shares
 everything else in ADR 0004 R10. Bundle and application identifiers follow
-one pattern per app across platforms.
+one reverse-DNS pattern per app across platforms:
+
+| App | Bundle ID | Prefix |
+|---|---|---|
+| localgallery | `com.localgallery.app` | `com.localgallery` |
+| localcontacts | `com.localcontacts.app` | `com.localcontacts` |
+| localmusic | `com.localmusic.app` | `com.localmusic` |
+| localhealth | `com.localhealth.app` | `com.localhealth` |
+
+Extension and test targets append a sub-id (`com.localgallery.app.widgets`).
+Linux desktop identifiers use the same prefix.
 
 ### Host surfaces
 
@@ -186,16 +196,34 @@ person checking. A fixture read by exactly one implementation tests that
 implementation; a fixture read by several tests that they agree, which is the
 property actually at risk.
 
-**Retiring `CONVENTIONS.md` (r2).** It was 818 lines of SwiftUI guidance, and
-six of its sections had come to contradict these ADRs outright — including a
-second vocabulary table, which its own conformance rule would have flagged.
-It is the document that most shapes unsupervised agent output, so a live
-contradiction inside it is expensive in a way a stale comment is not.
-Disposition: state management, app shell, and UIKit appearance were dropped
-as one toolkit's idioms; folder access, stable ids, design tokens, settings
-shape, file I/O, logging and testing moved to the ADR that owns each; and
-bundle identifiers, build commands and the README template landed here as
-R6, R12 and R18.
+**Retiring `CONVENTIONS.md` (r2, completed Phase 0.2).** It was 818 lines of
+SwiftUI guidance, and six of its sections contradicted these ADRs outright.
+A live contradiction in the document that most shapes unsupervised agent
+output is expensive in a way a stale comment is not. Every section is
+dispositioned here; the file is deleted.
+
+| § | Title | Disposition |
+|---|---|---|
+| 1 | Per-app status snapshot | **Dropped.** Inventory, stale on arrival. |
+| 2 | Project layout | **Dropped.** `Models/` `Services/` `Views/` is one toolkit. Layout is ADR 0001 R1/R9. |
+| 3 | Build settings | **Dropped.** iOS/Xcode idioms. Per-platform commands are R12. |
+| 4 | State management | **Dropped.** A SwiftUI `@Observable` Store in the shell contradicts ADR 0001 R4 and ADR 0003. |
+| 5 | Folder access | **Moved.** Bookmark as a per-device exception: ADR 0005 R5. Folder grant: R15. The UIKit picker dance is one toolkit and is dropped. |
+| 6 | Logging | **Moved.** One facility in `localcore`: R11. Per-app `os.Logger` namespaces contradict R11. |
+| 7 | Settings sheet | **Moved.** Section order: R2. SwiftUI chrome (`.inline`, `.confirmationAction`) dropped. |
+| 8 | App shell & navigation | **Dropped.** `TabView` / `NavigationStack` are one toolkit. Navigation intents are ADR 0004 R4. |
+| 9 | Stable IDs | **Moved.** ADR 0002 R4, which adds NFC. Hashing path bytes as they arrive contradicted R4. |
+| 10 | Design tokens | **Moved.** ADR 0004 R11/R12. |
+| 11 | UIKit appearance | **Dropped.** One toolkit. |
+| 12 | File I/O | **Moved.** Atomic write is ADR 0002 R3 (temp file plus rename). `Data.write(.atomic)` was a different mechanism and contradicted R3. |
+| 13 | Vocabulary | **Dropped.** A second vocabulary table, which R1 itself flags as a defect. |
+| 14 | Testing | **Moved.** R7–R10 and R16. The Swift Testing / XCTest prescription is one toolkit and is dropped. |
+| 15 | Continuous integration | **Dropped.** Two workflows per app repo contradicts the monorepo `gate` job (plan 0.1). "Exercised by CI" remains R12. |
+| 16 | README template | **Moved.** R18. |
+| 17 | Bundle identifiers | **Moved.** R6. |
+| 18 | Canonical location | **Dropped.** This document is the location. |
+
+The six contradictions: §13 vs R1; §4 vs ADR 0001 R4 / ADR 0003; §9 vs ADR 0002 R4 (NFC); §12 vs ADR 0002 R3; §6 vs R11; §15 vs the monorepo gate.
 
 R15 (r2) closes a hole that made ADR 0001 R6 unusable in both directions.
 Read strictly it made iOS-only widgets a specification defect; read loosely

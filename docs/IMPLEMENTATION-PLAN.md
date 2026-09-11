@@ -188,13 +188,15 @@ change that breaks the FFI would not run the iOS job at all. Keep
 accept: all three iOS apps now share one build number (~184, monotonic, so
 TestFlight is fine), and a localmusic commit bumps localgallery's.
 
-**0.2 Retire `CONVENTIONS.md`.** Not a move — a **delete plus a sorting pass**
-over 818 lines. State management, app shell and UIKit appearance are dropped
-as one toolkit's idioms; folder access, stable ids, design tokens, settings
-shape, file I/O, logging and testing go to the ADR that owns each; bundle
-identifiers, build commands and the README template land in ADR 0007 as R6,
-R12, R18. Six sections contradicted the ADRs, including a second vocabulary
-table its own conformance rule would have flagged. Spec into `docs/spec/`.
+**0.2 Retire `CONVENTIONS.md` — done.** Delete plus a sorting pass. All 18
+sections are dispositioned in ADR 0007's rationale. State management, app
+shell and UIKit appearance dropped as one toolkit's idioms; folder access,
+stable ids, design tokens, settings, file I/O, logging and testing sit in
+the ADR that owns each; bundle identifiers, build commands and the README
+template are ADR 0007 R6, R12, R18. The six contradictions (second
+vocabulary table, Store-in-the-shell, identity without NFC, `Data.write`
+vs temp-rename, per-app `os.Logger`, per-repo CI) are gone because the
+file is gone. Spec is in `docs/spec/`.
 
 **0.3 Environments.** `docker/` as delivered. `mac/bootstrap.sh` as its
 sibling. Work-item routing documented (§5).
@@ -541,8 +543,9 @@ It changes no behaviour a user would name except removing cloud placeholders
 and crash reporting, it deletes ~6,500 lines, and it ends with the ADRs
 sitting in a repository whose structure they describe.
 
-**0.1 is done.** Next is **0.2 — retire `CONVENTIONS.md`**, then 0.3–0.5
-(environments, committed bindings, conformance harness red), then Phase 1
+**0.1 and 0.2 are done.** Next is **0.3 — environments** (`docker/` as
+delivered, `mac/bootstrap.sh` as its sibling, work-item routing), then 0.4
+committed bindings, 0.5 the conformance harness red, then Phase 1
 deletions. Read the specification against the cleaned tree and only
 afterwards start Phase 2. Reviewing ADRs against a codebase that still
 contains the code they retire is the mental overhead this ordering exists to

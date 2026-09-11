@@ -36,10 +36,10 @@ done in this tree.
 The 0.6 spikes are answered in `docs/spec/spikes/`. Recorded decisions:
 SFace + YuNet; no Flatpak and no portal; ISA drift assumed negligible.
 
-**Next is Phase 0.2 — retire `CONVENTIONS.md`.** Sorting pass over 818 lines
-into the ADRs that own each section; six contradictions dropped. Then 0.3
-environments, 0.4 committed bindings, 0.5 the conformance harness (graph
-check first, starts red).
+**Next is Phase 0.3 — environments.** `docker/` as delivered,
+`mac/bootstrap.sh` as its sibling, work-item routing documented. Then 0.4
+committed bindings, 0.5 the conformance harness (graph check first, starts
+red).
 
 ## The one thing not to do
 

@@ -11,7 +11,7 @@ xcodegen generate   # regenerate LocalMusic.xcodeproj
 xcodebuild -project LocalMusic.xcodeproj -scheme LocalMusic -destination 'generic/platform=iOS' build
 ```
 
-Requires Xcode 16+, targets iOS 18+, Swift 6 with `SWIFT_STRICT_CONCURRENCY: complete`. Unit tests live in `LocalMusicTests/` and run via `xcodebuild test`; CI runs them on every PR. Cross-app conventions are documented in `.claude/CONVENTIONS.md`.
+Requires Xcode 16+, targets iOS 18+, Swift 6 with `SWIFT_STRICT_CONCURRENCY: complete`. Unit tests live in `LocalMusicTests/` and run via `xcodebuild test`; CI runs them on every PR. Cross-app convention lives in `docs/spec/adr/0007-product-conventions.md`.
 
 ## Architecture
 

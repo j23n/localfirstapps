@@ -19,9 +19,8 @@ mounted at `/work`.
 - **Family spec — `/work/docs/spec/`.** Normative. RFC 2119. It describes
   the goal state of all four apps, not the current code. Where the code
   and a MUST disagree, the code is wrong.
-- **Conventions — `/work/.agents/CONVENTIONS.md`.** How things are done
-  across the apps. Retired in Phase 0.2; until then it is still the house
-  style. It must not contradict the spec; if it does, say so.
+- **Convention — `/work/docs/spec/adr/0007-product-conventions.md`.**
+  Sole home. `CONVENTIONS.md` is deleted.
 - **Per-app `CLAUDE.md`.** Build and test commands, structure, and the
   landmines of that app alone.
 - Per-app `docs/adr/` records decisions local to one app. It must not
