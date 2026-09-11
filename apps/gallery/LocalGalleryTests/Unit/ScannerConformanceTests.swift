@@ -146,7 +146,7 @@ final class ScannerConformanceTests: XCTestCase {
             "The sidecar manifest keys on the LOWERCASED full basename, so B.JPG finds B.JPG.xmp.",
             "totalPhotoCount is recursive (root = 15) while photoCount is the folder's own; Empty/ still becomes a node, with coverPhotoSource \"none\".",
             "versionHasContentIdentifier is false here: the scanner no longer probes a content identifier, so ContentVersion.sameContent compares (mtime, size).",
-            "PhotoLocality is `local` for everything: LocalOnlyProbe never marks a file remote.",
+            "PhotoLocality is `local` for everything: the scanner is local-only and never marks a file remote.",
         ],
         "2-light-after-mutations": [
             "Light scan (reuseCached = true) against the pass-1 cache.",

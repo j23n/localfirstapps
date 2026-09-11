@@ -12,9 +12,8 @@
 //! * [`core_version`], [`stable_uuid`].
 //! * [`tagging`]: [`TaggingSession`] and its progress listener.
 //! * [`faces`]: [`FaceSession`], cluster review, name / rename / merge / split.
-//! * [`scanner`]: [`ScannerSession`], [`ProviderProbe`], snapshot IO,
-//!   metadata reads. Request/response — see that module for why it is
-//!   still an object.
+//! * [`scanner`]: [`ScannerSession`], snapshot IO, metadata reads.
+//!   Request/response — see that module for why it is still an object.
 //! * [`library`]: [`LibraryIndex`] plus the memory engine as free
 //!   functions over an inputs snapshot; [`MemoryGenerator`] holds the
 //!   cancel flag.
@@ -54,10 +53,10 @@ pub use places::{
 pub use scanner::{
     load_snapshot, named_people_without_box, parse_xmp_bytes, probe_snapshot_version,
     read_image_metadata, read_sidecar, read_video_date, save_snapshot, snapshot_version,
-    ImageMetadataRecord, ProviderProbe, ScanContentVersion, ScanError, ScanFolderNode,
-    ScanLocality, ScanOutcomeRecord, ScanPhoto, ScanProgressListener, ScanRegion, ScanRequest,
-    ScanSidecarRow, ScanTag, ScanTimings, ScannerSession, SidecarParseRecord, SidecarViewRecord,
-    SnapshotRecord, VfsProviderAttrs, WallClock,
+    ImageMetadataRecord, ScanContentVersion, ScanError, ScanFolderNode, ScanLocality,
+    ScanOutcomeRecord, ScanPhoto, ScanProgressListener, ScanRegion, ScanRequest, ScanSidecarRow,
+    ScanTag, ScanTimings, ScannerSession, SidecarParseRecord, SidecarViewRecord, SnapshotRecord,
+    WallClock,
 };
 pub use tagging::{
     inspect_model_pack, resolve_model_pack, ModelPackInfo, PackResolution, PackSource,

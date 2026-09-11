@@ -2,9 +2,9 @@ import Foundation
 import CoreGraphics
 import CryptoKit
 
-/// Where the photo's bytes live. New scans always write `.local`
-/// (`LocalOnlyProbe`). `.remote` remains so a v20 snapshot written
-/// before Phase 1 still decodes.
+/// Where the photo's bytes live. New scans always write `.local`.
+/// `.remote` remains so a v20 snapshot written before Phase 1 still
+/// decodes.
 enum PhotoLocality: Codable, Hashable, Sendable {
     case local
     case remote(downloaded: Bool)

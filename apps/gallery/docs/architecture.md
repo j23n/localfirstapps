@@ -35,7 +35,7 @@ crates in-process. Neither shell reaches past `gallery-ffi` /
 | Library folder | User-selected tree (security-scoped bookmark on iOS; a path on Linux) | The rest of the filesystem. Sidecar writes and move/delete/create stay under that root. |
 | Image bytes | Never rewritten by the core | Sidecars (`.xmp`), caches, exports the user asked for |
 | `gallery-cache.sqlite` | Work queues, embeddings, face clusters | Not portable truth; wipe is safe |
-| File Provider (iOS) | **Retired (Phase 1).** `LocalOnlyProbe` answers the FFI with defaults until Phase 2 lifts `ProviderAttrs` off `Vfs`. | Placeholders do not enter the projection. |
+| File Provider (iOS) | **Retired.** The scanner is local-only; `ProviderProbe` is off the UniFFI surface. | Placeholders do not enter the projection. |
 | Nominatim | English reverse-geocode of GPS | **Exact coordinates leave the device** over HTTPS to the injected endpoint (default public OSM). Not a product backend. Override: `LOCALGALLERY_NOMINATIM` (Linux) or the iOS env equivalent. |
 | Model pack | Local ONNX + labels, hash-verified | Optional. Missing pack disables tagging and faces only. |
 | Logs | In-app ring buffer (`LogStore`) | No MetricKit; no automatic export |

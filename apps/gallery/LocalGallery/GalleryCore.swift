@@ -2459,271 +2459,10 @@ public func FfiConverterTypeMemoryGenerator_lower(_ value: MemoryGenerator) -> U
 
 
 /**
- * The platform's provider-attribute reader.
- *
- * # Contract
- *
- * Called on the core's scan thread, **never** on the main actor, once per
- * directory that needs it. Implementations must:
- *
- * * return exactly one row per input path, in order — the core matches
- * positionally, and a short reply degrades the tail to "plain local file";
- * * never call back into the core, which is what would deadlock the
- * synchronous bridge;
- * * treat a failed read as [`VfsProviderAttrs::default`] rather than throwing
- * the batch away, mirroring the `try?` the Swift baseline used.
- *
- * Implementations are expected to *fan the batch out*. Each of these is a
- * blocking XPC round trip to `fileproviderd`; run serially they were 99.4% of
- * a cold scan (docs/adr/0002).
- *
- * **The match is positional and nothing re-keys it.** An implementation that
- * fans the batch out owes the core answers written back into the slots it was
- * asked about — `CoreProviderProbe` does exactly that, striping into a
- * positional array. A reply of the wrong length is a platform bug the core
- * cannot paper over, so [`Vfs::probe_provider`] turns one into a batch of
- * defaults rather than silently pairing path `i` with answer `i` for a
- * prefix and losing the tail.
- */
-public protocol ProviderProbe: AnyObject, Sendable {
-    
-    /**
-     * Provider attributes for `paths`, positionally — exactly one row per
-     * input path, in the same order.
-     */
-    func probe(paths: [String])  -> [VfsProviderAttrs]
-    
-}
-/**
- * The platform's provider-attribute reader.
- *
- * # Contract
- *
- * Called on the core's scan thread, **never** on the main actor, once per
- * directory that needs it. Implementations must:
- *
- * * return exactly one row per input path, in order — the core matches
- * positionally, and a short reply degrades the tail to "plain local file";
- * * never call back into the core, which is what would deadlock the
- * synchronous bridge;
- * * treat a failed read as [`VfsProviderAttrs::default`] rather than throwing
- * the batch away, mirroring the `try?` the Swift baseline used.
- *
- * Implementations are expected to *fan the batch out*. Each of these is a
- * blocking XPC round trip to `fileproviderd`; run serially they were 99.4% of
- * a cold scan (docs/adr/0002).
- *
- * **The match is positional and nothing re-keys it.** An implementation that
- * fans the batch out owes the core answers written back into the slots it was
- * asked about — `CoreProviderProbe` does exactly that, striping into a
- * positional array. A reply of the wrong length is a platform bug the core
- * cannot paper over, so [`Vfs::probe_provider`] turns one into a batch of
- * defaults rather than silently pairing path `i` with answer `i` for a
- * prefix and losing the tail.
- */
-open class ProviderProbeImpl: ProviderProbe, @unchecked Sendable {
-    fileprivate let handle: UInt64
-
-    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoHandle {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromHandle handle: UInt64) {
-        self.handle = handle
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noHandle: NoHandle) {
-        self.handle = 0
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_gallery_ffi_fn_clone_providerprobe(self.handle, $0) }
-    }
-    // No primary constructor declared for this class.
-
-    deinit {
-        if handle == 0 {
-            // Mock objects have handle=0 don't try to free them
-            return
-        }
-
-        try! rustCall { uniffi_gallery_ffi_fn_free_providerprobe(handle, $0) }
-    }
-
-    
-
-    
-    /**
-     * Provider attributes for `paths`, positionally — exactly one row per
-     * input path, in the same order.
-     */
-open func probe(paths: [String]) -> [VfsProviderAttrs]  {
-    return try!  FfiConverterSequenceTypeVfsProviderAttrs.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_method_providerprobe_probe(
-            self.uniffiCloneHandle(),
-        FfiConverterSequenceString.lower(paths),uniffiCallStatus
-    )
-})
-}
-    
-
-    
-}
-
-
-
-// Put the implementation in a struct so we don't pollute the top-level namespace
-fileprivate struct UniffiCallbackInterfaceProviderProbe {
-
-    // Create the VTable using a series of closures.
-    // Swift automatically converts these into C callback functions.
-    //
-    // Store the vtable directly.
-    static let vtable: UniffiVTableCallbackInterfaceProviderProbe = UniffiVTableCallbackInterfaceProviderProbe(
-        uniffiFree: { (uniffiHandle: UInt64) -> () in
-            do {
-                try FfiConverterTypeProviderProbe.handleMap.remove(handle: uniffiHandle)
-            } catch {
-                print("Uniffi callback interface ProviderProbe: handle missing in uniffiFree")
-            }
-        },
-        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
-            do {
-                return try FfiConverterTypeProviderProbe.handleMap.clone(handle: uniffiHandle)
-            } catch {
-                fatalError("Uniffi callback interface ProviderProbe: handle missing in uniffiClone")
-            }
-        },
-        probe: { (
-            uniffiHandle: UInt64,
-            paths: RustBuffer,
-            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
-            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
-        ) in
-            let makeCall = {
-                () throws -> [VfsProviderAttrs] in
-                guard let uniffiObj = try? FfiConverterTypeProviderProbe.handleMap.get(handle: uniffiHandle) else {
-                    throw UniffiInternalError.unexpectedStaleHandle
-                }
-                return uniffiObj.probe(
-                     paths: try FfiConverterSequenceString.lift(paths)
-                )
-            }
-
-            
-            let writeReturn = { uniffiOutReturn.pointee = FfiConverterSequenceTypeVfsProviderAttrs.lower($0) }
-            uniffiTraitInterfaceCall(
-                callStatus: uniffiCallStatus,
-                makeCall: makeCall,
-                writeReturn: writeReturn
-            )
-        }
-    )
-
-    // Rust stores this pointer for future callback invocations, so it must live
-    // for the process lifetime (not just for the init function call).
-    //
-    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
-    // This is safe because the pointee is initialized once during static init
-    // and never mutated by either side of the FFI.  Its fields are C function pointers.
-    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceProviderProbe> = {
-        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceProviderProbe>.allocate(capacity: 1)
-        ptr.initialize(to: vtable)
-        return UnsafePointer(ptr)
-    }()
-}
-
-private func uniffiCallbackInitProviderProbe() {
-    uniffi_gallery_ffi_fn_init_callback_vtable_providerprobe(UniffiCallbackInterfaceProviderProbe.vtablePtr)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeProviderProbe: FfiConverter {
-    fileprivate static let handleMap = UniffiHandleMap<ProviderProbe>()
-
-    typealias FfiType = UInt64
-    typealias SwiftType = ProviderProbe
-
-    public static func lift(_ handle: UInt64) throws -> ProviderProbe {
-        if ((handle & 1) == 0) {
-            // Rust-generated handle, construct a new class that uses the handle to implement the
-            // interface
-            return ProviderProbeImpl(unsafeFromHandle: handle)
-        } else {
-            // Swift-generated handle, get the object from the handle map
-            return try handleMap.remove(handle: handle)
-        }
-    }
-
-    public static func lower(_ value: ProviderProbe) -> UInt64 {
-         if let rustImpl = value as? ProviderProbeImpl {
-             // Rust-implemented object.  Clone the handle and return it
-            return rustImpl.uniffiCloneHandle()
-         } else {
-            // Swift object, generate a new vtable handle and return that.
-            return handleMap.insert(obj: value)
-         }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProviderProbe {
-        let handle: UInt64 = try readInt(&buf)
-        return try lift(handle)
-    }
-
-    public static func write(_ value: ProviderProbe, into buf: inout [UInt8]) {
-        writeInt(&buf, lower(value))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeProviderProbe_lift(_ handle: UInt64) throws -> ProviderProbe {
-    return try FfiConverterTypeProviderProbe.lift(handle)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeProviderProbe_lower(_ value: ProviderProbe) -> UInt64 {
-    return FfiConverterTypeProviderProbe.lower(value)
-}
-
-
-
-
-
-
-/**
  * Progress during a walk.
  *
  * Fires on the scan thread every 500 photos and once at the end with the true
- * total. Same rule as the probe: do not call back into the core.
+ * total. Do not call back into the core from this callback.
  */
 public protocol ScanProgressListener: AnyObject, Sendable {
     
@@ -2737,7 +2476,7 @@ public protocol ScanProgressListener: AnyObject, Sendable {
  * Progress during a walk.
  *
  * Fires on the scan thread every 500 photos and once at the end with the true
- * total. Same rule as the probe: do not call back into the core.
+ * total. Do not call back into the core from this callback.
  */
 open class ScanProgressListenerImpl: ScanProgressListener, @unchecked Sendable {
     fileprivate let handle: UInt64
@@ -2972,8 +2711,7 @@ public protocol ScannerSessionProtocol: AnyObject, Sendable {
      *
      * **Blocking, and single-threaded by design.** The caller runs it off the
      * main actor; the core does not spawn for it, because the whole point of
-     * the call is the answer. Progress and provider probes fire on this
-     * thread.
+     * the call is the answer. Progress fires on this thread.
      */
     func scan(root: String, request: ScanRequest, progress: ScanProgressListener?) throws  -> ScanOutcomeRecord
     
@@ -3037,17 +2775,15 @@ open class ScannerSession: ScannerSessionProtocol, @unchecked Sendable {
         return try! rustCall { uniffi_gallery_ffi_fn_clone_scannersession(self.handle, $0) }
     }
     /**
-     * Build a session over the platform's provider probe.
-     *
-     * Cheap: the session holds no cache and opens no files, so making one per
-     * Store is fine and making one per scan would be too.
+     * Build a session. Cheap: the session holds no cache and opens no files,
+     * so making one per Store is fine and making one per scan would be too.
+     * The walk is always local; there is no platform probe.
      */
-public convenience init(probe: ProviderProbe) {
+public convenience init() {
     let handle =
         try! rustCall() {
         uniffiCallStatus in
-    uniffi_gallery_ffi_fn_constructor_scannersession_new(
-        FfiConverterTypeProviderProbe_lower(probe),uniffiCallStatus
+    uniffi_gallery_ffi_fn_constructor_scannersession_new(uniffiCallStatus
     )
 }
     self.init(unsafeFromHandle: handle)
@@ -3087,8 +2823,7 @@ open func cancel()  {try! rustCall() {
      *
      * **Blocking, and single-threaded by design.** The caller runs it off the
      * main actor; the core does not spawn for it, because the whole point of
-     * the call is the answer. Progress and provider probes fire on this
-     * thread.
+     * the call is the answer. Progress fires on this thread.
      */
 open func scan(root: String, request: ScanRequest, progress: ScanProgressListener?)throws  -> ScanOutcomeRecord  {
     return try  FfiConverterTypeScanOutcomeRecord_lift(try rustCallWithError(FfiConverterTypeScanError_lift) {
@@ -7161,21 +6896,19 @@ public struct ScanTimings: Equatable, Hashable {
      */
     public var listMillis: UInt64
     /**
-     * Provider probes — the whole of Finding 1.
+     * Provider probes — always 0; the scanner is local-only.
      */
     public var probeMillis: UInt64
     /**
-     * Paths probed.
+     * Paths probed — always 0.
      */
     public var probedPaths: UInt32
     /**
-     * Batched probe calls — i.e. boundary crossings.
+     * Batched probe calls — always 0.
      */
     public var probeBatches: UInt32
     /**
-     * Probe batches discarded because the reply did not have one row per
-     * requested path. Always 0 when the platform probe is behaving; anything
-     * else means those directories were scanned as plain local storage.
+     * Probe batches discarded for a wrong-length reply — always 0.
      */
     public var probeMismatches: UInt32
     /**
@@ -7201,18 +6934,16 @@ public struct ScanTimings: Equatable, Hashable {
          * Directory listings.
          */listMillis: UInt64, 
         /**
-         * Provider probes — the whole of Finding 1.
+         * Provider probes — always 0; the scanner is local-only.
          */probeMillis: UInt64, 
         /**
-         * Paths probed.
+         * Paths probed — always 0.
          */probedPaths: UInt32, 
         /**
-         * Batched probe calls — i.e. boundary crossings.
+         * Batched probe calls — always 0.
          */probeBatches: UInt32, 
         /**
-         * Probe batches discarded because the reply did not have one row per
-         * requested path. Always 0 when the platform probe is behaving; anything
-         * else means those directories were scanned as plain local storage.
+         * Probe batches discarded for a wrong-length reply — always 0.
          */probeMismatches: UInt32, 
         /**
          * Photos reused verbatim from the cache.
@@ -8287,105 +8018,6 @@ public func FfiConverterTypeTaggingStats_lift(_ buf: RustBuffer) throws -> Taggi
 #endif
 public func FfiConverterTypeTaggingStats_lower(_ value: TaggingStats) -> RustBuffer {
     return FfiConverterTypeTaggingStats.lower(value)
-}
-
-
-/**
- * `URLResourceKey`-derived facts about a file that POSIX cannot report.
- */
-public struct VfsProviderAttrs: Equatable, Hashable {
-    /**
-     * The file belongs to a file provider (iCloud Drive, OneDrive, …) rather
-     * than to plain local storage.
-     */
-    public var isFileProvider: Bool
-    /**
-     * The bytes have not been materialised.
-     */
-    public var isPlaceholder: Bool
-    /**
-     * `fileContentIdentifierKey`, stringified. `None` when the provider
-     * vends none and callers fall back to `(mtime, size)`.
-     */
-    public var contentVersion: String?
-    /**
-     * `totalFileSizeKey` — the size the file has once its bytes are here,
-     * which for a placeholder is not the size a `stat` reports. Feeds the
-     * sidecar manifest's `ContentVersion.size`, where the Swift baseline wrote
-     * `totalFileSize ?? fileSize`. `None` falls back to the listing's size.
-     */
-    public var intendedSize: Int64?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * The file belongs to a file provider (iCloud Drive, OneDrive, …) rather
-         * than to plain local storage.
-         */isFileProvider: Bool, 
-        /**
-         * The bytes have not been materialised.
-         */isPlaceholder: Bool, 
-        /**
-         * `fileContentIdentifierKey`, stringified. `None` when the provider
-         * vends none and callers fall back to `(mtime, size)`.
-         */contentVersion: String?, 
-        /**
-         * `totalFileSizeKey` — the size the file has once its bytes are here,
-         * which for a placeholder is not the size a `stat` reports. Feeds the
-         * sidecar manifest's `ContentVersion.size`, where the Swift baseline wrote
-         * `totalFileSize ?? fileSize`. `None` falls back to the listing's size.
-         */intendedSize: Int64?) {
-        self.isFileProvider = isFileProvider
-        self.isPlaceholder = isPlaceholder
-        self.contentVersion = contentVersion
-        self.intendedSize = intendedSize
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension VfsProviderAttrs: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeVfsProviderAttrs: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VfsProviderAttrs {
-        return
-            try VfsProviderAttrs(
-                isFileProvider: FfiConverterBool.read(from: &buf), 
-                isPlaceholder: FfiConverterBool.read(from: &buf), 
-                contentVersion: FfiConverterOptionString.read(from: &buf), 
-                intendedSize: FfiConverterOptionInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: VfsProviderAttrs, into buf: inout [UInt8]) {
-        FfiConverterBool.write(value.isFileProvider, into: &buf)
-        FfiConverterBool.write(value.isPlaceholder, into: &buf)
-        FfiConverterOptionString.write(value.contentVersion, into: &buf)
-        FfiConverterOptionInt64.write(value.intendedSize, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeVfsProviderAttrs_lift(_ buf: RustBuffer) throws -> VfsProviderAttrs {
-    return try FfiConverterTypeVfsProviderAttrs.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeVfsProviderAttrs_lower(_ value: VfsProviderAttrs) -> RustBuffer {
-    return FfiConverterTypeVfsProviderAttrs.lower(value)
 }
 
 
@@ -11041,31 +10673,6 @@ fileprivate struct FfiConverterSequenceTypeTagSuggestionRecord: FfiConverterRust
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeVfsProviderAttrs: FfiConverterRustBuffer {
-    typealias SwiftType = [VfsProviderAttrs]
-
-    public static func write(_ value: [VfsProviderAttrs], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeVfsProviderAttrs.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [VfsProviderAttrs] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [VfsProviderAttrs]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeVfsProviderAttrs.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterSequenceOptionString: FfiConverterRustBuffer {
     typealias SwiftType = [String?]
 
@@ -11704,16 +11311,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_memorygenerator_is_cancelled() != 63354) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_providerprobe_probe() != 33999) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_gallery_ffi_checksum_method_scanprogresslistener_on_progress() != 9650) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_scannersession_cancel() != 30242) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_scannersession_scan() != 20110) {
+    if (uniffi_gallery_ffi_checksum_method_scannersession_scan() != 58351) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_taggingprogresslistener_on_progress() != 21273) {
@@ -11761,7 +11365,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_constructor_memorygenerator_new() != 47432) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_constructor_scannersession_new() != 13372) {
+    if (uniffi_gallery_ffi_checksum_constructor_scannersession_new() != 1466) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_constructor_taggingsession_new() != 7692) {
@@ -11773,7 +11377,6 @@ private let initializationResult: InitializationResult = {
 
     uniffiCallbackInitFaceProgressListener()
     uniffiCallbackInitHeicDecoder()
-    uniffiCallbackInitProviderProbe()
     uniffiCallbackInitScanProgressListener()
     uniffiCallbackInitTaggingProgressListener()
     return InitializationResult.ok

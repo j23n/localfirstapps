@@ -26,10 +26,9 @@ freshness, not providers.
    watches the folder.
 2. ~~**Provider attributes are the only Swift VFS callback.**~~
    **Struck (Phase 2).** `ProviderAttrs` / `probe_provider` are off the
-   Rust `Vfs` trait. The scanner is always local. Generated
-   `VfsProviderAttrs` and `ScannerSession(probe:)` remain on the FFI
-   surface until a later commit drops them; the probe is ignored.
-   Family ADR 0005 R2.
+   Rust `Vfs` trait, and `ProviderProbe` / `VfsProviderAttrs` are off
+   the UniFFI surface. `ScannerSession()` takes no probe. Family ADR
+   0005 R2.
 3. **A light pass may reuse a cached row only after a live size+mtime
    check.** Size or mtime change rebuilds the row. Content-preserving
    rewrites that keep both are invisible; a full / explicit rescan is
