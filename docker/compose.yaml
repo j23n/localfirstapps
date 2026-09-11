@@ -1,0 +1,117 @@
+# Agent workspace for the localfiles family.
+#
+#   cd localapps/docker
+#   ./bootstrap.sh                     # once: write .env, check the checkouts
+#   docker compose build
+#   docker compose up -d               # long-lived container
+#   docker compose exec agent bash     # a shell in it; run this twice for two agents
+#
+# `up -d` plus `exec`, rather than `run --rm`, because credentials now live in
+# volumes and the ssh-agent lives in the container: one running container means
+# one `ssh-add`, shared by every shell and every coding agent you exec into it.
+# `docker compose run --rm agent bash` still works for a throwaway shell.
+#
+# Two agents share /work, which is the point (one crates.io cache, one gh
+# login) and also the hazard: two agents in one checkout will fight over the
+# git index. Give each its own `git worktree` under /work.
+#
+# Host layout this assumes:
+#
+#   ~/localfiles/            <- WORKSPACE, mounted at /work
+#     localapps/docker/       <- this file
+#     localgallery/ localcontacts/ localmusic/ localhealth/
+#
+# There is no agent-home directory any more. See the volumes block.
+
+name: localfiles
+
+services:
+  agent:
+    image: localfiles/agent:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: localfiles          # `base` for the toolchain-free tool image
+      args:
+        UID: "${UID:-1000}"
+        GID: "${GID:-1000}"
+        INSTALL_CURSOR: "${INSTALL_CURSOR:-1}"
+        EXTRA_PACKAGES: "${EXTRA_PACKAGES:-}"
+
+    init: true                    # reap the processes agents spawn and abandon
+    stdin_open: true
+    tty: true
+    working_dir: /work
+
+    # Keeps the container up so `exec` has something to attach to, and so the
+    # ssh-agent the entrypoint starts outlives any one shell. The entrypoint
+    # runs first either way.
+    command: ["sleep", "infinity"]
+    userns_mode: "keep-id"
+    volumes:
+      # The repos. One mount, not five: an agent asked to make localmusic
+      # conform to an ADR has to be able to read the ADR, and cross-repo greps
+      # are most of what the coordination repo is for.
+      - "${WORKSPACE:?set WORKSPACE in .env}:/work:z"
+
+      # --- credentials and state, as named volumes -----------------------
+      #
+      # Named rather than bind-mounted from the host: the container writes
+      # these as uid 1000 and nothing on the host needs to read them, so a
+      # volume avoids the ownership mismatch a bind mount creates. Each is
+      # initialised from the image on first use, which is what makes them
+      # writable by the non-root user without a root entrypoint.
+      #
+      # `docker compose down` keeps them. `down -v` destroys them — that is
+      # the command that logs you out and deletes your ssh keys.
+      - "ssh:/home/agent/.ssh"          # keys, known_hosts
+      - "config:/home/agent/.config"    # gh login, git global config, CLI config
+      - "claude:/home/agent/.claude"    # Claude Code state; it does not use XDG
+      - "cache:/home/agent/.cache"      # cargo, rustup, go, npm, ORT (~GBs)
+
+      # Deliberately NOT a volume: /home/agent/.local. It holds pi and
+      # cursor-agent, installed by the image. Mounting over it would pin both
+      # at whatever version existed when the volume was created, and a rebuild
+      # would silently not upgrade them.
+
+    environment:
+      # Commit identity. Optional — `git config --global` now persists in the
+      # config volume, so setting it once inside the container is enough. Set
+      # it here too if you would rather it be declared than remembered.
+      GIT_AUTHOR_NAME: "${GIT_AUTHOR_NAME:-}"
+      GIT_AUTHOR_EMAIL: "${GIT_AUTHOR_EMAIL:-}"
+      GIT_COMMITTER_NAME: "${GIT_AUTHOR_NAME:-}"
+      GIT_COMMITTER_EMAIL: "${GIT_AUTHOR_EMAIL:-}"
+
+      TZ: "${TZ:-UTC}"
+
+      # No GH_TOKEN, no ANTHROPIC_API_KEY, no CURSOR_API_KEY, and no forwarded
+      # ssh-agent socket. Authenticate once, inside the container:
+      #
+      #   ssh-keygen -t ed25519 -C '<you>'
+      #   gh auth login                 # SSH as the git protocol
+      #   gh ssh-key add ~/.ssh/id_ed25519.pub
+      #   claude                        # /login on first run
+      #
+      # All four land in the volumes above and survive restarts and rebuilds.
+      # If you do need a token for CI-style non-interactive use, export
+      # GH_TOKEN in your shell before `compose up` and add it here — but note
+      # that gh ignores its stored login whenever GH_TOKEN is set.
+
+    # An agent that runs `cargo test --workspace` and an ONNX build will use
+    # every core you give it. Cap it so a runaway run does not take the host
+    # down with it; raise on a bigger box.
+    cpus: "${AGENT_CPUS:-4}"
+    mem_limit: "${AGENT_MEM:-8g}"
+
+    # Rust linking and Go test binaries are the usual reason this matters.
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
+
+volumes:
+  ssh:
+  config:
+  claude:
+  cache:

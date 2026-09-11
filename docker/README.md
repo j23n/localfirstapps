@@ -1,0 +1,173 @@
+# Agent workspace
+
+A container with all five localfiles repos mounted, the toolchains to build
+the portable halves of them, and no credentials in the image.
+
+```
+cd localapps/docker
+./bootstrap.sh                      # once: writes .env
+docker compose build
+docker compose up -d
+docker compose exec agent bash      # run again for a second agent
+```
+
+Then once, inside the container — all of it persists in Docker volumes:
+
+```
+ssh-keygen -t ed25519 -C '<you>'
+gh auth login                       # choose SSH as the git protocol
+gh ssh-key add ~/.ssh/id_ed25519.pub
+claude                              # /login on first run
+```
+
+`up -d` plus `exec`, not `run --rm`: one long-lived container means one
+`ssh-add`, shared by every shell and every coding agent you exec into it.
+`docker compose run --rm agent bash` still works for a throwaway shell.
+
+## Host layout it assumes
+
+```
+~/localfiles/
+  localapps/docker/   <- here
+  localgallery/  localcontacts/  localmusic/  localhealth/
+```
+
+`bootstrap.sh` derives `WORKSPACE` from its own location. If your checkouts
+live elsewhere, edit `WORKSPACE` in `.env`. There is no `agent-home/` any
+more — see below.
+
+## What is mounted, and why that way
+
+| | Container path | Why |
+|---|---|---|
+| bind `$WORKSPACE` | `/work` | One mount, not five. Cross-repo reads are the point of a coordination repo. |
+| volume `ssh` | `/home/agent/.ssh` | keys, `known_hosts` |
+| volume `config` | `/home/agent/.config` | `gh` login, git global config, agent CLI config |
+| volume `claude` | `/home/agent/.claude` | Claude Code state — it does not use XDG |
+| volume `cache` | `/home/agent/.cache` | cargo, rustup, Go, npm, the ORT static lib. Gigabytes. |
+
+**`/home/agent/.local` is deliberately not mounted.** It holds `pi` and
+`cursor-agent`, installed by the image. A volume there would pin both at
+whatever version existed when the volume was first created, and rebuilding
+would silently not upgrade them. This is not hypothetical: the previous
+version of this file bind-mounted the whole of `/home/agent`, which shadowed
+both binaries completely — the build asserted they were on PATH and the
+running container did not have them.
+
+Named volumes rather than host directories because the container writes these
+as uid 1000 and nothing on the host needs to read them. A named volume
+mounted over a path that exists in the image is initialised from that path,
+*ownership included*, which is why the Dockerfile creates all four as `agent`
+and why no root entrypoint is needed to chown anything.
+
+`docker compose down` keeps the volumes. **`down -v` destroys them** — that is
+the command that deletes your ssh key and logs you out of everything.
+
+## Where the tools come from
+
+Everything Fedora packages comes from `dnf`. Two exceptions, in descending
+order of comfort: `pi` from npm at a pinned version, and `cursor-agent` from
+`cursor.com/install`, the only unpinned step in the image (`INSTALL_CURSOR=0`
+drops it).
+
+The package list is in **two groups**, and this matters:
+
+- **Required** — the build fails, naming the missing *tool*, if any is absent.
+- **Optional** — `helix`, `eza`, `btop`. Skipped with a printed note.
+
+Both groups install with `--skip-unavailable`, so **dnf never decides what is
+fatal**; a single assertion layer does. That is a direct lesson from the first
+build of this file: `zellij` is not in Fedora 44, dnf failed the transaction
+on the name, and the build died with a raw `No match for argument` instead of
+reaching the layer written to explain exactly that.
+
+`EXTRA_PACKAGES` adds to the optional group without editing the Dockerfile:
+
+```
+docker compose build --build-arg EXTRA_PACKAGES="tig bat fzf"
+```
+
+### zellij and lazygit
+
+Neither is in the Fedora repositories. Rather than guess at a COPR name this
+file cannot verify, install them at run time — both land in the `cache` volume
+and survive restarts:
+
+```
+cargo install zellij
+go install github.com/jesseduffield/lazygit@latest
+```
+
+`tmux` is installed as the packaged multiplexer so you are not without one
+meanwhile.
+
+## What it can and cannot build
+
+Builds and tests here: every Rust crate in `localgallery/core`, the GTK shell
+in `localgallery/linux`, and all of `localhealth` (cgo + sqlite).
+
+Cannot, ever: `xcodegen`, `xcodebuild`, the iOS slices of
+`GalleryCore.xcframework`, and therefore every Swift test in localgallery,
+localcontacts and localmusic. Those need Xcode on a Mac. An agent that changes
+Swift here has written unverified code and must say so.
+
+First `cargo build` needs the network: crates.io plus the ~85 MB prebuilt ONNX
+Runtime the `ort` crate fetches. It lands in the `cache` volume and is paid
+once for all agents, not once per container.
+
+## SECURITY
+
+Keys now live in a volume inside the container rather than being reached
+through a forwarded agent socket. That is a deliberate trade and it moves in
+both directions, so be clear about which way.
+
+**What got worse.** A private key is now readable by anything running in the
+container, including agent-written code. The socket-forwarding model kept the
+key on the host and exposed only the ability to *use* it while the container
+ran; this model exposes the key itself.
+
+**What got better.** Nothing on the host is reachable from the container any
+more, and the blast radius is exactly one volume whose entire contents you
+chose.
+
+**The mitigation that makes this fine.** Generate the key *inside* the
+container and register it on GitHub as its own key. It is then a container
+credential, not your personal one: revoking it is one click, costs you nothing
+else, and you never have to wonder what else it opened. Do not copy an
+existing personal key into the volume — that throws away the only thing this
+posture has going for it.
+
+Same reasoning for `gh auth login`: authorise it for the five localfiles repos
+and nothing more. If you would rather use a token, a fine-grained PAT with
+contents + pull-requests write on those five repos can be exported as
+`GH_TOKEN` before `compose up` — but note that `gh` ignores its stored login
+whenever `GH_TOKEN` is set, so it is one or the other.
+
+`known_hosts` is trust-on-first-use (`StrictHostKeyChecking accept-new`): the
+first connection to github.com is accepted unseen and pinned, and a *changed*
+key afterwards is refused loudly. To close the first-use gap, run
+`ssh-keyscan github.com >> ~/.ssh/known_hosts` once and compare against
+GitHub's published fingerprints.
+
+`.env` holds no secrets under this design. It is gitignored and `chmod 600`
+anyway.
+
+## If something is wrong
+
+The entrypoint checks the four volumes on every start and prints a precise fix
+rather than failing obscurely later. The two you may actually hit:
+
+- **`~/.ssh is not writable`** — the volume was created with the wrong
+  ownership, usually because it predates this compose file. The message names
+  the exact `docker volume rm` or `chown` to run.
+- **`dnf: unknown option --skip-unavailable`** — your base image is on dnf4
+  rather than dnf5. Replace it with `--setopt=strict=0` in both dnf lines.
+
+## Not verified
+
+This image has never been built in the environment these files were written
+in — no Docker daemon, and the egress policy blocks the Fedora mirrors, so
+package names could not be checked against a real repository. The assertion
+layers exist because of that: they turn an unverifiable package name into a
+build failure that names the tool. `rustup` and `graphene-devel` are the two
+least confident names in the file.

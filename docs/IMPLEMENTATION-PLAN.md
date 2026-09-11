@@ -1,0 +1,548 @@
+# localfiles — implementation plan (r2)
+
+Four apps, three platforms, one engineer with an agent fleet, evenings and
+weekends. Written against spec r2 (`spec-r2/`).
+
+---
+
+## 1. What changed from r1, and why it matters
+
+r1 was an inventory problem rather than a reasoning problem: the things it
+listed were right, and the things it omitted were what made the schedule
+fiction. Six corrections, each of which moves real work:
+
+| r1 said | Actually |
+|---|---|
+| M4 forces a schema bump and a full rescan | **No.** Every member of `ContentVersion` is already optional on both sides; it shrinks by one field and `LibrarySnapshot` stays at v20. Checked, not assumed. |
+| "The 21.5k Foundation-only lines are the prize — they move to Rust more or less directly" | **~6–8k.** 19,666 of the 54,832 classified lines are XCTest. Another 3,349 in gallery alone — `FaceService`, `TaggingService`, `CoreScanner`, `CoreMemories`, `CoreLibraryIndex` — are *adapters for already-ported Rust*. They are replaced, not moved. |
+| Geocoding removal is one line in a deletion table | `gallery-geo` is **891 lines of live Nominatim client inside `core/`**, exported over FFI, used by `gallery-ffi`, `gallery-session` and `linux/`. And its replacement — a bundled gazetteer with point-in-polygon country resolution — is a **new crate**, not a deletion. |
+| Phase 2 deletions are "negative code, behaviourally identical" | `FileProviderDetector.ContentVersion` sits inside `SidecarCandidate` and `PhotoFile`, both inside `LibrarySnapshot` v20, **read and written by Rust**. It is a cross-language on-disk schema change forcing a full rescan. |
+| Nothing about model licences | `PACK_VARIANT=full\|tagging` existed *because* the face embedder was research/non-commercial. **Spike answered: OpenCV Zoo SFace + YuNet (Apache-2.0).** R12/R13 stand; one pack; M3 is real. |
+| `git subtree add` "preserving history" | **Verified: it does not.** `git log <path>` returns 1 commit where the original has 15; `--follow` returns 0. `filter-repo` then `merge --allow-unrelated-histories` returns all 15. |
+| Path-based agent routing | **27% of gallery's last 30 commits touch both Swift and `core/*.rs`**, and they are the architecturally significant ones. Routing by path routes file edits inside a work item, not work items. |
+
+Two more that r1 had no entry for at all: **four user-data migrations**, and
+**design tokens with a dark palette that does not exist** (`Design.swift` is a
+light-only literal palette; libadwaita follows the system dark preference).
+
+---
+
+## 2. The shape of the problem
+
+Coverage today — 4.5 of 12 cells:
+
+| | iOS | Fedora | Comet |
+|---|---|---|---|
+| localgallery | 40.5k Swift | 6.3k GTK | `--comet` |
+| localcontacts | 7.2k Swift | — | — |
+| localmusic | 7.1k Swift | — | — |
+| localhealth | — | Go + web UI (being removed) | — |
+
+Honest Swift classification, production only (test targets excluded):
+
+| | views | Apple-bound | portable logic | FFI adapters |
+|---|---|---|---|---|
+| localgallery | 13,585 | ~7,000 | ~4,000 | 3,349 |
+| localcontacts | 2,236 | ~1,400 | ~1,000 | — |
+| localmusic | 4,222 | 158 | ~750 | — |
+
+**~6k lines is what genuinely moves to Rust.** The case for this project is
+not line-count arbitrage; it is that domain rules asserted once are asserted
+once, and that a second GTK app costs a shell rather than a product.
+
+Two findings from the code that drive sequencing:
+
+- **No `.sync-conflict` handling exists anywhere** — zero matches in 54k lines
+  of Rust. ADR 0005's conflict rules are net-new, and the bug is live in all
+  four apps today.
+- **`gallery-scan` is not cleanly generic** — 469 photo-vocabulary hits, public
+  surface is `MediaKind` / `IMAGE_EXTENSIONS` / `VIDEO_EXTENSIONS`. The *walk*
+  extracts; classification stays app-side. `gallery-vfs` extracts cleanly
+  except that `ProviderAttrs` is in its public `Vfs` surface (33 references)
+  and `TEMP_PREFIX` is a constant that must become a parameter.
+
+---
+
+## 3. The organizing principle, corrected
+
+Review time is the bottleneck. The conformance harness reduces it; **it does
+not remove it**, and r1 assumed otherwise.
+
+Roughly 62 of the spec's requirements are mechanically checkable, and they
+are overwhelmingly *absence* rules — no socket crate, no colour literal, no
+file-provider API. The ones that actually get broken are positive rules about
+where a decision lives: ADR 0001 R4, ADR 0003 R5, ADR 0004 R8/R9, ADR 0007
+R7. The existing GTK shell, written against a conventions document that
+forbade exactly this, carries 27 comparator sites and 42 formatting sites.
+
+So the harness is built in two halves:
+
+1. **Structural checks** — the dependency-graph check first (ADR 0002 R13),
+   then greps and AST checks. Cheap, total, run in the Fedora container.
+2. **The type-system guard** — ADR 0003 R6. Only ids, strings, booleans and
+   pre-ordered id lists cross to a shell. A shell handed no record has
+   nothing to sort and no field to format. This is worth more than every
+   grep combined, and it costs one design decision in Phase 1.
+
+What neither catches goes in the PR template as a review question
+(ADR 0007 R16), and **that review time is budgeted, not wished away**.
+
+---
+
+---
+
+## 4. Milestones — the review points
+
+Phases are work; milestones are where you stop and read. Each is chosen so
+that you hold **one** mental model of the codebase, not two.
+
+| | Milestone | You review | Holds in your head |
+|---|---|---|---|
+| **A** | **Clean Slate** — monorepo, pure deletions, spec in tree, harness red, spikes answered | the ADRs themselves, against real directories | the old codebase, cleaned. Nothing new exists yet. |
+| **B** | **`localcore` is real** — extracted, gallery running on it unchanged, headless harness green | the new architecture, against working code | the new core. The old shape is gone from `core/`. |
+| **C** | **First shell vertical** — contacts on three platforms over `shell-kit` | ADR 0004's vocabulary, having met a second toolkit | one app, end to end |
+| **D** | **Per app** — music, gallery, health core loops | the gap list, with a working app in hand | one app at a time |
+
+**A is the one that matters for the question this plan was reorganised
+around.** At A, four ADR requirements are already *true in the tree* rather
+than aspirational — you review ADR 0005 R2 against a codebase with no
+placeholder concept in it, not against one where you imagine its absence.
+Nothing has been built yet, so there is no future architecture to hold
+alongside the current one.
+
+### The migration register
+
+Five, and ADR 0005 R19 requires each to ship with a pre-change fixture and a
+survival assertion. They are listed here in one place because r1 scheduled
+none of them and they are the only work in this plan that can lose a user's
+state.
+
+| | Migration | Lands | Status |
+|---|---|---|---|
+| **M1** | Stable ids re-key to NFC | Phase 2 | real; person state, thumbnails, memory ids and widget deep links are path-keyed |
+| **M2** | Tier-2 `UserDefaults` → event log | Phase 2 | real; seven path-keyed values in gallery alone |
+| **M3** | Face-cluster re-key on a model swap | Phase 2 | **real** — SFace + YuNet replace `buffalo_sc` |
+| **M4** | `LibrarySnapshot` sidecar identity | Phase 1 | **checked — not a migration.** See Phase 1. |
+| **M5** | Apple Health dated cutover | Phase 6 | real but trivial; a bounded first query, nothing rewritten |
+
+### Milestone A exit criteria
+
+1. Monorepo exists, layout per ADR 0001 R1/R9, originals archived read-only.
+2. The pure deletions have landed (Phase 1) — ~6,500 lines, no replacements.
+3. `CONVENTIONS.md` retired, all 18 sections dispositioned.
+4. The dependency-graph check runs, is **red**, and its allowlist is written.
+5. All three spikes have written answers (`docs/spec/spikes/`): SFace + YuNet
+   (R12/R13 outcome 1); no Flatpak or portal; ISA drift assumed negligible.
+6. All four apps build and test exactly as before.
+
+---
+
+## 5. The phases
+
+### Phase 0 — Foundations and the three spikes
+
+No app behaviour changes. Nothing here blocks on a Mac.
+
+**0.1 Monorepo — done.** Each app was rewritten with
+`git filter-repo --to-subdirectory-filter` and merged
+`--allow-unrelated-histories`. Directory names are the short ones:
+
+`apps/{gallery,contacts,music,health}`
+
+SHAs changed; `git log apps/<name>` keeps the original commits. The
+standalone clones are archived read-only with redirect READMEs.
+
+Current tree (Phase 2 will extract `core/` and `shells/` from inside the
+apps; they are not lifted yet):
+
+```
+.agents/            agent instructions (CONVENTIONS.md retired in 0.2)
+docs/               index.html style.css screenshots/   (Pages source)
+  spec/             the eight ADRs + spike answers
+  IMPLEMENTATION-PLAN.md
+docker/
+apps/gallery/       was localgallery (Swift + core/ + linux/)
+apps/contacts/      was localcontacts
+apps/music/         was localmusic
+apps/health/        was localhealth
+```
+
+Eventual tree, after later phases:
+
+```
+.agents/
+docs/               Pages + spec/
+docker/  mac/
+core/               workspace 1: localcore-* and <app>-core-*   (no UI deps)
+shells/             workspace 2: shell-kit-gtk + four Linux shells
+apps/*/ios/         SwiftUI shells
+conformance/
+```
+
+CI: **one always-running `gate` job** that computes path filters, with every
+required check depending on it. Path-filtered required checks that simply
+never report are the classic monorepo deadlock, and worse here — a `core/**`
+change that breaks the FFI would not run the iOS job at all. Keep
+`fetch-depth: 0` (`set_build_number.sh` needs the commit count). Note and
+accept: all three iOS apps now share one build number (~184, monotonic, so
+TestFlight is fine), and a localmusic commit bumps localgallery's.
+
+**0.2 Retire `CONVENTIONS.md`.** Not a move — a **delete plus a sorting pass**
+over 818 lines. State management, app shell and UIKit appearance are dropped
+as one toolkit's idioms; folder access, stable ids, design tokens, settings
+shape, file I/O, logging and testing go to the ADR that owns each; bundle
+identifiers, build commands and the README template land in ADR 0007 as R6,
+R12, R18. Six sections contradicted the ADRs, including a second vocabulary
+table its own conformance rule would have flagged. Spec into `docs/spec/`.
+
+**0.3 Environments.** `docker/` as delivered. `mac/bootstrap.sh` as its
+sibling. Work-item routing documented (§5).
+
+**0.4 Commit the bindings, and give Linux a compile signal.** Commit the
+generated UniFFI Swift; CI regenerates and fails on drift. **Replace the
+`.gitignore` comment that forbids this** rather than deleting the line — it
+records a real hazard (checksum mismatch against a stale xcframework) and the
+CI job is what answers it. Then add the part r1 was missing: a Linux
+`swift build` shim against a Linux-built `libgallery_ffi.so`, so the Fedora
+fleet gets a compile signal instead of a reference document.
+
+**0.5 The conformance harness, graph check first.**
+`conformance/` plus a CI job. The **first** check is ADR 0002 R13's
+dependency-graph check with its one-entry allowlist (`ort`, build-time,
+`ORT_LIB_LOCATION`). It starts **red** — that is the point; a source grep
+would have certified `gallery-geo`'s Nominatim client as clean.
+
+**0.6 Three spikes — answered.** Written answers live in `docs/spec/spikes/`.
+
+| Spike | Answer | Consequence |
+|---|---|---|
+| **Face licence** | **Outcome 1.** OpenCV Zoo SFace (Apache-2.0, 128-D ONNX, LFW 99.40%) + YuNet. AuraFace and FaceX MFN rejected. | R12/R13 stand. One pack; `PACK_VARIANT` retires. **M3 is real.** |
+| **Flatpak portal** | **Do not use Flatpak or portals.** Native GTK binary, host filesystem, folder is a path, share is a file save. | ADR 0002 R6 holds. ADR 0007 R15 Linux rows lose the portal. Phase 3 ships no Flatpak manifest. |
+| **Cross-ISA ε** | **ISA causes no significant difference.** No fixture; ε is not a measured ISA margin. | R16 amended: conventional retention band only. No Phase 2 ε work item. |
+
+> **Gate:** all four apps build and test exactly as before, from the new
+> layout, with no behaviour change. The graph check is red and its allowlist
+> is written. All three spikes have written answers.
+
+Size: M. Almost entirely agent work.
+
+---
+
+### Phase 1 — Cleanup (Milestone A)
+
+**Deletions only. Nothing is replaced, nothing is built.** This phase exists
+so that the ADR review happens against one codebase rather than two, and so
+that `localcore` is extracted from a smaller surface.
+
+| Delete | Lines | Makes true |
+|---|---|---|
+| `PhotoMaterializer`, `CloudStorageService`, `FileProviderDetector`, `RemoteBadge` | 507 + 271 refs / 30 files | ADR 0005 R2 |
+| `CrashDiagnosticsService` ×3 (MetricKit) | 304 | ADR 0006 R9, ADR 0007 R17 |
+| localhealth `internal/ui/` loopback server | 4,864 Go + 1,604 assets | ADR 0006 R9 |
+
+**What cannot move here, and why.** Three deletions are replacement-gated;
+pulling them forward ships a regression:
+
+| Deferred to | Deletion | Blocked on |
+|---|---|---|
+| Phase 2 | `gallery-geo` (~900 Rust) + `nominatim_lookup` FFI + 5 Linux call sites + `GeocodingService` (1,232 Swift) | `localcore-geo` existing, or gallery loses place names entirely |
+| Phase 2 | `ImageIOHeicDecoder` (~100) | the decoder seam consolidated |
+| Phase 2 | — | `localcore-conflict` before any app can be wired to it |
+
+**Not deletions — r1 mislabelled these.** `PhotoExporter` (125) re-encodes for
+share-sheet export; it is not a decoder and no ADR retires it. `EXIFService`
+(80) is the info panel's data source and owns `exifDateFormatter`, whose
+missing `timeZone` is deliberate. Both are "replace with a named replacement"
+rows, and neither replacement is named yet.
+
+**Amend, do not retire, `localgallery/docs/adr/0002`.** It carries four
+decisions and only one is about provider probes. Decision 3 ("a light pass may
+reuse a cached row only after a live size+mtime check") *is* ADR 0002 R5's
+definition of `light`; decision 1 is its dedupe rule; decision 4 is why
+`LibrarySnapshot` is at v20 rather than v21. Strike decision 2, keep the rest,
+point at the new ADR.
+
+**M4 — checked, and it is not a risk.** Removing `FileProviderDetector`
+touches `SidecarCandidate` and `PhotoFile.SidecarStatus`, both inside
+`LibrarySnapshot` v20, which the Rust core also reads and writes. r1 assumed
+a version bump and a forced rescan. The types say otherwise:
+
+```swift
+struct ContentVersion: Hashable, Codable, Sendable {
+    var contentIdentifier: String?     // provider-vended — stops being written
+    var modificationDate: Date?        // stat identity — stays (ADR 0002 R6)
+    var size: Int64?                   // stat identity — stays
+}
+```
+
+All three are optional on both sides: Rust marks each
+`skip_serializing_if = "Option::is_none"`, and Swift already hand-writes a
+tolerant `init(from:)`. So `ContentVersion` **shrinks rather than
+disappearing** — it loses the one provider-vended member and keeps exactly the
+size-plus-mtime pair ADR 0002 R6 requires. Moving it out of
+`FileProviderDetector`'s namespace is a type move; Codable keys do not carry
+the enclosing type's name, so the wire format is untouched.
+
+`downloadStatus` is the only non-optional member, and the Rust enum already
+derives `#[default] Local`. Two ways to retire it, both one line:
+
+- **Preferred** — add `#[serde(default)]` to the Rust field and
+  `decodeIfPresent ?? .local` in Swift, then stop writing the key. Removes the
+  concept from the wire format, which is what ADR 0005 R2 wants.
+- **Fallback** — keep writing `"downloadStatus": "local"` forever. Zero
+  decoder changes on either side.
+
+**No `LibrarySnapshot` version bump, no cache eviction, no forced rescan, no
+memories regeneration.** Milestone A is deletions only, as advertised. This
+was checked against the source rather than assumed, because the r1 plan's
+assumption was the one thing that would have made Milestone A cost users
+something.
+
+The Swift deletions batch into one Mac session; the rest is container work.
+
+> **Gate (Milestone A):** all four apps build and test as before. No source
+> references a placeholder, download state, ubiquitous-item attribute, or
+> file-provider API. No source links a crash-reporting framework. The graph
+> check is red with exactly one un-allowlisted entry (`gallery-geo`), which is
+> the honest state until Phase 2. **`LibrarySnapshot` is still v20**, and a
+> fixture written by the pre-deletion build decodes on the post-deletion build
+> with no rescan.
+
+Size: M, and genuinely negative. **This is the ADR review point.**
+
+---
+
+### Phase 2 — `localcore`, settled against gallery (Milestone B)
+
+**The API is settled by the app that will break it.** r1 proved "core + two
+shells" on localcontacts, which has no scanner, no queue, no cache, no event
+log and no capability of any kind — so ADR 0006's 18 requirements and ADR
+0002's freshness tiers would have been designed against a workload that
+cannot reveal their cost, then bent for gallery two phases later.
+
+So Phase 2 is a **headless Linux harness over gallery's real 20k-photo tree**.
+No shell, no FFI, no parity. Gallery already has the fixtures and the cost
+data — and after Phase 1 it has ~6,500 fewer lines of behaviour to preserve.
+
+| Crate | From | Notes |
+|---|---|---|
+| `localcore-vfs` | `gallery-vfs` (1,308) | `ProviderAttrs` comes **out** of the `Vfs` surface — Phase 1's deletions have already removed its callers, which is the main reason cleanup goes first. `TEMP_PREFIX` becomes a parameter, plus a `.stignore` entry per app. |
+| `localcore-id` | `gallery-model::stable_uuid` | **Now NFC-normalising** (ADR 0002 R4). Ships with **M1**. |
+| `localcore-walk` | `gallery-scan` walk only | Classification stays app-side, parameterised by extension set. |
+| `localcore-conflict` | **new** | ADR 0005 R7–R11. Grammar, detection, resolution policy. Fixture suite before any app calls it. Then wired into all four apps — the live bug fix. |
+| `localcore-queue` | `gallery-ml`'s queue, generalised | ADR 0006 R1–R5. The substrate every capability uses. |
+| `localcore-geo` | **new** | ADR 0006 R10. Packed `cities1000` + admin-0 point-in-polygon + spatial index + a data-build step. **1.5–2.5k lines. A crate, not a deletion** — r1 had it in a table of things being removed. Gates the `gallery-geo` / `GeocodingService` removal deferred from Phase 1. |
+| `localcore-log` | localhealth's Go `internal/log` (354) | Designed against **both** consumers in one PR: localhealth's `blob_import` shape *and* gallery's `person_hidden` / `person_renamed` operation events with a replay test. Ships with **M2**. |
+| `localcore-blob` | localhealth's Go `internal/blobs` (266) | Content-addressed store. |
+
+Also here: **ADR 0003 R6's type boundary** is designed now, because every
+later phase depends on it.
+
+Migrations landing in this phase (ADR 0005 R19 — each with a pre-change
+fixture and a survival assertion):
+
+| | Migration | Trigger |
+|---|---|---|
+| **M1** | Stable ids re-key NFC→ | ADR 0002 R4. Person state, thumbnails, memory ids and widget deep links are all path-keyed. |
+| **M2** | Tier-2 `UserDefaults` → event log | ADR 0005 R5/R13/R14. Gallery persists `me`, `hiddenPeople`, `featured`, `pinnedPeople`, `featuredPhotoByPerson`, `mePersonPath`, `personContactLinks` — all path-keyed snapshots, which R13 forbids. `migratePersonState` becomes a replayed `person_renamed` event. |
+| **M3** | Face-cluster re-key | Spike 0.6 swaps `buffalo_sc` for SFace + YuNet. New `face_pack_key` re-detects, re-embeds, re-clusters, and orphans every user-assigned name. |
+
+> **Gate (Milestone B):** gallery's `cargo test --workspace` and its iOS CI
+> green, no behaviour change. Harness replays a 20k tree and reproduces
+> today's scan costs. `localcore-geo` passes the border test. `localcore-log`
+> has a gallery replay test and a localhealth one. Conflict files no longer
+> appear as content in any app. The graph check is **green**. M1–M3 fixtures
+> pass.
+
+Size: L. All Linux-container work.
+
+---
+
+### Phase 3 — `shell-kit` and localcontacts, the first *shell* vertical (Milestone C)
+
+Scope corrected: this proves **ADR 0004 and the vCard merge**, not "core +
+two shells". `localcore` was settled in Phase 1.
+
+1. `shell-kit-gtk` — one binding per slot kind (ADR 0004 R6), app-agnostic.
+   The reusable half of every Linux shell that follows.
+2. The three generated enums + token emission (ADR 0004 R14).
+3. **Design tokens and a dark palette.** `Design.swift` is a light-only
+   literal palette; there is no dark variant anywhere and libadwaita follows
+   the system preference, where most GNOME users run dark. This is a design
+   task — someone authors dark values for four apps — plus a small build step.
+   r1 had no entry for it, and it blocks one of the easiest conformance greps.
+4. `contacts-core`: vCard read/write, index, conflict handling. Absorbs ~1k
+   lines of portable Swift.
+5. iOS shell reduced to views over the core. `CNSyncService` (547) stays as an
+   iOS-only port — ADR 0007 R15, row "system address-book sync".
+6. GTK shell over `shell-kit`. Native host filesystem — a path, not a
+   portal grant. No Flatpak. Share is a file save (ADR 0007 R15).
+7. Comet: same binary, `--comet`.
+
+> **Gate:** localcontacts' **core loop** on iOS, Fedora and Comet — choose a
+> folder, list, search, view, edit, save, resolve a conflict. ADR 0004's
+> conformance passes over both shells. ADR 0003 R6's boundary test passes.
+
+Expect to revise ADR 0004 after this. That is the process working, not a
+failure — the vocabulary was derived from iOS and has never met a second
+toolkit.
+
+Size: L.
+
+---
+
+### Phase 4 — localmusic
+
+Same shape, reusing `shell-kit`. Additions: the media port (AVFoundation /
+gstreamer), MPRIS on Linux (ADR 0007 R15), playlist writing through
+`localcore-vfs`'s atomic write.
+
+Least portable logic (~750 lines) and the most views, so shell work dominates
+— which is exactly what `shell-kit` should now be absorbing. If Phase 4's GTK
+shell is not markedly cheaper than Phase 3's, `shell-kit` is not working and
+that is the signal to fix it before gallery.
+
+Size: M.
+
+---
+
+### Phase 5 — localgallery
+
+**Core loop, not full parity** — with a numbered gap list in the spec.
+
+| In the Linux core loop | Explicitly not (gap list) |
+|---|---|
+| browse, folder tree, search | slideshow ambient music (`SlideshowMusic`, AVAudioEngine) |
+| viewer, zoom, video playback | MP4 slideshow export (`SlideshowVideoRenderer`, AVAssetWriter) |
+| tags, tag grid | widgets (ADR 0007 R15) |
+| people **read**, person pages | face review UI |
+| places, memories rail | Live Photos — no Linux equivalent exists |
+| scan, tagging, face scan | |
+
+Plus: move the residual portable Swift into `gallery-core`; the FFI moves to
+ADR 0003 R4's structure/window split (this is where the 20k-item grid either
+scrolls or does not); media port for video thumbnails.
+
+That gap list is the difference between roughly 8k and 30k lines of GTK.
+Each row is a decision you can revisit later with a working app in hand.
+
+Size: L–XL. Per-screen agent tasks against the slot vocabulary.
+
+---
+
+### Phase 6 — localhealth
+
+Full Rust port, both shells — and **materially smaller than r1**, because
+ADR 0008 retires the riskiest component instead of porting it.
+
+1. `health-core` over `localcore-log` / `localcore-blob` (Phase 1).
+   Projection to SQLite.
+2. **HealthKit ingestion in the iOS shell** (ADR 0008 R2–R7): anchored query,
+   canonical NDJSON blob per batch, one `blob_import` event, `retract` on
+   deletion, dedup on the source identifier. The 1,754-line streaming XML
+   adapter is **deleted, not ported** — and with it the group-hash dedup
+   heuristic and the differential harness r1 needed to survive it.
+3. **M5: dated cutover.** First anchored query bounded to samples after the
+   last export import. Old export-derived events stay in the log untouched.
+4. FIT adapter — new code in Rust, not a port (unimplemented in Go too).
+   Linux-side: watch mount → blob.
+5. Gaps report carries ADR 0008 R8's wording: HealthKit cannot report a
+   denied read, so "none seen" never means "complete".
+6. Two shells, **core loop only**: ingest, browse, one chart, gaps report.
+7. Go tree deleted once the projection reproduces a real archive.
+
+What survives from r1's differential plan: the Go projection's golden
+fixtures still pin the **projection**, compared as a canonical ordered JSON
+dump per table — not "byte-identical SQLite", which two bindings will never
+produce. Add a memory-ceiling test: a Rust port that accidentally buffers
+passes every small-fixture test.
+
+Size: L. (r1 sized this XL; ADR 0008 and core-loop parity are why.)
+
+---
+
+## 6. How work routes to agents
+
+**By work item, not by path.** 27% of gallery's recent commits touch both
+Swift and `core/*.rs`, and they are the architecturally significant ones —
+"Move Places, pack, and merge policy into the core" is 26 Swift files and 23
+Rust files. Routing by path routes *file edits inside a work item*.
+
+**Additive FFI is the discipline that makes this work.** New functions land
+alongside old; Swift migrates; the old surface is removed. `main` is never
+knowingly unbuildable for a platform, so `macos-26` stays a signal rather than
+an expected-red job — which is precisely when committed-binding drift would
+otherwise go unnoticed.
+
+| Work | Verified by |
+|---|---|
+| `core/**`, `shells/**`, `conformance/**`, `docs/**` | `cargo test` in the container, seconds |
+| FFI surface change | Linux `swift build` shim (0.4), then `macos-26` |
+| `apps/*/ios/**` | `macos-26` by default; Mac VM interactively when >1 round |
+
+**Task shape:** one requirement, one fixture, one PR. "Make `contacts-core`
+satisfy ADR 0005 R7, here is the fixture directory, the check must go red to
+green." Reviewable in minutes because the check is the review — for the 62
+requirements where that is true. For the rest, the PR template asks the
+review question (ADR 0007 R16) and you read the diff.
+
+---
+
+## 7. Risks, ranked
+
+1. **Face-model swap quality.** The licence spike came back positive
+   (SFace + YuNet). What remains is whether personal-library clustering
+   holds up after M3 orphans every user-assigned name.
+2. **ADR 0003 R4's windowed boundary not being enough.** If a 20k grid still
+   stutters through UniFFI, the fallback is the current arrangement — shell
+   holds the structs — which costs ADR 0003 R6 and with it the only structural
+   enforcement of ADR 0001 R4.
+3. **The slot vocabulary not surviving a second toolkit.** Phase 3 is where it
+   holds or gets revised. Budget the revision.
+4. **Review capacity.** The honest one. See below.
+
+---
+
+## 8. Sizing, honestly
+
+| Work | Size |
+|---|---|
+| `localcore` + four app cores | 15–25k |
+| GTK core loops ×4 over `shell-kit` | 12–18k |
+| SwiftUI rebound to view models | ~20k touched |
+| localhealth Go→Rust (no XML adapter) | ~7k |
+| `localcore-geo` + data pipeline | 1.5–2.5k |
+| Five migrations with fixtures | 2–3k |
+| Design tokens + dark palettes ×4 | small code, real design time |
+
+Call it 55–75k lines written or rewritten, all of it reviewed. At a sustained
+1,000 reviewed lines a week — aggressive for evenings and weekends — that is
+**14–18 months**, and it assumes ADR 0004 survives Phase 3 mostly intact,
+which risk 3 says it will not.
+
+What bought the reduction from r1's 75–100k: core-loop parity with a written
+gap list (largest single saving), ADR 0008 retiring the XML adapter and its
+differential harness, and `shell-kit` making shells 2–4 progressively cheaper.
+What added to it: `localcore-geo`, the five migrations, and the token work —
+all of which existed in r1 too, just not on the page.
+
+Each phase leaves something shippable. Phases 0–2 change no user-visible
+behaviour except removing cloud placeholders and network geocoding, so the
+first year's risk is concentrated in Phase 3, which is the cheapest app.
+
+---
+
+## 9. What I would do first
+
+**Drive straight at Milestone A and stop there.** The 0.6 spikes are
+answered. Phase 0.1–0.5 plus Phase 1 is two or three weekends of agent work.
+It changes no behaviour a user would name except removing cloud placeholders
+and crash reporting, it deletes ~6,500 lines, and it ends with the ADRs
+sitting in a repository whose structure they describe.
+
+**0.1 is done.** Next is **0.2 — retire `CONVENTIONS.md`**, then 0.3–0.5
+(environments, committed bindings, conformance harness red), then Phase 1
+deletions. Read the specification against the cleaned tree and only
+afterwards start Phase 2. Reviewing ADRs against a codebase that still
+contains the code they retire is the mental overhead this ordering exists to
+remove.
