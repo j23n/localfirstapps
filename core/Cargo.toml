@@ -6,6 +6,7 @@ members = [
     "localcore-id",
     "localcore-log",
     "localcore-vfs",
+    "localcore-walk",
 ]
 
 [workspace.package]

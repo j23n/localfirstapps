@@ -382,6 +382,11 @@ fn four_passes_over_the_fixture_tree_match_the_swift_baseline() {
 
     // Pass 1 — cold full scan over the pristine tree.
     let pass1 = scan(&vfs, root, &ScanInput::default());
+    assert!(
+        pass1.conflict_groups.is_empty(),
+        "the conformance fixture has no Syncthing copies; groups must default empty: {:?}",
+        pass1.conflict_groups
+    );
 
     let locked = Unlocker(tree.mutate(&root_path));
     let chmod_works = locked.0.iter().all(|p| chmod_is_effective(p));

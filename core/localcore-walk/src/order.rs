@@ -2,7 +2,7 @@
 //!
 //! Subfolder order **is** part of the contract (fixture landmine 21) — the
 //! grid renders folders in it, and it must not drift between scans or between
-//! platforms. Within-folder photo order is *not*; it is whatever the directory
+//! platforms. Within-folder file order is *not*; it is whatever the directory
 //! listing produced, and the fixtures sort those lists rather than pin them.
 //!
 //! # What this is and is not

@@ -8,11 +8,11 @@
 //! | `url.path`, `url.standardized.path` | the **on-disk bytes**, untouched |
 //! | `url.standardizedFileURL.path`, `resolvingSymlinksInPath().path` | **decomposed** (NFD) |
 //!
-//! `PhotoFile.stableID` hashes the first, so ids follow the spelling the file
-//! was created with — and NFC and NFD names derive *different* ids, which
-//! `stable_uuid_vectors.json` pins. `FolderScanner.failedDirectoryPaths` and
-//! the Store's carry-forward prefix check go through the second, so both sides
-//! of *that* comparison are NFD.
+//! Record identity hashes the first, so ids follow the spelling the file was
+//! created with — and NFC and NFD names derive *different* ids, which
+//! `stable_uuid_vectors.json` pins. Failed-directory paths and the Store's
+//! carry-forward prefix check go through the second, so both sides of *that*
+//! comparison are NFD.
 //!
 //! Each side is internally consistent. Mixing them is what breaks — and it
 //! breaks invisibly in Swift, because `String ==` compares under canonical

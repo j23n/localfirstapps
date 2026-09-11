@@ -555,6 +555,7 @@ version = "0.1.0"
 dependencies = [
  "gallery-model",
  "gallery-vfs",
+ "localcore-walk",
  "serde",
  "serde_json",
  "tempfile",
@@ -890,6 +891,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
+name = "localcore-conflict"
+version = "0.1.0"
+
+[[package]]
 name = "localcore-id"
 version = "0.1.0"
 dependencies = [
@@ -900,6 +905,15 @@ dependencies = [
 [[package]]
 name = "localcore-vfs"
 version = "0.1.0"
+
+[[package]]
+name = "localcore-walk"
+version = "0.1.0"
+dependencies = [
+ "localcore-conflict",
+ "localcore-vfs",
+ "unicode-normalization",
+]
 
 [[package]]
 name = "log"
