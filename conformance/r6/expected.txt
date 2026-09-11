@@ -45,5 +45,4 @@ SplitResult
 TagSuggestionRecord
 TaggingRunSummary
 TaggingStats
-VfsProviderAttrs
 WallClock

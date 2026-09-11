@@ -83,7 +83,7 @@ the surface is built around. `ScanTag`, `ScanRegion`, `ScanLocality`
 (the enum is allowed; the records that carry it are not),
 `ScanFolderNode`, `ScanContentVersion`, `ScanSidecarRow`,
 `ScanTimings`, `ScanOutcomeRecord`, `ScanRequest`, `SnapshotRecord`,
-`VfsProviderAttrs`, `WallClock`, `ImageMetadataRecord`,
+`WallClock`, `ImageMetadataRecord`,
 `SidecarParseRecord`, `SidecarViewRecord`.
 
 **Library / memory domain.** `MemoryGenerationInputs` ships the
