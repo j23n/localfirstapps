@@ -1,0 +1,49 @@
+# Known ADR 0003 R6 violations in gallery-ffi.
+# One uniffi::Record name per line. A new Record that is not a
+# display record for exactly one ADR 0004 slot kind must appear
+# here or `check.py --expect-violations` fails.
+
+ClusterSummary
+FaceAssignmentRecord
+FaceLibraryStats
+FaceMergeCandidate
+FaceMergeDecision
+FacePhotoRecord
+FaceRef
+FaceRunSummary
+FaceStats
+HeicPixels
+ImageMetadataRecord
+LibraryIndexSummary
+LibraryTagSuggestions
+MemoryContact
+MemoryDateEntry
+MemoryGenerationInputs
+MemoryLeafFolder
+MemoryPersonLink
+MemoryRecord
+MergeProposal
+ModelPackInfo
+PackResolution
+PlaceWrite
+ReclusterSummary
+ScanContentVersion
+ScanFolderNode
+ScanOutcomeRecord
+ScanPhoto
+ScanRegion
+ScanRequest
+ScanSidecarRow
+ScanTag
+ScanTimings
+ScheduledMemoryRecord
+SidecarParseRecord
+SidecarViewRecord
+SidecarWriteReport
+SnapshotRecord
+SplitResult
+TagSuggestionRecord
+TaggingRunSummary
+TaggingStats
+VfsProviderAttrs
+WallClock

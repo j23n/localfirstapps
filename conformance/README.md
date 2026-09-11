@@ -43,7 +43,31 @@ name `NSFileProvider*`, `ubiquitousItem*`, or `MXMetric*`. Generated
 
 `.github/workflows/conformance.yml` runs this next to the graph check.
 
+## Display records — ADR 0003 R6
+
+```
+python3 conformance/r6/check.py                  # exit 1 while red
+python3 conformance/r6/check.py --expect-violations
+python3 conformance/r6/check.py --self-test
+```
+
+`conformance/r6/` walks `apps/gallery/core/gallery-ffi/src/**/*.rs` and
+enumerates `uniffi::Record` plus other exported types. A Record is
+green only when every field is a display-ready scalar for exactly one
+ADR 0004 slot kind. The taxonomy is
+[`docs/spec/adr/0003-r6-surface.md`](../docs/spec/adr/0003-r6-surface.md).
+
+It starts **red**. Today's gallery FFI ships `ScanPhoto`,
+`MemoryGenerationInputs`, face/cluster records, and the rest of the
+domain surface. That is the honest state until a later rewrite.
+`expected.txt` is the inventory. CI asserts this exact red so a *new*
+Record cannot hide behind the known ones.
+
+`--expect-violations` with no names reads `expected.txt`. Named
+arguments override the file (same shape as the graph check). The flag
+is dropped when the surface goes green.
+
 ## Later
 
 AST checks land here as later phases make their requirements
-mechanically true. The type-system guard (ADR 0003 R6) is Phase 2.
+mechanically true.
