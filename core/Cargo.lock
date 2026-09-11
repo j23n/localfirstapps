@@ -149,6 +149,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
+name = "localcore-blob"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "localcore-conflict"
 version = "0.1.0"
 dependencies = [
@@ -164,6 +172,15 @@ dependencies = [
  "serde_json",
  "sha2",
  "uuid",
+]
+
+[[package]]
+name = "localcore-log"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
