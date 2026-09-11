@@ -74,6 +74,10 @@ does not appear in the exported surface, under any name. This is how ADR 0001
 R4 is enforced where it can be enforced at all: a shell given no record has
 nothing to sort and no field to format.
 
+The display-record taxonomy, the slot-field vocabulary, and the current
+`gallery-ffi` inventory are in [0003-r6-surface.md](0003-r6-surface.md).
+That document is the design; it does not rewrite the gallery FFI.
+
 **R7.** All user intent enters the app core as a declared **action**. A shell
 MUST NOT mutate domain state directly. Actions are total: an action that
 cannot proceed returns a typed refusal, never a panic and never silence.
@@ -100,7 +104,9 @@ write, scanning, indexing and reconciliation are `localcore` (ADR 0002).
   toolkit installed.
 - Every screen in each app's UI spec resolves to exactly one view model.
 - No type crossing the FFI or the GTK binding carries a domain record; a test
-  enumerates the exported surface and asserts R6.
+  enumerates the exported surface and asserts R6. That check starts red:
+  `conformance/r6/check.py` pins today's `gallery-ffi` Records
+  ([0003-r6-surface.md](0003-r6-surface.md)).
 - No shell source contains a comparator, formatter, predicate over records,
   or enablement rule (ADR 0001 R4, checked from the shell side).
 - A windowed `items` call with a stale generation returns the staleness
