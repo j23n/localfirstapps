@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Blue background -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2E6BBF"/>
+      <stop offset="100%" stop-color="#1A3D7A"/>
+    </linearGradient>
+    <!-- Neutral beige folder -->
+    <linearGradient id="folderBody" x1="512" y1="320" x2="512" y2="810" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F5EADB"/>
+      <stop offset="100%" stop-color="#E2CDAF"/>
+    </linearGradient>
+    <linearGradient id="folderTab" x1="300" y1="220" x2="300" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FAF2E8"/>
+      <stop offset="100%" stop-color="#EEDDCA"/>
+    </linearGradient>
+    <linearGradient id="cardBg" x1="512" y1="395" x2="512" y2="765" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDFBF8"/>
+      <stop offset="100%" stop-color="#F5EDE6"/>
+    </linearGradient>
+    <linearGradient id="avatarGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6090D0"/>
+      <stop offset="100%" stop-color="#4070B0"/>
+    </linearGradient>
+    <filter id="folderShadow">
+      <feDropShadow dx="0" dy="8" stdDeviation="20" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="cardShadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <filter id="softShadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#4060A0" flood-opacity="0.15"/>
+    </filter>
+    <clipPath id="avatarClip">
+      <circle cx="330" cy="580" r="100"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <ellipse cx="512" cy="540" rx="380" ry="300" fill="#fff" opacity="0.06"/>
+
+  <!-- FOLDER -->
+  <g filter="url(#folderShadow)">
+    <path d="M140,320 L140,255 Q140,220 175,220 L375,220 Q405,220 418,250 L445,320" fill="url(#folderTab)"/>
+    <rect x="112" y="320" width="800" height="490" rx="32" fill="url(#folderBody)"/>
+  </g>
+
+  <!-- Back card (tilted, depth effect) -->
+  <g filter="url(#cardShadow)">
+    <rect x="160" y="378" width="704" height="380" rx="16" fill="#FFFFFF"
+          transform="rotate(-1.5, 512, 568)" opacity="0.7"/>
+  </g>
+
+  <!-- Front contact card -->
+  <g filter="url(#cardShadow)">
+    <rect x="150" y="395" width="724" height="380" rx="16" fill="url(#cardBg)"/>
+
+    <!-- Large avatar on left -->
+    <g filter="url(#softShadow)">
+      <circle cx="330" cy="580" r="108" fill="#E0E8F5"/>
+      <g clip-path="url(#avatarClip)">
+        <circle cx="330" cy="548" r="40" fill="url(#avatarGrad)"/>
+        <ellipse cx="330" cy="638" rx="62" ry="46" fill="url(#avatarGrad)"/>
+      </g>
+    </g>
+
+    <!-- Text lines on right -->
+    <rect x="490" y="520" width="320" height="20" rx="10" fill="#4A6A9F" opacity="0.85"/>
+    <rect x="490" y="562" width="260" height="14" rx="7" fill="#8AA0C4" opacity="0.5"/>
+    <rect x="490" y="595" width="290" height="14" rx="7" fill="#8AA0C4" opacity="0.38"/>
+    <rect x="490" y="628" width="220" height="14" rx="7" fill="#8AA0C4" opacity="0.28"/>
+  </g>
+</svg>
