@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Red background -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#C0392B"/>
+      <stop offset="100%" stop-color="#8B1A1A"/>
+    </linearGradient>
+    <!-- Neutral beige folder -->
+    <linearGradient id="folderBody" x1="512" y1="320" x2="512" y2="810" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F5EADB"/>
+      <stop offset="100%" stop-color="#E2CDAF"/>
+    </linearGradient>
+    <linearGradient id="folderTab" x1="300" y1="220" x2="300" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FAF2E8"/>
+      <stop offset="100%" stop-color="#EEDDCA"/>
+    </linearGradient>
+    <radialGradient id="vinylDisc" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#2C2C2C"/>
+      <stop offset="60%" stop-color="#1E1E1E"/>
+      <stop offset="100%" stop-color="#111"/>
+    </radialGradient>
+    <radialGradient id="vinylLabel" cx="0.45" cy="0.42" r="0.55">
+      <stop offset="0%" stop-color="#F06060"/>
+      <stop offset="100%" stop-color="#B83030"/>
+    </radialGradient>
+    <filter id="folderShadow">
+      <feDropShadow dx="0" dy="8" stdDeviation="20" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="contentShadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <ellipse cx="512" cy="540" rx="380" ry="300" fill="#fff" opacity="0.06"/>
+
+  <!-- FOLDER -->
+  <g filter="url(#folderShadow)">
+    <path d="M140,320 L140,255 Q140,220 175,220 L375,220 Q405,220 418,250 L445,320" fill="url(#folderTab)"/>
+    <rect x="112" y="320" width="800" height="490" rx="32" fill="url(#folderBody)"/>
+  </g>
+
+  <!-- VINYL RECORD -->
+  <g filter="url(#contentShadow)">
+    <circle cx="512" cy="565" r="195" fill="url(#vinylDisc)"/>
+    <!-- Grooves -->
+    <circle cx="512" cy="565" r="185" fill="none" stroke="#363636" stroke-width="0.8" opacity="0.5"/>
+    <circle cx="512" cy="565" r="176" fill="none" stroke="#333" stroke-width="0.6" opacity="0.4"/>
+    <circle cx="512" cy="565" r="167" fill="none" stroke="#363636" stroke-width="0.8" opacity="0.5"/>
+    <circle cx="512" cy="565" r="158" fill="none" stroke="#333" stroke-width="0.6" opacity="0.4"/>
+    <circle cx="512" cy="565" r="149" fill="none" stroke="#363636" stroke-width="0.8" opacity="0.5"/>
+    <circle cx="512" cy="565" r="140" fill="none" stroke="#333" stroke-width="0.6" opacity="0.4"/>
+    <circle cx="512" cy="565" r="131" fill="none" stroke="#363636" stroke-width="0.8" opacity="0.5"/>
+    <circle cx="512" cy="565" r="122" fill="none" stroke="#333" stroke-width="0.6" opacity="0.4"/>
+    <circle cx="512" cy="565" r="113" fill="none" stroke="#363636" stroke-width="0.8" opacity="0.5"/>
+    <circle cx="512" cy="565" r="104" fill="none" stroke="#333" stroke-width="0.6" opacity="0.4"/>
+    <circle cx="512" cy="565" r="95" fill="none" stroke="#363636" stroke-width="0.8" opacity="0.5"/>
+    <circle cx="512" cy="565" r="86" fill="none" stroke="#333" stroke-width="0.6" opacity="0.3"/>
+    <!-- Subtle shine arc -->
+    <path d="M365,440 Q480,400 660,470" fill="none" stroke="#fff" stroke-width="3" opacity="0.05"/>
+    <path d="M370,445 Q485,410 655,475" fill="none" stroke="#fff" stroke-width="8" opacity="0.03"/>
+    <!-- Red label -->
+    <circle cx="512" cy="565" r="62" fill="url(#vinylLabel)"/>
+    <circle cx="512" cy="565" r="61" fill="none" stroke="#fff" stroke-width="0.5" opacity="0.15"/>
+    <!-- Label text lines -->
+    <rect x="490" y="548" width="44" height="5" rx="2.5" fill="#fff" opacity="0.25"/>
+    <rect x="484" y="558" width="56" height="4" rx="2" fill="#fff" opacity="0.15"/>
+    <rect x="488" y="567" width="48" height="4" rx="2" fill="#fff" opacity="0.12"/>
+    <!-- Center hole -->
+    <circle cx="512" cy="565" r="7" fill="#1A1A1A"/>
+    <circle cx="512" cy="565" r="4.5" fill="#111"/>
+    <circle cx="510" cy="563" r="1.5" fill="#fff" opacity="0.15"/>
+  </g>
+</svg>

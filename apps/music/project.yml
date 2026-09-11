@@ -1,0 +1,84 @@
+name: LocalMusic
+options:
+  bundleIdPrefix: com.j23n.localmusic
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+
+targets:
+  LocalMusic:
+    type: application
+    platform: iOS
+    sources:
+      - LocalMusic
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localmusic.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: HN22UT76EY
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: LocalMusic/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: LocalMusic
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+        ENABLE_PREVIEWS: YES
+    postBuildScripts:
+      - name: Set Build Number from Git
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(SRCROOT)/.git/HEAD
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/build-number.stamp
+        script: |
+          set -euo pipefail
+          export PATH="/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
+          BUILD=$(/usr/bin/git -C "$SRCROOT" rev-list --count HEAD)
+          if [ -z "$BUILD" ]; then
+            echo "error: git rev-list --count HEAD returned empty" >&2
+            exit 1
+          fi
+          PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$PLIST"
+          mkdir -p "$DERIVED_FILE_DIR"
+          echo "$BUILD" > "$DERIVED_FILE_DIR/build-number.stamp"
+          echo "note: set CFBundleVersion=$BUILD in $PLIST"
+
+  LocalMusicTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - LocalMusicTests
+    dependencies:
+      - target: LocalMusic
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localmusic.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: $(TEST_HOST)
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/LocalMusic.app/LocalMusic
+
+schemes:
+  LocalMusic:
+    build:
+      targets:
+        LocalMusic: all
+        LocalMusicTests: [test]
+    test:
+      targets:
+        - LocalMusicTests
