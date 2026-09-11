@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""ADR 0002 R13 — dependency-graph check over one Cargo.lock.
+"""ADR 0002 R13 — dependency-graph check over the core lockfiles.
 
 Walks the resolved graph, not source text. A source grep would have
 certified gallery-geo's Nominatim client as clean; this check does not.
+
+Both `core/Cargo.lock` and `apps/gallery/core/Cargo.lock` are scanned
+when they exist, and findings are unioned by package name. Preferring
+only `core/` would hide `gallery-geo → ureq` the moment the extracted
+workspace exists. `--lockfile` remains a single-file override.
 
 Usage (from the monorepo root):
 
@@ -144,15 +149,30 @@ def load_policy(allow_path: Path, policy_path: Path) -> Policy:
     return Policy(allow=frozenset(allow), allow_entries=entries, forbidden=forbidden)
 
 
-def find_lockfile(root: Path) -> Path:
-    # Prefer the extracted workspace once Phase 2 lands it.
-    for rel in ("core/Cargo.lock", "apps/gallery/core/Cargo.lock"):
-        path = root / rel
-        if path.is_file():
-            return path
-    raise FileNotFoundError(
-        "no core Cargo.lock (looked at core/ and apps/gallery/core/)"
-    )
+LOCKFILE_RELS = ("core/Cargo.lock", "apps/gallery/core/Cargo.lock")
+
+
+def find_lockfiles(root: Path) -> list[Path]:
+    """Every default lockfile that exists.
+
+    Both paths are scanned until gallery-geo is deleted. Returning only
+    the first hit would hide that crate once `core/Cargo.lock` exists.
+    """
+    found = [root / rel for rel in LOCKFILE_RELS if (root / rel).is_file()]
+    if not found:
+        raise FileNotFoundError(
+            "no core Cargo.lock (looked at core/ and apps/gallery/core/)"
+        )
+    return found
+
+
+def union_findings(groups: list[list[Finding]]) -> list[Finding]:
+    """Merge findings from several lockfiles, one row per workspace crate."""
+    by_package: dict[str, Finding] = {}
+    for group in groups:
+        for finding in group:
+            by_package.setdefault(finding.package, finding)
+    return [by_package[name] for name in sorted(by_package)]
 
 
 def _packages_by_name(packages: list[Package]) -> dict[str, list[Package]]:
@@ -199,11 +219,16 @@ def findings_for(packages: list[Package], policy: Policy) -> list[Finding]:
     return out
 
 
-def render(lockfile: Path, policy: Policy, found: list[Finding]) -> str:
+def render(lockfiles: list[Path], policy: Policy, found: list[Finding]) -> str:
     lines: list[str] = []
     status = "RED" if found else "GREEN"
     lines.append(f"ADR 0002 R13 — dependency graph  [{status}]")
-    lines.append(f"lockfile: {lockfile}")
+    if len(lockfiles) == 1:
+        lines.append(f"lockfile: {lockfiles[0]}")
+    else:
+        lines.append("lockfiles:")
+        for lockfile in lockfiles:
+            lines.append(f"  {lockfile}")
     allow = ", ".join(sorted(policy.allow)) or "(empty)"
     lines.append(f"allowlist ({policy.allow_entry_count} "
                  f"{'entry' if policy.allow_entry_count == 1 else 'entries'}): {allow}")
@@ -346,6 +371,16 @@ checksum = "00"
     found = findings_for(gtk, policy)
     assert [(f.package, f.klass) for f in found] == [("oops", "ui")], found
 
+    # A clean lockfile must not hide a finding that lives only in the other.
+    # This is why both default lockfiles are walked rather than preferring
+    # core/ once that workspace exists.
+    merged = union_findings([findings_for(ort, policy), findings_for(geo, policy)])
+    assert [f.package for f in merged] == ["gallery-geo"], merged
+    assert union_findings([[], findings_for(geo, policy)])[0].package == "gallery-geo"
+    assert union_findings([findings_for(geo, policy), findings_for(geo, policy)]) == [
+        Finding(package="gallery-geo", via="ureq", klass="network")
+    ]
+
     print("self-test: ok")
     return 0
 
@@ -374,21 +409,41 @@ def main(argv: list[str] | None = None) -> int:
         return run_self_test()
 
     root = args.root.resolve()
-    try:
-        lockfile = args.lockfile.resolve() if args.lockfile else find_lockfile(root)
-    except FileNotFoundError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    if not lockfile.is_file():
-        print(f"error: lockfile not found: {lockfile}", file=sys.stderr)
-        return 2
+    if args.lockfile:
+        lockfile = args.lockfile.resolve()
+        if not lockfile.is_file():
+            print(f"error: lockfile not found: {lockfile}", file=sys.stderr)
+            return 2
+        lockfiles = [lockfile]
+    else:
+        try:
+            lockfiles = find_lockfiles(root)
+        except FileNotFoundError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
 
     policy = load_policy(HERE / "allowlist.toml", HERE / "policy.toml")
-    packages = parse_cargo_lock(lockfile.read_text())
-    if not packages:
-        print(f"error: no packages in {lockfile}", file=sys.stderr)
+    groups: list[list[Finding]] = []
+    scanned: list[Path] = []
+    for lockfile in lockfiles:
+        packages = parse_cargo_lock(lockfile.read_text())
+        if not packages:
+            if args.lockfile:
+                print(f"error: no packages in {lockfile}", file=sys.stderr)
+                return 2
+            # Empty extracted workspace (members = []) is not a finding
+            # source. Skip it so it cannot hide the gallery lockfile.
+            continue
+        scanned.append(lockfile)
+        groups.append(findings_for(packages, policy))
+    if not scanned:
+        print(
+            "error: no packages in any scanned lockfile: "
+            + ", ".join(str(p) for p in lockfiles),
+            file=sys.stderr,
+        )
         return 2
-    found = findings_for(packages, policy)
+    found = union_findings(groups)
     names = [f.package for f in found]
 
     if args.json:
@@ -396,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "status": "red" if found else "green",
-                    "lockfile": str(lockfile),
+                    "lockfiles": [str(p) for p in lockfiles],
                     "allowlist": sorted(policy.allow),
                     "findings": [
                         {"package": f.package, "via": f.via, "class": f.klass}
@@ -407,7 +462,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
     else:
-        print(render(lockfile, policy, found), end="")
+        print(render(lockfiles, policy, found), end="")
 
     if args.expect_violations is not None:
         expected = list(args.expect_violations)

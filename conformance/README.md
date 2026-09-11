@@ -12,9 +12,15 @@ python3 conformance/graph/check.py --expect-violations gallery-geo
 
 ## Graph — ADR 0002 R13
 
-`conformance/graph/` walks `core/`'s resolved `Cargo.lock` against a
-written allowlist. The allowlist has one entry: `ort` / `ort-sys`,
-build-time, offline override `ORT_LIB_LOCATION`.
+`conformance/graph/` walks every core lockfile that exists —
+`core/Cargo.lock` and `apps/gallery/core/Cargo.lock` — and unions
+findings by package name. Preferring only `core/` would hide
+`gallery-geo → ureq` the moment the extracted workspace exists. Both
+are scanned until `gallery-geo` is deleted. `--lockfile` is a
+single-file override.
+
+The allowlist has one entry: `ort` / `ort-sys`, build-time, offline
+override `ORT_LIB_LOCATION`.
 
 It starts **red**. `gallery-geo` depends on `ureq` (Nominatim). That is
 the honest state until Phase 2 ships `localcore-geo` and deletes the
