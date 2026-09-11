@@ -178,7 +178,7 @@ pub fn run_analysis(request: AnalysisRequest<'_>) -> AnalysisSummary {
         return summary;
     }
 
-    let vfs = StdVfs;
+    let vfs = StdVfs::new();
     let places = places::run_places(
         &vfs,
         photos,
@@ -222,7 +222,7 @@ fn run_ml(
     use gallery_ml::{FaceEngine, FaceRunOptions, RunOptions, TaggingEngine};
     use std::sync::Arc;
 
-    let vfs = Arc::new(StdVfs);
+    let vfs = Arc::new(StdVfs::new());
     if let Some(dir) = cache_db.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }

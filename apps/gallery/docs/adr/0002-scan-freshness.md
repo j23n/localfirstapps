@@ -25,10 +25,11 @@ freshness, not providers.
    sync stay in the iOS store. Linux opens from the snapshot and
    watches the folder.
 2. ~~**Provider attributes are the only Swift VFS callback.**~~
-   **Struck (Phase 1).** Production Swift no longer reads file-provider
-   keys. The Rust `Vfs::probe_provider` seam and generated
-   `VfsProviderAttrs` stay until Phase 2 lifts them off `Vfs`. iOS
-   supplies `LocalOnlyProbe` (all-default attrs). Family ADR 0005 R2.
+   **Struck (Phase 2).** `ProviderAttrs` / `probe_provider` are off the
+   Rust `Vfs` trait. The scanner is always local. Generated
+   `VfsProviderAttrs` and `ScannerSession(probe:)` remain on the FFI
+   surface until a later commit drops them; the probe is ignored.
+   Family ADR 0005 R2.
 3. **A light pass may reuse a cached row only after a live size+mtime
    check.** Size or mtime change rebuilds the row. Content-preserving
    rewrites that keep both are invisible; a full / explicit rescan is

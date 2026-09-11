@@ -45,7 +45,7 @@ pub fn name_cluster(
     use std::sync::Arc;
 
     let engine =
-        FaceEngine::open(cache_db, pack_dir, Arc::new(StdVfs)).map_err(|e| e.to_string())?;
+        FaceEngine::open(cache_db, pack_dir, Arc::new(StdVfs::new())).map_err(|e| e.to_string())?;
     let plan = engine
         .name_cluster(cluster_id, name, None, root_prefix)
         .map_err(|e| e.to_string())?;

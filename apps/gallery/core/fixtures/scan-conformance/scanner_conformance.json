@@ -375,7 +375,7 @@
         "Junk/orphan.xmp is a sidecar with no photo: no row, no photo, no complaint.",
         "The sidecar manifest keys on the LOWERCASED full basename, so B.JPG finds B.JPG.xmp.",
         "totalPhotoCount is recursive (root = 15) while photoCount is the folder's own; Empty/ still becomes a node, with coverPhotoSource \"none\".",
-        "versionHasContentIdentifier is true here: APFS populates fileContentIdentifierKey, so ContentVersion.sameContent compares identifiers rather than (mtime, size). On a provider that leaves it nil the other branch runs — both are live paths.",
+        "versionHasContentIdentifier is false here: the scanner no longer probes a content identifier, so ContentVersion.sameContent compares (mtime, size).",
         "PhotoLocality is `local` for everything: FileProviderDetector sees totalFileSize == fileSize on a plain volume, so nothing looks provider-backed."
       ],
       "removedPaths" : [
@@ -513,7 +513,7 @@
           "downloadStatus" : "local",
           "photoPath" : "B.JPG",
           "sidecarPath" : "B.JPG.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-03-01T10:00:02.000Z"
@@ -524,7 +524,7 @@
           "downloadStatus" : "local",
           "photoPath" : "Locked/locked1.jpg",
           "sidecarPath" : "Locked/locked1.jpg.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-03-04T10:00:01.000Z"
@@ -535,7 +535,7 @@
           "downloadStatus" : "local",
           "photoPath" : "Nested/Deep/deep1.jpg",
           "sidecarPath" : "Nested/Deep/deep1.jpg.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-03-03T10:00:01.000Z"
@@ -1034,7 +1034,7 @@
           "downloadStatus" : "local",
           "photoPath" : "B.JPG",
           "sidecarPath" : "B.JPG.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-03-01T10:00:02.000Z"
@@ -1045,7 +1045,7 @@
           "downloadStatus" : "local",
           "photoPath" : "Media/IMG_0003.jpg",
           "sidecarPath" : "Media/IMG_0003.jpg.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-04-01T10:00:01.000Z"
@@ -1538,7 +1538,7 @@
           "downloadStatus" : "local",
           "photoPath" : "B.JPG",
           "sidecarPath" : "B.JPG.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-03-01T10:00:02.000Z"
@@ -1549,7 +1549,7 @@
           "downloadStatus" : "local",
           "photoPath" : "Media/IMG_0003.jpg",
           "sidecarPath" : "Media/IMG_0003.jpg.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-04-01T10:00:01.000Z"
@@ -2088,7 +2088,7 @@
           "downloadStatus" : "local",
           "photoPath" : "B.JPG",
           "sidecarPath" : "B.JPG.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-03-01T10:00:02.000Z"
@@ -2099,7 +2099,7 @@
           "downloadStatus" : "local",
           "photoPath" : "Locked/locked1.jpg",
           "sidecarPath" : "Locked/locked1.jpg.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-03-04T10:00:01.000Z"
@@ -2110,7 +2110,7 @@
           "downloadStatus" : "local",
           "photoPath" : "Media/IMG_0003.jpg",
           "sidecarPath" : "Media/IMG_0003.jpg.xmp",
-          "versionHasContentIdentifier" : true,
+          "versionHasContentIdentifier" : false,
           "versionModificationDate" : {
             "basis" : "utc",
             "value" : "2021-04-01T10:00:01.000Z"

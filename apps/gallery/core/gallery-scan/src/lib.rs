@@ -11,7 +11,7 @@
 //! use gallery_scan::{scan, ScanInput};
 //! use gallery_vfs::StdVfs;
 //!
-//! let outcome = scan(&StdVfs, "/photos", &ScanInput::default());
+//! let outcome = scan(&StdVfs::new(), "/photos", &ScanInput::default());
 //! println!("{} photos, {} new", outcome.flat_photos.len(), outcome.added_paths.len());
 //! ```
 //!
