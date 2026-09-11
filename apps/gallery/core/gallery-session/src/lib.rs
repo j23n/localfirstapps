@@ -9,6 +9,7 @@
 
 pub mod analysis;
 pub mod eligibility;
+pub mod geo;
 pub mod pack;
 pub mod people;
 pub mod places;
@@ -20,6 +21,10 @@ pub use analysis::{
     AnalysisRequest, AnalysisSummary, ProgressFn,
 };
 pub use eligibility::{is_ml_eligible, is_places_candidate, places_needed};
+pub use geo::{
+    haversine_km, resolve, wait_until_allowed, Gazetteer, GeoCache, GeoCacheEntry, GeoCacheError,
+    GeoError, ReverseGeocoder, CACHE_RADIUS_KM, DISK_CACHE_VERSION,
+};
 pub use pack::{
     data_pack_root, default_roots, discover_pack, ml_enabled, resolve_in, PackRoots, PackStatus,
 };

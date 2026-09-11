@@ -32,8 +32,8 @@ folder is the gallery: you own the files and choose where they live.
 - **Hierarchical tags** — `digiKam:TagsList`-style paths; see the
   [photo-tools schema](https://github.com/j23n/photo-tools/blob/main/docs/xmp-schema.md)
 - **On-device tagging and faces** — optional model pack (ONNX)
-- **Places from GPS** — Nominatim reverse geocode; **coordinates leave
-  the device**
+- **Places from GPS** — offline gazetteer + admin-0 polygons; coordinates
+  stay on the device
 - **Explicit file mutations** — Scan Photos writes `.xmp` sidecars;
   you can move, delete, or create items in the folder
 ## What the apps write
@@ -42,8 +42,8 @@ They are not read-only. Sidecar writes and file move/delete/create
 are described in [docs/storage.md](docs/storage.md). Image bytes are
 not rewritten by the core.
 
-Places is the only product network egress: Nominatim (injectable
-endpoint). There is no LocalGallery account or telemetry backend.
+There is no product network egress. There is no LocalGallery account
+or telemetry backend.
 
 ## Requirements
 
@@ -139,7 +139,7 @@ a mapping at that commit reproduces the pinned hash. Do not invent one.
 
 On first launch, pick (or create) a folder of photos. Syncthing and
 iCloud Drive folders are fine. Scan Photos is opt-in and writes
-sidecars. Places uploads GPS to Nominatim.
+sidecars. Places resolves GPS offline.
 
 ## Linux
 

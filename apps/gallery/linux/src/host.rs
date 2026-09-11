@@ -342,7 +342,7 @@ pub fn reapply_sidecars_with_commit(
 /// Persist geocode cache and an optional refreshed library only while
 /// `token` is still the live generation.
 pub fn commit_analysis_state(
-    geo_cache: &gallery_geo::GeoCache,
+    geo_cache: &gallery_session::GeoCache,
     state: Option<&LibraryState>,
     cancel: &AtomicBool,
     ledger: &OpLedger,
@@ -685,7 +685,7 @@ fn persist_library_state(
 }
 
 fn persist_analysis_artifacts(
-    geo_cache: &gallery_geo::GeoCache,
+    geo_cache: &gallery_session::GeoCache,
     state: Option<&LibraryState>,
     cancel: &AtomicBool,
     commit: Option<(&OpLedger, OpToken)>,
@@ -1194,8 +1194,8 @@ mod tests {
             vec!["Places/Italy/Rome".to_string()]
         );
 
-        let mut geo = gallery_geo::GeoCache::new();
-        geo.insert(gallery_geo::GeoCacheEntry {
+        let mut geo = gallery_session::GeoCache::new();
+        geo.insert(gallery_session::GeoCacheEntry {
             latitude: 48.8,
             longitude: 2.3,
             path: "Places/France/Paris".into(),

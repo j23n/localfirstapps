@@ -33,8 +33,7 @@ use crate::ops::{apply_begin, apply_done, OpKind, OpLedger, OpToken, SurfaceFlag
 use crate::row::PhotoRow;
 use crate::time;
 use crate::watch::{self, MuteGate, UnmuteAction, WatchHandle};
-use gallery_geo::Nominatim;
-use gallery_session::{self as session, AnalysisSummary};
+use gallery_session::{self as session, AnalysisSummary, Gazetteer};
 
 const APP_TITLE: &str = "LocalGallery";
 
@@ -652,11 +651,10 @@ impl Window {
             self.toast(&msg);
         }
         let ml_cache = config::ml_cache_path();
-        let endpoint = config::nominatim_endpoint();
         let ops = self.inner.ops.borrow().clone();
         thread::spawn(move || {
             let mut geo_cache = geo_cache;
-            let geo = Nominatim::new(endpoint);
+            let geo = Gazetteer;
             let summary = session::run_analysis(session::AnalysisRequest {
                 photos: &photos,
                 pack: pack.as_ref(),

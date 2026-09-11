@@ -196,7 +196,8 @@ pub fn places_needed(tags: Vec<String>, force: bool) -> bool {
     gallery_session::places_needed(tags, force)
 }
 
-/// Why a Nominatim lookup failed.
+/// Why a place lookup failed. The offline gazetteer does not produce
+/// these; the variants stay so the UniFFI surface does not change.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
 pub enum GeoError {
     /// Transient — retry.
@@ -221,38 +222,32 @@ impl std::fmt::Display for GeoError {
 
 impl std::error::Error for GeoError {}
 
-impl From<gallery_geo::GeoError> for GeoError {
-    fn from(e: gallery_geo::GeoError) -> Self {
-        match e {
-            gallery_geo::GeoError::Retryable(detail) => GeoError::Retryable { detail },
-            gallery_geo::GeoError::Fatal(detail) => GeoError::Fatal { detail },
-        }
-    }
-}
-
-/// Reverse-geocode via Nominatim. `endpoint` is injected (empty = public OSM).
+/// Reverse-geocode from the bundled gazetteer.
 ///
-/// English names. The host owns rate limiting and the haversine cache.
+/// `endpoint` is ignored (kept so existing UniFFI bindings stay valid).
+/// English names. Country is admin-0 point-in-polygon.
 #[uniffi::export]
 pub fn nominatim_lookup(
-    endpoint: String,
+    _endpoint: String,
     latitude: f64,
     longitude: f64,
 ) -> Result<Option<PlaceWrite>, GeoError> {
-    use gallery_geo::{Nominatim, ReverseGeocoder};
-    let url = if endpoint.trim().is_empty() {
-        gallery_geo::DEFAULT_ENDPOINT.to_string()
-    } else {
-        endpoint
-    };
-    let req = Nominatim::new(url).lookup(latitude, longitude)?;
-    Ok(req.map(|r| PlaceWrite {
-        path: r.path,
-        country: r.country,
-        state: r.state,
-        city: r.city,
-        sublocation: r.sublocation,
-        country_code: r.country_code,
+    Ok(localcore_geo::lookup(latitude, longitude).and_then(|p| {
+        gallery_meta::place_from_parts(
+            Some(p.country.as_str()),
+            p.admin.as_deref(),
+            Some(p.locality.as_str()),
+            None,
+            Some(p.country_code.as_str()),
+        )
+        .map(|r| PlaceWrite {
+            path: r.path,
+            country: r.country,
+            state: r.state,
+            city: r.city,
+            sublocation: r.sublocation,
+            country_code: r.country_code,
+        })
     }))
 }
 

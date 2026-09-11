@@ -147,40 +147,32 @@ pub fn ml_cache_path() -> PathBuf {
     cache_dir().join("gallery-cache.sqlite")
 }
 
-/// Nominatim haversine cache (version 3 — not the old Apple JSON).
+/// Haversine place-lookup cache (version 3 — not the old Apple JSON).
 pub fn geo_cache_path() -> PathBuf {
     cache_dir().join("nominatim-cache.json")
 }
 
 /// Load the geocode cache. Stale versions are empty; corrupt files are
 /// reported separately so a derived miss can start clean.
-pub fn load_geo_cache() -> (gallery_geo::GeoCache, Option<String>) {
+pub fn load_geo_cache() -> (gallery_session::GeoCache, Option<String>) {
     let path = geo_cache_path();
     let _ = persist::tighten_file_mode(&path);
-    match gallery_geo::GeoCache::try_load(&path) {
+    match gallery_session::GeoCache::try_load(&path) {
         Ok(cache) => (cache, None),
-        Err(gallery_geo::GeoCacheError::Missing)
-        | Err(gallery_geo::GeoCacheError::StaleVersion { .. }) => {
-            (gallery_geo::GeoCache::new(), None)
+        Err(gallery_session::GeoCacheError::Missing)
+        | Err(gallery_session::GeoCacheError::StaleVersion { .. }) => {
+            (gallery_session::GeoCache::new(), None)
         }
         Err(e) => (
-            gallery_geo::GeoCache::new(),
+            gallery_session::GeoCache::new(),
             Some(format!("geocode cache: {e}")),
         ),
     }
 }
 
 /// Persist the geocode cache with the same atomic write as config/snapshot.
-pub fn save_geo_cache(cache: &gallery_geo::GeoCache) -> std::io::Result<()> {
+pub fn save_geo_cache(cache: &gallery_session::GeoCache) -> std::io::Result<()> {
     persist::write_atomic(&geo_cache_path(), &cache.encode())
-}
-
-/// Reverse-geocode URL. `$LOCALGALLERY_NOMINATIM` overrides the public OSM instance.
-pub fn nominatim_endpoint() -> String {
-    std::env::var("LOCALGALLERY_NOMINATIM")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| gallery_geo::DEFAULT_ENDPOINT.to_string())
 }
 
 /// Whether `root` exists and is a directory.

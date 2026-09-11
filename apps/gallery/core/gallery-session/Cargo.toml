@@ -12,8 +12,8 @@ default = []
 ml = ["gallery-ml/ort-backend"]
 
 [dependencies]
-gallery-geo = { path = "../gallery-geo" }
 gallery-meta = { path = "../gallery-meta" }
+localcore-geo = { path = "../../../../core/localcore-geo" }
 gallery-ml = { path = "../gallery-ml", default-features = false }
 gallery-model = { path = "../gallery-model" }
 gallery-vfs = { path = "../gallery-vfs" }

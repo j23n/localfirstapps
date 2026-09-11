@@ -24,7 +24,7 @@ left alone. The standing policy is narrower
 ([ADR 0001](adr/0001-xmp-ownership.md)): retract only sentinel-owned
 claims. Unrelated XML is preserved on the DOM path.
 
-Places: GPS is sent to Nominatim; the resulting `Places/…` path is
+Places: GPS is resolved offline; the resulting `Places/…` path is
 written to the sidecar.
 
 ## Caches (recomputable)
@@ -36,7 +36,7 @@ written to the sidecar.
 | Memories cache | App cache | Generated rail; evicted if the library snapshot version mismatches |
 | Sidecar parse cache (iOS) | App cache | Parsed XMP for evicted provider files |
 | Thumbnails | iOS disk cache; Linux Freedesktop `thumbnails/large` and `x-large` | Display only |
-| Geo cache | App support / XDG | Nominatim results by coordinates |
+| Geo cache | App support / XDG | Place-lookup results by coordinates |
 | Widget snapshots (iOS) | App Group | Pre-rendered tiles and deep-link ids |
 
 Deleting caches does not delete photos or sidecars. The next scan or

@@ -7,15 +7,14 @@ import os
 /// Reverse-geocode GPS into photo-tools `Places/*` tags and IPTC location
 /// fields, the same shape `photo-tools tag --gps` writes.
 ///
-/// The lookup is Nominatim in the Rust core (English names), same source
-/// Linux uses. Coordinates leave the device. The *output* is one nested
-/// `Places/<Country>[/<Region>[/<City>[/<Neighborhood>]]]` keyword plus
-/// `photoshop:City/State/Country`, `Iptc4xmpCore:CountryCode/Location`, and
-/// `phototools:CountryCode`.
+/// The lookup is the bundled gazetteer in the Rust core (English names),
+/// same source Linux uses. Coordinates stay on the device. The *output*
+/// is one nested `Places/<Country>[/<Region>[/<City>[/<Neighborhood>]]]`
+/// keyword plus `photoshop:City/State/Country`,
+/// `Iptc4xmpCore:CountryCode/Location`, and `phototools:CountryCode`.
 ///
-/// Live lookups are serial and paced at `minLookupInterval`. Nominatim
-/// 429 / 5xx and transport failures retry with exponential backoff.
-/// A miss (`nil`, or `geocodeFoundNoResult`) is not retried.
+/// Lookups are serial. The host still paces and retries so a miss or a
+/// future gazetteer error does not stampede. A miss (`nil`) is not retried.
 ///
     /// Photos whose **library row** already carries a `Places/*` name are
     /// not the Scan work queue (`needsLibraryPlaces`). The write path still
@@ -62,7 +61,8 @@ final class GeocodingService {
     /// Matches photo-tools' `gps.geocode_cache_radius_km`.
     static let cacheRadiusKm = 0.5
 
-    /// Floor between live Nominatim calls (their polite rate).
+    /// Floor between live lookups. Offline resolution does not need it;
+    /// the orchestrator still owns pacing.
     static let minLookupInterval: TimeInterval = 1
 
     /// Injected endpoint. Empty / unset uses the public OSM instance.
@@ -80,8 +80,8 @@ final class GeocodingService {
     /// minutes on one coordinate.
     static let maxRetryBackoff: TimeInterval = 16
 
-    /// Nominatim HTTP timeout (core default is 15s). Kept so the Swift
-    /// watchdog still abandons a hung transport.
+    /// Lookup watchdog. Offline resolution is instant; the cap stays so a
+    /// hung FFI call cannot pin the UI.
     nonisolated static let lookupTimeout: TimeInterval = 15
 
     nonisolated enum LookupError: Error, Equatable, Sendable {
@@ -172,8 +172,7 @@ final class GeocodingService {
         return doc.rawTags.map { HierarchicalTag(raw: $0) }
     }
 
-    /// Reverse-geocode `photos` and write sidecars. Serial: Nominatim
-    /// is paced at one live request per second.
+    /// Reverse-geocode `photos` and write sidecars. Serial and paced.
     func geocode(_ photos: [PhotoFile], force: Bool = false) async -> Summary {
         guard !isRunning else { return lastSummary ?? Summary() }
         isRunning = true
@@ -284,7 +283,7 @@ final class GeocodingService {
             return nil
         }
         Log.ml.info(
-            "Places cache miss \(Log.r.gps(latitude, longitude)) cache=\(cache.count) — live Nominatim"
+            "Places cache miss \(Log.r.gps(latitude, longitude)) cache=\(cache.count) — live gazetteer"
         )
         guard let entry = try await lookupLive(
             latitude: latitude,
@@ -312,20 +311,20 @@ final class GeocodingService {
             lastLiveLookupAt = now()
             let attemptAt = now()
             Log.ml.info(
-                "Places Nominatim attempt \(attempt + 1)/\(Self.maxLookupAttempts) \(Log.r.gps(latitude, longitude))"
+                "Places lookup attempt \(attempt + 1)/\(Self.maxLookupAttempts) \(Log.r.gps(latitude, longitude))"
             )
             do {
                 let entry = try await lookup(latitude, longitude)
                 let path = entry.map { Log.r.place($0.path) } ?? "nil"
                 Log.ml.info(
-                    "Places Nominatim returned in \(Self.ms(since: attemptAt))ms path=\(path)"
+                    "Places lookup returned in \(Self.ms(since: attemptAt))ms path=\(path)"
                 )
                 return entry
             } catch {
                 attempt += 1
                 let retriesLeft = Self.maxLookupAttempts - attempt
                 Log.ml.error(
-                    "Places Nominatim error attempt \(attempt) after \(Self.ms(since: attemptAt))ms: \(Log.r.error(error)) retryable=\(Self.isRetryable(error))"
+                    "Places lookup error attempt \(attempt) after \(Self.ms(since: attemptAt))ms: \(Log.r.error(error)) retryable=\(Self.isRetryable(error))"
                 )
                 if Self.isRetryable(error), retriesLeft > 0, !cancelRequested {
                     let backoff = Self.backoff(afterFailures: attempt)
@@ -364,7 +363,7 @@ final class GeocodingService {
         }
     }
 
-    /// Transient failures worth another try. Nominatim 429/5xx arrive as
+    /// Transient failures worth another try. Gazetteer misses are not; FFI
     /// `GeoError.retryable`. Tests still inject `kCLErrorNetwork`.
     static func isRetryable(_ error: Error) -> Bool {
         if case .retryable = error as? GeoError { return true }
@@ -442,8 +441,7 @@ final class GeocodingService {
         return []
     }
 
-    /// Off the main actor so a hung Apple call cannot pin the UI, and so
-    /// Nominatim runs off the main actor so a hung HTTP call cannot pin the UI.
+    /// Off the main actor so a hung lookup cannot pin the UI.
     nonisolated private static func liveLookup(
         latitude: Double,
         longitude: Double
@@ -451,7 +449,7 @@ final class GeocodingService {
         let started = Date()
         let timeout = lookupTimeout
         Log.ml.info(
-            "Places Nominatim starting \(Log.r.gps(latitude, longitude)) timeout=\(Int(timeout))s"
+            "Places lookup starting \(Log.r.gps(latitude, longitude)) timeout=\(Int(timeout))s"
         )
         do {
             return try await withThrowingTaskGroup(of: CacheEntry?.self) { group in
@@ -465,25 +463,25 @@ final class GeocodingService {
                         try await Task.sleep(for: .seconds(step))
                         waited += step
                         Log.ml.info(
-                            "Places Nominatim still waiting \(waited)s \(Log.r.gps(latitude, longitude))"
+                            "Places lookup still waiting \(waited)s \(Log.r.gps(latitude, longitude))"
                         )
                     }
                     try await Task.sleep(for: .seconds(timeout - Double(waited)))
                     Log.ml.error(
-                        "Places Nominatim timed out after \(Int(timeout))s \(Log.r.gps(latitude, longitude))"
+                        "Places lookup timed out after \(Int(timeout))s \(Log.r.gps(latitude, longitude))"
                     )
                     throw LookupError.timedOut
                 }
                 let first = try await group.next()!
                 group.cancelAll()
                 Log.ml.info(
-                    "Places Nominatim finished in \(Self.ms(since: started))ms \(Log.r.gps(latitude, longitude))"
+                    "Places lookup finished in \(Self.ms(since: started))ms \(Log.r.gps(latitude, longitude))"
                 )
                 return first
             }
         } catch {
             Log.ml.error(
-                "Places Nominatim failed in \(Self.ms(since: started))ms: \(Log.r.error(error))"
+                "Places lookup failed in \(Self.ms(since: started))ms: \(Log.r.error(error))"
             )
             throw error
         }

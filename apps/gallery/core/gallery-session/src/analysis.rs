@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use gallery_geo::{GeoCache, ReverseGeocoder};
+use crate::geo::{GeoCache, ReverseGeocoder};
 use gallery_model::photo::PhotoFile;
 use gallery_vfs::StdVfs;
 
@@ -19,7 +19,7 @@ pub enum AnalysisPhase {
     Tagging,
     /// Detect / embed / cluster.
     Faces,
-    /// Nominatim + `Places/*`.
+    /// Offline gazetteer + `Places/*`.
     Places,
 }
 
@@ -103,7 +103,7 @@ pub struct AnalysisRequest<'a> {
     pub ml_cache: Option<&'a std::path::Path>,
     /// Reverse geocoder used for the Places phase.
     pub geo: &'a dyn ReverseGeocoder,
-    /// On-disk Nominatim cache.
+    /// On-disk place-lookup cache.
     pub geo_cache: &'a mut GeoCache,
     /// Re-write Places even when a path is already present.
     pub force_places: bool,
@@ -399,7 +399,7 @@ pub fn readiness_blurb(pack: Option<&PackStatus>, photo_count: usize) -> String 
             ));
         }
     }
-    parts.push("Places uses Nominatim (GPS leaves the device).".into());
+    parts.push("Places uses a bundled gazetteer (GPS stays on the device).".into());
     parts.join(" ")
 }
 

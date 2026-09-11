@@ -1,8 +1,8 @@
-//! Places pass: eligibility, cache, Nominatim, sidecar write.
+//! Places pass: eligibility, cache, offline gazetteer, sidecar write.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use gallery_geo::{resolve, wait_until_allowed, GeoCache, GeoError, ReverseGeocoder};
+use crate::geo::{resolve, wait_until_allowed, GeoCache, GeoError, ReverseGeocoder};
 use gallery_meta::places::write_places;
 use gallery_meta::read_view;
 use gallery_meta::sidecar::{alt_sidecar_path, sidecar_path};
@@ -146,7 +146,7 @@ fn sidecar_tag_paths(vfs: &dyn Vfs, image_path: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gallery_geo::ReverseGeocoder;
+    use crate::geo::ReverseGeocoder;
     use gallery_meta::place_from_parts;
     use gallery_model::photo::HierarchicalTag;
     use gallery_vfs::MemVfs;

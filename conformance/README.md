@@ -6,28 +6,25 @@ reduces it. It does not remove it (ADR 0007 R16).
 The **first** check is the one a source grep cannot do.
 
 ```
-python3 conformance/graph/check.py                  # exit 1 while red
-python3 conformance/graph/check.py --expect-violations gallery-geo
+python3 conformance/graph/check.py
+python3 conformance/graph/check.py --self-test
 ```
 
 ## Graph — ADR 0002 R13
 
 `conformance/graph/` walks every core lockfile that exists —
 `core/Cargo.lock` and `apps/gallery/core/Cargo.lock` — and unions
-findings by package name. Preferring only `core/` would hide
-`gallery-geo → ureq` the moment the extracted workspace exists. Both
-are scanned until `gallery-geo` is deleted. `--lockfile` is a
-single-file override.
+findings by package name. Preferring only `core/` would hide a
+networking crate that lives only in the extracted workspace.
+`--lockfile` is a single-file override.
 
 The allowlist has one entry: `ort` / `ort-sys`, build-time, offline
 override `ORT_LIB_LOCATION`.
 
-It starts **red**. `gallery-geo` depends on `ureq` (Nominatim). That is
-the honest state until Phase 2 ships `localcore-geo` and deletes the
-client. CI asserts this exact red so a *second* networking crate cannot
-hide behind the known one.
-
-`--expect-violations` is dropped when the graph goes green.
+The graph is **green**. Place names come from `localcore-geo` (packed
+gazetteer + admin-0 polygons). `gallery-geo` and its `ureq` client are
+gone. `--expect-violations` remains for pinning a known-red graph; it
+is not used here.
 
 ## Source — Milestone A (Phase 1)
 

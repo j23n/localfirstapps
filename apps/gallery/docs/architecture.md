@@ -18,8 +18,8 @@ core/                  Cargo workspace — engines and XMP
   gallery-index        search + tag buckets
   gallery-memories     memory selection and 7-day horizon
   gallery-ml           tagging, faces, HEIC software decode, cache DB
-  gallery-geo          Nominatim reverse geocode + haversine cache
   gallery-session      shared Scan Photos order, pack roots, Places, mute
+                       (Places lookup is localcore-geo; haversine cache here)
   gallery-ffi          UniFFI surface (iOS only)
 scripts/               build_core.sh, prepare_pack.sh, model-pack builder
 ```
@@ -36,7 +36,7 @@ crates in-process. Neither shell reaches past `gallery-ffi` /
 | Image bytes | Never rewritten by the core | Sidecars (`.xmp`), caches, exports the user asked for |
 | `gallery-cache.sqlite` | Work queues, embeddings, face clusters | Not portable truth; wipe is safe |
 | File Provider (iOS) | **Retired.** The scanner is local-only; `ProviderProbe` is off the UniFFI surface. | Placeholders do not enter the projection. |
-| Nominatim | English reverse-geocode of GPS | **Exact coordinates leave the device** over HTTPS to the injected endpoint (default public OSM). Not a product backend. Override: `LOCALGALLERY_NOMINATIM` (Linux) or the iOS env equivalent. |
+| Place names | Bundled gazetteer + admin-0 polygons (`localcore-geo`) | Coordinates stay on the device. Country is point-in-polygon, not nearest city. |
 | Model pack | Local ONNX + labels, hash-verified | Optional. Missing pack disables tagging and faces only. |
 | Logs | In-app ring buffer (`LogStore`) | No MetricKit; no automatic export |
 | Widgets (iOS) | App Group snapshots | Deep links back into the app |

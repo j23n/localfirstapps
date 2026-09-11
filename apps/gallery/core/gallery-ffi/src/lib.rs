@@ -17,7 +17,7 @@
 //! * [`library`]: [`LibraryIndex`] plus the memory engine as free
 //!   functions over an inputs snapshot; [`MemoryGenerator`] holds the
 //!   cancel flag.
-//! * [`places`]: Nominatim lookup and Places sidecar writes.
+//! * [`places`]: offline place lookup and Places sidecar writes.
 //!
 //! Tagging and face sessions share one cache file: [`support`] holds
 //! the run-thread mechanics both are built on.

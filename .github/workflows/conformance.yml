@@ -1,4 +1,4 @@
-# Graph check (Phase 0.5, still red: gallery-geo → ureq), Milestone A
+# Graph check (ADR 0002 R13, green after localcore-geo), Milestone A
 # source greps (no FileProvider / MetricKit in production Swift/Go),
 # and ADR 0003 R6 (still red: gallery-ffi domain Records).
 name: Conformance
@@ -22,7 +22,7 @@ defaults:
 
 jobs:
   graph:
-    name: "ADR 0002 R13 graph (red: gallery-geo)"
+    name: "ADR 0002 R13 graph"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -30,8 +30,8 @@ jobs:
       - name: Self-test
         run: python3 conformance/graph/check.py --self-test
 
-      - name: Graph check (expected red)
-        run: python3 conformance/graph/check.py --expect-violations gallery-geo
+      - name: Graph check
+        run: python3 conformance/graph/check.py
 
   source:
     name: "Milestone A source greps"

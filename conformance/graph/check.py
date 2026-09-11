@@ -2,12 +2,12 @@
 """ADR 0002 R13 — dependency-graph check over the core lockfiles.
 
 Walks the resolved graph, not source text. A source grep would have
-certified gallery-geo's Nominatim client as clean; this check does not.
+certified a Nominatim client as clean; this check does not.
 
 Both `core/Cargo.lock` and `apps/gallery/core/Cargo.lock` are scanned
 when they exist, and findings are unioned by package name. Preferring
-only `core/` would hide `gallery-geo → ureq` the moment the extracted
-workspace exists. `--lockfile` remains a single-file override.
+only `core/` would hide a networking crate that lives only in the
+extracted workspace. `--lockfile` remains a single-file override.
 
 Usage (from the monorepo root):
 
@@ -20,8 +20,8 @@ exactly. Exit 1 on a real mismatch. Exit 2 on usage / IO errors.
 
 Traversal: from each workspace package, follow third-party edges.
 Allowlisted packages are not entered (ort's ureq stays invisible).
-Sibling workspace packages are not entered (gallery-ffi does not
-inherit gallery-geo's finding). The finding is the workspace crate
+Sibling workspace packages are not entered (a clean crate does not
+inherit a sibling's finding). The finding is the workspace crate
 that introduced the edge.
 """
 
@@ -155,8 +155,8 @@ LOCKFILE_RELS = ("core/Cargo.lock", "apps/gallery/core/Cargo.lock")
 def find_lockfiles(root: Path) -> list[Path]:
     """Every default lockfile that exists.
 
-    Both paths are scanned until gallery-geo is deleted. Returning only
-    the first hit would hide that crate once `core/Cargo.lock` exists.
+    Both paths are scanned. Returning only the first hit would hide a
+    networking crate that lives only in the other workspace.
     """
     found = [root / rel for rel in LOCKFILE_RELS if (root / rel).is_file()]
     if not found:
@@ -255,7 +255,7 @@ def render(lockfiles: list[Path], policy: Policy, found: list[Finding]) -> str:
         lines.append("")
         lines.append(
             "A source grep would have missed a client that lives in a "
-            "dependency. Phase 2 removes gallery-geo once localcore-geo exists."
+            "dependency. Place lookup is localcore-geo; no gallery-geo remains."
         )
     else:
         lines.append("no networking, UI, or platform crate outside the allowlist.")

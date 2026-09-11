@@ -26,7 +26,6 @@ gallery-scan = { path = "../core/gallery-scan" }
 gallery-index = { path = "../core/gallery-index" }
 gallery-meta = { path = "../core/gallery-meta" }
 gallery-ml = { path = "../core/gallery-ml", default-features = false }
-gallery-geo = { path = "../core/gallery-geo" }
 gallery-session = { path = "../core/gallery-session" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

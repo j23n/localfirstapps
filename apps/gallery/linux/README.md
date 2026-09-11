@@ -22,9 +22,8 @@ app menu) runs tagging → faces → places and writes `.xmp` sidecars
 next to photos. You can also move, delete, or create items in that
 folder. Image bytes are not rewritten.
 
-Places uses Nominatim in the Rust core (same source as iOS). **GPS
-coordinates leave the device.** Override the endpoint with
-`LOCALGALLERY_NOMINATIM`.
+Places uses the bundled `localcore-geo` gazetteer (same source as iOS).
+GPS coordinates stay on the device.
 
 Tagging and faces need a model pack **and** `--features ml`. The pack
 is optional and manual:

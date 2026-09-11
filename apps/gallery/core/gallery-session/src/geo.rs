@@ -1,15 +1,18 @@
-//! Persistent haversine cache. A burst of photos from one street is one query.
+//! Offline reverse-geocode for `Places/*` sidecars.
+//!
+//! [`localcore_geo`] turns a coordinate into a locality and a country.
+//! [`gallery_meta`] still owns the XMP write; this module maps that
+//! place onto a [`PlaceWriteRequest`] and keeps the haversine cache the
+//! hosts already persist.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gallery_meta::places::PlaceWriteRequest;
 use serde::{Deserialize, Serialize};
-
-use crate::haversine_km;
 
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -20,8 +23,110 @@ static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub const CACHE_RADIUS_KM: f64 = 0.5;
 
 /// Bumped when the on-disk shape changes. v1/v2 were the Swift CLGeocoder
-/// cache; those rows are dropped so the next pass re-queries Nominatim.
+/// cache; v3 rows stay valid after the Nominatim client was deleted.
 pub const DISK_CACHE_VERSION: u32 = 3;
+
+/// Why a lookup failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GeoError {
+    /// Transient. The places loop may retry.
+    Retryable(String),
+    /// The result cannot be used.
+    Fatal(String),
+}
+
+impl std::fmt::Display for GeoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GeoError::Retryable(d) | GeoError::Fatal(d) => write!(f, "{d}"),
+        }
+    }
+}
+
+impl std::error::Error for GeoError {}
+
+/// One reverse-geocode. Tests inject a fake; the app uses [`Gazetteer`].
+pub trait ReverseGeocoder {
+    /// Country / region / city for this coordinate. `Ok(None)` is a miss.
+    fn lookup(&self, lat: f64, lon: f64) -> Result<Option<PlaceWriteRequest>, GeoError>;
+
+    /// Floor between live calls. The offline gazetteer returns zero.
+    fn min_interval(&self) -> Duration {
+        Duration::ZERO
+    }
+}
+
+/// Bundled gazetteer + admin-0 polygons. No sockets.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Gazetteer;
+
+impl Gazetteer {
+    /// Map a [`localcore_geo::Place`] onto the sidecar write contract.
+    pub fn request_from_place(place: localcore_geo::Place) -> Option<PlaceWriteRequest> {
+        gallery_meta::place_from_parts(
+            Some(place.country.as_str()),
+            place.admin.as_deref(),
+            Some(place.locality.as_str()),
+            None,
+            Some(place.country_code.as_str()),
+        )
+    }
+}
+
+impl ReverseGeocoder for Gazetteer {
+    fn lookup(&self, lat: f64, lon: f64) -> Result<Option<PlaceWriteRequest>, GeoError> {
+        Ok(localcore_geo::lookup(lat, lon).and_then(Self::request_from_place))
+    }
+}
+
+/// Cache hit or a live lookup that is then stored.
+pub fn resolve(
+    cache: &mut GeoCache,
+    geo: &dyn ReverseGeocoder,
+    lat: f64,
+    lon: f64,
+) -> Result<Option<PlaceWriteRequest>, GeoError> {
+    if let Some(hit) = cache.nearest(lat, lon) {
+        return Ok(Some(hit.request()));
+    }
+    let request = geo.lookup(lat, lon)?;
+    if let Some(ref req) = request {
+        cache.insert(GeoCacheEntry::from_request(lat, lon, req.clone()));
+    }
+    Ok(request)
+}
+
+/// Haversine distance in kilometres. Same formula as the former Swift cache.
+pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    const R: f64 = 6371.0;
+    let p1 = lat1.to_radians();
+    let p2 = lat2.to_radians();
+    let dp = (lat2 - lat1).to_radians();
+    let dl = (lon2 - lon1).to_radians();
+    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * R * a.sqrt().atan2((1.0 - a).sqrt())
+}
+
+/// Pace live lookups. `last` is updated when this returns `true`.
+pub fn wait_until_allowed(
+    last: &mut Option<Instant>,
+    min_interval: Duration,
+    cancel: &AtomicBool,
+) -> bool {
+    if let Some(prev) = *last {
+        let mut remaining = min_interval.saturating_sub(prev.elapsed());
+        while remaining > Duration::from_millis(1) {
+            if cancel.load(Ordering::Relaxed) {
+                return false;
+            }
+            let slice = remaining.min(Duration::from_millis(250));
+            std::thread::sleep(slice);
+            remaining = remaining.saturating_sub(slice);
+        }
+    }
+    *last = Some(Instant::now());
+    !cancel.load(Ordering::Relaxed)
+}
 
 /// Why [`GeoCache::try_load`] could not return a usable cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -292,6 +397,34 @@ mod tests {
             2.3522,
             place_from_parts(Some("France"), None, Some("Paris"), None, Some("fr")).unwrap(),
         )
+    }
+
+    #[test]
+    fn haversine_is_small_for_the_same_street() {
+        let d = haversine_km(48.8566, 2.3522, 48.8567, 2.3523);
+        assert!(d < 0.05, "{d}");
+        assert!(d > 0.0);
+    }
+
+    #[test]
+    fn gazetteer_maps_paris() {
+        let req = Gazetteer.lookup(48.8566, 2.3522).unwrap().unwrap();
+        assert_eq!(req.city.as_deref(), Some("Paris"));
+        assert_eq!(req.country_code.as_deref(), Some("FR"));
+        assert!(req.path.starts_with("Places/France"), "{}", req.path);
+    }
+
+    #[test]
+    fn resolve_stores_a_live_hit() {
+        let mut cache = GeoCache::default();
+        let a = resolve(&mut cache, &Gazetteer, 48.8566, 2.3522)
+            .unwrap()
+            .unwrap();
+        let b = resolve(&mut cache, &Gazetteer, 48.8566, 2.3522)
+            .unwrap()
+            .unwrap();
+        assert_eq!(a.path, b.path);
+        assert_eq!(cache.len(), 1);
     }
 
     #[test]

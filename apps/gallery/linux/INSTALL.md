@@ -48,8 +48,7 @@ and either export `LOCALGALLERY_PACK` or stage it under one of those
 roots. Without a pack, browse and Places still work; Scan Photos skips
 ONNX phases.
 
-Places uses Nominatim. GPS coordinates leave the machine. Override the
-endpoint with `LOCALGALLERY_NOMINATIM`.
+Places uses the bundled gazetteer. GPS coordinates stay on the machine.
 
 ## Install a binary locally
 
