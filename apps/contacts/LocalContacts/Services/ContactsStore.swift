@@ -141,7 +141,10 @@ final class ContactsStore {
         do {
             let contents = try fileAccess.contentsOfDirectory(at: url)
 
-            let vcfFiles = contents.filter { $0.pathExtension.lowercased() == "vcf" }
+            let vcfFiles = contents.filter {
+                $0.pathExtension.lowercased() == "vcf"
+                    && !SyncConflict.isConflictName($0.lastPathComponent)
+            }
             var loaded: [Contact] = []
 
             for file in vcfFiles {
