@@ -1,0 +1,13 @@
+# ADR 0002 R13 — the dependency-graph allowlist.
+#
+# Exactly one entry. Adding a second [[allow]] is an amendment to that
+# ADR, not a local convenience. The checker prints a warning if this
+# file grows so the amendment cannot be silent.
+#
+# An allowlisted crate is build-time only and has a documented override
+# that makes a clean-checkout build succeed with the network down.
+
+[[allow]]
+crates = ["ort", "ort-sys"]
+why = "build-time fetch of the prebuilt ONNX Runtime static library"
+offline = "ORT_LIB_LOCATION pointing at a directory holding libonnxruntime.a"

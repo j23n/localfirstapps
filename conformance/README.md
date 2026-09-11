@@ -1,0 +1,30 @@
+# Conformance harness
+
+Structural checks against the ADRs. Review time is the bottleneck; this
+reduces it. It does not remove it (ADR 0007 R16).
+
+The **first** check is the one a source grep cannot do.
+
+```
+python3 conformance/graph/check.py                  # exit 1 while red
+python3 conformance/graph/check.py --expect-violations gallery-geo
+```
+
+## Graph — ADR 0002 R13
+
+`conformance/graph/` walks `core/`'s resolved `Cargo.lock` against a
+written allowlist. The allowlist has one entry: `ort` / `ort-sys`,
+build-time, offline override `ORT_LIB_LOCATION`.
+
+It starts **red**. `gallery-geo` depends on `ureq` (Nominatim). That is
+the honest state until Phase 2 ships `localcore-geo` and deletes the
+client. CI asserts this exact red so a *second* networking crate cannot
+hide behind the known one.
+
+`--expect-violations` is dropped when the graph goes green.
+
+## Later
+
+Greps and AST checks land here as Phase 1 and later phases make their
+requirements mechanically true. The type-system guard (ADR 0003 R6) is
+Phase 2.

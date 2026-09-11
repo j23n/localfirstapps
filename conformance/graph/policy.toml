@@ -1,0 +1,84 @@
+# Crates whose presence in core/'s resolved graph is a finding unless
+# they sit behind an ADR 0002 R13 allowlist entry.
+#
+# Classified by purpose, not by name substring. `http` / `url` / `idna`
+# are types. `windows-sys` / `libc` / `rustix` are portable OS bindings.
+# Those are not listed. A source grep is not a substitute for this list
+# applied to the lockfile — that is the whole point of R13.
+
+[network]
+# HTTP clients, TLS stacks, raw sockets, RPC transports.
+crates = [
+    "attohttpc",
+    "awc",
+    "curl",
+    "git2",
+    "h2",
+    "h3",
+    "hickory-proto",
+    "hickory-resolver",
+    "hyper",
+    "hyper-rustls",
+    "hyper-tls",
+    "hyper-util",
+    "isahc",
+    "minreq",
+    "native-tls",
+    "openssl",
+    "openssl-sys",
+    "quiche",
+    "quinn",
+    "reqwest",
+    "russh",
+    "rustls",
+    "s2n-quic",
+    "socket2",
+    "ssh2",
+    "surf",
+    "tokio-native-tls",
+    "tokio-rustls",
+    "tokio-tungstenite",
+    "tonic",
+    "trust-dns-resolver",
+    "tungstenite",
+    "ureq",
+    "ureq-proto",
+    "websocket",
+]
+
+[ui]
+# Toolkits. core/ must not grow these; they belong in shells/.
+crates = [
+    "adw",
+    "cairo-rs",
+    "dioxus",
+    "egui",
+    "gdk4",
+    "gio",
+    "glib",
+    "gtk",
+    "gtk4",
+    "iced",
+    "libadwaita",
+    "pango",
+    "slint",
+    "tao",
+    "tauri",
+    "webkit2gtk",
+    "winit",
+    "wry",
+]
+
+[platform]
+# UI-adjacent platform bindings that must not leak into core/.
+# Not every `windows-*` / `core-foundation` crate — those show up as
+# transitive deps of TLS and getrandom. Only the ones a workspace
+# member would name on purpose.
+crates = [
+    "javascriptcore-rs",
+    "metal",
+    "objc",
+    "objc2",
+    "swift-bridge",
+    "uikit",
+]

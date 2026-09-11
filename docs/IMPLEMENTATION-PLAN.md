@@ -163,6 +163,7 @@ docs/               index.html style.css screenshots/   (Pages source)
   IMPLEMENTATION-PLAN.md
 docker/
 mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
+conformance/        graph check (ADR 0002 R13); starts red
 apps/gallery/       was localgallery (Swift + core/ + linux/)
 apps/contacts/      was localcontacts
 apps/music/         was localmusic
@@ -215,11 +216,14 @@ gets `apps/gallery/linux/swift-shim/` (`swift build` against a host
 Xcode-free refresh. `openssl-devel` is now a required agent-image
 package — `ort` → `ureq` → `native-tls` on the host build.
 
-**0.5 The conformance harness, graph check first.**
-`conformance/` plus a CI job. The **first** check is ADR 0002 R13's
-dependency-graph check with its one-entry allowlist (`ort`, build-time,
-`ORT_LIB_LOCATION`). It starts **red** — that is the point; a source grep
-would have certified `gallery-geo`'s Nominatim client as clean.
+**0.5 The conformance harness, graph check first — done.**
+`conformance/graph/check.py` walks `apps/gallery/core/Cargo.lock` (and
+`core/Cargo.lock` once Phase 2 extracts it) against
+`conformance/graph/allowlist.toml`. One entry: `ort` / `ort-sys`,
+build-time, `ORT_LIB_LOCATION`. It is **red** — `gallery-geo` → `ureq`.
+`.github/workflows/conformance.yml` asserts that exact finding so a
+second networking crate cannot hide behind the known one. A source grep
+would have certified the Nominatim client as clean.
 
 **0.6 Three spikes — answered.** Written answers live in `docs/spec/spikes/`.
 
@@ -551,8 +555,8 @@ It changes no behaviour a user would name except removing cloud placeholders
 and crash reporting, it deletes ~6,500 lines, and it ends with the ADRs
 sitting in a repository whose structure they describe.
 
-**0.1–0.4 are done.** Next is **0.5 — the conformance harness**, graph
-check first, starting red. Then Phase 1 deletions. Read the
-specification against the cleaned tree and only afterwards start Phase
-2. Reviewing ADRs against a codebase that still contains the code they
-retire is the mental overhead this ordering exists to remove.
+**0.1–0.5 are done.** Next is **Phase 1 — deletions** (Milestone A).
+Read the specification against the cleaned tree and only afterwards
+start Phase 2. Reviewing ADRs against a codebase that still contains
+the code they retire is the mental overhead this ordering exists to
+remove.

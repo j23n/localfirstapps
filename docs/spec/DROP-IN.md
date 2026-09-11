@@ -36,10 +36,9 @@ done in this tree.
 The 0.6 spikes are answered in `docs/spec/spikes/`. Recorded decisions:
 SFace + YuNet; no Flatpak and no portal; ISA drift assumed negligible.
 
-**Next is Phase 0.5 — the conformance harness** (`conformance/` plus a
-CI job). The first check is ADR 0002 R13's dependency-graph check with
-its one-entry allowlist (`ort`, build-time, `ORT_LIB_LOCATION`). It
-starts **red**. Then Phase 1 deletions.
+**Next is Phase 1 — deletions** (Milestone A). The graph check is red
+(`gallery-geo` → `ureq`); that is the honest state until Phase 2. Do
+not start Phase 2 first.
 
 ## The one thing not to do
 
