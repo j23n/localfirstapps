@@ -4,6 +4,8 @@
 //! so one schema serves both consumers (ADR 0005 R13/R14).
 
 use serde::{Deserialize, Serialize};
+use serde_json::ser::{CharEscape, CompactFormatter, Formatter, Serializer};
+use std::io;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::Error;
@@ -253,8 +255,13 @@ impl Event {
     }
 
     /// Compact NDJSON line including the trailing newline.
+    ///
+    /// Matches Go `json.Encoder` with `SetEscapeHTML(false)`: `<`, `>`, `&`
+    /// stay literal so health notes are the same bytes on both sides.
     pub fn marshal_line(&self) -> Result<Vec<u8>, Error> {
-        let mut buf = serde_json::to_vec(self)?;
+        let mut buf = Vec::new();
+        let mut ser = Serializer::with_formatter(&mut buf, NoHtmlEscape);
+        self.serialize(&mut ser)?;
         buf.push(b'\n');
         Ok(buf)
     }
@@ -282,6 +289,21 @@ impl Event {
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(str::to_string)
+    }
+}
+
+/// Compact JSON, but `<` `>` `&` are not `\u00xx`-escaped (Go `SetEscapeHTML(false)`).
+struct NoHtmlEscape;
+
+impl Formatter for NoHtmlEscape {
+    fn write_char_escape<W>(&mut self, writer: &mut W, char_escape: CharEscape) -> io::Result<()>
+    where
+        W: ?Sized + io::Write,
+    {
+        match char_escape {
+            CharEscape::AsciiControl(b @ (b'<' | b'>' | b'&')) => writer.write_all(&[b]),
+            other => CompactFormatter.write_char_escape(writer, other),
+        }
     }
 }
 
@@ -395,6 +417,21 @@ mod tests {
         let line = ev.marshal_line().unwrap();
         let want = b"{\"id\":\"01900000-0000-7000-8000-000000000001\",\"ts\":\"2024-01-15T12:00:00.000000000Z\",\"dev\":\"manual\",\"type\":\"note\",\"body\":{\"text\":\"ok\"}}\n";
         assert_eq!(line, want);
+    }
+
+    #[test]
+    fn marshal_does_not_html_escape() {
+        let ev = Event::new(
+            "01900000-0000-7000-8000-000000000001",
+            "2024-01-15T12:00:00.000000000Z",
+            "manual",
+            TYPE_NOTE,
+            json!({"text": "a<b>&c"}),
+        );
+        let line = ev.marshal_line().unwrap();
+        let s = String::from_utf8(line).unwrap();
+        assert!(s.contains("a<b>&c"), "{s}");
+        assert!(!s.contains("\\u003c"), "{s}");
     }
 
     #[test]
