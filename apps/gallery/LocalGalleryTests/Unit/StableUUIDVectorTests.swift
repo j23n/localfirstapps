@@ -34,18 +34,14 @@ final class StableUUIDVectorTests: XCTestCase {
         }
     }
 
-    func testCompositionFormsStayDistinct() throws {
-        // NFC and NFD spellings of the same visible name derive different ids,
-        // because the hash is over UTF-8 bytes. APFS hands back decomposed
-        // names, so this is not hypothetical — it is the behaviour to revisit
-        // when the scanner moves into the core (Phase 3). Pinned here so nobody
-        // "fixes" it by accident.
+    func testCompositionFormsShareOneId() throws {
+        // NFC and NFD spellings of the same visible name derive the same id
+        // after M1 (ADR 0002 R4): `derive` NFC-normalises before hashing.
+        // Inputs stay distinct on disk so the fixture is not vacuous.
         //
-        // Note the trap this test walked into first: Swift's `String ==` is
-        // canonical-equivalence based, so `nfc.input == nfd.input` is *true*
-        // while their ids differ. Any dedupe or lookup that compares Swift
-        // Strings will therefore disagree with anything comparing StableUUIDs.
-        // Compare `utf8` when the distinction matters.
+        // Swift's `String ==` is still canonical-equivalence based, so
+        // `nfc.input == nfd.input` is *true* while their UTF-8 bytes differ.
+        // Compare `utf8` when the byte distinction matters.
         let vectors = try StableUUIDVectors.load()
         for stem in ["cafe", "zurich", "hangul"] {
             let nfc = try XCTUnwrap(vectors.first { $0.label == "nfc-\(stem)" })
@@ -55,7 +51,7 @@ final class StableUUIDVectorTests: XCTestCase {
             XCTAssertEqual(nfc.input, nfd.input,
                            "\(stem): Swift String equality is canonical — if this ever fails, "
                            + "the fixture no longer holds the same visible name")
-            XCTAssertNotEqual(nfc.uuid, nfd.uuid, "\(stem): composed/decomposed must differ")
+            XCTAssertEqual(nfc.uuid, nfd.uuid, "\(stem): composed/decomposed must share one id")
         }
     }
 

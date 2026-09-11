@@ -54,10 +54,10 @@ fn matches_every_swift_vector() {
 }
 
 #[test]
-fn nfc_and_nfd_are_distinct() {
+fn nfc_and_nfd_are_equal() {
     // Guards the fixture itself: if an editor or filesystem ever normalizes the
-    // JSON, the paired vectors would collapse and the parity claim would be
-    // vacuous. Also documents the standing behaviour — no normalization.
+    // JSON, the paired inputs would collapse and the parity claim would be
+    // vacuous. After M1 the *ids* must match (ADR 0002 R4).
     let vectors = vectors();
     for stem in ["cafe", "zurich", "hangul"] {
         let nfc = vectors
@@ -69,9 +69,14 @@ fn nfc_and_nfd_are_distinct() {
             .find(|v| v.label == format!("nfd-{stem}"))
             .unwrap_or_else(|| panic!("missing nfd-{stem} vector"));
         assert_ne!(nfc.input, nfd.input, "{stem}: fixture was normalized");
-        assert_ne!(
+        assert_eq!(
             nfc.uuid, nfd.uuid,
-            "{stem}: composed/decomposed must differ"
+            "{stem}: composed/decomposed must share one id"
+        );
+        assert_eq!(
+            gallery_model::stable_uuid::derive(&nfc.input),
+            gallery_model::stable_uuid::derive(&nfd.input),
+            "{stem}: derive(nfc) must equal derive(nfd)"
         );
     }
 }

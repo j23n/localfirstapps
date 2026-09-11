@@ -233,11 +233,15 @@ struct PhotoFile: Identifiable, Hashable, Codable, Sendable {
 }
 
 /// SHA-256-truncated deterministic UUID with RFC 4122 variant + version-5 marker.
-/// Namespace-less; matches localmusic. Used by `PhotoFile` and `PhotoFolder` so
-/// the grid doesn't flicker on rescan.
+/// Namespace-less; matches `localcore_id::derive`. Used by `PhotoFile` and
+/// `PhotoFolder` so the grid doesn't flicker on rescan.
+///
+/// NFC-normalises (`precomposedStringWithCanonicalMapping`) before hashing so
+/// NFC and NFD spellings of one visible name share one id (ADR 0002 R4 / M1).
 enum StableUUID {
     static func derive(from input: String) -> UUID {
-        let digest = SHA256.hash(data: Data(input.utf8))
+        let nfc = input.precomposedStringWithCanonicalMapping
+        let digest = SHA256.hash(data: Data(nfc.utf8))
         var bytes = Array(digest.prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50   // version 5
         bytes[8] = (bytes[8] & 0x3F) | 0x80   // variant RFC 4122
