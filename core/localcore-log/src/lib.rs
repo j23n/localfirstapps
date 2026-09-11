@@ -2,11 +2,15 @@
 //!
 //! Files are append-only. Never rewrite, edit, or delete a line.
 //! Layout: `{root}/log/<dev>/YYYY-MM.ndjson`
+//! Field order: `id`, `ts`, `dev`, `type`, `body`.
+//! `ts` is UTC with 9 fractional digits. Marshal matches Go
+//! `SetEscapeHTML(false)` (`<`, `>`, `&` stay literal).
 //!
 //! Ported from health `internal/log` + `internal/event`. Gallery person-state
-//! types are accepted in the schema so one log serves both consumers. The Go
-//! packages stay until Phase 6. Gallery writes under `{library}/.gallery`
-//! (M2); this crate's `root` is that directory.
+//! types are accepted in the schema so one log serves both consumers. Health
+//! Go remains the writer until Phase 6; `tests/health_golden.rs` is the port
+//! contract (byte-identical m0 log + `read_all` parity). Gallery writes under
+//! `{library}/.gallery` (M2); this crate's `root` is that directory.
 
 #![forbid(unsafe_code)]
 
