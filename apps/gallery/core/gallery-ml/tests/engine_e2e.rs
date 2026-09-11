@@ -1315,13 +1315,7 @@ fn a_row_stranded_mid_flight_is_reclaimed_by_the_next_run() {
 /// R5: `done` is not claimable, and nothing but a pack change or an explicit
 /// reset moved a row off it — so a photo edited in place kept its old tags
 /// forever.
-///
-/// Known red (2026-09-12): the second `run()` reports `processed == 0`
-/// after rewriting `gradient.jpg` with `stripes.jpg` bytes. `gallery-ml`
-/// does not use `gallery-model`; this is not the Phase 1 snapshot cut.
-/// Re-enable when `restat_done_rows` notices the size change here.
 #[test]
-#[ignore = "known red: restat misses in-place rewrite; fix later"]
 fn a_photo_edited_in_place_is_re_tagged_without_a_reset() {
     let f = Fixture::with_files(&["gradient.jpg"]);
     f.enqueue_all(&["gradient.jpg"]);

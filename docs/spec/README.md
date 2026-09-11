@@ -107,8 +107,9 @@ Written answers live in `docs/spec/spikes/`.
 ## What is deliberately absent
 
 No sequencing, no migration steps, no per-repository task lists. A spec that
-describes the destination stays true while the work happens; a plan that
-describes the route is stale after the first week.
+describes the destination stays true while the work happens; the route is
+[`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md) and goes stale on
+purpose. There is no separate drop-in note.
 
 The one exception is that ADR 0005 R19 requires migrations to *exist* as
 first-class work with fixtures. It does not say when they happen.

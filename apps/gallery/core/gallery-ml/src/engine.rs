@@ -564,26 +564,25 @@ impl TaggingEngine {
             return Ok(None);
         };
 
+        // Embeddings are keyed by content hash. Do not read CLIP out of the
+        // sidecar here: that field is stamped with the pack version, not the
+        // bytes, so a Stale or forced row would reuse the previous picture
+        // and skip the write (`sidecars_written == 0` after an in-place edit).
         let model_key = self.pack.embedding_model_key();
         let dim = self.pack.manifest.model.embedding_dim;
-        let (embedding, cache_hit, hash) = if let Some(v) = self.sidecar_clip(path, dim) {
-            self.cache.put_embedding(&probe, &model_key, &v)?;
-            (v, true, probe)
-        } else {
-            match self.cache.embedding(&probe, &model_key)? {
-                Some(v) if v.len() == dim => (v, true, probe),
-                _ => {
-                    if cancelled() {
-                        return Ok(None);
-                    }
-                    let (tensor, hash) = self.decode_for_embed(path, &probe)?;
-                    if cancelled() {
-                        return Ok(None);
-                    }
-                    let v = self.encoder.embed(&tensor)?;
-                    self.cache.put_embedding(&hash, &model_key, &v)?;
-                    (v, false, hash)
+        let (embedding, cache_hit, hash) = match self.cache.embedding(&probe, &model_key)? {
+            Some(v) if v.len() == dim => (v, true, probe),
+            _ => {
+                if cancelled() {
+                    return Ok(None);
                 }
+                let (tensor, hash) = self.decode_for_embed(path, &probe)?;
+                if cancelled() {
+                    return Ok(None);
+                }
+                let v = self.encoder.embed(&tensor)?;
+                self.cache.put_embedding(&hash, &model_key, &v)?;
+                (v, false, hash)
             }
         };
 
@@ -631,14 +630,6 @@ impl TaggingEngine {
         self.sidecar_view(&item.path).is_some_and(|view| {
             view.photo_tools.tagger_version.as_deref() == Some(self.pack.version())
         })
-    }
-
-    fn sidecar_clip(&self, path: &str, dim: usize) -> Option<Vec<f32>> {
-        let view = self.sidecar_view(path)?;
-        if view.photo_tools.clip_model.as_deref() != Some(self.pack.version()) {
-            return None;
-        }
-        clip_embedding_from_b64(view.photo_tools.clip_embedding.as_deref()?, dim)
     }
 
     /// Decode + preprocess one photo for embedding.
@@ -817,6 +808,7 @@ fn clip_embedding_b64(embedding: &[f32]) -> String {
     encode_base64(&bytes)
 }
 
+#[cfg(test)]
 fn clip_embedding_from_b64(b64: &str, dim: usize) -> Option<Vec<f32>> {
     let bytes = decode_base64(b64)?;
     if bytes.len() != dim * 4 {
@@ -830,6 +822,7 @@ fn clip_embedding_from_b64(b64: &str, dim: usize) -> Option<Vec<f32>> {
     )
 }
 
+#[cfg(test)]
 fn decode_base64(input: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(input.len().div_ceil(4) * 3);
     let mut buf = 0u32;

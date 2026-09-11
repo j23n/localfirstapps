@@ -36,7 +36,7 @@ Coverage today — 4.5 of 12 cells:
 | localgallery | 40.5k Swift | 6.3k GTK | `--comet` |
 | localcontacts | 7.2k Swift | — | — |
 | localmusic | 7.1k Swift | — | — |
-| localhealth | — | Go + web UI (being removed) | — |
+| localhealth | — | Go CLI; web UI preserved at `reference/web-ui/` (not shipped) | — |
 
 Honest Swift classification, production only (test targets excluded):
 
@@ -391,7 +391,7 @@ Size: L. All Linux-container work.
 ### Phase 3 — `shell-kit` and localcontacts, the first *shell* vertical (Milestone C)
 
 Scope corrected: this proves **ADR 0004 and the vCard merge**, not "core +
-two shells". `localcore` was settled in Phase 1.
+two shells". `localcore` was settled in Phase 2.
 
 1. `shell-kit-gtk` — one binding per slot kind (ADR 0004 R6), app-agnostic.
    The reusable half of every Linux shell that follows.
@@ -465,7 +465,7 @@ Size: L–XL. Per-screen agent tasks against the slot vocabulary.
 Full Rust port, both shells — and **materially smaller than r1**, because
 ADR 0008 retires the riskiest component instead of porting it.
 
-1. `health-core` over `localcore-log` / `localcore-blob` (Phase 1).
+1. `health-core` over `localcore-log` / `localcore-blob` (Phase 2).
    Projection to SQLite.
 2. **HealthKit ingestion in the iOS shell** (ADR 0008 R2–R7): anchored query,
    canonical NDJSON blob per batch, one `blob_import` event, `retract` on
@@ -570,14 +570,15 @@ first year's risk is concentrated in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**Drive straight at Milestone A and stop there.** The 0.6 spikes are
-answered. Phase 0.1–0.5 plus Phase 1 is two or three weekends of agent work.
-It changes no behaviour a user would name except removing cloud placeholders
-and crash reporting, it deletes ~6,500 lines, and it ends with the ADRs
-sitting in a repository whose structure they describe.
+**Milestone A is done.** Phase 0.1–0.5 and Phase 1 have landed. Cloud
+placeholders, MetricKit, and `archive serve` are gone. The health web UI
+is the Phase 6 brief at `apps/health/reference/web-ui/`. Charts are one
+new ADR 0004 kind (plot IR as the payload), amended when a shell needs
+the binding — not a Chart.js port.
 
-**0.1–0.5 are done.** Next is **Phase 1 — deletions** (Milestone A).
-Read the specification against the cleaned tree and only afterwards
-start Phase 2. Reviewing ADRs against a codebase that still contains
-the code they retire is the mental overhead this ordering exists to
-remove.
+**Next is the ADR review, then Phase 2.** Read 0001–0008 against this
+tree, then extract `localcore-vfs` (ProviderAttrs off the trait). The
+graph stays red on `gallery-geo` until `localcore-geo` exists.
+
+Still not done, and not Phase 2: redirect READMEs on the old standalone
+GitHub remotes; a Mac `xcodebuild` of the three iOS shells.
