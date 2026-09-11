@@ -3,7 +3,7 @@
 This workspace holds `localcore-*` crates (ADR 0001 R9):
 
 `localcore-vfs`, `localcore-id`, `localcore-walk`, `localcore-conflict`,
-`localcore-queue`, `localcore-log`, `localcore-blob`.
+`localcore-queue`, `localcore-log`, `localcore-blob`, `localcore-geo`.
 
 Gallery remains at `apps/gallery/core` until later verticals move here.
 

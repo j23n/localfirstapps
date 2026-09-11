@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "localcore-blob",
     "localcore-conflict",
+    "localcore-geo",
     "localcore-id",
     "localcore-log",
     "localcore-queue",

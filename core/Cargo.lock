@@ -237,6 +237,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "localcore-geo"
+version = "0.1.0"
+
+[[package]]
 name = "localcore-id"
 version = "0.1.0"
 dependencies = [

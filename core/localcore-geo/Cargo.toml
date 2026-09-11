@@ -1,0 +1,10 @@
+[package]
+name = "localcore-geo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Offline place lookup: packed gazetteer + admin-0 point-in-polygon (ADR 0006 R10)."
+
+[dependencies]

@@ -1,0 +1,13 @@
+# Committed gazetteer subset (GeoNames-style names, CC BY 4.0 — ATTRIBUTION.md).
+# Columns: name	admin	lat	lon
+# Sufficient for Paris locality lookup. Niagara Falls, NY is the nearest
+# city to both sides of the river so the border test cannot cheat via city.
+name	admin	lat	lon
+Paris	Île-de-France	48.8566	2.3522
+Lyon	Auvergne-Rhône-Alpes	45.7640	4.8357
+Marseille	Provence-Alpes-Côte d'Azur	43.2965	5.3698
+Niagara Falls	New York	43.0962	-79.0377
+Buffalo	New York	42.8864	-78.8784
+New York	New York	40.7128	-74.0060
+Toronto	Ontario	43.6532	-79.3832
+Montreal	Quebec	45.5017	-73.5673
