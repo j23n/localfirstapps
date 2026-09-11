@@ -90,7 +90,8 @@ the surface is built around. `ScanTag`, `ScanRegion`, `ScanLocality`
 library into the engine. `MemoryRecord`, `ScheduledMemoryRecord`,
 `MemoryLeafFolder`, `MemoryContact`, `MemoryPersonLink`,
 `MemoryDateEntry`, `TagSuggestionRecord`, `LibraryIndexSummary`,
-`LibraryTagSuggestions`.
+`LibraryTagSuggestions`. M2 person-log projection: `PersonStateRecord`,
+`PersonKeyedString`.
 
 **Face / cluster domain.** `FaceRef`, `ClusterSummary`,
 `FaceAssignmentRecord`, `FacePhotoRecord`, `FaceMergeCandidate`,

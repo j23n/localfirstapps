@@ -52,6 +52,20 @@ If you sync with Syncthing (or SyncTrain on iOS), include sidecars.
 Exclude `gallery-cache.sqlite` if you sync the same folder the app
 uses as a library — the cache is per-device.
 
+## Person state (tier 2)
+
+Hidden / featured / me / cover-photo / contact-link decisions are
+operations in an append-only log, not UserDefaults snapshots:
+
+`{library}/.gallery/log/<dev>/YYYY-MM.ndjson`
+
+The log syncs with the library. The device id (`galleryDeviceId` in
+UserDefaults) is the ADR 0005 R5 per-device exception and must not
+sync. Memory chrome (`hiddenMemories`, …) is not in this log.
+
+A pre-M2 UserDefaults dump lives at
+`core/localcore-log/tests/fixtures/m2/userdefaults-person-state.json`.
+
 ## File-provider folders (iOS)
 
 Non-local items stay placeholders until opened. Sidecars can be

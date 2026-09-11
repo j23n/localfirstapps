@@ -25,6 +25,8 @@ MemoryRecord
 MergeProposal
 ModelPackInfo
 PackResolution
+PersonKeyedString
+PersonStateRecord
 PlaceWrite
 ReclusterSummary
 ScanContentVersion

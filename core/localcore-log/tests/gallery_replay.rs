@@ -1,13 +1,18 @@
 //! Dual-consumer replay: gallery person-state ops on the shared log.
 //!
-//! Does not touch Swift PeopleStore or UserDefaults (that is M2).
+//! M2: a pre-change UserDefaults dump migrates to operations and projects
+//! back to the same decisions. `person_renamed` is the rename, not a
+//! snapshot rewrite of the five keys.
 
 use localcore_log::{
-    append, project_people, read_all, Event, PeopleState, TYPE_FEATURED_PHOTO_SET,
-    TYPE_PERSON_FEATURED, TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_SET, TYPE_PERSON_RENAMED,
+    append, migrate_from_snapshot_json, project_people, project_people_at, read_all, ts_with_nanos,
+    Event, PersonSnapshot, PeopleState, TYPE_FEATURED_PHOTO_SET, TYPE_PERSON_FEATURED,
+    TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_SET, TYPE_PERSON_RENAMED,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::PathBuf;
 
 fn ev(id: &str, ts: &str, dev: &str, typ: &str, body: serde_json::Value) -> Event {
     Event::new(id, ts, dev, typ, body)
@@ -154,4 +159,91 @@ fn gallery_replay_sorts_across_devices() {
     let mut sorted = keys.clone();
     sorted.sort();
     assert_eq!(keys, sorted);
+}
+
+fn m2_dump() -> String {
+    fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/m2/userdefaults-person-state.json"),
+    )
+    .unwrap()
+}
+
+fn expected_from_m2_dump() -> PeopleState {
+    PeopleState {
+        hidden: BTreeSet::from(["People/Anna Schmidt".to_string()]),
+        featured: vec!["People/Ada".to_string(), "People/Cy".to_string()],
+        me: Some("People/Ada".to_string()),
+        featured_photo: BTreeMap::from([(
+            "People/Ada".to_string(),
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".to_string(),
+        )]),
+        links: BTreeMap::from([
+            ("People/Ada".to_string(), "CN:ada-uuid".to_string()),
+            ("People/Erin Hidden".to_string(), String::new()),
+        ]),
+    }
+}
+
+/// ADR 0005 R19: pre-M2 UserDefaults dump → migrate → project equals the dump.
+#[test]
+fn m2_userdefaults_dump_survives_migrate_and_project() {
+    let dump = m2_dump();
+    let snap = PersonSnapshot::parse(&dump).unwrap();
+    assert_eq!(snap.to_people_state(), expected_from_m2_dump());
+
+    let root = tempfile::tempdir().unwrap();
+    let n = migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
+    assert_eq!(n, 7, "2 featured + 1 photo + 1 me + 2 links + 1 hidden");
+    assert_eq!(
+        project_people_at(root.path()).unwrap(),
+        snap.to_people_state()
+    );
+    assert_eq!(
+        project_people_at(root.path()).unwrap(),
+        expected_from_m2_dump()
+    );
+
+    let again = migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
+    assert_eq!(again, 0, "migration is one-shot per device");
+    assert_eq!(read_all(root.path()).unwrap().len(), n);
+}
+
+/// A second device still imports its own dump; replay unions by (ts, id).
+#[test]
+fn m2_second_device_still_migrates() {
+    let dump = m2_dump();
+    let root = tempfile::tempdir().unwrap();
+    migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
+    let n = migrate_from_snapshot_json(root.path(), "linux", &dump).unwrap();
+    assert_eq!(n, 7);
+    assert_eq!(
+        project_people_at(root.path()).unwrap(),
+        expected_from_m2_dump()
+    );
+}
+
+/// Rename is a `person_renamed` event, not a rewrite of the five keys.
+#[test]
+fn m2_rename_is_a_replayed_event() {
+    let dump = m2_dump();
+    let root = tempfile::tempdir().unwrap();
+    migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
+    let last = read_all(root.path()).unwrap().pop().unwrap();
+    let last_nanos: u32 = last.ts[20..29].parse().unwrap();
+    let mut renamed = Event::fresh(
+        "ios",
+        TYPE_PERSON_RENAMED,
+        json!({"from": "People/Anna Schmidt", "to": "People/Ann Schmidt"}),
+    );
+    renamed.ts = ts_with_nanos(&last.ts, last_nanos + 1).unwrap();
+    append(root.path(), &renamed).unwrap();
+    let state = project_people_at(root.path()).unwrap();
+    assert!(state.hidden.contains("People/Ann Schmidt"));
+    assert!(!state.hidden.contains("People/Anna Schmidt"));
+    assert_eq!(
+        state.featured,
+        vec!["People/Ada".to_string(), "People/Cy".to_string()]
+    );
+    assert_eq!(state.me.as_deref(), Some("People/Ada"));
 }

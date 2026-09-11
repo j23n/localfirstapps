@@ -471,6 +471,7 @@ dependencies = [
  "gallery-scan",
  "gallery-session",
  "gallery-vfs",
+ "localcore-log",
  "tempfile",
  "uniffi",
  "uuid",
@@ -901,6 +902,14 @@ version = "0.1.0"
 dependencies = [
  "sha2",
  "uuid",
+]
+
+[[package]]
+name = "localcore-log"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

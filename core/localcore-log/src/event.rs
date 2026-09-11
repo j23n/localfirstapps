@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::ser::{CharEscape, CompactFormatter, Formatter, Serializer};
 use std::io;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::Error;
@@ -153,6 +154,53 @@ pub fn now_utc() -> String {
     format_unix(dur.as_secs() as i64, dur.subsec_nanos())
 }
 
+/// Replace the 9-digit fractional-second field of a canonical `ts`.
+pub fn ts_with_nanos(ts: &str, nanos: u32) -> Result<String, Error> {
+    validate_ts(ts)?;
+    if nanos >= 1_000_000_000 {
+        return Err(Error::Invalid("nanos must be < 1e9".into()));
+    }
+    let mut out = ts.to_string();
+    out.replace_range(20..29, &format!("{nanos:09}"));
+    Ok(out)
+}
+
+static EVENT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Time-ordered UUIDv7 (8-4-4-4-12 hex), matching health `internal/uuid`.
+pub fn new_event_id() -> String {
+    let dur = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let ms = dur.as_millis() as u64;
+    let n = EVENT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mix = n
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(dur.subsec_nanos() as u64);
+    let mut b = [0u8; 16];
+    b[0] = (ms >> 40) as u8;
+    b[1] = (ms >> 32) as u8;
+    b[2] = (ms >> 24) as u8;
+    b[3] = (ms >> 16) as u8;
+    b[4] = (ms >> 8) as u8;
+    b[5] = ms as u8;
+    b[6] = ((mix >> 48) as u8 & 0x0f) | 0x70;
+    b[7] = (mix >> 40) as u8;
+    b[8] = ((mix >> 32) as u8 & 0x3f) | 0x80;
+    b[9] = (mix >> 24) as u8;
+    b[10] = (mix >> 16) as u8;
+    b[11] = (mix >> 8) as u8;
+    b[12] = mix as u8;
+    b[13] = (n >> 16) as u8;
+    b[14] = (n >> 8) as u8;
+    b[15] = n as u8;
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13],
+        b[14], b[15]
+    )
+}
+
 /// Parse `YYYY-MM-DDTHH:MM:SS.fffffffffZ` and require the canonical spelling.
 fn validate_ts(ts: &str) -> Result<(), Error> {
     if ts.len() != TS_FORMAT.len() {
@@ -210,6 +258,15 @@ impl Event {
             event_type: event_type.into(),
             body,
         }
+    }
+
+    /// A new event with a UUIDv7 id and canonical UTC timestamp.
+    pub fn fresh(
+        dev: impl Into<String>,
+        event_type: impl Into<String>,
+        body: serde_json::Value,
+    ) -> Self {
+        Self::new(new_event_id(), now_utc(), dev, event_type, body)
     }
 
     /// Fields required to append.
@@ -457,5 +514,21 @@ mod tests {
     fn now_utc_is_canonical() {
         let ts = now_utc();
         validate_ts(&ts).expect(&ts);
+    }
+
+    #[test]
+    fn new_event_id_is_version_7() {
+        let id = new_event_id();
+        assert_eq!(id.len(), 36);
+        assert_eq!(&id[14..15], "7");
+        let second = new_event_id();
+        assert_ne!(id, second);
+    }
+
+    #[test]
+    fn ts_with_nanos_rewrites_fraction() {
+        let ts = ts_with_nanos("2024-07-01T10:00:00.000000000Z", 42).unwrap();
+        assert_eq!(ts, "2024-07-01T10:00:00.000000042Z");
+        validate_ts(&ts).unwrap();
     }
 }

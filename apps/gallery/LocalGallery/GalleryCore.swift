@@ -5742,6 +5742,135 @@ public func FfiConverterTypePackResolution_lower(_ value: PackResolution) -> Rus
 
 
 /**
+ * One path-keyed string in a projected person-state map.
+ */
+public struct PersonKeyedString: Equatable, Hashable {
+    public var path: String
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, value: String) {
+        self.path = path
+        self.value = value
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PersonKeyedString: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonKeyedString: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonKeyedString {
+        return
+            try PersonKeyedString(
+                path: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PersonKeyedString, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonKeyedString_lift(_ buf: RustBuffer) throws -> PersonKeyedString {
+    return try FfiConverterTypePersonKeyedString.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonKeyedString_lower(_ value: PersonKeyedString) -> RustBuffer {
+    return FfiConverterTypePersonKeyedString.lower(value)
+}
+
+
+/**
+ * Projected people-rail state after replaying `.gallery/log`.
+ *
+ * `me` is empty when unset. `links` values: a contact id, or empty for
+ * `PersonLink.disabled`.
+ */
+public struct PersonStateRecord: Equatable, Hashable {
+    public var hidden: [String]
+    public var featured: [String]
+    public var me: String
+    public var featuredPhoto: [PersonKeyedString]
+    public var links: [PersonKeyedString]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(hidden: [String], featured: [String], me: String, featuredPhoto: [PersonKeyedString], links: [PersonKeyedString]) {
+        self.hidden = hidden
+        self.featured = featured
+        self.me = me
+        self.featuredPhoto = featuredPhoto
+        self.links = links
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PersonStateRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonStateRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonStateRecord {
+        return
+            try PersonStateRecord(
+                hidden: FfiConverterSequenceString.read(from: &buf), 
+                featured: FfiConverterSequenceString.read(from: &buf), 
+                me: FfiConverterString.read(from: &buf), 
+                featuredPhoto: FfiConverterSequenceTypePersonKeyedString.read(from: &buf), 
+                links: FfiConverterSequenceTypePersonKeyedString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PersonStateRecord, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.hidden, into: &buf)
+        FfiConverterSequenceString.write(value.featured, into: &buf)
+        FfiConverterString.write(value.me, into: &buf)
+        FfiConverterSequenceTypePersonKeyedString.write(value.featuredPhoto, into: &buf)
+        FfiConverterSequenceTypePersonKeyedString.write(value.links, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonStateRecord_lift(_ buf: RustBuffer) throws -> PersonStateRecord {
+    return try FfiConverterTypePersonStateRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonStateRecord_lower(_ value: PersonStateRecord) -> RustBuffer {
+    return FfiConverterTypePersonStateRecord.lower(value)
+}
+
+
+/**
  * One reverse-geocoded place, matching photo-tools schema §1.3 / §2.2.
  */
 public struct PlaceWrite: Equatable, Hashable {
@@ -9117,6 +9246,153 @@ public func FfiConverterTypePackSource_lower(_ value: PackSource) -> RustBuffer 
 
 
 /**
+ * Why a person-log call failed.
+ */
+public 
+enum PersonLogError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    /**
+     * Bad device id, unknown type, or a body that is not a JSON object.
+     */
+    case Invalid(
+        /**
+         * Log text.
+         */detail: String
+    )
+    /**
+     * Filesystem said no.
+     */
+    case Io(
+        /**
+         * Path that failed.
+         */path: String, 
+        /**
+         * OS message; for logs only.
+         */detail: String
+    )
+    /**
+     * A complete line was not JSON.
+     */
+    case Json(
+        /**
+         * Parser message; for logs only.
+         */detail: String
+    )
+    /**
+     * A truncated last line (ADR 0005 R16). Not mid-file corruption.
+     */
+    case TornTail(
+        /**
+         * File that ended mid-record.
+         */path: String, 
+        /**
+         * Byte offset of the torn line.
+         */offset: UInt64, 
+        /**
+         * Parser message; for logs only.
+         */detail: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension PersonLogError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonLogError: FfiConverterRustBuffer {
+    typealias SwiftType = PersonLogError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonLogError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Invalid(
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 2: return .Io(
+            path: try FfiConverterString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 3: return .Json(
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 4: return .TornTail(
+            path: try FfiConverterString.read(from: &buf), 
+            offset: try FfiConverterUInt64.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PersonLogError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .Invalid(detail):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .Io(path,detail):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .Json(detail):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .TornTail(path,offset,detail):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterUInt64.write(offset, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonLogError_lift(_ buf: RustBuffer) throws -> PersonLogError {
+    return try FfiConverterTypePersonLogError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonLogError_lower(_ value: PersonLogError) -> RustBuffer {
+    return FfiConverterTypePersonLogError.lower(value)
+}
+
+
+/**
  * Why a Places write failed.
  */
 public 
@@ -10498,6 +10774,31 @@ fileprivate struct FfiConverterSequenceTypeMergeProposal: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePersonKeyedString: FfiConverterRustBuffer {
+    typealias SwiftType = [PersonKeyedString]
+
+    public static func write(_ value: [PersonKeyedString], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePersonKeyedString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PersonKeyedString] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PersonKeyedString]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePersonKeyedString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeScanFolderNode: FfiConverterRustBuffer {
     typealias SwiftType = [ScanFolderNode]
 
@@ -10795,6 +11096,54 @@ public func scheduledMemoryHorizonDays() -> Int64  {
     return try!  FfiConverterInt64.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_scheduled_memory_horizon_days(uniffiCallStatus
+    )
+})
+}
+/**
+ * Append one person-state operation. `body_json` is a JSON object.
+ */
+public func personLogAppend(root: String, device: String, eventType: String, bodyJson: String)throws   {try rustCallWithError(FfiConverterTypePersonLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_person_log_append(
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(device),
+        FfiConverterString.lower(eventType),
+        FfiConverterString.lower(bodyJson),uniffiCallStatus
+    )
+}
+}
+/**
+ * One-shot import of the five UserDefaults keys. Returns events written.
+ */
+public func personLogMigrateFromSnapshot(root: String, device: String, snapshotJson: String)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypePersonLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_person_log_migrate_from_snapshot(
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(device),
+        FfiConverterString.lower(snapshotJson),uniffiCallStatus
+    )
+})
+}
+/**
+ * Replay every device file under `{root}/.gallery/log`.
+ */
+public func personLogProject(root: String)throws  -> PersonStateRecord  {
+    return try  FfiConverterTypePersonStateRecord_lift(try rustCallWithError(FfiConverterTypePersonLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_person_log_project(
+        FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+/**
+ * JSON array of every event under `{root}/.gallery/log`, sorted by (ts, id).
+ */
+public func personLogRead(root: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypePersonLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_person_log_read(
+        FfiConverterString.lower(root),uniffiCallStatus
     )
 })
 }
@@ -11132,6 +11481,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_scheduled_memory_horizon_days() != 19202) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_person_log_append() != 29822) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_person_log_migrate_from_snapshot() != 59074) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_person_log_project() != 61117) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_person_log_read() != 7200) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_is_strict_places_prefix() != 7811) {

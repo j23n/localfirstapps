@@ -23,6 +23,7 @@ gallery-session = { path = "../gallery-session" }
 gallery-model = { path = "../gallery-model" }
 gallery-scan = { path = "../gallery-scan" }
 gallery-vfs = { path = "../gallery-vfs" }
+localcore-log = { path = "../../../../core/localcore-log" }
 uniffi = { workspace = true }
 uuid = { version = "1", default-features = false }
 

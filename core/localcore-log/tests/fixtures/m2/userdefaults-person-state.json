@@ -1,0 +1,12 @@
+{
+  "hiddenPeople": ["People/Anna Schmidt"],
+  "pinnedPeople": ["People/Ada", "People/Cy"],
+  "featuredPhotoByPerson": {
+    "People/Ada": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  },
+  "mePersonPath": "People/Ada",
+  "personContactLinks": {
+    "People/Ada": { "manual": { "contactID": "CN:ada-uuid" } },
+    "People/Erin Hidden": { "disabled": {} }
+  }
+}

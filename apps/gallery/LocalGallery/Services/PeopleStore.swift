@@ -6,10 +6,10 @@ import Observation
 /// from `GalleryStore` so the whole People feature lives (and can be tested)
 /// in one place; views reach it via `store.people`.
 ///
-/// Owns its UserDefaults persistence. Cross-domain side effects (memory
-/// regeneration when hidden/me changes, widget re-export when visibility
-/// changes) are injected as closures by the Store — this type knows nothing
-/// about memories or widgets.
+/// Owns UserDefaults dual-write plus the synced `.gallery/log` (ADR 0005
+/// R5/R13). Cross-domain side effects (memory regeneration when hidden/me
+/// changes, widget re-export when visibility changes) are injected as
+/// closures by the Store — this type knows nothing about memories or widgets.
 @Observable
 @MainActor
 final class PeopleStore {
@@ -56,6 +56,12 @@ final class PeopleStore {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let clock: any Clock
+    /// ADR 0005 R5: per-device, not synced.
+    @ObservationIgnored let deviceId: String
+    /// Library folder; log lives at `{libraryRoot}/.gallery/log/<deviceId>/`.
+    @ObservationIgnored private(set) var libraryRoot: URL?
+    /// False while applying a projection so we do not re-append.
+    @ObservationIgnored private var writeLog = true
     /// The core library index: O(1) photo lookup for featured-photo IDs, and
     /// the tag → photos buckets for the candidate pool. Strong reference is
     /// cycle-free: the index doesn't know about this type.
@@ -68,11 +74,14 @@ final class PeopleStore {
     init(
         defaults: UserDefaults,
         clock: any Clock,
-        index: CoreLibraryIndex
+        index: CoreLibraryIndex,
+        libraryRoot: URL? = nil
     ) {
         self.defaults = defaults
         self.clock = clock
         self.index = index
+        self.deviceId = PersonLog.deviceId(in: defaults)
+        self.libraryRoot = libraryRoot
 
         if let hidden = defaults.array(forKey: "hiddenPeople") as? [String] {
             hiddenPeople = Set(hidden)
@@ -140,14 +149,41 @@ final class PeopleStore {
 
     // MARK: Mutations
 
+    /// Bind the synced log once the library folder is known, then migrate
+    /// the UserDefaults snapshot if this device has not written yet.
+    @discardableResult
+    func attachLibrary(_ root: URL, snapshot: PersonLog.Snapshot) -> PersonLog.State? {
+        libraryRoot = root
+        PersonLog.migrate(libraryRoot: root, device: deviceId, snapshot: snapshot)
+        guard let state = PersonLog.project(libraryRoot: root) else { return nil }
+        applyProjection(state)
+        return state
+    }
+
+    func applyProjection(_ state: PersonLog.State) {
+        writeLog = false
+        hiddenPeople = state.hidden
+        featuredPeople = state.featured
+        featuredPhotoByPerson = state.featuredPhoto.compactMapValues { UUID(uuidString: $0) }
+        mePersonPath = state.me
+        writeLog = true
+    }
+
+    func appendPersonEvent(_ type: String, _ body: [(String, PersonLog.LogJSON)]) {
+        guard writeLog, let root = libraryRoot else { return }
+        PersonLog.append(libraryRoot: root, device: deviceId, type: type, body: body)
+    }
+
     func hidePerson(_ path: String) {
         hiddenPeople.insert(path)
         featuredPeople.removeAll { $0 == path }
+        appendPersonEvent("person_hidden", [("path", .string(path))])
         onWidgetAffectingChange?()
     }
 
     func unhidePerson(_ path: String) {
         hiddenPeople.remove(path)
+        appendPersonEvent("person_unhidden", [("path", .string(path))])
         onWidgetAffectingChange?()
     }
 
@@ -158,8 +194,10 @@ final class PeopleStore {
     func toggleFeaturePerson(_ path: String) {
         if let idx = featuredPeople.firstIndex(of: path) {
             featuredPeople.remove(at: idx)
+            appendPersonEvent("person_unfeatured", [("path", .string(path))])
         } else {
             featuredPeople.append(path)
+            appendPersonEvent("person_featured", [("path", .string(path))])
         }
         // Featured ordering floats people to the front of the rail, which
         // the widget mirrors.
@@ -172,14 +210,20 @@ final class PeopleStore {
 
     func markAsMe(_ path: String) {
         mePersonPath = path
+        appendPersonEvent("person_me_set", [("path", .string(path))])
     }
 
     func unmarkAsMe() {
         mePersonPath = ""
+        appendPersonEvent("person_me_clear", [])
     }
 
     func setFeaturedPhoto(personPath: String, photoID: UUID) {
         featuredPhotoByPerson[personPath] = photoID
+        appendPersonEvent("featured_photo_set", [
+            ("path", .string(personPath)),
+            ("photo", .string(photoID.uuidString)),
+        ])
         onWidgetAffectingChange?()
     }
 
@@ -189,32 +233,35 @@ final class PeopleStore {
     func remapFeaturedPhotoIDs(_ map: [UUID: UUID]) {
         guard !map.isEmpty else { return }
         var next = featuredPhotoByPerson
-        var changed = false
+        var remapped: [(String, UUID)] = []
         for (path, id) in featuredPhotoByPerson {
             if let new = map[id] {
                 next[path] = new
-                changed = true
+                remapped.append((path, new))
             }
         }
-        if changed { featuredPhotoByPerson = next }
+        if !remapped.isEmpty {
+            featuredPhotoByPerson = next
+            for (path, new) in remapped {
+                appendPersonEvent("featured_photo_set", [
+                    ("path", .string(path)),
+                    ("photo", .string(new.uuidString)),
+                ])
+            }
+        }
     }
 
     /// Carry every persisted decision about a person across a rename.
     ///
-    /// All four of this type's persisted keys are tag paths, and the rescan
-    /// that follows a rename cannot tell a renamed person from a new one — so
-    /// without this the user silently loses their "me" person, their pins,
-    /// their hidden set and their cover photos, and nothing tells them until
-    /// they go looking. Called by the Store after the core reports the sidecars
-    /// written and before the rescan publishes the new path.
-    ///
-    /// Collisions are possible, because renaming onto an existing person is a
-    /// supported merge at the name level. Each key resolves one: the hidden set
-    /// collapses (set semantics), the feature list keeps one entry in the older
-    /// position, and the cover photo the user picked for the *new* name wins —
-    /// that is the name they just chose.
+    /// Dual-write: local keys still move (so UserDefaults tests stay green)
+    /// and a `person_renamed` event is appended so replay migrates every
+    /// device identically (ADR 0005 R14).
     func renamePerson(from old: String, to new: String) {
         guard old != new else { return }
+        appendPersonEvent("person_renamed", [
+            ("from", .string(old)),
+            ("to", .string(new)),
+        ])
 
         if hiddenPeople.contains(old) {
             hiddenPeople.remove(old)
