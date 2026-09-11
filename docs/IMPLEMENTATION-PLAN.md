@@ -579,7 +579,7 @@ the binding — not a Chart.js port.
 **Phase 2 has started.** `core/` exists and `localcore-vfs` is extracted
 (`ProviderAttrs` off the `Vfs` trait; temp prefix is a parameter). The
 graph stays red on `gallery-geo` until `localcore-geo` exists. Still
-ahead: drop `ProviderProbe` from UniFFI, then the remaining verticals.
+ahead: the remaining verticals (`ProviderProbe` is off the UniFFI surface).
 
 Still not done, and not Phase 2: redirect READMEs on the old standalone
 GitHub remotes; a Mac `xcodebuild` of the three iOS shells.

@@ -2,8 +2,8 @@ import Foundation
 import os
 import os.lock
 
-/// The app's side of the Rust scanner: the provider probe the core calls back
-/// into, and the bridge that turns a `ScanOutcomeRecord` into the app's own
+/// The app's side of the Rust scanner: owns the core's `ScannerSession` and
+/// the bridge that turns a `ScanOutcomeRecord` into the app's own
 /// `PhotoFile` / `PhotoFolder` values.
 ///
 /// Replaces `FolderScanner`. Scan *policy* — light/full/auto resolution, the
@@ -64,10 +64,8 @@ final class CoreScanner: Sendable {
     private let session: ScannerSession
 
     init() {
-        // Phase 1: no file-provider callback. The Rust default is "plain
-        // local file"; this probe says the same so iCloud placeholders
-        // are absent from the projection (ADR 0005 R2).
-        session = ScannerSession(probe: LocalOnlyProbe())
+        // Local-only: no ProviderProbe on the FFI (ADR 0005 R2).
+        session = ScannerSession()
     }
 
     /// Walk `rootURL` and produce the tree, the flat list, and the diff.
@@ -382,24 +380,5 @@ final class CoreScanner: Sendable {
             ),
             downloadStatus: candidate.downloadStatus.rawValue
         )
-    }
-}
-
-
-// MARK: - Local-only probe
-
-/// Phase 1: the scanner still takes a `ProviderProbe` (FFI). This one
-/// never reads file-provider keys. Everything is a plain local file, so
-/// placeholders do not enter the projection (ADR 0005 R2).
-final class LocalOnlyProbe: ProviderProbe {
-    func probe(paths: [String]) -> [VfsProviderAttrs] {
-        paths.map { _ in
-            VfsProviderAttrs(
-                isFileProvider: false,
-                isPlaceholder: false,
-                contentVersion: nil,
-                intendedSize: nil
-            )
-        }
     }
 }

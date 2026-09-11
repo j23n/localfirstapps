@@ -8,32 +8,13 @@
 //! The Store already owns the concurrency policy (dedupe, two-phase ordering,
 //! the 48-hour promotion).
 //!
-//! Two things still need somewhere to live, and both are per-*app* rather than
-//! per-call:
-//!
-//! * the [`ProviderProbe`] the core calls back into, and
-//! * the cancel flag, which by definition has to be reachable from a thread
-//!   that is not the one blocked inside `scan`.
+//! The cancel flag still needs somewhere to live, and it is per-*app* rather
+//! than per-call: by definition it has to be reachable from a thread that is
+//! not the one blocked inside `scan`.
 //!
 //! [`ScannerSession`] is that home. It holds no scan state between calls: the
 //! cache goes in with each request and the outcome comes straight back out.
-//!
-//! # Why the probe is the *only* thing Swift implements
-//!
-//! A full Swift `Vfs` (list, stat, read) so listings could carry
-//! `is_placeholder` and `content_version` is the wrong split. Everything
-//! except those provider attributes is
-//! plain POSIX, and `std::fs` does it under the app's already-active security
-//! scope; routing 20k listings through UniFFI *and* Foundation's URL
-//! resource-value machinery costs about 7 s of `resourceValues` calls that
-//! `read_dir` does in 40 ms.
-//!
-//! So the boundary carries exactly what only Swift can answer:
-//! `URLResourceKey`-derived provider attributes, batched per directory, for the
-//! minority of files a pass actually rebuilds. A light scan over an unchanged
-//! library crosses the boundary **zero** times. The seam for a future
-//! handle-based backend (Android SAF) is still [`gallery_vfs::Vfs`], which is
-//! where it belongs.
+//! The walk is always local ([`StdVfs`]); there is no platform probe.
 //!
 //! # Why the tree comes back flat
 //!
@@ -131,63 +112,13 @@ impl From<SnapshotError> for ScanError {
 }
 
 // ---------------------------------------------------------------------------
-// The one thing Swift implements
+// Progress
 // ---------------------------------------------------------------------------
-
-/// `URLResourceKey`-derived facts about a file that POSIX cannot report.
-#[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Record)]
-pub struct VfsProviderAttrs {
-    /// The file belongs to a file provider (iCloud Drive, OneDrive, …) rather
-    /// than to plain local storage.
-    pub is_file_provider: bool,
-    /// The bytes have not been materialised.
-    pub is_placeholder: bool,
-    /// `fileContentIdentifierKey`, stringified. `None` when the provider
-    /// vends none and callers fall back to `(mtime, size)`.
-    pub content_version: Option<String>,
-    /// `totalFileSizeKey` — the size the file has once its bytes are here,
-    /// which for a placeholder is not the size a `stat` reports. Feeds the
-    /// sidecar manifest's `ContentVersion.size`, where the Swift baseline wrote
-    /// `totalFileSize ?? fileSize`. `None` falls back to the listing's size.
-    pub intended_size: Option<i64>,
-}
-
-/// The platform's provider-attribute reader.
-///
-/// # Contract
-///
-/// Called on the core's scan thread, **never** on the main actor, once per
-/// directory that needs it. Implementations must:
-///
-/// * return exactly one row per input path, in order — the core matches
-///   positionally, and a short reply degrades the tail to "plain local file";
-/// * never call back into the core, which is what would deadlock the
-///   synchronous bridge;
-/// * treat a failed read as [`VfsProviderAttrs::default`] rather than throwing
-///   the batch away, mirroring the `try?` the Swift baseline used.
-///
-/// Implementations are expected to *fan the batch out*. Each of these is a
-/// blocking XPC round trip to `fileproviderd`; run serially they were 99.4% of
-/// a cold scan (docs/adr/0002).
-///
-/// **The match is positional and nothing re-keys it.** An implementation that
-/// fans the batch out owes the core answers written back into the slots it was
-/// asked about — `CoreProviderProbe` does exactly that, striping into a
-/// positional array. A reply of the wrong length is a platform bug the core
-/// cannot paper over, so [`Vfs::probe_provider`] turns one into a batch of
-/// defaults rather than silently pairing path `i` with answer `i` for a
-/// prefix and losing the tail.
-#[uniffi::export(with_foreign)]
-pub trait ProviderProbe: Send + Sync {
-    /// Provider attributes for `paths`, positionally — exactly one row per
-    /// input path, in the same order.
-    fn probe(&self, paths: Vec<String>) -> Vec<VfsProviderAttrs>;
-}
 
 /// Progress during a walk.
 ///
 /// Fires on the scan thread every 500 photos and once at the end with the true
-/// total. Same rule as the probe: do not call back into the core.
+/// total. Do not call back into the core from this callback.
 #[uniffi::export(with_foreign)]
 pub trait ScanProgressListener: Send + Sync {
     /// Photos discovered so far.
@@ -342,15 +273,13 @@ pub struct ScanTimings {
     pub total_millis: u64,
     /// Directory listings.
     pub list_millis: u64,
-    /// Provider probes — the whole of Finding 1.
+    /// Provider probes — always 0; the scanner is local-only.
     pub probe_millis: u64,
-    /// Paths probed.
+    /// Paths probed — always 0.
     pub probed_paths: u32,
-    /// Batched probe calls — i.e. boundary crossings.
+    /// Batched probe calls — always 0.
     pub probe_batches: u32,
-    /// Probe batches discarded because the reply did not have one row per
-    /// requested path. Always 0 when the platform probe is behaving; anything
-    /// else means those directories were scanned as plain local storage.
+    /// Probe batches discarded for a wrong-length reply — always 0.
     pub probe_mismatches: u32,
     /// Photos reused verbatim from the cache.
     pub cache_hits: u32,
@@ -431,9 +360,6 @@ pub struct SnapshotRecord {
 /// it has already cancelled is the Swift side's job, and `CoreScanner` does it.
 #[derive(uniffi::Object)]
 pub struct ScannerSession {
-    /// Kept so `ScannerSession(probe:)` still compiles. Scan ignores it.
-    #[allow(dead_code)]
-    probe: Option<Arc<dyn ProviderProbe>>,
     /// Generation handed to the next run. Monotonic, never reused.
     next_generation: AtomicU64,
     /// Generation of the run in flight; `IDLE` when none is.
@@ -467,25 +393,12 @@ impl Drop for RunGuard<'_> {
 
 #[uniffi::export]
 impl ScannerSession {
-    /// Build a session over the platform's provider probe.
-    ///
-    /// Cheap: the session holds no cache and opens no files, so making one per
-    /// Store is fine and making one per scan would be too.
+    /// Build a session. Cheap: the session holds no cache and opens no files,
+    /// so making one per Store is fine and making one per scan would be too.
+    /// The walk is always local; there is no platform probe.
     #[uniffi::constructor]
-    pub fn new(probe: Arc<dyn ProviderProbe>) -> Arc<Self> {
+    pub fn new() -> Arc<Self> {
         Arc::new(ScannerSession {
-            probe: Some(probe),
-            next_generation: AtomicU64::new(IDLE + 1),
-            running_generation: AtomicU64::new(IDLE),
-            cancelled_generation: AtomicU64::new(IDLE),
-        })
-    }
-
-    /// A session that does not take a platform probe. Scan is always local.
-    #[uniffi::constructor]
-    pub fn without_probe() -> Arc<Self> {
-        Arc::new(ScannerSession {
-            probe: None,
             next_generation: AtomicU64::new(IDLE + 1),
             running_generation: AtomicU64::new(IDLE),
             cancelled_generation: AtomicU64::new(IDLE),
@@ -496,8 +409,7 @@ impl ScannerSession {
     ///
     /// **Blocking, and single-threaded by design.** The caller runs it off the
     /// main actor; the core does not spawn for it, because the whole point of
-    /// the call is the answer. Progress fires on this thread. The constructor
-    /// probe, if any, is ignored.
+    /// the call is the answer. Progress fires on this thread.
     pub fn scan(
         &self,
         root: String,
@@ -542,7 +454,7 @@ impl ScannerSession {
         )
         .ok_or(ScanError::Cancelled)?;
 
-        Ok(outcome_to_record(outcome, started.elapsed(), 0))
+        Ok(outcome_to_record(outcome, started.elapsed()))
     }
 
     /// Ask the in-flight walk to stop. Returns immediately; the blocked
@@ -1122,7 +1034,6 @@ fn build(
 fn outcome_to_record(
     outcome: gallery_scan::ScanOutcome,
     elapsed: std::time::Duration,
-    boundary_mismatches: u64,
 ) -> ScanOutcomeRecord {
     let stats = outcome.stats;
     let mut folders = Vec::new();
@@ -1148,13 +1059,12 @@ fn outcome_to_record(
         timings: ScanTimings {
             total_millis: elapsed.as_millis() as u64,
             list_millis: stats.list_micros / 1000,
-            probe_millis: stats.probe_micros / 1000,
-            probed_paths: stats.probed_paths as u32,
-            probe_batches: stats.probe_batches as u32,
-            // Both layers can catch one: the boundary rejects a mis-sized
-            // foreign reply before the core ever sees it, and the core's own
-            // check covers any other `Vfs` implementation.
-            probe_mismatches: (stats.probe_mismatches + boundary_mismatches) as u32,
+            // Probe fields stay on the wire so existing Swift / generated
+            // bindings keep compiling. The scanner is local-only; always zero.
+            probe_millis: 0,
+            probed_paths: 0,
+            probe_batches: 0,
+            probe_mismatches: 0,
             cache_hits: stats.cache_hits as u32,
             slow_path: stats.slow_path as u32,
             folders: stats.folders as u32,
@@ -1165,13 +1075,6 @@ fn outcome_to_record(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct AllLocal;
-    impl ProviderProbe for AllLocal {
-        fn probe(&self, paths: Vec<String>) -> Vec<VfsProviderAttrs> {
-            vec![VfsProviderAttrs::default(); paths.len()]
-        }
-    }
 
     fn library() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -1194,7 +1097,7 @@ mod tests {
     #[test]
     fn a_scan_reports_the_tree_as_slices_of_the_flat_list() {
         let dir = library();
-        let session = ScannerSession::new(Arc::new(AllLocal));
+        let session = ScannerSession::new();
         let out = session
             .scan(
                 dir.path().to_str().unwrap().to_string(),
@@ -1226,7 +1129,7 @@ mod tests {
     fn a_light_pass_over_the_previous_outcome_is_all_cache_hits() {
         let dir = library();
         let root = dir.path().to_str().unwrap().to_string();
-        let session = ScannerSession::new(Arc::new(AllLocal));
+        let session = ScannerSession::new();
         let cold = session.scan(root.clone(), empty_request(), None).unwrap();
 
         let light = session
@@ -1259,7 +1162,7 @@ mod tests {
         }
         let dir = library();
         let sink = Arc::new(Sink(std::sync::Mutex::new(Vec::new())));
-        let session = ScannerSession::new(Arc::new(AllLocal));
+        let session = ScannerSession::new();
         let out = session
             .scan(
                 dir.path().to_str().unwrap().to_string(),
@@ -1295,7 +1198,7 @@ mod tests {
         std::fs::write(dir.path().join("Sub/z.jpg"), b"z").unwrap();
         let root = dir.path().to_str().unwrap().to_string();
 
-        let session = ScannerSession::without_probe();
+        let session = ScannerSession::new();
         let listener = Arc::new(CancelOnFirst(Arc::clone(&session)));
         let err = session
             .scan(root.clone(), empty_request(), Some(listener))
@@ -1315,7 +1218,7 @@ mod tests {
     fn a_cancel_between_scans_does_not_reach_the_next_one() {
         let dir = library();
         let root = dir.path().to_str().unwrap().to_string();
-        let session = ScannerSession::new(Arc::new(AllLocal));
+        let session = ScannerSession::new();
 
         // Before anything has ever run.
         session.cancel();
@@ -1343,7 +1246,7 @@ mod tests {
     #[test]
     fn a_snapshot_round_trips_through_the_flattened_tree() {
         let dir = library();
-        let session = ScannerSession::new(Arc::new(AllLocal));
+        let session = ScannerSession::new();
         let out = session
             .scan(
                 dir.path().to_str().unwrap().to_string(),

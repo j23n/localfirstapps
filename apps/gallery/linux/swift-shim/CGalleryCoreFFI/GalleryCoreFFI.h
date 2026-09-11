@@ -278,13 +278,6 @@ typedef void (*UniffiCallbackInterfaceHeicDecoderMethod0)(uint64_t, RustBuffer, 
     );
 
 #endif
-#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_PROVIDER_PROBE_METHOD0
-#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_PROVIDER_PROBE_METHOD0
-typedef void (*UniffiCallbackInterfaceProviderProbeMethod0)(uint64_t, RustBuffer, RustBuffer* _Nonnull, 
-        RustCallStatus *_Nonnull uniffiCallStatus
-    );
-
-#endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_SCAN_PROGRESS_LISTENER_METHOD0
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_SCAN_PROGRESS_LISTENER_METHOD0
 typedef void (*UniffiCallbackInterfaceScanProgressListenerMethod0)(uint64_t, uint32_t, void* _Nonnull, 
@@ -332,15 +325,6 @@ typedef struct UniffiVTableCallbackInterfaceHeicDecoder {
     UniffiCallbackInterfaceClone _Nonnull uniffiClone;
     UniffiCallbackInterfaceHeicDecoderMethod0 _Nonnull decode;
 } UniffiVTableCallbackInterfaceHeicDecoder;
-
-#endif
-#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_PROVIDER_PROBE
-#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_PROVIDER_PROBE
-typedef struct UniffiVTableCallbackInterfaceProviderProbe {
-    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
-    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
-    UniffiCallbackInterfaceProviderProbeMethod0 _Nonnull probe;
-} UniffiVTableCallbackInterfaceProviderProbe;
 
 #endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_SCAN_PROGRESS_LISTENER
@@ -635,26 +619,6 @@ RustBuffer uniffi_gallery_ffi_fn_method_memorygenerator_generate(uint64_t ptr, R
 int8_t uniffi_gallery_ffi_fn_method_memorygenerator_is_cancelled(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_PROVIDERPROBE
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_PROVIDERPROBE
-uint64_t uniffi_gallery_ffi_fn_clone_providerprobe(uint64_t handle, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_PROVIDERPROBE
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_PROVIDERPROBE
-void uniffi_gallery_ffi_fn_free_providerprobe(uint64_t handle, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_INIT_CALLBACK_VTABLE_PROVIDERPROBE
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_INIT_CALLBACK_VTABLE_PROVIDERPROBE
-void uniffi_gallery_ffi_fn_init_callback_vtable_providerprobe(const UniffiVTableCallbackInterfaceProviderProbe* _Nonnull vtable
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PROVIDERPROBE_PROBE
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PROVIDERPROBE_PROBE
-RustBuffer uniffi_gallery_ffi_fn_method_providerprobe_probe(uint64_t ptr, RustBuffer paths, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_SCANPROGRESSLISTENER
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_SCANPROGRESSLISTENER
 uint64_t uniffi_gallery_ffi_fn_clone_scanprogresslistener(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -687,7 +651,8 @@ void uniffi_gallery_ffi_fn_free_scannersession(uint64_t handle, RustCallStatus *
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CONSTRUCTOR_SCANNERSESSION_NEW
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CONSTRUCTOR_SCANNERSESSION_NEW
-uint64_t uniffi_gallery_ffi_fn_constructor_scannersession_new(uint64_t probe, RustCallStatus *_Nonnull out_status
+uint64_t uniffi_gallery_ffi_fn_constructor_scannersession_new(RustCallStatus *_Nonnull out_status
+    
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_SCANNERSESSION_CANCEL
@@ -1600,12 +1565,6 @@ uint16_t uniffi_gallery_ffi_checksum_method_memorygenerator_generate(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_MEMORYGENERATOR_IS_CANCELLED
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_MEMORYGENERATOR_IS_CANCELLED
 uint16_t uniffi_gallery_ffi_checksum_method_memorygenerator_is_cancelled(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PROVIDERPROBE_PROBE
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PROVIDERPROBE_PROBE
-uint16_t uniffi_gallery_ffi_checksum_method_providerprobe_probe(void
     
 );
 #endif
