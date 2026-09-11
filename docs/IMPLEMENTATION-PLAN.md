@@ -162,6 +162,7 @@ docs/               index.html style.css screenshots/   (Pages source)
   spec/             the eight ADRs + spike answers
   IMPLEMENTATION-PLAN.md
 docker/
+mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
 apps/gallery/       was localgallery (Swift + core/ + linux/)
 apps/contacts/      was localcontacts
 apps/music/         was localmusic
@@ -198,8 +199,10 @@ vocabulary table, Store-in-the-shell, identity without NFC, `Data.write`
 vs temp-rename, per-app `os.Logger`, per-repo CI) are gone because the
 file is gone. Spec is in `docs/spec/`.
 
-**0.3 Environments.** `docker/` as delivered. `mac/bootstrap.sh` as its
-sibling. Work-item routing documented (§5).
+**0.3 Environments — done.** `docker/` as delivered (monorepo mount).
+`mac/bootstrap.sh` is its sibling: Xcode CLT, the gallery rustup pin,
+XcodeGen 2.46.0 via the existing checksummed installer. Work-item
+routing lives in `.agents/ROUTING.md` (plan §6).
 
 **0.4 Commit the bindings, and give Linux a compile signal.** Commit the
 generated UniFFI Swift; CI regenerates and fails on drift. **Replace the
@@ -466,6 +469,8 @@ Size: L. (r1 sized this XL; ADR 0008 and core-loop parity are why.)
 
 ## 6. How work routes to agents
 
+Living copy: [`.agents/ROUTING.md`](../.agents/ROUTING.md).
+
 **By work item, not by path.** 27% of gallery's recent commits touch both
 Swift and `core/*.rs`, and they are the architecturally significant ones —
 "Move Places, pack, and merge policy into the core" is 26 Swift files and 23
@@ -543,10 +548,9 @@ It changes no behaviour a user would name except removing cloud placeholders
 and crash reporting, it deletes ~6,500 lines, and it ends with the ADRs
 sitting in a repository whose structure they describe.
 
-**0.1 and 0.2 are done.** Next is **0.3 — environments** (`docker/` as
-delivered, `mac/bootstrap.sh` as its sibling, work-item routing), then 0.4
-committed bindings, 0.5 the conformance harness red, then Phase 1
-deletions. Read the specification against the cleaned tree and only
-afterwards start Phase 2. Reviewing ADRs against a codebase that still
-contains the code they retire is the mental overhead this ordering exists to
-remove.
+**0.1–0.3 are done.** Next is **0.4 — commit the UniFFI bindings** and a
+Linux `swift build` shim, then 0.5 the conformance harness red, then
+Phase 1 deletions. Read the specification against the cleaned tree and
+only afterwards start Phase 2. Reviewing ADRs against a codebase that
+still contains the code they retire is the mental overhead this ordering
+exists to remove.

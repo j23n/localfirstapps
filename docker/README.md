@@ -109,8 +109,10 @@ in `apps/gallery/linux`, and all of `apps/health` (cgo + sqlite).
 
 Cannot, ever: `xcodegen`, `xcodebuild`, the iOS slices of
 `GalleryCore.xcframework`, and therefore every Swift test in gallery,
-contacts and music. Those need Xcode on a Mac. An agent that changes
-Swift here has written unverified code and must say so.
+contacts and music. Those need Xcode on a Mac — [`mac/`](../mac/README.md).
+An agent that changes Swift here has written unverified code and must say so.
+
+Work-item routing: [`.agents/ROUTING.md`](../.agents/ROUTING.md).
 
 First `cargo build` needs the network: crates.io plus the ~85 MB prebuilt ONNX
 Runtime the `ort` crate fetches. It lands in the `cache` volume and is paid

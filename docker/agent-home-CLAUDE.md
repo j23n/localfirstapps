@@ -40,3 +40,4 @@ requirement you are conforming to (`ADR 0005 R2`) in the commit message.
 - The Apple halves cannot be built here — no Xcode, no iOS SDK. `cargo test`,
   `go test`, and the GTK shell are what this container verifies. Say
   "unverified on iOS" rather than implying a Swift build passed.
+- Route work by work item, not by path. See `/work/.agents/ROUTING.md`.

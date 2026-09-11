@@ -14,3 +14,4 @@ Specification: [`docs/spec/README.md`](docs/spec/README.md).
 Plan: [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md).
 Pages: [`docs/index.html`](docs/index.html).
 Agent container: [`docker/README.md`](docker/README.md).
+Mac (iOS shells): [`mac/README.md`](mac/README.md).

@@ -14,4 +14,6 @@ family spec. ADR 0007 is the sole home for convention.
 | Capabilities and packs | `docs/spec/adr/0006-derived-data.md` |
 | Health ingestion | `docs/spec/adr/0008-health-ingestion.md` |
 
+Work-item routing (not path routing): [`ROUTING.md`](ROUTING.md).
+
 Do not add a second vocabulary table. Do not put domain state in a shell.
