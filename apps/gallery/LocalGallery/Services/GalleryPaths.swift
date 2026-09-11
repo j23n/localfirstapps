@@ -56,9 +56,8 @@ struct GalleryPaths: Sendable {
         )
     }
 
-    /// Application Support, for the logging/crash singletons
-    /// (`LogRedactor`, `CrashDiagnosticsService`, `LogPersistence`) that
-    /// exist before any Store and therefore can't take an injected
+    /// Application Support, for singletons (`LogRedactor`) that exist
+    /// before any Store and therefore can't take an injected
     /// `GalleryPaths`. Centralised here so every disk location the app uses
     /// is discoverable from this one file.
     static var applicationSupport: URL {

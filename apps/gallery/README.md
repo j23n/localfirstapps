@@ -27,8 +27,7 @@ folder is the gallery: you own the files and choose where they live.
 - **Video and Live Photos** — inline playback (iOS)
 - **HEIC** — read like other stills. Analysis decode is ImageIO on iOS
   and software HEVC (`heif-oxide`) on Linux and `cargo test`
-- **Cloud folders** — iOS File Provider: on-demand download, sidecar
-  cache for evicted `.xmp`
+- **Sidecar cache** — parsed `.xmp` reused across scans (size + mtime)
 - **EXIF panel** — camera, lens, exposure, GPS, size
 - **Hierarchical tags** — `digiKam:TagsList`-style paths; see the
   [photo-tools schema](https://github.com/j23n/photo-tools/blob/main/docs/xmp-schema.md)
@@ -37,9 +36,6 @@ folder is the gallery: you own the files and choose where they live.
   the device**
 - **Explicit file mutations** — Scan Photos writes `.xmp` sidecars;
   you can move, delete, or create items in the folder
-- **Opt-in crash export** — MetricKit + redacted logs, never uploaded
-  automatically (iOS)
-
 ## What the apps write
 
 They are not read-only. Sidecar writes and file move/delete/create

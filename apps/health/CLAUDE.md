@@ -159,7 +159,7 @@ Silently scrambles data if wrong.
 
 ## Status
 
-**Implemented:** event log, blob store, UUIDv7, Apple Health adapter (Records, Correlations, Workouts including GPX routes, ActivitySummary), SQLite projection, gaps report, portable export / restore / fsck, read-only web UI (`archive serve`). Backup is external (restic) — do not add backup tooling.
+**Implemented:** event log, blob store, UUIDv7, Apple Health adapter (Records, Correlations, Workouts including GPX routes, ActivitySummary), SQLite projection, gaps report, portable export / restore / fsck. The loopback web UI is preserved at `reference/web-ui/` and is not a product command. Backup is external (restic) — do not add backup tooling.
 
 **Not implemented:** FIT importer (mount → blob → one `blob_import` → projection maps into Apple's vocabulary; Instinct 1 Solar only, no gen-2 fields), dedicated medication/meditation commands (generic `append` only), lab extraction (Ollama), sync.
 

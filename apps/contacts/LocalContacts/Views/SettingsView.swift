@@ -5,14 +5,11 @@ struct SettingsView: View {
     @Environment(ContactsStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    @Environment(\.scenePhase) private var scenePhase
     @State private var showFolderPicker = false
     @State private var showOverwriteConfirmation = false
     @State private var contactsAuthStatus: CNAuthorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
     @AppStorage("hasSeenSyncInfo") private var hasSeenSyncInfo = false
     @State private var syncInfoExpanded = false
-    @AppStorage("crashReportingEnabled") private var crashReportingEnabled = false
-    private var crashService = CrashDiagnosticsService.shared
 
     private static let githubURL = URL(string: "https://github.com/j23n/localcontacts")!
 
@@ -175,14 +172,6 @@ struct SettingsView: View {
                     hasSeenSyncInfo = true
                 }
             }
-            .onChange(of: crashReportingEnabled) { _, newValue in
-                CrashDiagnosticsService.shared.setEnabled(newValue)
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    crashService.refreshPendingCrash()
-                }
-            }
             .alert("Error", isPresented: .init(
                 get: { store.errorMessage != nil },
                 set: { if !$0 { store.errorMessage = nil } }
@@ -254,66 +243,9 @@ struct SettingsView: View {
                 Label("Logs", systemImage: "doc.text.magnifyingglass")
             }
             LabeledContent("Version", value: appVersion)
-            Toggle("Crash Reporting", isOn: $crashReportingEnabled)
-
-            if crashReportingEnabled, crashService.hasPendingCrash {
-                crashRows
-            }
         } header: {
             Text("Diagnostics")
-        } footer: {
-            Text("When on, LocalContacts captures crash details and recent log entries on this device. Nothing is sent automatically — if a crash is captured, a banner appears here in Settings and you can choose to share the report with the developer. Logs include file names from your contacts folder. Off by default. App Store crash analytics (system-level) are unaffected by this setting.")
         }
-    }
-
-    @ViewBuilder
-    private var crashRows: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("LocalContacts crashed last session", systemImage: "exclamationmark.triangle.fill")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.orange)
-            Text("A crash report was captured. You can share it with the developer to help diagnose the issue, or dismiss it.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 2)
-
-        Button {
-            shareCrashReport()
-        } label: {
-            Label("Share Crash Report", systemImage: "square.and.arrow.up")
-        }
-
-        Button(role: .destructive) {
-            crashService.clearPendingCrash()
-        } label: {
-            Label("Dismiss", systemImage: "xmark.circle")
-        }
-    }
-
-    private func shareCrashReport() {
-        let stamp = Date().formatted(.iso8601.year().month().day().dateSeparator(.dash))
-        var items: [Any] = []
-
-        if let crashData = crashService.pendingCrashReport() {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("localcontacts-crash-\(stamp).json")
-            if (try? crashData.write(to: url, options: .atomic)) != nil {
-                items.append(url)
-            }
-        }
-
-        if let logData = crashService.recentLogTail() {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("localcontacts-logs-\(stamp).txt")
-            if (try? logData.write(to: url, options: .atomic)) != nil {
-                items.append(url)
-            }
-        }
-
-        guard !items.isEmpty else { return }
-        ShareSheet.present(items: items)
     }
 }
 

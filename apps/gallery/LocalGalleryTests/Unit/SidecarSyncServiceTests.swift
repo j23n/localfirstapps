@@ -27,7 +27,7 @@ final class SidecarSyncServiceTests: XCTestCase {
         SidecarCandidate(
             photoID: id,
             sidecarURL: url,
-            currentVersion: FileProviderDetector.ContentVersion(size: size),
+            currentVersion: ContentVersion(size: size),
             downloadStatus: .local
         )
     }
@@ -39,7 +39,7 @@ final class SidecarSyncServiceTests: XCTestCase {
         faces: [FaceRegion] = [FaceRegion(name: "Ada", centerX: 0.4, centerY: 0.4, width: 0.1, height: 0.1)]
     ) -> SidecarCacheStore.CachedSidecar {
         SidecarCacheStore.CachedSidecar(
-            version: FileProviderDetector.ContentVersion(size: size),
+            version: ContentVersion(size: size),
             hierarchicalTags: tags.map { HierarchicalTag(raw: $0) },
             countryCode: country,
             faceRegions: faces

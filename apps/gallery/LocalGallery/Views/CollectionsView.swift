@@ -225,14 +225,6 @@ struct CollectionsView: View {
         }
 
         renderTask = Task.detached(priority: .userInitiated) {
-            // Pre-flight: pull non-local photos down before the renderer
-            // tries to read their bytes — without this it would silently
-            // fail on placeholders.
-            let remote = photos.filter { $0.locality != .local }
-            for p in remote {
-                if Task.isCancelled { await endExportShield(success: false); return }
-                _ = try? await mgr.ensureMaterialized(p)
-            }
             if Task.isCancelled { await endExportShield(success: false); return }
 
             let loader: (URL, CGSize) async -> UIImage? = { url, size in

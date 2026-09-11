@@ -1,14 +1,14 @@
 # Third-party licenses
 
-This file covers frontend assets vendored into the binary. Go module
-dependencies live under `vendor/` with their own `LICENSE` files; they are
-listed at the end.
+This file covers frontend assets preserved in `reference/web-ui/` (not
+compiled into the binary). Go module dependencies live under `vendor/`
+with their own `LICENSE` files; they are listed at the end.
 
 ---
 
 ## Chart.js 4.4.7
 
-Vendored as `internal/ui/assets/vendor/chart.umd.min.js`. MIT License.
+Vendored as `reference/web-ui/assets/vendor/chart.umd.min.js`. MIT License.
 
 Text from https://github.com/chartjs/Chart.js/blob/v4.4.7/LICENSE.md
 
@@ -28,7 +28,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## Recursive
 
-Vendored as `internal/ui/assets/fonts/recursive-latin.woff2`.
+Vendored as `reference/web-ui/assets/fonts/recursive-latin.woff2`.
 SIL Open Font License 1.1.
 
 Copyright 2019 Arrow Type.

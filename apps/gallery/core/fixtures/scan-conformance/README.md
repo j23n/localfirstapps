@@ -142,7 +142,7 @@ Two things about that row are contract, not decoration:
 
 | aspect | contract |
 |---|---|
-| `downloadStatus` | a **bare string** (`"local"`). A Swift enum without raw values synthesises `{"local": {}}` for a payload-less case, and `gallery_model::snapshot::DownloadStatus` emits the string. `FileProviderDetector.DownloadStatus` therefore has `String` raw values. |
+| `downloadStatus` | a **bare string** (`"local"`). A Swift enum without raw values synthesises `{"local": {}}` for a payload-less case, and `gallery_model::snapshot::DownloadStatus` emits the string. `DownloadStatus` therefore has `String` raw values. Phase 1 omits the key when `local`; a fixture that still writes it must still decode. |
 | `currentVersion.contentIdentifier` | a **string**, even though `fileContentIdentifierKey` vends an `Int64` on APFS. SAF and every non-Apple provider hand back opaque tokens. `ContentVersion`'s Swift decoder accepts a bare JSON number too, so sidecar caches written before the change still load. |
 
 Both halves of the no-bump decision have a test:

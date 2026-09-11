@@ -1,6 +1,5 @@
-# Phase 0.5: ADR 0002 R13 graph check. Starts red (gallery-geo → ureq).
-# --expect-violations keeps CI mergeable while asserting that exact red
-# so a new networking crate cannot hide behind the known one.
+# Graph check (Phase 0.5, still red: gallery-geo → ureq) plus Milestone A
+# source greps (no FileProvider / MetricKit in production Swift/Go).
 name: Conformance
 
 on:
@@ -32,3 +31,15 @@ jobs:
 
       - name: Graph check (expected red)
         run: python3 conformance/graph/check.py --expect-violations gallery-geo
+
+  source:
+    name: "Milestone A source greps"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Self-test
+        run: python3 conformance/source/check.py --self-test
+
+      - name: Production Swift/Go APIs
+        run: python3 conformance/source/check.py

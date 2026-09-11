@@ -54,8 +54,8 @@ final class SidecarRefreshService {
     /// prior manifest. Injectable filesystem so tests do not need a provider.
     nonisolated static func refreshedManifest(
         _ manifest: [SidecarCandidate],
-        versionOf: @Sendable (URL) -> FileProviderDetector.ContentVersion = {
-            FileProviderDetector.contentVersion(of: $0)
+        versionOf: @Sendable (URL) -> ContentVersion = {
+            ContentVersion.ofFile(at: $0)
         },
         fileExists: @Sendable (URL) -> Bool = {
             FileManager.default.fileExists(atPath: $0.path)

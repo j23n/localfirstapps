@@ -73,7 +73,7 @@ final class PhotoFileIDTests: XCTestCase {
         photo.faceDecisions = ["named-below-floor"]
         photo.sidecarOnDisk = true
         photo.locality = .remote(downloaded: true)
-        photo.sidecarStatus = .cached(FileProviderDetector.ContentVersion(
+        photo.sidecarStatus = .cached(ContentVersion(
             contentIdentifier: "cid", modificationDate: date(2024, 2, 1), size: 12
         ))
         photo.dimensions = CGSize(width: 4032, height: 3024)

@@ -5,10 +5,6 @@ struct LocalContactsApp: App {
     @State private var store = ContactsStore()
     @Environment(\.scenePhase) private var scenePhase
 
-    init() {
-        CrashDiagnosticsService.shared.setEnabled(UserDefaults.standard.bool(forKey: "crashReportingEnabled"))
-    }
-
     var body: some Scene {
         WindowGroup {
             ContentView()

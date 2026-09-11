@@ -65,7 +65,7 @@ enum EnrichmentService {
     /// by the queue — the same 8 the sidecar sync uses. `.utility` because
     /// enrichment is background work that must not outrank the thumbnail
     /// decodes the user is actually looking at. Same pattern, and the same
-    /// reason, as `CoreProviderProbe`'s queue.
+    /// reason, as the sidecar-sync bound.
     private static let readQueue = DispatchQueue(
         label: "com.j23n.localgallery.enrichment-read",
         qos: .utility,
@@ -262,14 +262,10 @@ enum EnrichmentService {
                     group.addTask {
                         guard !Task.isCancelled else { return nil }
 
-                        // Non-downloaded placeholders have no bytes —
-                        // CGImageSource/AVAsset would read nothing. Skip the
-                        // read but still mark them enriched-for-now; the
-                        // locality transition (scanner full-scan probe, or
-                        // `ensureMaterialized` in the Store) clears
-                        // `enrichedFileDate` when the download lands so the
-                        // real EXIF pass happens then. Tags/GPS for
-                        // placeholders come from the sidecar cache instead.
+                        // A leftover `.remote` row from an old snapshot has
+                        // no guaranteed bytes. Skip the read and keep the
+                        // cached dates; tags/GPS come from the sidecar
+                        // cache. New scans do not produce this case.
                         if case .remote(downloaded: false) = photo.locality {
                             return EnrichedResult(
                                 index: idx,

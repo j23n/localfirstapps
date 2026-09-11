@@ -8,7 +8,7 @@ Current layout and what is allowed to cross each edge. Decisions:
 ## Pieces
 
 ```
-LocalGallery/          iOS shell: bookmarks, File Provider, UI, widgets
+LocalGallery/          iOS shell: bookmarks, UI, widgets
 linux/                 GTK4 / libadwaita shell (outside the Cargo workspace)
 core/                  Cargo workspace — engines and XMP
   gallery-model        photo / folder / snapshot types, stable ids
@@ -35,10 +35,10 @@ crates in-process. Neither shell reaches past `gallery-ffi` /
 | Library folder | User-selected tree (security-scoped bookmark on iOS; a path on Linux) | The rest of the filesystem. Sidecar writes and move/delete/create stay under that root. |
 | Image bytes | Never rewritten by the core | Sidecars (`.xmp`), caches, exports the user asked for |
 | `gallery-cache.sqlite` | Work queues, embeddings, face clusters | Not portable truth; wipe is safe |
-| File Provider (iOS) | Probe + on-demand download | Provider XPC; placeholders have no bytes for tagging |
+| File Provider (iOS) | **Retired (Phase 1).** `LocalOnlyProbe` answers the FFI with defaults until Phase 2 lifts `ProviderAttrs` off `Vfs`. | Placeholders do not enter the projection. |
 | Nominatim | English reverse-geocode of GPS | **Exact coordinates leave the device** over HTTPS to the injected endpoint (default public OSM). Not a product backend. Override: `LOCALGALLERY_NOMINATIM` (Linux) or the iOS env equivalent. |
 | Model pack | Local ONNX + labels, hash-verified | Optional. Missing pack disables tagging and faces only. |
-| Crash reports | MetricKit + redacted logs on disk | Shared only when the user exports them |
+| Logs | In-app ring buffer (`LogStore`) | No MetricKit; no automatic export |
 | Widgets (iOS) | App Group snapshots | Deep links back into the app |
 
 ## Analysis decode

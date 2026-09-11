@@ -100,7 +100,7 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
         return SidecarCandidate(
             photoID: PhotoFile.stableID(for: url.deletingPathExtension()),
             sidecarURL: url,
-            currentVersion: FileProviderDetector.ContentVersion(
+            currentVersion: ContentVersion(
                 contentIdentifier: "1234567",
                 modificationDate: Date(timeIntervalSinceReferenceDate: 649_500_000),
                 size: 128
@@ -208,7 +208,7 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
         // Neither of these is in CodingKeys; set them to non-defaults so the
         // test can prove they are dropped.
         p.locality = .remote(downloaded: false)
-        p.sidecarStatus = .cached(FileProviderDetector.ContentVersion(
+        p.sidecarStatus = .cached(ContentVersion(
             contentIdentifier: "42", modificationDate: nil, size: 99
         ))
         return p
@@ -313,7 +313,7 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
     /// `.xmp` in the library to save nothing.
     func testALegacyNumericContentIdentifierStillDecodes() throws {
         let legacy = Data(#"{"contentIdentifier": 8675309, "size": 12}"#.utf8)
-        let decoded = try JSONDecoder().decode(FileProviderDetector.ContentVersion.self, from: legacy)
+        let decoded = try JSONDecoder().decode(ContentVersion.self, from: legacy)
         XCTAssertEqual(decoded.contentIdentifier, "8675309")
         XCTAssertEqual(decoded.size, 12)
         // …and it re-encodes as a string from then on.

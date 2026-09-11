@@ -1,7 +1,8 @@
 import Foundation
 
-/// Debounced write of `LogStore.shared.asText` to disk so the crash banner
-/// can include a recent log tail. No-op when crash reporting is disabled.
+/// Debounced write of `LogStore.shared.asText` to disk. Capture is
+/// opt-in (ADR 0007 R11); with crash reporting gone there is no toggle,
+/// so instance methods are a no-op. The static helpers stay for tests.
 @MainActor
 final class LogPersistence {
 
@@ -14,38 +15,13 @@ final class LogPersistence {
     /// Debounce window for coalescing burst writes (e.g. during a folder scan).
     static let debounceSeconds: UInt64 = 2
 
-    private var pendingFlush: Task<Void, Never>?
-    private var lastFlushedCount = 0
-    private var lastFlushedID: UUID?
-
     private init() {}
 
-    var isEnabled: Bool { CrashDiagnosticsService.shared.isEnabled }
+    var isEnabled: Bool { false }
 
-    func scheduleFlush() {
-        guard isEnabled else { return }
-        pendingFlush?.cancel()
-        pendingFlush = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.debounceSeconds * 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.flushNow()
-        }
-    }
+    func scheduleFlush() {}
 
-    func flushNow() {
-        guard isEnabled else { return }
-        let entries = LogStore.shared.entries
-        let lastID = entries.last?.id
-        // Debounce already coalesces bursts; skip the 5k-line format +
-        // disk write when the ring buffer hasn't changed since last flush.
-        if entries.count == lastFlushedCount, lastID == lastFlushedID {
-            return
-        }
-        lastFlushedCount = entries.count
-        lastFlushedID = lastID
-        let url = CrashDiagnosticsService.shared.logTailURL
-        Self.flush(text: LogStore.shared.asText, to: url)
-    }
+    func flushNow() {}
 
     /// Atomically writes `text` to `url`, then truncates the file's leading
     /// bytes if it exceeds `maxBytes`. Exposed for tests.

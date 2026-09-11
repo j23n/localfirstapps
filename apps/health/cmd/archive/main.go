@@ -18,7 +18,6 @@ import (
 	"archive/internal/log"
 	"archive/internal/portable"
 	"archive/internal/projection"
-	"archive/internal/ui"
 	"archive/internal/uuid"
 )
 
@@ -68,8 +67,6 @@ func run(stdout, stderr io.Writer, args []string) int {
 		err = cmdExport(stdout, root, args[1:])
 	case "fsck":
 		err = cmdFsck(stdout, root, args[1:])
-	case "serve":
-		err = cmdServe(stdout, stderr, root, args[1:])
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		usage(stderr)
@@ -99,7 +96,6 @@ commands:
   stats         counts and observation date range
   export        write a portable copy of the archive to -out DIR
   fsck          verify blob hashes and references (read-only)
-  serve         read-only web UI on 127.0.0.1 (default :8080)
 
 Local calendar dates (-on/-from/-to) use $ARCHIVE_TZ (IANA or +0200), else the process local zone.
 The UTC window and offset are printed on stderr.
@@ -341,24 +337,6 @@ func cmdFsck(stdout io.Writer, root string, args []string) error {
 		return errFsckFailed
 	}
 	return nil
-}
-
-func cmdServe(stdout, stderr io.Writer, root string, args []string) error {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	addr := fs.String("addr", "127.0.0.1:8080", "listen address (127.0.0.1 only)")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("serve: %w", err)
-	}
-	if err := ui.CheckBind(*addr); err != nil {
-		return err
-	}
-	srv, err := ui.New(root)
-	if err != nil {
-		return fmt.Errorf("serve: %w", err)
-	}
-	fmt.Fprintf(stdout, "listening on %s (read-only)\n", *addr)
-	return ui.Listen(*addr, srv.Handler())
 }
 
 func writeJSONLines(w io.Writer, v any) error {

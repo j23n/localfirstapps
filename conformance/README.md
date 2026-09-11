@@ -23,8 +23,22 @@ hide behind the known one.
 
 `--expect-violations` is dropped when the graph goes green.
 
+## Source — Milestone A (Phase 1)
+
+```
+python3 conformance/source/check.py
+python3 conformance/source/check.py --self-test
+```
+
+Production Swift/Go must not import `FileProvider` or `MetricKit`, or
+name `NSFileProvider*`, `ubiquitousItem*`, or `MXMetric*`. Generated
+`GalleryCore.swift`, the Linux UniFFI shim, `vendor/`, and
+`apps/health/reference/web-ui/` are excluded. Rust `Vfs::probe_provider`
+stays until Phase 2.
+
+`.github/workflows/conformance.yml` runs this next to the graph check.
+
 ## Later
 
-Greps and AST checks land here as Phase 1 and later phases make their
-requirements mechanically true. The type-system guard (ADR 0003 R6) is
-Phase 2.
+AST checks land here as later phases make their requirements
+mechanically true. The type-system guard (ADR 0003 R6) is Phase 2.

@@ -171,17 +171,6 @@ final class GalleryStore {
         didSet { persistPersonContactLinks() }
     }
 
-    /// Pre-fetch neighbour photos in the viewer when the user lands on a
-    /// file-provider placeholder. Default `true`; disable to save bandwidth.
-    var prefetchAdjacentRemotePhotos: Bool = true {
-        didSet { defaults.set(prefetchAdjacentRemotePhotos, forKey: "prefetchAdjacentRemotePhotos") }
-    }
-    /// When `false`, prefetch (only — explicit taps always go through) is
-    /// gated on Wi-Fi/wired connectivity. Default `false` (Wi-Fi-only).
-    var useCellularForDownloads: Bool = false {
-        didSet { defaults.set(useCellularForDownloads, forKey: "useCellularForDownloads") }
-    }
-
     /// Scan-pipeline state (GalleryStore+Scanning) — internal because the
     /// pipeline lives in a separate file; not meant for use elsewhere.
     @ObservationIgnored var isEnriching = false
@@ -220,9 +209,6 @@ final class GalleryStore {
     @ObservationIgnored let index = CoreLibraryIndex()
     @ObservationIgnored private let thumbnailService: ThumbnailService
     @ObservationIgnored private let widgetExport = WidgetExportScheduler()
-    /// Materialises file-provider placeholders on demand. Exposed as a
-    /// property so views can observe `inFlight` for spinner state.
-    let materializer = PhotoMaterializer()
     /// People-rail domain (hidden/featured/me, visible lists, cover photos).
     /// Views reach it as `store.people`.
     let people: PeopleStore
@@ -463,13 +449,6 @@ final class GalleryStore {
             // user's entire set of manual contact links.
             personContactLinks = dict.compactMapValues(\.value)
         }
-        if defaults.object(forKey: "prefetchAdjacentRemotePhotos") != nil {
-            prefetchAdjacentRemotePhotos = defaults.bool(forKey: "prefetchAdjacentRemotePhotos")
-        }
-        if defaults.object(forKey: "useCellularForDownloads") != nil {
-            useCellularForDownloads = defaults.bool(forKey: "useCellularForDownloads")
-        }
-
         // Load cache + start security scope synchronously so cached
         // URLs are accessible before the first SwiftUI render
         if loadCache(), let url = resolveBookmark() {
@@ -781,12 +760,8 @@ final class GalleryStore {
     ///   - `.photosRelocated` drops the old ids, inserts the moved
     ///     `PhotoFile`s (new path, new stable id) into `destFolderID`, and
     ///     rebuilds indexes. Persistence is `movePhotos`'s job.
-    ///   - `.photoLocalityChanged`, `.allDownloadsCleared`, and
-    ///     `.sidecarCacheCleared` update in-memory locality / sidecar
-    ///     status on `allPhotos`, the index object table, and the folder
-    ///     tree so grid / viewer / folder rows cannot diverge. No core
-    ///     rebuild, no save — the next scan repopulates from disk and
-    ///     avoids churning the cache on every download completion.
+    ///   - `.sidecarCacheCleared` updates in-memory sidecar status on
+    ///     `allPhotos`, the index object table, and the folder tree.
     ///
     /// The widget snapshot, memory regeneration, and sidecar-sync planning
     /// are intentionally NOT triggered from here — they depend on
@@ -796,8 +771,6 @@ final class GalleryStore {
         case sidecarsMerged(photos: [PhotoFile])
         case photosRemoved(Set<UUID>)
         case photosRelocated(from: Set<UUID>, to: [PhotoFile], destFolderID: UUID)
-        case photoLocalityChanged(id: UUID, locality: PhotoLocality)
-        case allDownloadsCleared
         case sidecarCacheCleared
     }
 
@@ -833,24 +806,6 @@ final class GalleryStore {
             libraryEpoch += 1
             rebuildSortAndIndex()
             libraryAvailability = allPhotos.isEmpty ? .empty : .ready
-        case let .photoLocalityChanged(id, locality):
-            guard let idx = allPhotos.firstIndex(where: { $0.id == id }) else { return }
-            // Placeholder → downloaded: the first enrichment ran against a
-            // byteless file, so clear the marker and the next enrichment
-            // pass reads the real EXIF/GPS.
-            if case .remote(downloaded: false) = allPhotos[idx].locality,
-               case .remote(downloaded: true) = locality {
-                allPhotos[idx].enrichedFileDate = nil
-            }
-            allPhotos[idx].locality = locality
-            syncRuntimeCopies(of: allPhotos[idx])
-        case .allDownloadsCleared:
-            for i in allPhotos.indices {
-                if case .remote = allPhotos[i].locality {
-                    allPhotos[i].locality = .remote(downloaded: false)
-                }
-            }
-            syncRuntimeCopies(of: allPhotos)
         case .sidecarCacheCleared:
             for i in allPhotos.indices {
                 allPhotos[i].sidecarStatus = .absent
@@ -1237,67 +1192,6 @@ final class GalleryStore {
 
     func loadFullImage(for url: URL, maxPixelSize: CGFloat = 2000) async -> UIImage? {
         await thumbnailService.loadFullImage(for: url, maxPixelSize: maxPixelSize)
-    }
-
-    // MARK: - Materialization (forwarded to PhotoMaterializer)
-
-    /// Ensure the photo's bytes are present on disk. Local photos return
-    /// immediately; placeholders coordinate-read through the file provider.
-    /// Throws on failure so the caller can offer a retry button.
-    @discardableResult
-    func ensureMaterialized(_ photo: PhotoFile) async throws -> URL {
-        let url = try await materializer.ensureMaterialized(photo)
-        // Mark this photo as downloaded in the in-memory model so the grid
-        // badge clears without waiting for a rescan. Cache write is deferred
-        // to the next save.
-        if let existing = index.photo(byID: photo.id),
-           case .remote = existing.locality {
-            apply(.photoLocalityChanged(id: photo.id, locality: .remote(downloaded: true)))
-        }
-        return url
-    }
-
-    func cancelMaterialize(_ photoID: PhotoFile.ID) {
-        materializer.cancel(photoID)
-    }
-
-    func prefetchMaterialize(_ photos: [PhotoFile]) {
-        materializer.prefetch(photos, allowCellular: useCellularForDownloads)
-    }
-
-    // MARK: - Cloud storage
-
-    /// True when at least one folder backs onto a file provider. Drives the
-    /// "Cloud Storage" section in Settings — purely-local libraries don't
-    /// see any of this UI.
-    var hasFileProviderPhotos: Bool {
-        allPhotos.contains { photo in
-            if case .remote = photo.locality { return true } else { return false }
-        }
-    }
-
-    /// Snapshot the remote photos and hand them to `CloudStorageService`
-    /// for the per-file download-status probe (off the main actor).
-    func computeCloudStorageStats() async -> CloudStorageService.Stats {
-        let remote = allPhotos.filter {
-            if case .remote = $0.locality { return true } else { return false }
-        }
-        return await CloudStorageService.probeStats(of: remote)
-    }
-
-    /// Evict every materialised provider-backed photo. Grid stays usable
-    /// because thumbnails + sidecar cache are untouched; only
-    /// full-resolution viewing requires a re-download.
-    func clearAllDownloads() async -> Int {
-        let downloaded = allPhotos.filter {
-            if case .remote(let d) = $0.locality { return d } else { return false }
-        }
-        let evicted = await CloudStorageService.evictAll(downloaded)
-        // Refresh in-memory state regardless of evict success — next scan
-        // will re-detect actual download status.
-        apply(.allDownloadsCleared)
-        Log.scan.info("Cleared \(evicted) downloads")
-        return evicted
     }
 
     /// Wipe the sidecar cache and re-run sync the next time the scanner

@@ -163,31 +163,12 @@ struct PhotoPageView: View {
         materializeError = nil
 
         if thumbnail == nil {
-            // Cloud-aware decode for the placeholder thumbnail. Cheap; the
-            // QL path inside ThumbnailService activates only when needed.
-            let probe = FileProviderDetector.probe(photo.url)
-            let useQL = probe.isFileProvider && probe.status != .local
             thumbnail = await store.thumbnail(
                 for: photo.url,
                 size: CGSize(width: 400, height: 400),
                 isVideo: photo.isVideo,
-                useQuickLook: useQL
+                useQuickLook: false
             )
-        }
-
-        // Pull bytes down for file-provider placeholders before attempting
-        // the full-resolution decode. Local photos short-circuit immediately.
-        if photo.locality != .local {
-            isMaterializing = true
-            do {
-                _ = try await store.ensureMaterialized(photo)
-                isMaterializing = false
-            } catch {
-                isMaterializing = false
-                materializeError = (error as? LocalizedError)?.errorDescription
-                    ?? error.localizedDescription
-                return
-            }
         }
 
         if !photo.isVideo {

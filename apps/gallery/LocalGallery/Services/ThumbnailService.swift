@@ -32,8 +32,8 @@ final class ThumbnailService {
     /// Source identity recorded when an in-memory thumbnail was stored.
     /// Lookups compare this to the live size/mtime (or content identifier)
     /// so a replaced file doesn't keep painting the old JPEG.
-    private var thumbnailStamps: [NSURL: FileProviderDetector.ContentVersion] = [:]
-    private var fullImageStamps: [NSURL: FileProviderDetector.ContentVersion] = [:]
+    private var thumbnailStamps: [NSURL: ContentVersion] = [:]
+    private var fullImageStamps: [NSURL: ContentVersion] = [:]
     /// Pixel-size of the bitmap sitting in `fullImageCache` for that URL.
     /// A 1080 export must not satisfy a later 2000 viewer load.
     private var fullImagePixelSizes: [NSURL: CGFloat] = [:]
@@ -270,27 +270,17 @@ final class ThumbnailService {
         }
     }
 
-    /// Cheap size/mtime/content-identifier read — the same keys
-    /// `FileProviderDetector.sizeKeys` uses, without the ubiquitous probe.
-    nonisolated static func sourceStamp(for url: URL) -> FileProviderDetector.ContentVersion {
-        let values = try? url.resourceValues(forKeys: [
-            .fileContentIdentifierKey,
-            .contentModificationDateKey,
-            .fileSizeKey,
-        ])
-        return FileProviderDetector.ContentVersion(
-            contentIdentifier: values?.fileContentIdentifier.map(String.init),
-            modificationDate: values?.contentModificationDate,
-            size: values?.fileSize.map(Int64.init)
-        )
+    /// Cheap size/mtime read. No content identifier, no ubiquitous keys.
+    nonisolated static func sourceStamp(for url: URL) -> ContentVersion {
+        ContentVersion.ofFile(at: url)
     }
 
     /// True when the cached bitmap still matches the live file. A missing
     /// source keeps the last-known image (same contract as the disk JPEG).
-    private func isFresh(_ url: URL, stamp: FileProviderDetector.ContentVersion?) -> Bool {
+    private func isFresh(_ url: URL, stamp: ContentVersion?) -> Bool {
         guard let stamp else { return false }
         if Self.sourceFileIsMissing(url) { return true }
-        return FileProviderDetector.ContentVersion.sameContent(stamp, Self.sourceStamp(for: url))
+        return ContentVersion.sameContent(stamp, Self.sourceStamp(for: url))
     }
 
     private nonisolated static func stampURL(nextTo diskPath: URL) -> URL {
@@ -298,7 +288,7 @@ final class ThumbnailService {
     }
 
     private nonisolated static func writeDiskStamp(
-        _ stamp: FileProviderDetector.ContentVersion, nextTo diskPath: URL
+        _ stamp: ContentVersion, nextTo diskPath: URL
     ) {
         let size = stamp.size.map(String.init) ?? ""
         // Milliseconds avoid Date equality failing after a Double string round-trip.
@@ -520,7 +510,7 @@ final class ThumbnailService {
 
     private static func faceCropKey(
         url: URL, region: FaceRegion, cellSize: CGFloat,
-        stamp: FileProviderDetector.ContentVersion
+        stamp: ContentVersion
     ) -> NSString {
         let stampPart = "\(stamp.contentIdentifier ?? "")|\(stamp.size ?? 0)|\(stamp.modificationDate?.timeIntervalSince1970 ?? 0)"
         return "\(url.path)#\(region.centerX),\(region.centerY),\(region.width),\(region.height)#\(Int(cellSize.rounded()))#\(stampPart)" as NSString

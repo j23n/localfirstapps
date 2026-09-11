@@ -22,8 +22,7 @@ enum RedactionKind: String, Sendable, CaseIterable {
 /// identifying strings from log output. Tokens look like `folder#7`,
 /// `person#3`, `tag#42`, `title#11`. The reverse map lives in a single
 /// JSON file in Application Support so a debug session can recover the
-/// original strings locally; the file is **never** included in the crash
-/// share bundle (`CrashDiagnosticsService` only ships the log tail).
+/// original strings locally. The map is not a product export.
 ///
 /// Tokens are stable across launches — counters and mappings load on init,
 /// new entries append and trigger a debounced rewrite. We don't rotate or

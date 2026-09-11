@@ -36,9 +36,10 @@ done in this tree.
 The 0.6 spikes are answered in `docs/spec/spikes/`. Recorded decisions:
 SFace + YuNet; no Flatpak and no portal; ISA drift assumed negligible.
 
-**Next is Phase 1 — deletions** (Milestone A). The graph check is red
-(`gallery-geo` → `ureq`); that is the honest state until Phase 2. Do
-not start Phase 2 first.
+**Phase 1 is in progress** (Milestone A). Health's web UI is preserved
+at `apps/health/reference/web-ui/` (not shipped). The graph check is
+red (`gallery-geo` → `ureq`); that is the honest state until Phase 2.
+Do not start Phase 2 first.
 
 ## The one thing not to do
 

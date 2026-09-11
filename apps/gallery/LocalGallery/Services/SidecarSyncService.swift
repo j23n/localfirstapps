@@ -132,7 +132,7 @@ final class SidecarSyncService {
 
         for candidate in manifest {
             if let cached = cache.get(candidate.photoID),
-               FileProviderDetector.ContentVersion.sameContent(cached.version, candidate.currentVersion) {
+               ContentVersion.sameContent(cached.version, candidate.currentVersion) {
                 upToDate += 1
             } else {
                 needsFetch.append(candidate)

@@ -15,7 +15,7 @@ Design: [docs/plan.md](docs/plan.md). Backup and recovery:
 - **Append-only event log.** Corrections are new `supersede` / `retract` events. Log lines are never rewritten.
 - **Content-addressed blobs.** Bulk sensor data stays in the source file. An import appends one `blob_import` event.
 - **Disposable SQLite projection.** `derived/archive.db` is rebuilt from `log/` + `blobs/`. No migrations.
-- **Offline.** UI assets are `//go:embed`ed. No cloud APIs, telemetry, or CDN.
+- **Offline.** No cloud APIs, telemetry, or CDN. The loopback UI is preserved at `reference/web-ui/` and is not shipped.
 - **Apple identifiers as vocabulary.** Every other source maps into that namespace. No parallel taxonomy.
 
 ## Build
@@ -69,7 +69,6 @@ go build -o archive ./cmd/archive
 
 ./archive import -dev laptop export.zip   # hash into blobs/; one blob_import
 ./archive rebuild                         # reconstruct derived/archive.db
-./archive serve                           # read-only UI on 127.0.0.1:8080
 ./archive query                           # events from the projection
 ./archive observations -kind StepCount -on 2026-09-01
 ./archive fsck
@@ -96,7 +95,6 @@ commands:
   stats         counts and observation date range
   export        write a portable copy of the archive to -out DIR
   fsck          verify blob hashes and references (read-only)
-  serve         read-only web UI on 127.0.0.1 (default :8080)
 ```
 
 Local calendar dates (`-on` / `-from` / `-to`) use `$ARCHIVE_TZ` (IANA name or
@@ -116,12 +114,11 @@ nothing but the archive root and the binary.
 
 ## Privacy and security
 
-- `archive serve` binds `127.0.0.1` only, rejects non-localhost `Host` headers
-  (DNS rebinding), sets CSP and other security headers, and uses HTTP timeouts.
+- The loopback web UI (`archive serve`) is no longer a product command.
+  Screens, charts and goldens live at `reference/web-ui/` for the Phase 6
+  native shells. That tree is not compiled and opens no socket.
 - Archive files are written mode `0600`, directories `0700`.
-- The UI appends a local usage log at `<root>/derived/uiusage.log` (path and
-  query per request, mode `0600`, rotated at 4 MiB). It is never transmitted.
-  Delete that file (and `uiusage.log.1` if present) to clear it. Exclude
+- Exclude
   `derived/` from backup; see [docs/durability.md](docs/durability.md).
 - `archive/` is gitignored. Never commit a live archive, a real Apple export,
   or real GPX.
@@ -190,7 +187,7 @@ vendor/                  # mattn/go-sqlite3 + sqlite.org amalgamation
 
 Implemented: event log, blob store, UUIDv7, Apple Health adapter (Records,
 Correlations, Workouts including GPX routes, ActivitySummary), SQLite
-projection, gaps report, portable export / restore / fsck, read-only web UI.
+projection, gaps report, portable export / restore / fsck. The web UI is preserved at `reference/web-ui/` (not shipped).
 
 Not implemented: Garmin Instinct 1 Solar FIT adapter (`muktihari/fit`),
 dedicated medication/meditation commands (generic `append` only), local lab

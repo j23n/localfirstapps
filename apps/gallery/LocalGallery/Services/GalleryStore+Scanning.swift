@@ -161,11 +161,10 @@ extension GalleryStore {
         // Two-phase scan: when a full scan is on tap AND we already hold a
         // cache to reuse, run a quick light pass first. The light pass walks
         // the tree but reuses cached PhotoFiles for unchanged files (no
-        // FileProvider probe, no EXIF re-read), so newly added / changed
-        // files surface in seconds instead of waiting out the full pass's
-        // ~3-min probe + enrichment over the whole library. The full pass
-        // then follows for the deterministic backstop: probe/locality
-        // refresh, in-place EXIF edits, and missed sidecars.
+        // EXIF re-read), so newly added / changed files surface in seconds
+        // instead of waiting out the full pass's enrichment over the whole
+        // library. The full pass then follows for the deterministic
+        // backstop: in-place EXIF edits and missed sidecars.
         //
         // Skipped when `allPhotos` is empty (cold launch with no cache):
         // with nothing to reuse, the light pass pays the same per-file cost
@@ -266,9 +265,7 @@ extension GalleryStore {
             uniquingKeysWith: { _, b in b }
         )
         // Pass last scan's sidecar manifest in too so the light-scan fast
-        // path can skip the `.xmp` `FileProviderDetector.probe()` for
-        // unchanged photos — that probe dominates light-scan wall time on
-        // digiKam libraries (one 7-key resourceValues syscall per sidecar).
+        // path can reuse unchanged `.xmp` rows (docs/adr/0002).
         let cachedSidecarManifest = Dictionary(
             self.lastSidecarManifest.map { ($0.photoID, $0) },
             uniquingKeysWith: { _, b in b }
@@ -325,7 +322,7 @@ extension GalleryStore {
             if case .remote = $0.locality { return true } else { return false }
         }.count
         if remoteCount > 0 {
-            Log.scan.info("Detected \(remoteCount) file-provider photos, \(result.sidecarManifest.count) sidecar candidates")
+            Log.scan.info("Detected \(remoteCount) leftover remote-locality rows from an old snapshot, \(result.sidecarManifest.count) sidecar candidates")
         }
 
         // Carry forward cached photos under directories whose listing failed

@@ -56,7 +56,8 @@ What is implemented and what is not is listed in `README.md` → Status.
 
 **`archive` — the CLI.** Ingestion, projection, rebuild, export, fsck. Desktop-only: needs a USB mount, a real filesystem, and (for labs) Ollama.
 
-**`archive serve` — the UI.** Same binary, embedded assets, bound to `127.0.0.1`, read-only.
+**Web UI (preserved, not shipped).** `reference/web-ui/` is the Phase 6
+brief. `archive serve` is no longer a product command.
 
 > **The append-only log is a language-agnostic contract.** Any program that appends valid NDJSON into `log/<device>/` participates. No FFI, no shared code.
 

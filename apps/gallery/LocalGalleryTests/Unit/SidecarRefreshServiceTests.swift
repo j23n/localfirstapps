@@ -21,7 +21,7 @@ final class SidecarRefreshServiceTests: XCTestCase {
         SidecarCandidate(
             photoID: id,
             sidecarURL: url,
-            currentVersion: FileProviderDetector.ContentVersion(size: size),
+            currentVersion: ContentVersion(size: size),
             downloadStatus: .local
         )
     }
@@ -32,7 +32,7 @@ final class SidecarRefreshServiceTests: XCTestCase {
         let stale = candidate(id: id, url: url, size: 1)
         let (fresh, gone) = SidecarRefreshService.refreshedManifest(
             [stale],
-            versionOf: { _ in FileProviderDetector.ContentVersion(size: 99, modificationDate: Date()) },
+            versionOf: { _ in ContentVersion(size: 99, modificationDate: Date()) },
             fileExists: { _ in true }
         )
         XCTAssertTrue(gone.isEmpty)
@@ -46,7 +46,7 @@ final class SidecarRefreshServiceTests: XCTestCase {
         let id = UUID()
         let (fresh, gone) = SidecarRefreshService.refreshedManifest(
             [candidate(id: id, url: url, size: 12)],
-            versionOf: { _ in FileProviderDetector.ContentVersion() },
+            versionOf: { _ in ContentVersion() },
             fileExists: { _ in false }
         )
         XCTAssertTrue(fresh.isEmpty)
@@ -59,7 +59,7 @@ final class SidecarRefreshServiceTests: XCTestCase {
         let prior = candidate(id: id, url: url, size: 44)
         let (fresh, gone) = SidecarRefreshService.refreshedManifest(
             [prior],
-            versionOf: { _ in FileProviderDetector.ContentVersion() },
+            versionOf: { _ in ContentVersion() },
             fileExists: { _ in true }
         )
         XCTAssertTrue(gone.isEmpty)

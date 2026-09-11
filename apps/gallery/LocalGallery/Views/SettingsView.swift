@@ -5,10 +5,7 @@ struct SettingsView: View {
     @Environment(GalleryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    @Environment(\.scenePhase) private var scenePhase
     @State private var showPicker = false
-    @AppStorage("crashReportingEnabled") private var crashReportingEnabled = false
-    private let crashService = CrashDiagnosticsService.shared
 
     private static let githubURL = URL(string: "https://github.com/j23n/localgallery")!
 
@@ -45,9 +42,7 @@ struct SettingsView: View {
                     }
                 }
 
-                if store.hasFileProviderPhotos {
-                    cloudStorageSection
-                }
+                sidecarSection
 
                 Section("People") {
                     Toggle(isOn: $memories.birthdaysEnabled) {
@@ -104,20 +99,15 @@ struct SettingsView: View {
                         Label("Logs", systemImage: "doc.text.magnifyingglass")
                     }
                     LabeledContent("Version", value: appVersion)
-                    Toggle("Crash Reporting", isOn: $crashReportingEnabled)
 
                     ShareLink(item: LogRedactor.shared.keyFileURL) {
                         Label("Export Redaction Key", systemImage: "key.fill")
                     }
                     .tint(.primary)
-
-                    if crashReportingEnabled, crashService.hasPendingCrash {
-                        crashRows
-                    }
                 } header: {
                     Text("Diagnostics")
                 } footer: {
-                    Text("When on, LocalGallery captures crash details and recent log entries on this device. Nothing is sent automatically — if a crash is captured, a banner appears here in Settings and you can choose to share the report with the developer. Folder names, person names, tags, memory titles, and file paths in logs are replaced with anonymous tokens like \"folder#7\". Export the Redaction Key on this device to reverse-map tokens back to the originals locally — the key file is never bundled with crash reports. App Store crash analytics (system-level) are unaffected by this setting.")
+                    Text("Folder names, person names, tags, memory titles, and file paths in logs are replaced with anonymous tokens like \"folder#7\". Export the Redaction Key on this device to reverse-map tokens back to the originals locally.")
                 }
 
                 Section("About") {
@@ -151,14 +141,6 @@ struct SettingsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
-                }
-            }
-            .onChange(of: crashReportingEnabled) { _, newValue in
-                CrashDiagnosticsService.shared.setEnabled(newValue)
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    crashService.refreshPendingCrash()
                 }
             }
             .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
@@ -220,58 +202,6 @@ struct SettingsView: View {
     /// old "Last Synced" row used.
     private var lastSyncedText: String? {
         store.lastSyncedAt?.formatted(.dateTime.month(.abbreviated).day().hour().minute())
-    }
-
-    // MARK: - Crash banner
-
-    @ViewBuilder
-    private var crashRows: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("LocalGallery crashed last session", systemImage: "exclamationmark.triangle.fill")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.orange)
-            Text("A crash report was captured. You can share it with the developer to help diagnose the issue, or dismiss it.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 2)
-
-        Button {
-            shareCrashReport()
-        } label: {
-            Label("Share Crash Report", systemImage: "square.and.arrow.up")
-        }
-
-        Button(role: .destructive) {
-            crashService.clearPendingCrash()
-        } label: {
-            Label("Dismiss", systemImage: "xmark.circle")
-        }
-    }
-
-    private func shareCrashReport() {
-        let stamp = Date().formatted(.iso8601.year().month().day().dateSeparator(.dash))
-        var items: [Any] = []
-
-        if let crashData = crashService.pendingCrashReport() {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("localgallery-crash-\(stamp).json")
-            if (try? crashData.write(to: url, options: .atomic)) != nil {
-                items.append(url)
-            }
-        }
-
-        if let logData = crashService.recentLogTail() {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("localgallery-logs-\(stamp).txt")
-            if (try? logData.write(to: url, options: .atomic)) != nil {
-                items.append(url)
-            }
-        }
-
-        guard !items.isEmpty else { return }
-        ShareSheet.present(items: items)
     }
 
     // MARK: - On-device tagging
@@ -394,80 +324,27 @@ struct SettingsView: View {
         return parts.isEmpty ? "Nothing to do" : parts.joined(separator: ", ")
     }
 
-    // MARK: - Cloud Storage
+    // MARK: - Sidecars
 
-    @State private var cloudStats: CloudStorageService.Stats?
-    @State private var isClearingDownloads = false
-    @State private var showClearDownloadsAlert = false
     @State private var showClearSidecarsAlert = false
 
     @ViewBuilder
-    private var cloudStorageSection: some View {
-        @Bindable var store = store
-        Section("Cloud Storage") {
-            if let stats = cloudStats {
-                LabeledContent("Downloaded") {
-                    Text("\(stats.materializedCount) (\(EXIFFormatters.fileSize(stats.materializedBytes)))")
-                        .foregroundStyle(.secondary)
-                }
-                LabeledContent("Placeholders") {
-                    Text("\(stats.placeholderCount)")
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Computing…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Button(role: .destructive) {
-                showClearDownloadsAlert = true
-            } label: {
-                Label("Clear All Downloads", systemImage: "icloud.slash")
-            }
-            .disabled(isClearingDownloads || (cloudStats?.materializedCount ?? 0) == 0)
-
-            Toggle(isOn: $store.prefetchAdjacentRemotePhotos) {
-                Label("Pre-fetch in Viewer", systemImage: "rectangle.portrait.and.arrow.right")
-            }
-            Toggle(isOn: $store.useCellularForDownloads) {
-                Label("Use Cellular for Downloads", systemImage: "antenna.radiowaves.left.and.right")
-            }
-        }
+    private var sidecarSection: some View {
         Section("Sidecars") {
             Button(role: .destructive) {
                 showClearSidecarsAlert = true
             } label: {
-                Label("Re-download All Sidecars", systemImage: "arrow.triangle.2.circlepath")
+                Label("Clear Sidecar Cache", systemImage: "arrow.triangle.2.circlepath")
             }
         }
-        .alert("Clear all downloads?", isPresented: $showClearDownloadsAlert) {
+        .alert("Clear sidecar cache?", isPresented: $showClearSidecarsAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Clear", role: .destructive) {
-                isClearingDownloads = true
-                Task {
-                    _ = await store.clearAllDownloads()
-                    isClearingDownloads = false
-                    cloudStats = await store.computeCloudStorageStats()
-                }
-            }
-        } message: {
-            Text("Photos will need to download again the next time you open them. Thumbnails and tags are kept.")
-        }
-        .alert("Re-download all sidecars?", isPresented: $showClearSidecarsAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Re-download", role: .destructive) {
                 store.clearSidecarCache()
                 Task { await store.rescan(kind: .full, silent: true) }
             }
         } message: {
-            Text("This wipes the cached `.xmp` data and re-fetches everything on the next sync. Tags and country codes will reappear once the sync completes.")
-        }
-        .task {
-            cloudStats = await store.computeCloudStorageStats()
+            Text("This wipes the cached `.xmp` data. Tags and country codes will reappear once the next scan completes.")
         }
     }
 

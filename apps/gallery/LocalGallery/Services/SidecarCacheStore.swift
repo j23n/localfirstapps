@@ -19,7 +19,7 @@ final class SidecarCacheStore {
     /// per-photo date or GPS fields (those live in the image's EXIF), so
     /// this is tags + country + face regions only.
     struct CachedSidecar: Codable, Hashable, Sendable {
-        var version: FileProviderDetector.ContentVersion
+        var version: ContentVersion
         var hierarchicalTags: [HierarchicalTag]
         var countryCode: String?
         var faceRegions: [FaceRegion]

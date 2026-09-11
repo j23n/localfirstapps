@@ -18,6 +18,36 @@ import Foundation
 struct SidecarCandidate: Codable, Equatable, Sendable {
     let photoID: UUID
     let sidecarURL: URL
-    let currentVersion: FileProviderDetector.ContentVersion
-    let downloadStatus: FileProviderDetector.DownloadStatus
+    let currentVersion: ContentVersion
+    let downloadStatus: DownloadStatus
+
+    init(
+        photoID: UUID,
+        sidecarURL: URL,
+        currentVersion: ContentVersion,
+        downloadStatus: DownloadStatus = .local
+    ) {
+        self.photoID = photoID
+        self.sidecarURL = sidecarURL
+        self.currentVersion = currentVersion
+        self.downloadStatus = downloadStatus
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        photoID = try c.decode(UUID.self, forKey: .photoID)
+        sidecarURL = try c.decode(URL.self, forKey: .sidecarURL)
+        currentVersion = try c.decode(ContentVersion.self, forKey: .currentVersion)
+        downloadStatus = try c.decodeIfPresent(DownloadStatus.self, forKey: .downloadStatus) ?? .local
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(photoID, forKey: .photoID)
+        try c.encode(sidecarURL, forKey: .sidecarURL)
+        try c.encode(currentVersion, forKey: .currentVersion)
+        if downloadStatus != .local {
+            try c.encode(downloadStatus, forKey: .downloadStatus)
+        }
+    }
 }

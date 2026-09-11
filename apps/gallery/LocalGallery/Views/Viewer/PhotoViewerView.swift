@@ -195,18 +195,6 @@ struct PhotoViewerView: View {
         }
         .ignoresSafeArea()
         .onAppear { windowInsets = Self.currentWindowInsets() }
-        // Pre-warm the neighbouring pages' bytes for file-provider photos so
-        // a swipe doesn't land on a "Downloading…" overlay. `task(id:)` so
-        // it fires on appear and again on every page change; gated inside on
-        // the "Pre-fetch in Viewer" setting (and the cellular setting, via
-        // the materializer).
-        .task(id: currentPhotoID) {
-            guard store.prefetchAdjacentRemotePhotos, let idx = currentIndex else { return }
-            let neighbours = [idx - 1, idx + 1]
-                .filter { photos.indices.contains($0) }
-                .map { photos[$0] }
-            store.prefetchMaterialize(neighbours)
-        }
         .onChange(of: photos) { _, newPhotos in
             // Rescan dropped the photo we were viewing; dismiss instead of
             // silently landing on a different image at a stale index. Defer

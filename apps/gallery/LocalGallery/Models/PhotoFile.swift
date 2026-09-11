@@ -2,19 +2,15 @@ import Foundation
 import CoreGraphics
 import CryptoKit
 
-/// Where the photo's bytes live. `.local` covers any file fully readable
-/// from disk, including provider-backed files that have already materialised.
-/// `.remote(downloaded: false)` is the placeholder state — the file appears
-/// in directory listings but its bytes haven't been fetched.
+/// Where the photo's bytes live. New scans always write `.local`
+/// (`LocalOnlyProbe`). `.remote` remains so a v20 snapshot written
+/// before Phase 1 still decodes.
 enum PhotoLocality: Codable, Hashable, Sendable {
     case local
     case remote(downloaded: Bool)
 
-    /// True for `.remote(downloaded: false)` — i.e., a provider-backed file
-    /// whose bytes haven't been materialised. Maps to the QuickLook thumbnail
-    /// path and the remote badge in the UI. Cheaper than calling
-    /// `FileProviderDetector.probe(url)` per cell — that's a filesystem
-    /// syscall and stutters scrolling on large grids.
+    /// True for `.remote(downloaded: false)`. New scans never produce
+    /// this; it only appears when an old snapshot is still on disk.
     var isRemotePlaceholder: Bool {
         if case .remote(downloaded: false) = self { return true }
         return false
@@ -25,7 +21,7 @@ enum PhotoLocality: Codable, Hashable, Sendable {
 /// `SidecarCacheStore`. Search/tag features only consider `.cached(_)` photos.
 enum SidecarStatus: Codable, Hashable, Sendable {
     case absent
-    case cached(FileProviderDetector.ContentVersion)
+    case cached(ContentVersion)
 }
 
 struct PhotoFile: Identifiable, Hashable, Codable, Sendable {

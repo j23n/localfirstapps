@@ -146,7 +146,7 @@ final class ScannerConformanceTests: XCTestCase {
             "The sidecar manifest keys on the LOWERCASED full basename, so B.JPG finds B.JPG.xmp.",
             "totalPhotoCount is recursive (root = 15) while photoCount is the folder's own; Empty/ still becomes a node, with coverPhotoSource \"none\".",
             "versionHasContentIdentifier is true here: APFS populates fileContentIdentifierKey, so ContentVersion.sameContent compares identifiers rather than (mtime, size). On a provider that leaves it nil the other branch runs — both are live paths.",
-            "PhotoLocality is `local` for everything: FileProviderDetector sees totalFileSize == fileSize on a plain volume, so nothing looks provider-backed.",
+            "PhotoLocality is `local` for everything: LocalOnlyProbe never marks a file remote.",
         ],
         "2-light-after-mutations": [
             "Light scan (reuseCached = true) against the pass-1 cache.",
@@ -157,7 +157,7 @@ final class ScannerConformanceTests: XCTestCase {
             "Nested/nested1.jpg was deleted and does appear in removedPaths.",
             "New files (Media/IMG_0003.jpg, Added/added1.jpg) take the slow path even in a light scan, because a cache miss is the one branch that stats.",
             "Cached photos keep their cached PhotoFile verbatim; only `filename` and `livePhotoVideoURL` are refreshed, since live-photo pairing can change without the photo's own bytes changing.",
-            "Sidecar rows for unchanged photos are reused from the cached manifest, which is what skips the 7-key FileProviderDetector probe.",
+            "Sidecar rows for unchanged photos are reused from the cached manifest (docs/adr/0002).",
             "Nested/Deep/deep1.jpg.xmp was deleted, so its row disappears — a removed sidecar drops out of the manifest via the directory listing, never via the cache.",
             "Locked/locked1.jpg's row disappears too, but only because its directory could not be listed. Compare pass 4.",
         ],

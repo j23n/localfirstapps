@@ -45,12 +45,6 @@ struct ThumbnailView: View {
                     .transition(.opacity)
             }
         }
-        .overlay(alignment: .topTrailing) {
-            if isRemote {
-                RemoteBadge(size: max(10, size * 0.09))
-                    .padding(4)
-            }
-        }
         .overlay(alignment: .bottomTrailing) {
             if isVideo {
                 Image(systemName: "play.fill")

@@ -2,13 +2,8 @@ import Foundation
 import XCTest
 @testable import LocalGallery
 
-/// The Swift half of the Phase-3 scanner: the provider probe's fan-out, the
-/// path↔URL bridge, and the fact that Swift and Rust agree on the persisted
-/// snapshot at *runtime* rather than only against a committed fixture.
-///
-/// `ScannerConformanceTests` covers what the scanner produces. This covers the
-/// seams around it, which the conformance fixture cannot see because it runs on
-/// a plain local volume where every provider answer is the default.
+/// The Swift half of the scanner: path↔URL bridge, cancellation, and
+/// the fact that Swift and Rust agree on the persisted snapshot at runtime.
 final class CoreScannerBridgeTests: XCTestCase {
 
     private var temp: TempDir!
@@ -45,142 +40,6 @@ final class CoreScannerBridgeTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(5))
         }
         XCTAssertTrue(condition(), "timed out waiting for \(what)", file: file, line: line)
-    }
-
-    // MARK: - The probe fan-out
-
-    /// Parallel probes, serial emission. The batch is striped across threads
-    /// and reassembled positionally, so the answer for `paths[i]` is at `[i]`
-    /// however the stripes interleaved — which is the only reason the scan can
-    /// be both fanned out and deterministic.
-    func testProbeAnswersStayInInputOrderUnderConcurrency() throws {
-        // Enough files to cross the fan-out threshold several times over, with
-        // distinguishable contents so a mis-ordered answer is visible.
-        let count = 200
-        var paths: [String] = []
-        for i in 0..<count {
-            let url = temp.appending("f\(i).bin")
-            try Data(repeating: 0x41, count: i + 1).write(to: url)
-            paths.append(url.path)
-        }
-
-        let probe = CoreProviderProbe()
-        let answers = probe.probe(paths: paths)
-        XCTAssertEqual(answers.count, count, "one row per path, always")
-
-        // Nothing here is provider-backed, so the *values* are uniform; what
-        // the ordering claim needs is that repeated runs agree with each other
-        // and with a serial baseline.
-        let serial = paths.map { path -> VfsProviderAttrs in
-            let r = FileProviderDetector.probe(URL(fileURLWithPath: path))
-            return VfsProviderAttrs(isFileProvider: r.isFileProvider,
-                                    isPlaceholder: r.status != .local,
-                                    contentVersion: r.version.contentIdentifier,
-                                    intendedSize: r.version.size)
-        }
-        XCTAssertEqual(answers, serial, "the fanned-out batch disagreed with a serial pass")
-
-        // …and the content identifiers are per-file, so a shuffle would show.
-        let identifiers = answers.compactMap(\.contentVersion)
-        XCTAssertEqual(identifiers.count, count, "APFS should vend an identifier for every file")
-        XCTAssertEqual(Set(identifiers).count, count, "identifiers must be distinct per file")
-        for _ in 0..<3 {
-            XCTAssertEqual(probe.probe(paths: paths), answers, "repeated batches disagreed")
-        }
-    }
-
-    /// A batch below the fan-out threshold takes the serial path — most
-    /// directories in a real library hold a handful of files and a thread hop
-    /// would cost more than it saves. Both paths must answer identically.
-    func testATinyBatchAnswersTheSameAsALargeOne() throws {
-        let url = temp.appending("solo.jpg")
-        try Data("x".utf8).write(to: url)
-        let probe = CoreProviderProbe()
-        let one = probe.probe(paths: [url.path])
-        XCTAssertEqual(one.count, 1)
-        XCTAssertEqual(probe.probe(paths: Array(repeating: url.path, count: 64)).first, one.first)
-    }
-
-    func testAnEmptyBatchIsAnEmptyAnswer() {
-        XCTAssertTrue(CoreProviderProbe().probe(paths: []).isEmpty)
-    }
-
-    /// A path that cannot be read is a plain local file, not a thrown batch.
-    /// The baseline's `try?` did the same, and a probe failure must never make
-    /// a photo disappear.
-    func testAnUnreadablePathDegradesToLocal() {
-        let answers = CoreProviderProbe().probe(paths: ["/definitely/not/here.jpg"])
-        XCTAssertEqual(answers, [VfsProviderAttrs(isFileProvider: false, isPlaceholder: false,
-                                                  contentVersion: nil, intendedSize: nil)])
-    }
-
-    /// The intended size is what the sidecar manifest's `ContentVersion.size`
-    /// is built from, and for a placeholder it is *not* the size a `stat`
-    /// reports. `FileProviderDetector` already computed `totalFileSize ??
-    /// fileSize`; the probe now carries it across instead of letting the core
-    /// fall back to the listing's stub size and churn the sidecar cache.
-    func testTheProbeCarriesTheIntendedSizeAcrossTheBoundary() throws {
-        let url = temp.appending("sized.xmp")
-        try Data(repeating: 0x41, count: 1234).write(to: url)
-
-        let answer = try XCTUnwrap(CoreProviderProbe().probe(paths: [url.path]).first)
-        // Compared against the detector rather than against the literal: on a
-        // local file `totalFileSize` counts metadata and resource forks too, so
-        // it is `>= 1234` rather than exactly it. What must hold is that
-        // whatever the detector computed is what the core receives.
-        XCTAssertEqual(answer.intendedSize, FileProviderDetector.probe(url).version.size)
-        XCTAssertNotNil(answer.intendedSize, "nil would send the core back to the stat size")
-        XCTAssertGreaterThanOrEqual(answer.intendedSize ?? 0, 1234)
-    }
-
-    // MARK: - Which keys the probe reads
-
-    /// The expensive keys are the only ones that can see an iCloud
-    /// placeholder, so a read that *threw* must mean "read them anyway" — the
-    /// old code folded a thrown read into `false`, the same answer it gives a
-    /// genuinely local folder.
-    ///
-    /// The second half matters just as much and points the other way: on iOS
-    /// `isUbiquitousItem` is simply **absent** for everything outside iCloud
-    /// Drive. Measured on this simulator, `resourceValues` for a plain local
-    /// directory — and for a path that does not exist at all — succeeds and
-    /// answers `nil`, never `false`. If that absence were also treated as
-    /// "unknown", every scan would take the seven-key path and the entire
-    /// 406 s → 2.3 s win would be gone. Absent is a no; thrown is a yes.
-    func testTheUbiquityRuleFailsClosedOnlyForAReadThatActuallyFailed() {
-        XCTAssertTrue(CoreProviderProbe.treeIsUbiquitous(.unreadable),
-                      "a thrown read must not be recorded as 'local'")
-        XCTAssertTrue(CoreProviderProbe.treeIsUbiquitous(.answered(true)))
-        XCTAssertFalse(CoreProviderProbe.treeIsUbiquitous(.answered(false)))
-        XCTAssertFalse(CoreProviderProbe.treeIsUbiquitous(.answered(nil)),
-                       "the key is absent for every non-iCloud URL on iOS; that is the fast path")
-    }
-
-    /// …and end to end: a plain local root takes the cheap path.
-    func testALocalRootResolvesToTheCheapProbe() {
-        let probe = CoreProviderProbe()
-        XCTAssertNil(probe.resolvedTreeIsUbiquitous, "nothing resolved before a scan asks")
-        probe.resolveTreeKind(root: temp.url)
-        XCTAssertEqual(probe.resolvedTreeIsUbiquitous, false)
-    }
-
-    /// …and it is the *scan root* that is asked, not whichever directory the
-    /// first probe batch happened to land in.
-    ///
-    /// An empty library is what separates the two: it produces no probe batch
-    /// at all, so the old lazy resolution never ran and the tree kind stayed
-    /// unresolved. Resolving up front means the answer exists whether or not a
-    /// single file needed probing — and whose answer it is stops depending on
-    /// traversal order.
-    func testTheTreeKindIsResolvedFromTheScanRootEvenWhenNothingIsProbed() async throws {
-        let root = temp.appending("Empty", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-
-        let scanner = CoreScanner()
-        let outcome = await scanner.scan(at: root, reuseCached: false)
-        XCTAssertTrue(outcome.flatPhotos.isEmpty, "nothing to probe, by construction")
-        XCTAssertEqual(scanner.providerProbeForTesting.resolvedTreeIsUbiquitous, false,
-                       "the root was never asked — the old code only asked once a batch arrived")
     }
 
     // MARK: - Cancellation

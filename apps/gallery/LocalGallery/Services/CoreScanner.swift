@@ -62,15 +62,12 @@ final class CoreScanner: Sendable {
     }
 
     private let session: ScannerSession
-    private let providerProbe = CoreProviderProbe()
-
-    /// The probe this scanner resolved the tree kind on. Exposed so
-    /// `CoreScannerBridgeTests` can assert *which URL* the answer came from —
-    /// the thing that was wrong before and that no other observable shows.
-    var providerProbeForTesting: CoreProviderProbe { providerProbe }
 
     init() {
-        session = ScannerSession(probe: providerProbe)
+        // Phase 1: no file-provider callback. The Rust default is "plain
+        // local file"; this probe says the same so iCloud placeholders
+        // are absent from the projection (ADR 0005 R2).
+        session = ScannerSession(probe: LocalOnlyProbe())
     }
 
     /// Walk `rootURL` and produce the tree, the flat list, and the diff.
@@ -94,13 +91,6 @@ final class CoreScanner: Sendable {
         reuseCached: Bool = false,
         onProgress: (@Sendable (Int) -> Void)? = nil
     ) async -> Result {
-        // Resolved from the root, once per scan, before any batch runs. Per
-        // scan rather than per process because the user can pick a new folder
-        // mid-session and an answer cached from the old one would make the new
-        // one's placeholders invisible; from the *root* rather than from
-        // whichever directory the first batch happens to land in, because that
-        // directory is an implementation detail of the traversal order.
-        providerProbe.resolveTreeKind(root: rootURL)
         let session = self.session
 
         // A scan whose Task was cancelled before the FFI call started must not
@@ -337,13 +327,13 @@ final class CoreScanner: Sendable {
                 for: fileURL(String(row.sidecarPath.dropLast(".xmp".count)))
             ),
             sidecarURL: fileURL(row.sidecarPath),
-            currentVersion: FileProviderDetector.ContentVersion(
+            currentVersion: ContentVersion(
                 contentIdentifier: row.currentVersion.contentIdentifier,
                 modificationDate: row.currentVersion.modificationDate
                     .map(Date.init(timeIntervalSinceReferenceDate:)),
                 size: row.currentVersion.size
             ),
-            downloadStatus: FileProviderDetector.DownloadStatus(rawValue: row.downloadStatus) ?? .local
+            downloadStatus: DownloadStatus(rawValue: row.downloadStatus) ?? .local
         )
     }
 
@@ -395,242 +385,21 @@ final class CoreScanner: Sendable {
     }
 }
 
-// MARK: - The provider probe
 
-/// The one thing the core cannot do for itself: read the `URLResourceKey`s that
-/// say whether a file is provider-backed, whether its bytes are here, and what
-/// its content identifier is.
-///
-/// # Why this exists, and why it fans out
-///
-/// `FileProviderDetector.probe(_:)` is a single `resourceValues(forKeys:)` with
-/// seven ubiquitous-item keys — one blocking XPC round trip to `fileproviderd`,
-/// **~11 ms**, whatever the file. Run serially over the ~37k photos and sidecars
-/// of a 20k-photo library that was 403 s of a 406 s cold scan
-/// (docs/adr/0002). The scan is latency-bound,
-/// not CPU-bound: `sample` showed the thread parked in `mach_msg2_trap`.
-///
-/// # What actually fixed it, and what did not
-///
-/// Finding 1 proposed fanning the probes out across a bounded task group and
-/// expected 406 s → 30–60 s. **Measured, that does nothing.** At width 16 over
-/// the 20k library the scan took *512 s* — slower than serial. `sample` showed
-/// all 16 threads parked in `mach_msg2_trap` inside `resourceValues`, and the
-/// arithmetic is unambiguous: each probe went from ~11 ms to ~220 ms, exactly
-/// 16× plus contention overhead. Throughput was flat, so the round trip is
-/// serialised somewhere neither the app nor the thread count can reach.
-///
-/// What works is asking **fewer times**. `contentsOfDirectory(at:
-/// includingPropertiesForKeys:)` fetches the provider keys for a whole
-/// directory in one call and hands back URLs carrying the cached values, so a
-/// per-file `resourceValues` on one of *those* URLs is a memory read rather
-/// than a round trip. That turns ~37k round trips into ~100 — one per
-/// directory — and it is why this type takes a batch instead of a path.
-///
-/// (`FolderScanner` had a comment saying this prefetch was broken on iOS 26 +
-/// security-scoped bookmarks. That was observed for plain stat keys —
-/// `fileSize`, `contentModificationDate` — which the scanner no longer asks
-/// Foundation for at all; the core reads those through `read_dir`. The
-/// ubiquitous-item keys are a different provider path, and they do cache.)
-///
-/// The fan-out is kept underneath, because it is free once the values are
-/// cached and it still helps on the fallback path where a URL was not in the
-/// prefetch. **Determinism is preserved by construction**: results are written
-/// into positional slots, so the answers come back in the order the core asked
-/// for them however the threads interleaved.
-final class CoreProviderProbe: ProviderProbe {
+// MARK: - Local-only probe
 
-    /// How many `resourceValues` reads are in flight at once.
-    ///
-    /// Benchmarked at 1 / 16 against the 20k fixture library on the simulator;
-    /// with the directory prefetch in place the reads are cache hits and the
-    /// width stops mattering (see docs/adr/0002). Kept at
-    /// 16 for the uncached fallback, and overridable at runtime so the
-    /// measurement can be repeated without a rebuild:
-    ///
-    ///     xcrun simctl spawn booted defaults write \
-    ///       com.j23n.localgallery.app coreProbeFanOutWidth -int 32
-    static let fanOutWidth: Int = {
-        let configured = UserDefaults.standard.integer(forKey: "coreProbeFanOutWidth")
-        return configured > 0 ? min(configured, 64) : 16
-    }()
-
-    /// Below this a batch is not worth a thread hop — most directories in a
-    /// real library hold a handful of files.
-    private static let fanOutThreshold = 4
-
-    private static let queue = DispatchQueue(
-        label: "com.j23n.localgallery.provider-probe",
-        qos: .userInitiated,
-        attributes: .concurrent
-    )
-
-    /// Positional result slots, written from the stripe threads.
-    ///
-    /// `@unchecked Sendable` with an explicit lock: the stripes touch disjoint
-    /// indices, which is safe but not something the compiler can see, and a
-    /// lock costs ~20 ns against a ~20 ms probe.
-    private final class Slots: @unchecked Sendable {
-        private let lock = NSLock()
-        private var values: [VfsProviderAttrs?]
-        init(count: Int) { values = Array(repeating: nil, count: count) }
-        func set(_ value: VfsProviderAttrs, at index: Int) {
-            lock.lock(); values[index] = value; lock.unlock()
-        }
-        func take() -> [VfsProviderAttrs] {
-            lock.lock(); defer { lock.unlock() }
-            // An unwritten slot cannot happen — the stripes tile the array —
-            // but the type says it can, and "plain local file" is the same
-            // answer a failed probe gives.
-            return values.map {
-                $0 ?? VfsProviderAttrs(isFileProvider: false, isPlaceholder: false,
-                                       contentVersion: nil, intendedSize: nil)
-            }
-        }
-    }
-
+/// Phase 1: the scanner still takes a `ProviderProbe` (FFI). This one
+/// never reads file-provider keys. Everything is a plain local file, so
+/// placeholders do not enter the projection (ADR 0005 R2).
+final class LocalOnlyProbe: ProviderProbe {
     func probe(paths: [String]) -> [VfsProviderAttrs] {
-        guard !paths.isEmpty else { return [] }
-        // Unresolved reads as ubiquitous: the expensive keys are the ones that
-        // find placeholders, and skipping them on a tree that might be
-        // provider-backed loses photos' `.remote` state silently. See
-        // `resolveTreeKind(root:)`.
-        let ubiquitous = treeIsUbiquitous.withLock { $0 } ?? true
-        let urls = paths.map(CoreScanner.fileURL)
-
-        guard paths.count >= Self.fanOutThreshold else {
-            return urls.map { Self.probeOne($0, ubiquitous: ubiquitous) }
-        }
-        let width = min(Self.fanOutWidth, urls.count)
-        let slots = Slots(count: urls.count)
-        let group = DispatchGroup()
-        for stripe in 0..<width {
-            Self.queue.async(group: group) {
-                var index = stripe
-                while index < urls.count {
-                    slots.set(Self.probeOne(urls[index], ubiquitous: ubiquitous), at: index)
-                    index += width
-                }
-            }
-        }
-        group.wait()
-        return slots.take()
-    }
-
-    /// Whether the tree being scanned is an iCloud (ubiquitous) one.
-    ///
-    /// When it is false the per-file probe drops the three ubiquitous keys —
-    /// the expensive ones — and rests on `totalFileSize > fileSize`, which is
-    /// the branch every non-Apple provider already took, so placeholder
-    /// detection on Dropbox / OneDrive / Drive is unaffected. On a genuinely
-    /// ubiquitous tree nothing changes: the full seven-key read happens as
-    /// before, and the scan is as slow as it always was. That is the honest
-    /// trade — the saving is entirely "stop asking a local file 37,000 times
-    /// whether it is in the cloud".
-    private let treeIsUbiquitous = OSAllocatedUnfairLock<Bool?>(initialState: nil)
-
-    /// The resolved answer, or `nil` before a scan has asked for one.
-    ///
-    /// Exposed only so `CoreScannerBridgeTests` can pin the fail-closed rule:
-    /// the alternative is asserting on a log line, and getting this wrong is
-    /// invisible in every other observable — the scan simply becomes fast and
-    /// stops noticing placeholders.
-    var resolvedTreeIsUbiquitous: Bool? { treeIsUbiquitous.withLock { $0 } }
-
-    /// Decide, once per scan, whether this tree gets the expensive keys.
-    ///
-    /// # Two things here are deliberate and both were wrong before
-    ///
-    /// **The question is asked of the scan root**, not of whatever directory
-    /// the first probe batch happens to land in. Which directory that is
-    /// depends on traversal order and on which files a light scan decided to
-    /// rebuild; letting it decide a library-wide policy made the policy
-    /// effectively random.
-    ///
-    /// **A read that *threw* means "yes"**, not "no" — see
-    /// [`treeIsUbiquitous(_:)`], which is where that rule lives and where both
-    /// of its branches are testable.
-    ///
-    /// # The limitation this does not fix
-    ///
-    /// One answer covers the whole tree. A **mixed** library — a local root
-    /// with an iCloud Drive folder symlinked or nested inside it — resolves to
-    /// its root's kind, and the ubiquitous subtree then gets the cheap probe.
-    /// Its placeholders are still found when the provider populates
-    /// `totalFileSize` (all the third-party ones do, and iCloud does too); what
-    /// is lost is the `.downloading` / `.stale` distinction, which nothing in
-    /// the app reads today. A per-directory answer is the real fix and costs
-    /// one `resourceValues` per directory — cheap, but it is a behaviour change
-    /// to the probe's cost model that belongs with the Phase-4 work, not with a
-    /// bug fix.
-    func resolveTreeKind(root: URL) {
-        let read: UbiquityRead
-        do {
-            read = .answered(
-                try root.resourceValues(forKeys: FileProviderDetector.ubiquitousKeys)
-                    .isUbiquitousItem
+        paths.map { _ in
+            VfsProviderAttrs(
+                isFileProvider: false,
+                isPlaceholder: false,
+                contentVersion: nil,
+                intendedSize: nil
             )
-        } catch {
-            Log.scan.warning("""
-                Provider probe: could not read the root's ubiquity — \
-                \(Log.r.path(root)): \(Log.r.error(error)); reading all seven keys
-                """)
-            read = .unreadable
         }
-        let resolved = Self.treeIsUbiquitous(read)
-        Log.scan.info("Provider probe: tree is ubiquitous = \(resolved) — \(resolved ? "reading all seven keys" : "skipping the three expensive ones")")
-        treeIsUbiquitous.withLock { $0 = resolved }
-    }
-
-    /// What one `isUbiquitousItem` read said.
-    enum UbiquityRead: Equatable {
-        /// `resourceValues` threw. Nothing was learned.
-        case unreadable
-        /// It answered. `nil` means the key was not populated.
-        case answered(Bool?)
-    }
-
-    /// The rule, isolated so both of its branches can be tested — the failing
-    /// one cannot be provoked through the public entry point at all.
-    ///
-    /// # The two "no answer" cases are not the same, and that is the whole rule
-    ///
-    /// **A read that threw is unknown, and unknown means yes.** A permission
-    /// blip, a provider that has not mounted, a bookmark whose scope was not
-    /// started: none of those are "this is local storage", and answering "not
-    /// ubiquitous" to them drops the only keys that can see an iCloud
-    /// placeholder. Every undownloaded photo would then read as `.local` — no
-    /// cloud badge, `ensureMaterialized` never fires, an empty frame in the
-    /// viewer. Being slow is the recoverable failure of the two.
-    ///
-    /// **A read that succeeded with the key absent is a no.** On iOS
-    /// `isUbiquitousItem` is simply *not populated* for anything outside iCloud
-    /// Drive — measured on the simulator, a plain local directory answers `nil`,
-    /// never `false`. Treating that absence as "unknown" too would send every
-    /// scan down the seven-key path and undo the whole 406 s → 2.3 s win
-    /// (docs/adr/0002). It is the ordinary case, not a failure.
-    static func treeIsUbiquitous(_ read: UbiquityRead) -> Bool {
-        switch read {
-        case .unreadable:
-            return true
-        case .answered(let isUbiquitous):
-            return isUbiquitous ?? false
-        }
-    }
-
-    /// One file's provider attributes. A failed read reports "plain local
-    /// file", which is what the baseline's `try?` did — a probe that throws
-    /// must not make a photo disappear.
-    private static func probeOne(_ url: URL, ubiquitous: Bool) -> VfsProviderAttrs {
-        let result = FileProviderDetector.probe(url, includeUbiquitousKeys: ubiquitous)
-        return VfsProviderAttrs(
-            isFileProvider: result.isFileProvider,
-            isPlaceholder: result.status != .local,
-            contentVersion: result.version.contentIdentifier,
-            // `totalFileSize ?? fileSize`, which is exactly what the baseline
-            // wrote into `ContentVersion.size`. A placeholder's `stat` size is
-            // a stub, and the sidecar cache compares on this field.
-            intendedSize: result.version.size
-        )
     }
 }

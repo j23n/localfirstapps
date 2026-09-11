@@ -78,8 +78,9 @@ pub struct SidecarCandidate {
     /// The sidecar's identity at scan time.
     #[serde(rename = "currentVersion")]
     pub current_version: ContentVersion,
-    /// Whether the sidecar's own bytes are present.
-    #[serde(rename = "downloadStatus")]
+    /// Whether the sidecar's own bytes are present. Omitted when `local`
+    /// (M4 preferred). Old snapshots still decode via `default`.
+    #[serde(rename = "downloadStatus", default, skip_serializing_if = "DownloadStatus::is_local")]
     pub download_status: DownloadStatus,
 }
 
@@ -105,10 +106,9 @@ impl ContentVersion {
         self.content_identifier.is_none() && self.modification_date.is_none() && self.size.is_none()
     }
 
-    /// `FileProviderDetector.ContentVersion.sameContent`, verbatim: identifiers
-    /// win when **both** sides have one; `(mtime, size)` decides when neither
-    /// does; mixed presence is "different", because one side knows something
-    /// the other cannot confirm.
+    /// Identifiers win when **both** sides have one; `(mtime, size)` decides
+    /// when neither does; mixed presence is "different", because one side
+    /// knows something the other cannot confirm.
     pub fn same_content(lhs: &ContentVersion, rhs: &ContentVersion) -> bool {
         match (&lhs.content_identifier, &rhs.content_identifier) {
             (Some(l), Some(r)) => l == r,
@@ -134,6 +134,10 @@ pub enum DownloadStatus {
 }
 
 impl DownloadStatus {
+    fn is_local(&self) -> bool {
+        matches!(self, DownloadStatus::Local)
+    }
+
     /// The spelling the scanner fixture records.
     pub fn describe(self) -> &'static str {
         match self {

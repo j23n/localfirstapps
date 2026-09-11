@@ -247,11 +247,28 @@ Size: M. Almost entirely agent work.
 so that the ADR review happens against one codebase rather than two, and so
 that `localcore` is extracted from a smaller surface.
 
-| Delete | Lines | Makes true |
-|---|---|---|
-| `PhotoMaterializer`, `CloudStorageService`, `FileProviderDetector`, `RemoteBadge` | 507 + 271 refs / 30 files | ADR 0005 R2 |
-| `CrashDiagnosticsService` ×3 (MetricKit) | 304 | ADR 0006 R9, ADR 0007 R17 |
-| localhealth `internal/ui/` loopback server | 4,864 Go + 1,604 assets | ADR 0006 R9 |
+Recorded before the cut (2026-09-12):
+
+- **M4 wire — preferred.** `downloadStatus` is `#[serde(default)]` and
+  omitted when `local`; `contentIdentifier` stays optional for decode.
+  Snapshot stays v20. The committed `library_snapshot_v20.json` is the
+  pre-change fixture; it must still decode.
+- **Gate scope.** Production Swift/Go: no `FileProvider` / `NSFileProvider*`
+  / `ubiquitousItem*` / `MetricKit` / `MXMetric*`. Rust
+  `Vfs::probe_provider` and generated `VfsProviderAttrs` stay until Phase 2
+  lifts Vfs. iOS uses a local-only probe (defaults); placeholders are
+  absent from the projection.
+- **Health web UI is preserved**, not deleted. `archive serve` leaves the
+  product (ADR 0006 R9). The screens, charts, templates and goldens move
+  to `apps/health/reference/web-ui/` as the Phase 6 brief. ADR 0004 has
+  no `chart` / metric-card kind; that is an R4 amendment when health
+  gets shells, not a one-off widget.
+
+| Delete / move | Makes true |
+|---|---|
+| `PhotoMaterializer`, `CloudStorageService`, `FileProviderDetector`, `RemoteBadge`, `CoreProviderProbe`, Cloud Storage settings, materialize/cloud APIs | ADR 0005 R2 |
+| `CrashDiagnosticsService` ×3 (MetricKit) and its Settings chrome | ADR 0006 R9, ADR 0007 R17 |
+| `archive serve` (loopback). UI relocated, not deleted | ADR 0006 R9 |
 
 **What cannot move here, and why.** Three deletions are replacement-gated;
 pulling them forward ships a regression:
@@ -462,7 +479,11 @@ ADR 0008 retires the riskiest component instead of porting it.
 5. Gaps report carries ADR 0008 R8's wording: HealthKit cannot report a
    denied read, so "none seen" never means "complete".
 6. Two shells, **core loop only**: ingest, browse, one chart, gaps report.
-7. Go tree deleted once the projection reproduces a real archive.
+   The IA brief is `apps/health/reference/web-ui/`. A chart / metric-card
+   is an ADR 0004 R4 amendment (one native binding per platform), not a
+   port of Chart.js.
+7. Go tree deleted once the projection reproduces a real archive. The
+   reference web UI stays until that amendment is written.
 
 What survives from r1's differential plan: the Go projection's golden
 fixtures still pin the **projection**, compared as a canonical ordered JSON

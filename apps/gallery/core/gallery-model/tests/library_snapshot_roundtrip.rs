@@ -128,13 +128,31 @@ fn the_committed_snapshot_decodes() {
 
 #[test]
 fn decoding_and_re_encoding_loses_nothing() {
-    let original = json(&fixture_bytes());
+    let mut original = json(&fixture_bytes());
     let library = snapshot::load(&fixture_bytes()).unwrap();
-    let re_encoded = json(&snapshot::save(&library).unwrap());
+    let mut re_encoded = json(&snapshot::save(&library).unwrap());
+    // M4 preferred: Local downloadStatus is omitted on write. The
+    // pre-change fixture still has the key; strip both sides so the
+    // rest of the envelope is what we compare.
+    strip_local_download_status(&mut original);
+    strip_local_download_status(&mut re_encoded);
     assert_eq!(
         re_encoded, original,
         "a round trip through the Rust types changed the wire format"
     );
+}
+
+fn strip_local_download_status(value: &mut serde_json::Value) {
+    if let Some(rows) = value
+        .pointer_mut("/value/sidecarManifest")
+        .and_then(|v| v.as_array_mut())
+    {
+        for row in rows {
+            if row.get("downloadStatus") == Some(&serde_json::json!("local")) {
+                row.as_object_mut().unwrap().remove("downloadStatus");
+            }
+        }
+    }
 }
 
 #[test]
