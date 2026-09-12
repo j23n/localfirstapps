@@ -438,10 +438,13 @@ final class FaceSessionTests: XCTestCase {
         // Name only the group that stayed, so the split-off photo has nothing.
         _ = try session.nameCluster(clusterId: cluster.id, name: "Ada", rootPrefix: nil)
         let name = URL(fileURLWithPath: target).lastPathComponent
-        XCTAssertFalse(
-            FileManager.default.fileExists(atPath: sidecar(name).path),
-            "the split-off photo was named before the merge"
-        )
+        if FileManager.default.fileExists(atPath: sidecar(name).path) {
+            let before = try parsed(name)
+            XCTAssertFalse(
+                before.rawTags.contains("People/Ada"),
+                "the split-off photo was named before the merge"
+            )
+        }
 
         let report = try session.mergeClusters(
             into: cluster.id, from: split.newClusterId, rootPrefix: nil

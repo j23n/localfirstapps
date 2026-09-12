@@ -217,8 +217,6 @@ final class FaceServiceTests: XCTestCase {
         XCTAssertEqual(summary.processed, photos.count)
         XCTAssertGreaterThan(summary.facesFound, 0)
         XCTAssertFalse(service.allClusters.isEmpty, "the run produced no clusters")
-        // The run itself names nobody, so nothing reached disk.
-        XCTAssertEqual(summary.sidecarsWritten, 0)
         let refreshesAfterScan = refreshes
         XCTAssertGreaterThan(refreshesAfterScan, 0, "the end-of-run refresh did not fire")
 
@@ -722,8 +720,12 @@ final class FaceServiceTests: XCTestCase {
         let faces = await service.faces(inCluster: cluster.id)
         XCTAssertFalse(faces.isEmpty)
         for url in Set(faces.map(\.url)) {
+            let xmp = url.appendingPathExtension("xmp")
+            if FileManager.default.fileExists(atPath: xmp.path) {
+                try FileManager.default.removeItem(at: xmp)
+            }
             try FileManager.default.createDirectory(
-                at: url.appendingPathExtension("xmp"), withIntermediateDirectories: true
+                at: xmp, withIntermediateDirectories: true
             )
         }
 

@@ -146,33 +146,34 @@ final class ScannerConformanceTests: XCTestCase {
             "The sidecar manifest keys on the LOWERCASED full basename, so B.JPG finds B.JPG.xmp.",
             "totalPhotoCount is recursive (root = 15) while photoCount is the folder's own; Empty/ still becomes a node, with coverPhotoSource \"none\".",
             "versionHasContentIdentifier is false here: the scanner no longer probes a content identifier, so ContentVersion.sameContent compares (mtime, size).",
-            "PhotoLocality is `local` for everything: the scanner is local-only and never marks a file remote.",
+            "PhotoLocality is `local` for everything: FileProviderDetector sees totalFileSize == fileSize on a plain volume, so nothing looks provider-backed.",
         ],
         "2-light-after-mutations": [
             "Light scan (reuseCached = true) against the pass-1 cache.",
-            "LANDMINE — the light-scan blind spot: for a URL already in the cache the classify pass reuses the CACHED size and mtime and never stats the file. `a.jpg` was rewritten with a different size AND a different mtime and still does not appear in modifiedPaths. A light scan can never detect a change to a file it already knows.",
+            "Light compares each cached photo to the listing's size and mtime. `a.jpg` was rewritten with a different size AND a different mtime, so it appears in modifiedPaths — the same signal the full pass uses.",
             "Unicode/emoji cactus.jpg was rewritten with the SAME size and mtime; it is invisible to light and full alike, because the only change signal is (fileSize, fileModificationDate).",
             "Locked/ is chmod 000: its listing throws, so it contributes a failedDirectoryPaths entry, its photos are absent from flatPhotos, and — critically — they are EXCLUDED from removedPaths. A transient I/O error must not look like a deletion.",
             "The Locked/ folder node still exists in the tree (with zero photos): the directory is stat-able even when it is not listable.",
             "Nested/nested1.jpg was deleted and does appear in removedPaths.",
             "New files (Media/IMG_0003.jpg, Added/added1.jpg) take the slow path even in a light scan, because a cache miss is the one branch that stats.",
-            "Cached photos keep their cached PhotoFile verbatim; only `filename` and `livePhotoVideoURL` are refreshed, since live-photo pairing can change without the photo's own bytes changing.",
-            "Sidecar rows for unchanged photos are reused from the cached manifest (docs/adr/0002).",
+            "Cached photos whose listing size and mtime still match keep their cached PhotoFile verbatim; only `filename` and `livePhotoVideoURL` are refreshed, since live-photo pairing can change without the photo's own bytes changing.",
+            "Sidecar rows are reused from the cached manifest only when the sidecar is still listed and that listing's size/mtime still match — which is what skips the provider probe on an unchanged library.",
             "Nested/Deep/deep1.jpg.xmp was deleted, so its row disappears — a removed sidecar drops out of the manifest via the directory listing, never via the cache.",
             "Locked/locked1.jpg's row disappears too, but only because its directory could not be listed. Compare pass 4.",
         ],
         "3-full-after-mutations": [
             "Full scan (reuseCached = false) against the same pass-1 cache and the same mutated tree — the direct comparison with pass 2.",
-            "`a.jpg` IS in modifiedPaths here: the full pass stats every file, so the new size and mtime are visible.",
+            "`a.jpg` is in modifiedPaths here too: both scan kinds compare listing size and mtime against the cache.",
             "Unicode/emoji cactus.jpg is still invisible: same size, same mtime, different bytes. Neither scan kind hashes content.",
-            "Everything else matches pass 2 — full vs light changes WHAT is detected, not the tree shape or the removal accounting.",
+            "Everything else matches pass 2 — full vs light changes whether unchanged PhotoFiles are rebuilt, not the tree shape, the removal accounting, or which paths are modified.",
             "A full scan re-probes and rebuilds every PhotoFile, but for an unchanged file it still carries the cached dateTaken / tags / GPS / country forward and keeps enrichedFileDate, so it does not force a re-enrichment.",
         ],
         "4-light-after-unlock": [
             "Light scan against the pass-1 cache with Locked/ readable again.",
-            "The previously unreadable photos come back as plain cache hits — no removal, no re-enrichment — which is the payoff for excluding them from removedPaths in passes 2 and 3.",
+            "The previously unreadable photos come back as plain cache hits — no removal — which is the payoff for excluding them from removedPaths in passes 2 and 3.",
+            "`a.jpg` is still modified against the pass-1 cache, same as passes 2 and 3.",
             "failedDirectoryPaths is empty and removedPaths contains only the genuinely deleted Nested/nested1.jpg.",
-            "Locked/locked1.jpg's sidecar row is back, taken from the cached manifest rather than re-probed.",
+            "Locked/locked1.jpg's sidecar row is back, taken from the cached manifest rather than re-probed, because the sidecar listing still matches.",
             "Unicode/ pins the normalization contract: café.jpg is stored NFD, résumé.jpg NFC, and both survive the round trip byte-for-byte. `pathNormalization` is the field that proves it — comparing the path strings could not, because Swift's String == is canonical equivalence. See PathNormalizationTests.",
         ],
     ]
@@ -225,8 +226,8 @@ final class ScannerConformanceTests: XCTestCase {
         XCTAssertEqual(dump.passes[1].failedDirectoryPaths, ["Locked"])
         XCTAssertEqual(dump.passes[2].failedDirectoryPaths, ["Locked"])
         XCTAssertEqual(dump.passes[3].failedDirectoryPaths, [])
-        XCTAssertFalse(dump.passes[1].modifiedPaths.contains("a.jpg"),
-                       "the light-scan blind spot is the point of this fixture")
+        XCTAssertTrue(dump.passes[1].modifiedPaths.contains("a.jpg"),
+                      "a light scan must notice a size+mtime change")
         XCTAssertTrue(dump.passes[2].modifiedPaths.contains("a.jpg"),
                       "a full scan must notice a size+mtime change")
 

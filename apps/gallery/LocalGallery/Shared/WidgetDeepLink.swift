@@ -58,8 +58,17 @@ enum WidgetDeepLink: Equatable {
             var paths: [String] = []
             for item in items {
                 guard let v = item.value, !v.isEmpty else { continue }
+                // Legacy widgets joined several tag paths with commas.
+                // A single path may itself contain a comma (`Buenos Aires, AR`);
+                // only split when every piece still looks like a `Namespace/…` path.
                 if v.contains(",") {
-                    paths.append(contentsOf: v.split(separator: ",").map(String.init))
+                    let parts = v.split(separator: ",", omittingEmptySubsequences: false)
+                        .map { String($0) }
+                    if parts.count > 1, parts.allSatisfy({ $0.contains("/") }) {
+                        paths.append(contentsOf: parts)
+                    } else {
+                        paths.append(v)
+                    }
                 } else {
                     paths.append(v)
                 }

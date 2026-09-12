@@ -124,7 +124,10 @@ final class MetadataConformanceTests: XCTestCase {
         "sidecar/tagslist_bag.jpg": ["rdf:Bag works exactly like rdf:Seq: the parser only scans for `<rdf:li>` between the TagsList open and close tags."],
         "sidecar/truncated_tagslist.jpg": ["No `</digiKam:TagsList>` means the whole block is skipped — a truncated sidecar silently yields zero tags rather than a partial list."],
         "sidecar/garbage.jpg": ["A non-XML sidecar parses to nothing; there is no error surface, the photo just looks untagged."],
-        "sidecar/country_gap.jpg": ["Country comes from the sidecar."],
+        "sidecar/country_gap.jpg": [
+            "Country comes from the sidecar.",
+            "The JPEG embeds Objects/Boat; the sidecar-only reader ignores embedded TagsList, so hierarchicalTags stays empty.",
+        ],
         "sidecar/date_and_gps_ignored.jpg": [
             "LANDMINE: the sidecar parser reads exactly three things — digiKam:TagsList, photo-tools:CountryCode, MWG regions.",
             "exif:DateTimeOriginal and exif:GPS* in a sidecar are ignored entirely; dateTaken and GPS stay nil.",

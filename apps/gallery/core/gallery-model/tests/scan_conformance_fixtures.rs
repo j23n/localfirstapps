@@ -522,12 +522,18 @@ fn library_snapshot_fixture_matches_the_documented_encoding() {
     let manifest = value["sidecarManifest"].as_array().unwrap();
     assert_eq!(manifest.len(), 1);
     let row = &manifest[0];
-    assert_eq!(row["downloadStatus"], "local");
+    assert!(
+        row.get("downloadStatus").is_none(),
+        "M4 omits downloadStatus when it is local"
+    );
     assert!(row["sidecarURL"]
         .as_str()
         .unwrap()
         .starts_with("file:///fixtures/PhotoLibrary/"));
-    assert!(row["currentVersion"]["contentIdentifier"].is_string());
+    assert!(
+        row["currentVersion"].get("contentIdentifier").is_none(),
+        "new writes omit the provider token"
+    );
     assert!(row["currentVersion"]["modificationDate"].is_number());
     let photo_id = row["photoID"].as_str().unwrap();
     assert_eq!(photo_id, photo_id.to_uppercase());

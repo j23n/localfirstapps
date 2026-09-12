@@ -185,7 +185,7 @@ final class ThumbnailServiceTests: XCTestCase {
         service.invalidateCachedImages(for: [source])
         XCTAssertNil(service.cachedThumbnail(for: source))
 
-        try writeTinyJPEG(to: source, red: 0x10, green: 0x10, blue: 0xE0)
+        try writeTinyJPEG(to: source, width: 16, height: 16, red: 0x10, green: 0x10, blue: 0xE0)
         try FileManager.default.setAttributes(
             [.modificationDate: Date().addingTimeInterval(5)],
             ofItemAtPath: source.path

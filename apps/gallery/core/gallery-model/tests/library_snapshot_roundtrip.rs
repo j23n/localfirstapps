@@ -66,8 +66,8 @@ fn the_committed_snapshot_decodes() {
     );
     assert_eq!(
         manifest[0].current_version.content_identifier.as_deref(),
-        Some("1234567"),
-        "the identifier is a JSON string on both sides of the boundary"
+        None,
+        "new writes omit the provider token; old files still decode"
     );
     assert_eq!(manifest[0].download_status, DownloadStatus::Local);
 

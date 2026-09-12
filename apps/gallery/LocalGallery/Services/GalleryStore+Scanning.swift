@@ -491,7 +491,15 @@ extension GalleryStore {
     /// surface tags/country codes without a manual rescan.
     func reapplySidecarMerges() {
         let merged = mergeCachedSidecars(into: allPhotos)
-        guard merged != allPhotos else { return }
+        // PhotoFile.== is id-only, so array equality cannot see tag/country
+        // retraction. Compare the fields the merge actually writes.
+        let changed = zip(merged, allPhotos).contains { new, old in
+            new.hierarchicalTags != old.hierarchicalTags
+                || new.countryCode != old.countryCode
+                || new.faceRegions != old.faceRegions
+                || new.sidecarStatus != old.sidecarStatus
+        }
+        guard changed else { return }
         apply(.sidecarsMerged(photos: merged))
         Log.cache.info("Re-applied sidecar merges to live photos")
     }

@@ -191,7 +191,7 @@ final class LibraryAnalysisTests: XCTestCase {
         run.photos = {
             [PhotoFile.fixture(
                 url: photoURL,
-                tags: ["Places/France/Paris"],
+                tags: ["Places/France/Île-de-France/Paris"],
                 gps: (lat: 48.8584, lon: 2.2945)
             )]
         }
@@ -200,7 +200,7 @@ final class LibraryAnalysisTests: XCTestCase {
         XCTAssertEqual(
             run.lastSummary,
             LibraryAnalysis.Summary(),
-            "a rescan-loaded Places/Paris name must not put the photo back up for places"
+            "a rescan-loaded city-depth Places name must not put the photo back up for places"
         )
     }
 

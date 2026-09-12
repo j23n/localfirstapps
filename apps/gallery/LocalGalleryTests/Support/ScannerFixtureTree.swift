@@ -138,7 +138,13 @@ struct ScannerFixtureTree: Decodable {
         // birth time, it is also what `earliestFilesystemDate` picks — which
         // is what makes `dateTaken` reproducible.
         if let mtime, let date = iso.date(from: mtime) {
-            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: path)
+            // APFS can pin birth time to the first mtime we write. Reset
+            // creationDate to now so `min(birth, mtime)` still picks mtime
+            // after a rewrite — that is what makes `dateTaken` reproducible.
+            try FileManager.default.setAttributes(
+                [.modificationDate: date, .creationDate: Date()],
+                ofItemAtPath: path
+            )
         }
     }
 }

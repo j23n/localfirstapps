@@ -270,18 +270,16 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
         XCTAssertEqual(row.sidecarURL.lastPathComponent, "IMG_0001.jpg.xmp")
         XCTAssertEqual(row.photoID, PhotoFile.stableID(for: row.sidecarURL.deletingPathExtension()))
         XCTAssertEqual(row.downloadStatus, .local)
-        XCTAssertEqual(row.currentVersion.contentIdentifier, "1234567")
+        XCTAssertNil(row.currentVersion.contentIdentifier)
 
-        // The enum has to be a plain string on the wire — the synthesised
-        // encoding for a payload-less case is `{"local": {}}`, and the Rust
-        // core reads and writes the same file.
+        // `.local` and the provider token are omitted on new writes (M4).
+        // The synthesised encoding for a payload-less enum case would be
+        // `{"local": {}}`; the wire form is a plain string when present.
         let value = try XCTUnwrap(fixtureObject()["value"] as? [String: Any])
         let rows = try XCTUnwrap(value["sidecarManifest"] as? [[String: Any]])
-        XCTAssertEqual(rows.first?["downloadStatus"] as? String, "local")
-        XCTAssertEqual(
-            (rows.first?["currentVersion"] as? [String: Any])?["contentIdentifier"] as? String,
-            "1234567",
-            "the content identifier is a string, matching gallery_model::snapshot::ContentVersion"
+        XCTAssertNil(rows.first?["downloadStatus"])
+        XCTAssertNil(
+            (rows.first?["currentVersion"] as? [String: Any])?["contentIdentifier"]
         )
     }
 
@@ -316,11 +314,13 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
         let decoded = try JSONDecoder().decode(ContentVersion.self, from: legacy)
         XCTAssertEqual(decoded.contentIdentifier, "8675309")
         XCTAssertEqual(decoded.size, 12)
-        // …and it re-encodes as a string from then on.
+        // New writes omit the provider token (M4). Decode still keeps it
+        // in memory so sameContent can compare old rows.
         let reencoded = try JSONSerialization.jsonObject(
             with: try JSONEncoder().encode(decoded)
         ) as? [String: Any]
-        XCTAssertEqual(reencoded?["contentIdentifier"] as? String, "8675309")
+        XCTAssertNil(reencoded?["contentIdentifier"])
+        XCTAssertEqual(reencoded?["size"] as? Int, 12)
     }
 
     /// Dates are JSON **numbers**: `JSONEncoder`'s default `.deferredToDate`

@@ -43,12 +43,12 @@ final class PersonThumbnailCropTests: XCTestCase {
         let needed = PersonThumbnailView.sourcePixelSize(
             cellSize: 76, region: region, scale: 3
         )
-        // 76pt × 3 / 0.1 = 2280, capped at the viewer-size decode.
-        XCTAssertEqual(needed, PersonThumbnailView.sourceMaxPixelSize)
+        // Longest face edge is height 0.12: 76pt × 3 / 0.12 = 1900.
+        XCTAssertEqual(needed, 1900, accuracy: 1)
         let tiny = PersonThumbnailView.sourcePixelSize(
             cellSize: 18, region: region, scale: 3
         )
-        XCTAssertEqual(tiny, 540, accuracy: 1)
+        XCTAssertEqual(tiny, 450, accuracy: 1)
     }
 
     func testAFaceNearTheEdgeShiftsInsteadOfGoingOutOfBounds() {

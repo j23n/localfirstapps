@@ -146,6 +146,34 @@ struct PhotoFile: Identifiable, Hashable, Codable, Sendable {
         sidecarOnDisk = try c.decodeIfPresent(Bool.self, forKey: .sidecarOnDisk) ?? false
     }
 
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(url, forKey: .url)
+        try c.encode(filename, forKey: .filename)
+        try c.encode(fileSize, forKey: .fileSize)
+        try c.encodeIfPresent(dateTaken, forKey: .dateTaken)
+        try c.encode(dateFromMetadata, forKey: .dateFromMetadata)
+        try c.encode(isVideo, forKey: .isVideo)
+        try c.encodeIfPresent(livePhotoVideoURL, forKey: .livePhotoVideoURL)
+        try c.encode(hierarchicalTags, forKey: .hierarchicalTags)
+        try c.encodeIfPresent(countryCode, forKey: .countryCode)
+        try c.encodeIfPresent(enrichedFileDate, forKey: .enrichedFileDate)
+        try c.encodeIfPresent(fileModificationDate, forKey: .fileModificationDate)
+        try c.encodeIfPresent(gpsLatitude, forKey: .gpsLatitude)
+        try c.encodeIfPresent(gpsLongitude, forKey: .gpsLongitude)
+        try c.encode(faceRegions, forKey: .faceRegions)
+        if !photoTools.isEmpty {
+            try c.encode(photoTools, forKey: .photoTools)
+        }
+        if !faceDecisions.isEmpty {
+            try c.encode(faceDecisions, forKey: .faceDecisions)
+        }
+        if sidecarOnDisk {
+            try c.encode(true, forKey: .sidecarOnDisk)
+        }
+    }
+
     static func == (lhs: PhotoFile, rhs: PhotoFile) -> Bool {
         lhs.id == rhs.id
     }
