@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-11 (spikes: SFace; ε not ISA-sized)
+- Revised: 2026-09-11 (r2); 2026-09-11 (spikes: SFace; ε not ISA-sized); 2026-09-12 (R10 fixture-pack exception)
 
 ## Scope
 
@@ -88,6 +88,13 @@ scope.
 A lookup answers with the nearest populated place, which is not the same as
 the place that contains the point; a photo in open country may resolve to a
 town some distance away. This is accepted.
+
+**Exception (2026-09-12).** The committed pack is an 8-city / FR–US–CA
+fixture (Paris + Niagara strip) until `scripts/pack_geo.py` can run
+against cities1000 + NE admin-0 offline. The border test uses
+hand-simplified rings. The bundle still stays under 10 MB. This is the
+pack that ships until that offline rebuild is possible; it is not a
+change to the cities1000 default.
 
 **R11.** **Points of interest are not a capability.** No POI or landmark
 dataset is bundled, and no landmark is inferred from coordinates. Proximity
