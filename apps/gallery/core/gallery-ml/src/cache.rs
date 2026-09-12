@@ -96,6 +96,10 @@ pub const META_FACE_PACK: &str = "face_pack";
 /// Ordered, append-only DDL. Index *n* takes the schema from version *n* to
 /// *n + 1*, so a migration is added by pushing onto the end and bumping
 /// [`SCHEMA_VERSION`] — never by editing an existing entry.
+///
+/// Work-table columns (`ml_work` / `face_work`) follow
+/// [`localcore_queue::ensure_table`]; this crate migrates, it does not
+/// own the shape.
 const MIGRATIONS: &[&str] = &[
     // 0 → 1
     r#"
@@ -436,8 +440,12 @@ pub struct CacheDb {
 }
 
 impl CacheDb {
-    /// Open (creating if needed) the cache DB at `path`, run migrations, and
-    /// reclaim rows a previous process abandoned mid-flight.
+    /// Open (creating if needed) the cache DB at `path` and run migrations.
+    ///
+    /// Does not reclaim abandoned work. Call [`CacheDb::reclaim_abandoned`]
+    /// and [`CacheDb::face_reclaim_abandoned`] at run start — two engines
+    /// share this file, and an opener cannot tell an abandoned row from one
+    /// the other engine is holding.
     ///
     /// The path is caller-supplied with no default — same rule as Swift's
     /// `GalleryPaths` — so a missed injection fails loudly instead of writing

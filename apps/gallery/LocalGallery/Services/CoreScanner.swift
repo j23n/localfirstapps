@@ -74,14 +74,13 @@ final class CoreScanner: Sendable {
     ///   - cachedPhotos: URL → previous-scan `PhotoFile`. Carries EXIF / tags /
     ///     GPS / locality forward.
     ///   - cachedSidecarManifest: photoID → previous-scan `SidecarCandidate`.
-    ///     A hit here is what lets a light scan skip the `.xmp` provider probe
-    ///     for an unchanged photo — the single most expensive thing a scan does
-    ///     on a provider-backed library.
+    ///     A hit here is what lets a light scan skip rebuilding an `.xmp` row
+    ///     when the listing size and mtime still match.
     ///   - reuseCached: light scan when true; see the blind spot documented on
     ///     `gallery_scan::scan`.
-    ///   - onProgress: cumulative photo count, fired from the core's scan
-    ///     thread every 500 photos and once at the end. Safe to hop to the main
-    ///     actor inside.
+    ///   - onProgress: count fired from the core's scan thread. Mid-walk the
+    ///     number is content files (photos, videos, `.xmp`); the last call is
+    ///     the photo total. Safe to hop to the main actor inside.
     func scan(
         at rootURL: URL,
         cachedPhotos: [URL: PhotoFile] = [:],
@@ -176,9 +175,9 @@ final class CoreScanner: Sendable {
             }
             if outcome.timings.probeMismatches > 0 {
                 Log.scan.error("""
-                    \(outcome.timings.probeMismatches) provider probe batches answered the wrong \
-                    number of rows and were discarded — those directories were scanned as plain \
-                    local storage
+                    \(outcome.timings.probeMismatches) leftover probe-mismatch counts \
+                    (always 0 on the local-only scanner) — historically a discarded \
+                    provider-probe batch
                     """)
             }
 

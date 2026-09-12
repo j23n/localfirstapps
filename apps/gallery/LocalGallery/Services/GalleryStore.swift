@@ -198,8 +198,8 @@ final class GalleryStore {
     /// (docs/adr/0002).
     @ObservationIgnored var lastSidecarManifest: [SidecarCandidate] = []
     @ObservationIgnored let bookmarks: BookmarkManager
-    /// The Rust core's folder scanner and the provider probe it calls back
-    /// into. Replaced `FolderScanner`; scan *policy* stays in
+    /// The Rust core's folder scanner (local-only; no provider probe).
+    /// Replaced `FolderScanner`; scan *policy* stays in
     /// `GalleryStore+Scanning.swift`.
     @ObservationIgnored let coreScanner = CoreScanner()
     @ObservationIgnored private let contactLinker = ContactLinker()

@@ -137,8 +137,8 @@ pub fn scan(vfs: &dyn Vfs, root: &str, input: &ScanInput) -> ScanOutcome {
     scan_with_progress(vfs, root, input, None)
 }
 
-/// [`scan`], with a callback invoked during the walk and once at the end
-/// with the true photo total.
+/// [`scan`], with a callback invoked during the walk (content files,
+/// including `.xmp`) and once after assemble with the photo total.
 ///
 /// The callback runs on the scanning thread and must not call back into the
 /// core — the VFS is already re-entrant from the platform side, and a second
@@ -876,7 +876,15 @@ mod tests {
             &ScanInput::default(),
             Some(&|n| seen.borrow_mut().push(n)),
         );
-        assert_eq!(seen.borrow().last().copied(), Some(out.flat_photos.len()));
+        let ticks = seen.borrow();
+        // Walk-end is content (5 photos + paired `.mov` + `.xmp`); assemble
+        // then overwrites with the photo total.
+        assert_eq!(
+            ticks.as_slice(),
+            &[7, 5],
+            "mid-walk / walk-end counts content, last tick is photos"
+        );
+        assert_eq!(ticks.last().copied(), Some(out.flat_photos.len()));
     }
 
     #[test]

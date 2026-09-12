@@ -117,11 +117,12 @@ impl From<SnapshotError> for ScanError {
 
 /// Progress during a walk.
 ///
-/// Fires on the scan thread every 500 photos and once at the end with the true
-/// total. Do not call back into the core from this callback.
+/// Fires on the scan thread during the walk (content files, including `.xmp`)
+/// every 500 items, and once after assemble with the photo total. Do not call
+/// back into the core from this callback.
 #[uniffi::export(with_foreign)]
 pub trait ScanProgressListener: Send + Sync {
-    /// Photos discovered so far.
+    /// Content files so far mid-walk; photo total on the last call.
     fn on_progress(&self, discovered: u32);
 }
 
@@ -322,7 +323,7 @@ pub struct ScanRequest {
     /// Last pass's photos. Carries EXIF, tags, GPS and locality forward.
     pub cached_photos: Vec<ScanPhoto>,
     /// Last pass's sidecar rows. A hit here is what lets a light scan skip
-    /// re-probing an `.xmp`.
+    /// rebuilding an `.xmp` row when the listing still matches.
     pub cached_sidecar_manifest: Vec<ScanSidecarRow>,
 }
 

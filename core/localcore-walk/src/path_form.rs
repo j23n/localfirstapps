@@ -8,14 +8,15 @@
 //! | `url.path`, `url.standardized.path` | the **on-disk bytes**, untouched |
 //! | `url.standardizedFileURL.path`, `resolvingSymlinksInPath().path` | **decomposed** (NFD) |
 //!
-//! Record identity hashes the first, so ids follow the spelling the file was
-//! created with — and NFC and NFD names derive *different* ids, which
-//! `stable_uuid_vectors.json` pins. Failed-directory paths and the Store's
-//! carry-forward prefix check go through the second, so both sides of *that*
-//! comparison are NFD.
+//! NFD here is listing / prefix form only: failed-directory paths and the
+//! Store's carry-forward prefix check, so both sides of *that* comparison
+//! are NFD. Record identity is not this function — after M1 it is NFC via
+//! `localcore-id` (Swift `precomposedStringWithCanonicalMapping`). NFC and
+//! NFD spellings of one visible name no longer derive different ids.
 //!
-//! Each side is internally consistent. Mixing them is what breaks — and it
-//! breaks invisibly in Swift, because `String ==` compares under canonical
+//! Each side is internally consistent. Mixing listing-form NFD with
+//! identity-form NFC in a *string* compare is what breaks — and it breaks
+//! invisibly in Swift, because `String ==` compares under canonical
 //! equivalence and answers "equal" to a mismatch Rust's byte comparison would
 //! catch. Hence: exactly one function, used for exactly the failed-directory
 //! paths, and nothing else in this crate normalizes anything.
