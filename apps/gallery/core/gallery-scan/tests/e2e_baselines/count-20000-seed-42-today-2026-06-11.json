@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "count": 20000,
+  "seed": 42,
+  "today": "2026-06-11",
+  "stills": 20000,
+  "videos": 0,
+  "sidecars": 16995,
+  "folders": 95,
+  "files": 20000,
+  "tagged_photos": 16993,
+  "gps_photos": 18555,
+  "dated_from_metadata": 19940,
+  "search_anna": 3608,
+  "search_rome": 794,
+  "memories_generated": 10,
+  "scheduled_horizon": 28
+}

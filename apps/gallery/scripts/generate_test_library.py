@@ -3,7 +3,6 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "pillow",
-#   "piexif",
 # ]
 # ///
 """Generate a synthetic test library for LocalGallery.
@@ -45,6 +44,7 @@ import os
 import plistlib
 import random
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -700,31 +700,88 @@ def _dms(value: float):
     return ((d, 1), (m, 1), (s, 10000))
 
 
+def _ifd(entries: list[tuple[int, int, int, bytes]], data_base: int) -> bytes:
+    """One TIFF IFD, little-endian, next-IFD pointer forced to 0.
+
+    `entries` are (tag, type, count, payload). Payload longer than 4 bytes is
+    appended after the directory; shorter values sit in the offset field.
+    `data_base` is the TIFF offset of the first byte of this IFD.
+    """
+    entries = sorted(entries, key=lambda e: e[0])
+    directory = 2 + 12 * len(entries) + 4
+    extra = bytearray()
+    out = struct.pack("<H", len(entries))
+    for tag, typ, count, payload in entries:
+        if len(payload) <= 4:
+            value = payload.ljust(4, b"\x00")
+        else:
+            value = struct.pack("<I", data_base + directory + len(extra))
+            extra += payload
+            if len(extra) % 2:
+                extra += b"\x00"
+        out += struct.pack("<HHI", tag, typ, count) + value
+    return out + struct.pack("<I", 0) + extra
+
+
 def _build_exif(dt: datetime, gps: tuple[float, float] | None) -> bytes:
-    import piexif
-    ds = dt.strftime("%Y:%m:%d %H:%M:%S").encode("ascii")
-    zeroth = {
-        piexif.ImageIFD.Make: b"LocalGallery",
-        piexif.ImageIFD.Model: b"SyntheticCam",
-        piexif.ImageIFD.DateTime: ds,
-    }
-    exif_ifd = {
-        piexif.ExifIFD.DateTimeOriginal: ds,
-        piexif.ExifIFD.DateTimeDigitized: ds,
-        piexif.ExifIFD.PixelXDimension: W,
-        piexif.ExifIFD.PixelYDimension: H,
-    }
-    gps_ifd = {}
+    """APP1 payload (`Exif\\0\\0` + TIFF) that `gallery-meta` / kamadak-exif accept.
+
+    `piexif.dump` writes an Exif/GPS IFD whose overflow strings land on the
+    next-IFD pointer (`Unexpected next IFD`). Link those IFDs only through
+    ExifOffset / GPSOffset and keep every next pointer at 0.
+    """
+    ds = dt.strftime("%Y:%m:%d %H:%M:%S").encode("ascii") + b"\x00"
+    make = b"LocalGallery\x00"
+    model = b"SyntheticCam\x00"
+
+    exif_entries = [
+        (0x9003, 2, 20, ds),  # DateTimeOriginal
+        (0x9004, 2, 20, ds),  # DateTimeDigitized
+        (0xA002, 4, 1, struct.pack("<I", W)),
+        (0xA003, 4, 1, struct.pack("<I", H)),
+    ]
+    gps_entries: list[tuple[int, int, int, bytes]] = []
     if gps is not None:
         lat, lon = gps
-        gps_ifd = {
-            piexif.GPSIFD.GPSVersionID: (2, 3, 0, 0),
-            piexif.GPSIFD.GPSLatitudeRef: b"N" if lat >= 0 else b"S",
-            piexif.GPSIFD.GPSLatitude: _dms(lat),
-            piexif.GPSIFD.GPSLongitudeRef: b"E" if lon >= 0 else b"W",
-            piexif.GPSIFD.GPSLongitude: _dms(lon),
-        }
-    return piexif.dump({"0th": zeroth, "Exif": exif_ifd, "GPS": gps_ifd})
+        lat_ref = b"N\x00" if lat >= 0 else b"S\x00"
+        lon_ref = b"E\x00" if lon >= 0 else b"W\x00"
+        lat_dms = b"".join(struct.pack("<II", n, d) for n, d in _dms(lat))
+        lon_dms = b"".join(struct.pack("<II", n, d) for n, d in _dms(lon))
+        gps_entries = [
+            (0x0000, 1, 4, bytes((2, 3, 0, 0))),
+            (0x0001, 2, 2, lat_ref),
+            (0x0002, 5, 3, lat_dms),
+            (0x0003, 2, 2, lon_ref),
+            (0x0004, 5, 3, lon_dms),
+        ]
+
+    # IFD0 overflow is make + model + DateTime (each even-padded). Pointers
+    # are inline LONGs, so the child IFD offsets are known before we emit IFD0.
+    ifd0_n = 4 + (1 if gps_entries else 0)
+    ifd0_dir = 2 + 12 * ifd0_n + 4
+    overflow0 = 0
+    for blob in (make, model, ds):
+        overflow0 += len(blob) + (len(blob) % 2)
+    exif_at = 8 + ifd0_dir + overflow0
+    exif_blob = _ifd(exif_entries, exif_at)
+    if gps_entries:
+        gps_at = exif_at + len(exif_blob)
+        gps_blob = _ifd(gps_entries, gps_at)
+    else:
+        gps_at = 0
+        gps_blob = b""
+
+    ifd0_entries = [
+        (0x010F, 2, len(make), make),
+        (0x0110, 2, len(model), model),
+        (0x0132, 2, 20, ds),
+        (0x8769, 4, 1, struct.pack("<I", exif_at)),
+    ]
+    if gps_entries:
+        ifd0_entries.append((0x8825, 4, 1, struct.pack("<I", gps_at)))
+    ifd0 = _ifd(ifd0_entries, 8)
+    tiff = b"II*\x00" + struct.pack("<I", 8) + ifd0 + exif_blob + gps_blob
+    return b"Exif\x00\x00" + tiff
 
 
 def render_photo(rec: PhotoRec) -> int:

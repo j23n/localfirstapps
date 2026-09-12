@@ -518,6 +518,9 @@ dependencies = [
 name = "gallery-scan"
 version = "0.1.0"
 dependencies = [
+ "gallery-index",
+ "gallery-memories",
+ "gallery-meta",
  "gallery-model",
  "gallery-vfs",
  "localcore-walk",

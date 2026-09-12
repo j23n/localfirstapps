@@ -24,4 +24,3 @@ CI (root `.github/workflows` only — nested `apps/*/.github` does not run here)
 | `bindings.yml` | UniFFI drift + Linux Swift shim |
 | `rust.yml` | `cargo test --locked --workspace` for `core/` and `apps/gallery/core` |
 | `apps.yml` | Gallery Linux + iOS, contacts iOS, music iOS, health log/event |
-| `e2e-20k.yml` | Generated 20k library scan + memories horizon. **Manual only** (`workflow_dispatch`) |

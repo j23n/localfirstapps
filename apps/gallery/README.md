@@ -129,8 +129,9 @@ Tests live in `LocalGalleryTests/Unit` with fixtures in
 On this monorepo, gallery crates are the root `rust.yml` and the Linux
 + iOS suites are the `gallery-*` jobs in root `apps.yml`. Nested
 `.github/workflows/test.yml` is for the old standalone remote. The
-20k generated-library suite is root `e2e-20k.yml` (`workflow_dispatch`
-only — it does not run on PRs).
+20k generated-library regression suite is local-only
+(`apps/gallery/scripts/e2e_20k.sh`: scan, enrich, index, memories);
+it does not run in CI.
 
 Pull requests and tags **validate** the tree (generate, compile, test).
 They do not publish an IPA. See [docs/release.md](docs/release.md) and

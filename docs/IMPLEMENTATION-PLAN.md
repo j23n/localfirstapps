@@ -359,7 +359,7 @@ data — and after Phase 1 it has ~6,500 fewer lines of behaviour to preserve.
 | `localcore-walk` | `gallery-scan` walk only | Classification stays app-side, parameterised by extension set. |
 | `localcore-conflict` | **new** | ADR 0005 R7–R11. Grammar, detection, resolution policy. Fixture suite before any app calls it. Then wired into all four apps — the live bug fix. |
 | `localcore-queue` | `gallery-ml`'s queue, generalised | ADR 0006 R1–R5. The substrate every capability uses. |
-| `localcore-geo` | **new** | ADR 0006 R10. Packed `cities1000` + admin-0 point-in-polygon + spatial index + a data-build step. **1.5–2.5k lines. A crate, not a deletion** — r1 had it in a table of things being removed. Gates the `gallery-geo` / `GeocodingService` removal deferred from Phase 1. |
+| `localcore-geo` | **new** | ADR 0006 R10. Packed `allCountries` class `P` + admin-0 point-in-polygon + spatial index + a data-build step. **1.5–2.5k lines. A crate, not a deletion** — r1 had it in a table of things being removed. Gates the `gallery-geo` / `GeocodingService` removal deferred from Phase 1. |
 | `localcore-log` | localhealth's Go `internal/log` (354) | Designed against **both** consumers in one PR: localhealth's `blob_import` shape *and* gallery's `person_hidden` / `person_renamed` operation events with a replay test. Ships with **M2**. |
 | `localcore-blob` | localhealth's Go `internal/blobs` (266) | Content-addressed store. |
 
@@ -386,13 +386,14 @@ fixture and a survival assertion):
 >   ./internal/event`. Nested `apps/*/.github` copies do not fire here.
 > - Conflict copies are never content. Gallery FFI scan asserts that on
 >   `gallery-minimal`; contacts/music `SyncConflictTests` run in `apps.yml`.
-> - `localcore-geo` border test passes. R10 fixture exception is written
->   (8-city pack, not `cities1000`).
+> - `localcore-geo` border test passes. The shipped pack is GeoNames
+>   `allCountries` (class `P`) + NE 10 m admin-0.
 > - `localcore-log` has a gallery replay test and a health Go↔Rust golden.
 > - M1–M3 **survival fixtures** pass. M2 is still dual-write; cutover
 >   is leftover. M3 is not a pack swap.
-> - 20k: `scan_tree` exists. A recorded `Scan totals:` baseline is ops,
->   not a merge gate (no tree in-repo).
+> - 20k: `scan_tree` exists. Local `e2e_20k.sh` records scan / enrich /
+>   index / memories against `e2e_baselines/` (not a merge gate; no
+>   tree in-repo).
 > - Glue: `gazetteer_lookup` → sidecar (FFI + session + Swift); FFI scan
 >   excludes `.sync-conflict`. PersonLog attach and `StableUUIDVectorTests`
 >   are in `LocalGalleryTests` (gallery iOS job).
@@ -408,7 +409,7 @@ R6-clean contacts FFI are Phase 3 work, not leftovers.
 | `localcore-log` / blob through `Vfs` | **C** | Before iOS contacts writes a folder log. |
 | Open event-type set | **C** | If contacts logs. Envelope stays; `known_type` is not a monorepo enum. |
 | Do not copy PeopleStore dual-write | **C constraint** | One authority. Log-wins-on-attach + swallowed append can clobber. |
-| `cities1000` + NE admin-0 pack | gallery | 8-city fixture is not a real library. Before Places is trustworthy. |
+| `allCountries` class `P` + NE admin-0 pack | **done** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | Unify iOS onto `run_places` | gallery | Two orchestrators. With or after the real pack. |
 | M2 UserDefaults cutover | gallery | After gallery iOS is green. Do not copy the dual-write. |
 | M1 thumb / widget / `library_cache` rewrite | gallery | Orphans until next scan. Release notes are enough. |
@@ -418,7 +419,7 @@ R6-clean contacts FFI are Phase 3 work, not leftovers.
 | R8–R11 for gallery `.xmp` / music `.m3u` | later | Phase 5 / 4. |
 | gallery-ffi R6 rewrite (45 Records) | later | Phase 5 / R4 windowing. |
 | Health Go `internal/log` / `internal/blobs` delete | later | Phase 6. |
-| 20k-tree as a CI gate | e2e, not PRs | `apps/gallery/scripts/e2e_20k.sh` and `.github/workflows/e2e-20k.yml` (`workflow_dispatch` only). Generator: `generate_test_library.py`. Tests are `#[ignore]`. |
+| 20k-tree as a CI gate | e2e, local-only | `apps/gallery/scripts/e2e_20k.sh`. Scan → enrich → index → memories on `generate_test_library.py`. Structural golden under `gallery-scan/tests/e2e_baselines/`; timings next to the tree. `#[ignore]`. Not a GitHub workflow. |
 | Old-remote redirect READMEs | you | Whenever. Never Phase 2. |
 
 Size: L. All Linux-container work.
@@ -665,11 +666,13 @@ first `xcodebuild` of this tree has not run.
    `contacts-core` until it is green or the failure is understood.
    Contacts/music iOS jobs do not link the new Rust crates; a green
    contacts job does not prove gallery.
-5. Optional 20k e2e (not a PR gate): GitHub Actions → **E2E 20k** →
-   Run workflow, or `apps/gallery/scripts/e2e_20k.sh`. Simulator
-   install is still `--install booted` (`DriverUITests` / `TestLibrary`).
+5. Optional 20k e2e (local-only, not CI):
+   `apps/gallery/scripts/e2e_20k.sh`. `LOCALGALLERY_E2E_RECORD=1`
+   rewrites the structural golden and the tree's timing file.
+   Simulator install is still `--install booted`
+   (`DriverUITests` / `TestLibrary`).
 6. Optional: redirect READMEs on the old standalone remotes.
 7. When 2–4 are green: next engineering move is Phase 3.1
    (`contacts-core` headless). You author dark tokens when 3.2 starts.
-   Gallery-track backlog (`cities1000`, M3, M2, `run_places`) can run
-   in parallel; it does not block C.
+   Gallery-track backlog (M3, M2, `run_places`) can run in parallel; it
+   does not block C. The gazetteer pack is `allCountries` class `P`.

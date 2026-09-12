@@ -25,7 +25,10 @@ It prints the CoreScanner totals line:
 Scan totals: N files in F folders, list=Xms hits=H slow=S probe=0
 ```
 
-The ignored `e2e_generated_library` test walks that tree (cold + light)
-and is **not** a PR gate. Run it with `apps/gallery/scripts/e2e_20k.sh`
-or the `E2E 20k` workflow (`workflow_dispatch` only). The ignored
-`scan_bench` test writes a synthetic 10k tree of empty files.
+The ignored `e2e_generated_library` test is a local performance-regression
+suite: cold + light scan, sidecar/EXIF enrich, then `gallery-index` search
+and `gallery-memories` generate + 7-day horizon on that same table.
+Structural counts are committed under `tests/e2e_baselines/`; timings
+live next to the generated tree (`LOCALGALLERY_E2E_RECORD=1` rewrites
+both). Not a CI gate — run `apps/gallery/scripts/e2e_20k.sh`. The
+ignored `scan_bench` test writes a synthetic 10k tree of empty files.
