@@ -48,6 +48,11 @@ final class PeopleStore {
         }
     }
 
+    /// Projected contact-link decisions. GalleryStore still persists the
+    /// UserDefaults key for the live UI; this copy exists so
+    /// `applyProjection` applies all five person keys, not four.
+    private(set) var personContactLinks: [String: PersonLink] = [:]
+
     /// All People/* tags with photo counts + latest-photo dates, sorted by
     /// count. Published here by the Store after each async tag aggregation.
     private(set) var topPeople: [TagSuggestion] = []
@@ -70,6 +75,8 @@ final class PeopleStore {
     @ObservationIgnored var onMemoryAffectingChange: (() -> Void)?
     /// Set by the Store: visibility changes affect the widget snapshot.
     @ObservationIgnored var onWidgetAffectingChange: (() -> Void)?
+    /// Set by the Store so projected contact links update GalleryStore's fifth key.
+    @ObservationIgnored var onLinksProjected: (([String: PersonLink]) -> Void)?
 
     init(
         defaults: UserDefaults,
@@ -150,14 +157,26 @@ final class PeopleStore {
     // MARK: Mutations
 
     /// Bind the synced log once the library folder is known, then migrate
-    /// the UserDefaults snapshot if this device has not written yet.
+    /// the UserDefaults snapshot if this device has not written a marker yet.
+    ///
+    /// Returns nil without touching UserDefaults when migrate/project fails
+    /// or when the projected state is empty and the incoming snapshot is not.
     @discardableResult
     func attachLibrary(_ root: URL, snapshot: PersonLog.Snapshot) -> PersonLog.State? {
         libraryRoot = root
-        PersonLog.migrate(libraryRoot: root, device: deviceId, snapshot: snapshot)
-        guard let state = PersonLog.project(libraryRoot: root) else { return nil }
-        applyProjection(state)
-        return state
+        do {
+            _ = try PersonLog.migrate(libraryRoot: root, device: deviceId, snapshot: snapshot)
+            let state = try PersonLog.project(libraryRoot: root)
+            if state.isEmpty && !snapshot.isEmpty {
+                Log.cache.warning("Person log project is empty; keeping UserDefaults snapshot")
+                return nil
+            }
+            applyProjection(state)
+            return state
+        } catch {
+            Log.cache.error("Person log attach failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     func applyProjection(_ state: PersonLog.State) {
@@ -166,12 +185,18 @@ final class PeopleStore {
         featuredPeople = state.featured
         featuredPhotoByPerson = state.featuredPhoto.compactMapValues { UUID(uuidString: $0) }
         mePersonPath = state.me
+        personContactLinks = state.personLinks()
+        onLinksProjected?(personContactLinks)
         writeLog = true
     }
 
     func appendPersonEvent(_ type: String, _ body: [(String, PersonLog.LogJSON)]) {
         guard writeLog, let root = libraryRoot else { return }
-        PersonLog.append(libraryRoot: root, device: deviceId, type: type, body: body)
+        do {
+            try PersonLog.append(libraryRoot: root, device: deviceId, type: type, body: body)
+        } catch {
+            Log.cache.error("Person log append failed: \(error.localizedDescription)")
+        }
     }
 
     func hidePerson(_ path: String) {

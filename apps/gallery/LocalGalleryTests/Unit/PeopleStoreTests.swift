@@ -184,4 +184,124 @@ final class PeopleStoreTests: XCTestCase {
 
         XCTAssertGreaterThan(widgetExports, 0)
     }
+
+    // MARK: - Attach / migrate / project
+
+    func testDeviceIdIsAsciiLikeRust() {
+        XCTAssertTrue(PersonLog.isValidDevice("ios"))
+        XCTAssertTrue(PersonLog.isValidDevice("instinct-1"))
+        XCTAssertTrue(PersonLog.isValidDevice("a.b_c-9"))
+        XCTAssertFalse(PersonLog.isValidDevice(""))
+        XCTAssertFalse(PersonLog.isValidDevice(".."))
+        XCTAssertFalse(PersonLog.isValidDevice("a/b"))
+        XCTAssertFalse(PersonLog.isValidDevice("Adaé"))
+        XCTAssertFalse(PersonLog.isValidDevice("éAda"))
+        XCTAssertFalse(PersonLog.isValidDevice("Ångstrom"))
+    }
+
+    func testAttachMigratesDualWritesRenameAndProjects() throws {
+        let library = TempDir.make()
+        defer { library.teardown() }
+
+        let store = makeStore()
+        let photo = UUID()
+        store.hidePerson("People/Anna")
+        store.toggleFeaturePerson("People/Ada")
+        store.setFeaturedPhoto(personPath: "People/Ada", photoID: photo)
+        store.markAsMe("People/Ada")
+        let links: [String: PersonLink] = [
+            "People/Ada": .manual(contactID: "CN:ada"),
+        ]
+        let snap = snapshot(of: store, links: links)
+
+        let state = store.attachLibrary(library.url, snapshot: snap)
+        XCTAssertNotNil(state)
+        XCTAssertEqual(store.hiddenPeople, ["People/Anna"])
+        XCTAssertEqual(store.featuredPeople, ["People/Ada"])
+        XCTAssertEqual(store.featuredPhotoByPerson["People/Ada"], photo)
+        XCTAssertEqual(store.mePersonPath, "People/Ada")
+        XCTAssertEqual(store.personContactLinks, links)
+
+        let logDir = library.url
+            .appendingPathComponent(".gallery/log/\(store.deviceId)", isDirectory: true)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: logDir.path),
+            "migrate writes {library}/.gallery/log/<dev>/"
+        )
+
+        var projected = try PersonLog.project(libraryRoot: library.url)
+        XCTAssertEqual(projected.hidden, ["People/Anna"])
+        XCTAssertEqual(projected.featured, ["People/Ada"])
+        XCTAssertEqual(projected.me, "People/Ada")
+        XCTAssertEqual(projected.featuredPhoto["People/Ada"], photo.uuidString)
+        XCTAssertEqual(projected.links["People/Ada"], "CN:ada")
+
+        store.toggleFeaturePerson("People/Cy")
+        XCTAssertEqual(defaults.array(forKey: "pinnedPeople") as? [String], ["People/Ada", "People/Cy"])
+        projected = try PersonLog.project(libraryRoot: library.url)
+        XCTAssertEqual(projected.featured, ["People/Ada", "People/Cy"])
+
+        store.renamePerson(from: "People/Anna", to: "People/Ann")
+        XCTAssertEqual(store.hiddenPeople, ["People/Ann"])
+        XCTAssertEqual(defaults.array(forKey: "hiddenPeople") as? [String], ["People/Ann"])
+        projected = try PersonLog.project(libraryRoot: library.url)
+        XCTAssertEqual(projected.hidden, ["People/Ann"])
+        XCTAssertFalse(projected.hidden.contains("People/Anna"))
+
+        let relaunched = makeStore()
+        XCTAssertEqual(relaunched.hiddenPeople, ["People/Ann"])
+        let again = try XCTUnwrap(
+            relaunched.attachLibrary(
+                library.url,
+                snapshot: snapshot(of: relaunched, links: links)
+            )
+        )
+        XCTAssertEqual(again.hidden, ["People/Ann"])
+        XCTAssertEqual(relaunched.featuredPeople, ["People/Ada", "People/Cy"])
+        XCTAssertEqual(relaunched.personContactLinks["People/Ada"], .manual(contactID: "CN:ada"))
+    }
+
+    func testEmptyProjectDoesNotClearNonEmptySnapshot() throws {
+        let library = TempDir.make()
+        defer { library.teardown() }
+
+        let store = makeStore()
+        store.hidePerson("People/Anna")
+        store.toggleFeaturePerson("People/Ada")
+        store.markAsMe("People/Ada")
+
+        try writePersonMigratedMarker(library: library.url, device: store.deviceId)
+
+        let state = store.attachLibrary(library.url, snapshot: snapshot(of: store))
+        XCTAssertNil(state, "empty project + non-empty snapshot must not apply")
+        XCTAssertEqual(store.hiddenPeople, ["People/Anna"])
+        XCTAssertEqual(store.featuredPeople, ["People/Ada"])
+        XCTAssertEqual(store.mePersonPath, "People/Ada")
+        XCTAssertEqual(defaults.array(forKey: "hiddenPeople") as? [String], ["People/Anna"])
+        XCTAssertEqual(defaults.array(forKey: "pinnedPeople") as? [String], ["People/Ada"])
+        XCTAssertEqual(defaults.string(forKey: "mePersonPath"), "People/Ada")
+    }
+
+    private func snapshot(
+        of store: PeopleStore,
+        links: [String: PersonLink] = [:]
+    ) -> PersonLog.Snapshot {
+        PersonLog.Snapshot(
+            hiddenPeople: Array(store.hiddenPeople),
+            pinnedPeople: store.featuredPeople,
+            featuredPhotoByPerson: Dictionary(
+                uniqueKeysWithValues: store.featuredPhotoByPerson.map { ($0.key, $0.value.uuidString) }
+            ),
+            mePersonPath: store.mePersonPath,
+            personContactLinks: links
+        )
+    }
+
+    private func writePersonMigratedMarker(library: URL, device: String) throws {
+        let dir = library.appendingPathComponent(".gallery/log/\(device)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let line =
+            "{\"id\":\"01900000-0000-7000-8000-00000000ffff\",\"ts\":\"2024-07-01T10:00:00.000000000Z\",\"dev\":\(PersonLog.jsonString(device)),\"type\":\"person_migrated\",\"body\":{}}\n"
+        try Data(line.utf8).write(to: dir.appendingPathComponent("2024-07.ndjson"))
+    }
 }

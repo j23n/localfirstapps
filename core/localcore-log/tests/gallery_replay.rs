@@ -7,7 +7,7 @@
 use localcore_log::{
     append, migrate_from_snapshot_json, project_people, project_people_at, read_all, ts_with_nanos,
     Event, PersonSnapshot, PeopleState, TYPE_FEATURED_PHOTO_SET, TYPE_PERSON_FEATURED,
-    TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_SET, TYPE_PERSON_RENAMED,
+    TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_SET, TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -194,7 +194,17 @@ fn m2_userdefaults_dump_survives_migrate_and_project() {
 
     let root = tempfile::tempdir().unwrap();
     let n = migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
-    assert_eq!(n, 7, "2 featured + 1 photo + 1 me + 2 links + 1 hidden");
+    assert_eq!(
+        n, 8,
+        "2 featured + 1 photo + 1 me + 2 links + 1 hidden + marker"
+    );
+    let evs = read_all(root.path()).unwrap();
+    assert_eq!(evs.len(), n);
+    assert_eq!(
+        evs.last().map(|e| e.event_type.as_str()),
+        Some(TYPE_PERSON_MIGRATED),
+        "marker is written last"
+    );
     assert_eq!(
         project_people_at(root.path()).unwrap(),
         snap.to_people_state()
@@ -205,7 +215,7 @@ fn m2_userdefaults_dump_survives_migrate_and_project() {
     );
 
     let again = migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
-    assert_eq!(again, 0, "migration is one-shot per device");
+    assert_eq!(again, 0, "migration is one-shot once the marker exists");
     assert_eq!(read_all(root.path()).unwrap().len(), n);
 }
 
@@ -216,7 +226,7 @@ fn m2_second_device_still_migrates() {
     let root = tempfile::tempdir().unwrap();
     migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
     let n = migrate_from_snapshot_json(root.path(), "linux", &dump).unwrap();
-    assert_eq!(n, 7);
+    assert_eq!(n, 8);
     assert_eq!(
         project_people_at(root.path()).unwrap(),
         expected_from_m2_dump()
@@ -246,4 +256,70 @@ fn m2_rename_is_a_replayed_event() {
         vec!["People/Ada".to_string(), "People/Cy".to_string()]
     );
     assert_eq!(state.me.as_deref(), Some("People/Ada"));
+}
+
+/// A crash after some snapshot events, before the marker, must retry. The
+/// second call after the marker is a no-op and must not duplicate featured
+/// list entries.
+#[test]
+fn migrate_retries_partial_file_until_marker() {
+    let dump = m2_dump();
+    let root = tempfile::tempdir().unwrap();
+    append(
+        root.path(),
+        &Event::fresh("ios", TYPE_PERSON_FEATURED, json!({"path": "People/Ada"})),
+    )
+    .unwrap();
+    append(
+        root.path(),
+        &Event::fresh("ios", TYPE_PERSON_FEATURED, json!({"path": "People/Cy"})),
+    )
+    .unwrap();
+    append(
+        root.path(),
+        &Event::fresh(
+            "ios",
+            TYPE_FEATURED_PHOTO_SET,
+            json!({
+                "path": "People/Ada",
+                "photo": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+            }),
+        ),
+    )
+    .unwrap();
+    assert!(
+        !read_all(root.path())
+            .unwrap()
+            .iter()
+            .any(|e| e.event_type == TYPE_PERSON_MIGRATED),
+        "fixture is a partial file without a marker"
+    );
+
+    let n = migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
+    assert!(n > 0, "partial file without marker still migrates");
+
+    let evs = read_all(root.path()).unwrap();
+    let featured: Vec<&str> = evs
+        .iter()
+        .filter(|e| e.dev == "ios" && e.event_type == TYPE_PERSON_FEATURED)
+        .filter_map(|e| e.body.get("path").and_then(|v| v.as_str()))
+        .collect();
+    assert_eq!(
+        featured,
+        ["People/Ada", "People/Cy"],
+        "retry must not duplicate person_featured entries"
+    );
+    assert!(
+        evs.iter()
+            .any(|e| e.dev == "ios" && e.event_type == TYPE_PERSON_MIGRATED),
+        "marker written on the completing retry"
+    );
+    assert_eq!(
+        project_people_at(root.path()).unwrap(),
+        expected_from_m2_dump()
+    );
+
+    let again = migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
+    assert_eq!(again, 0, "second call after marker is 0");
+    assert_eq!(read_all(root.path()).unwrap().len(), evs.len());
 }

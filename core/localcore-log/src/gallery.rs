@@ -7,7 +7,10 @@
 //! `{library}/.gallery` as `root` and writes `log/<dev>/YYYY-MM.ndjson`.
 //!
 //! M2 imports a one-shot dump of the five UserDefaults keys via
-//! [`migrate_from_snapshot_json`]. A `person_renamed` event is how a rename
+//! [`migrate_from_snapshot_json`]. The one-shot token is a `person_migrated`
+//! marker written last: if it is missing, migrate may retry and skips
+//! snapshot events already present (same type + body keys) so a partial
+//! write is not made permanent. A `person_renamed` event is how a rename
 //! migrates every device, replacing `PeopleStore.renamePerson` /
 //! `GalleryStore.migratePersonState` snapshot rewriting.
 
@@ -20,7 +23,8 @@ use crate::event::{
     known_type, new_event_id, now_utc, ts_with_nanos, valid_device, Event,
     TYPE_FEATURED_PHOTO_CLEAR, TYPE_FEATURED_PHOTO_SET, TYPE_PERSON_CONTACT_LINK_CLEAR,
     TYPE_PERSON_CONTACT_LINK_SET, TYPE_PERSON_FEATURED, TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_CLEAR,
-    TYPE_PERSON_ME_SET, TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED, TYPE_PERSON_UNHIDDEN,
+    TYPE_PERSON_ME_SET, TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED,
+    TYPE_PERSON_UNHIDDEN,
 };
 use crate::{append, read_all, Error, Result};
 
@@ -228,6 +232,7 @@ pub fn is_person_event_type(t: &str) -> bool {
             | TYPE_PERSON_RENAMED
             | TYPE_PERSON_CONTACT_LINK_SET
             | TYPE_PERSON_CONTACT_LINK_CLEAR
+            | TYPE_PERSON_MIGRATED
     )
 }
 
@@ -259,7 +264,7 @@ pub fn project_people_at(root: impl AsRef<Path>) -> Result<PeopleState> {
 }
 
 /// Import a UserDefaults dump as operations. No-op if `device` already wrote
-/// any person-state event (one-shot).
+/// a `person_migrated` marker (one-shot). A missing marker may retry.
 pub fn migrate_from_snapshot_json(
     root: impl AsRef<Path>,
     device: &str,
@@ -268,7 +273,13 @@ pub fn migrate_from_snapshot_json(
     migrate_from_snapshot(root, device, &PersonSnapshot::parse(snapshot_json)?)
 }
 
-/// Import a parsed snapshot. Returns the number of events appended.
+/// Import a parsed snapshot. Returns the number of events appended,
+/// including the `person_migrated` marker written last.
+///
+/// The marker is the one-shot token. If it is absent, a retry writes only
+/// snapshot events that are not already present for this device (same
+/// type and body keys/values) so a crash after a partial write cannot
+/// duplicate `person_featured` list entries, then writes the marker.
 pub fn migrate_from_snapshot(
     root: impl AsRef<Path>,
     device: &str,
@@ -280,15 +291,45 @@ pub fn migrate_from_snapshot(
     let existing = read_all(root.as_ref())?;
     if existing
         .iter()
-        .any(|e| e.dev == device && is_person_event_type(&e.event_type))
+        .any(|e| e.dev == device && e.event_type == TYPE_PERSON_MIGRATED)
     {
         return Ok(0);
     }
     let events = snapshot_events(device, snapshot)?;
+    let mut written = 0usize;
     for ev in &events {
+        if already_written_snapshot_event(&existing, device, ev) {
+            continue;
+        }
         append(root.as_ref(), ev)?;
+        written += 1;
     }
-    Ok(events.len())
+    append(
+        root.as_ref(),
+        &Event::fresh(device, TYPE_PERSON_MIGRATED, json!({})),
+    )?;
+    written += 1;
+    Ok(written)
+}
+
+/// True when this device already logged an event of the same type whose
+/// body contains every incoming body key with the same value.
+fn already_written_snapshot_event(existing: &[Event], device: &str, incoming: &Event) -> bool {
+    existing.iter().any(|e| {
+        e.dev == device
+            && e.event_type == incoming.event_type
+            && body_keys_match(&e.body, &incoming.body)
+    })
+}
+
+fn body_keys_match(have: &Value, want: &Value) -> bool {
+    let Some(want) = want.as_object() else {
+        return false;
+    };
+    let Some(have) = have.as_object() else {
+        return false;
+    };
+    want.iter().all(|(k, v)| have.get(k) == Some(v))
 }
 
 fn snapshot_events(device: &str, snapshot: &PersonSnapshot) -> Result<Vec<Event>> {
