@@ -6,8 +6,9 @@ this branch.
 
 ## 20k harness
 
-There is no 20k tree in the repo. Walk an external library through
-this crate (headless, no FFI, no shell):
+There is no 20k tree in the repo. Generate one with
+`apps/gallery/scripts/generate_test_library.py` (default 20k, seed 42),
+then walk it through this crate (headless, no FFI, no shell):
 
 ```sh
 cargo run -p gallery-scan --release --example scan_tree -- /path/to/photos

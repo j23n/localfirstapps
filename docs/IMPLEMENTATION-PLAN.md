@@ -418,7 +418,7 @@ R6-clean contacts FFI are Phase 3 work, not leftovers.
 | R8–R11 for gallery `.xmp` / music `.m3u` | later | Phase 5 / 4. |
 | gallery-ffi R6 rewrite (45 Records) | later | Phase 5 / R4 windowing. |
 | Health Go `internal/log` / `internal/blobs` delete | later | Phase 6. |
-| 20k-tree as a CI gate | ops | No tree in-repo. Harness stays. Optional one-off baseline. |
+| 20k-tree as a CI gate | ops / e2e | Generator: `apps/gallery/scripts/generate_test_library.py` (default `--count 20000 --seed 42`). Not committed. `scan_tree` + iOS `--install booted` consume it. |
 | Old-remote redirect READMEs | you | Whenever. Never Phase 2. |
 
 Size: L. All Linux-container work.
@@ -665,9 +665,10 @@ first `xcodebuild` of this tree has not run.
    `contacts-core` until it is green or the failure is understood.
    Contacts/music iOS jobs do not link the new Rust crates; a green
    contacts job does not prove gallery.
-5. Optional, not a merge gate: on a real ~20k library,
-   `cargo run -p gallery-scan --release --example scan_tree -- /path`
-   and keep the `Scan totals:` line.
+5. Optional 20k e2e tree (not a merge gate): from `apps/gallery`,
+   `uv run scripts/generate_test_library.py --out /tmp/test-library`
+   then `scan_tree` that folder, or `--install booted` for the
+   simulator (`DriverUITests` looks for `TestLibrary`).
 6. Optional: redirect READMEs on the old standalone remotes.
 7. When 2–4 are green: next engineering move is Phase 3.1
    (`contacts-core` headless). You author dark tokens when 3.2 starts.

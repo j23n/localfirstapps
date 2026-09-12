@@ -15,8 +15,9 @@ Gallery remains at `apps/gallery/core` until later verticals move here.
 
 ## 20k scan harness
 
-There is no 20k tree in this repo. Walk an external library through
-`gallery-scan` (which now uses `localcore-walk`):
+There is no 20k tree in this repo. Generate one with
+`apps/gallery/scripts/generate_test_library.py`, then walk it through
+`gallery-scan` (which uses `localcore-walk`):
 
 ```
 cd apps/gallery/core
