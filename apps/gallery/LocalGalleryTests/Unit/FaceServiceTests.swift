@@ -439,8 +439,10 @@ final class FaceServiceTests: XCTestCase {
         let faces = await service.faces(inCluster: cluster.id)
         XCTAssertGreaterThanOrEqual(faces.count, 3, "need two faces to split off")
 
-        XCTAssertTrue(await service.split(cluster: cluster.id, faces: [faces[0].key]))
-        XCTAssertTrue(await service.split(cluster: cluster.id, faces: [faces[1].key]))
+        let splitA = await service.split(cluster: cluster.id, faces: [faces[0].key])
+        let splitB = await service.split(cluster: cluster.id, faces: [faces[1].key])
+        XCTAssertTrue(splitA)
+        XCTAssertTrue(splitB)
         let absorbed = service.allClusters
             .filter { $0.id != cluster.id && $0.state == .unlabeled && $0.size == 1 }
             .map(\.id)
@@ -448,7 +450,8 @@ final class FaceServiceTests: XCTestCase {
 
         var rescans = 0
         service.onSidecarsWritten = { rescans += 1 }
-        XCTAssertTrue(await service.merge(into: cluster.id, absorbing: absorbed))
+        let merged = await service.merge(into: cluster.id, absorbing: absorbed)
+        XCTAssertTrue(merged)
         XCTAssertEqual(service.allClusters.first { $0.id == cluster.id }?.size, cluster.size)
         XCTAssertTrue(
             absorbed.allSatisfy { id in service.allClusters.contains { $0.id == id } == false },
@@ -474,9 +477,12 @@ final class FaceServiceTests: XCTestCase {
         )
         let faces = await service.faces(inCluster: cluster.id)
         XCTAssertGreaterThanOrEqual(faces.count, 3)
-        XCTAssertTrue(await service.split(cluster: cluster.id, faces: [faces[0].key]))
-        XCTAssertTrue(await service.split(cluster: cluster.id, faces: [faces[1].key]))
-        XCTAssertTrue(await service.name(cluster: cluster.id, as: "Ada"))
+        let namedSplitA = await service.split(cluster: cluster.id, faces: [faces[0].key])
+        let namedSplitB = await service.split(cluster: cluster.id, faces: [faces[1].key])
+        let named = await service.name(cluster: cluster.id, as: "Ada")
+        XCTAssertTrue(namedSplitA)
+        XCTAssertTrue(namedSplitB)
+        XCTAssertTrue(named)
 
         let absorbed = service.allClusters
             .filter { $0.id != cluster.id && $0.state == .unlabeled && $0.size == 1 }
@@ -485,7 +491,8 @@ final class FaceServiceTests: XCTestCase {
 
         var rescans = 0
         service.onSidecarsWritten = { rescans += 1 }
-        XCTAssertTrue(await service.merge(into: cluster.id, absorbing: absorbed))
+        let namedMerge = await service.merge(into: cluster.id, absorbing: absorbed)
+        XCTAssertTrue(namedMerge)
         XCTAssertEqual(rescans, 1, "named n-way merge should rescan once, not per group")
         XCTAssertEqual(service.allClusters.first { $0.id == cluster.id }?.name, "Ada")
         XCTAssertNil(service.lastError)

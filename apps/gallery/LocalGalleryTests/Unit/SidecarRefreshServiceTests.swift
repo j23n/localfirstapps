@@ -32,7 +32,7 @@ final class SidecarRefreshServiceTests: XCTestCase {
         let stale = candidate(id: id, url: url, size: 1)
         let (fresh, gone) = SidecarRefreshService.refreshedManifest(
             [stale],
-            versionOf: { _ in ContentVersion(size: 99, modificationDate: Date()) },
+            versionOf: { _ in ContentVersion(modificationDate: Date(), size: 99) },
             fileExists: { _ in true }
         )
         XCTAssertTrue(gone.isEmpty)

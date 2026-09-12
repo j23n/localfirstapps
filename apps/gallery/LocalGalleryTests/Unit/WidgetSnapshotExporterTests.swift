@@ -172,7 +172,8 @@ final class WidgetSnapshotExporterTests: XCTestCase {
         let dest = destinations(in: temp)
         let exporter = WidgetSnapshotExporter()
 
-        XCTAssertTrue(await exporter.export(firstInputs, destinations: dest))
+        let firstOk = await exporter.export(firstInputs, destinations: dest)
+        XCTAssertTrue(firstOk)
         let firstSignature = await exporter.lastExportSignature
         XCTAssertEqual(firstSignature, WidgetSnapshotExporter.contentFingerprint(inputs: firstInputs))
         let priorIndex = try Data(contentsOf: dest.indexURL)
@@ -195,9 +196,11 @@ final class WidgetSnapshotExporterTests: XCTestCase {
             tagsURL: dest.tagsURL,
             memoriesURL: dest.memoriesURL
         )
-        XCTAssertFalse(await exporter.export(secondInputs, destinations: failed))
+        let secondFailed = await exporter.export(secondInputs, destinations: failed)
+        XCTAssertFalse(secondFailed)
+        let afterFailSignature = await exporter.lastExportSignature
         XCTAssertEqual(
-            await exporter.lastExportSignature, firstSignature,
+            afterFailSignature, firstSignature,
             "failed export must not replace the last committed signature"
         )
         XCTAssertEqual(try Data(contentsOf: dest.indexURL), priorIndex)
@@ -214,8 +217,10 @@ final class WidgetSnapshotExporterTests: XCTestCase {
         let surviving = try decoder.decode(WidgetIndex.self, from: Data(contentsOf: dest.indexURL))
         XCTAssertEqual(surviving.photos.map(\.id), [photoAId])
 
-        XCTAssertTrue(await exporter.export(secondInputs, destinations: dest))
-        XCTAssertNotNil(await exporter.lastExportSignature)
+        let retryOk = await exporter.export(secondInputs, destinations: dest)
+        XCTAssertTrue(retryOk)
+        let retrySignature = await exporter.lastExportSignature
+        XCTAssertNotNil(retrySignature)
         let retried = try decoder.decode(WidgetIndex.self, from: Data(contentsOf: dest.indexURL))
         XCTAssertEqual(retried.photos.map(\.id), [secondInputs.allPhotos[0].id.uuidString])
         XCTAssertTrue(FileManager.default.fileExists(
@@ -260,10 +265,12 @@ final class WidgetSnapshotExporterTests: XCTestCase {
         let dest = destinations(in: temp)
         let exporter = WidgetSnapshotExporter()
 
-        XCTAssertTrue(await exporter.export(inputs, destinations: dest))
+        let firstWrite = await exporter.export(inputs, destinations: dest)
+        XCTAssertTrue(firstWrite)
         let firstGenerated = try String(contentsOf: dest.indexURL, encoding: .utf8)
         try await Task.sleep(nanoseconds: 20_000_000)
-        XCTAssertTrue(await exporter.export(inputs, destinations: dest))
+        let secondWrite = await exporter.export(inputs, destinations: dest)
+        XCTAssertTrue(secondWrite)
         let secondGenerated = try String(contentsOf: dest.indexURL, encoding: .utf8)
         XCTAssertEqual(firstGenerated, secondGenerated, "committed signature skips a rewrite")
     }
@@ -275,8 +282,8 @@ final class WidgetSnapshotExporterTests: XCTestCase {
             url: photoURL,
             fileSize: 2048,
             dateTaken: date(2024, 3, 15),
-            tags: ["People/Ada"],
-            fileModificationDate: date(2024, 3, 16)
+            fileModificationDate: date(2024, 3, 16),
+            tags: ["People/Ada"]
         )
         photo.fileSize = 2048
         let leaf = PhotoFolder.fixture(

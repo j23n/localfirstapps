@@ -49,6 +49,7 @@ final class AsyncSemaphoreTests: XCTestCase {
         }
         try? await Task.sleep(for: .milliseconds(20))
         await sem.release()
-        XCTAssertTrue(await waiter.value)
+        let finished = await waiter.value
+        XCTAssertTrue(finished)
     }
 }

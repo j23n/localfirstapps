@@ -125,7 +125,8 @@ final class ThumbnailServiceTests: XCTestCase {
         try writeTinyJPEG(to: source, red: 0xE0, green: 0x10, blue: 0x10)
 
         let first = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
-        let firstPixel = try XCTUnwrap(samplePixel(first))
+        let firstSample = samplePixel(first)
+        let firstPixel = try XCTUnwrap(firstSample)
 
         try writeTinyJPEG(to: source, red: 0x10, green: 0x10, blue: 0xE0)
         try FileManager.default.setAttributes(
@@ -134,7 +135,8 @@ final class ThumbnailServiceTests: XCTestCase {
         )
 
         let second = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
-        let secondPixel = try XCTUnwrap(samplePixel(second))
+        let secondSample = samplePixel(second)
+        let secondPixel = try XCTUnwrap(secondSample)
         XCTAssertNotEqual(firstPixel.0, secondPixel.0, "stale red cache must not survive a blue replacement")
         XCTAssertGreaterThan(secondPixel.2, secondPixel.0, "replacement should decode as blue-dominant")
     }
@@ -147,7 +149,8 @@ final class ThumbnailServiceTests: XCTestCase {
         let source = temp.appending("photo.jpg")
         try writeTinyJPEG(to: source, width: 8, height: 8, red: 0xE0, green: 0x10, blue: 0x10)
         let first = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
-        let firstPixel = try XCTUnwrap(samplePixel(first))
+        let firstSample = samplePixel(first)
+        let firstPixel = try XCTUnwrap(firstSample)
         let originalMtime = try FileManager.default.attributesOfItem(atPath: source.path)[.modificationDate] as? Date
 
         try writeTinyJPEG(to: source, width: 32, height: 32, red: 0x10, green: 0x10, blue: 0xE0)
@@ -159,7 +162,8 @@ final class ThumbnailServiceTests: XCTestCase {
         }
 
         let second = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
-        let secondPixel = try XCTUnwrap(samplePixel(second))
+        let secondSample = samplePixel(second)
+        let secondPixel = try XCTUnwrap(secondSample)
         XCTAssertNotEqual(firstPixel.0, secondPixel.0)
     }
 
@@ -183,7 +187,8 @@ final class ThumbnailServiceTests: XCTestCase {
             ofItemAtPath: source.path
         )
         let reloaded = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
-        let pixel = try XCTUnwrap(samplePixel(reloaded))
+        let reloadedSample = samplePixel(reloaded)
+        let pixel = try XCTUnwrap(reloadedSample)
         XCTAssertGreaterThan(pixel.2, pixel.0)
     }
 
@@ -195,8 +200,10 @@ final class ThumbnailServiceTests: XCTestCase {
         let source = temp.appending("photo.jpg")
         try writeTinyJPEG(to: source, width: 64, height: 64)
 
-        let small = try XCTUnwrap(await service.loadFullImage(for: source, maxPixelSize: 16))
-        let large = try XCTUnwrap(await service.loadFullImage(for: source, maxPixelSize: 64))
+        let smallImage = await service.loadFullImage(for: source, maxPixelSize: 16)
+        let largeImage = await service.loadFullImage(for: source, maxPixelSize: 64)
+        let small = try XCTUnwrap(smallImage)
+        let large = try XCTUnwrap(largeImage)
         let smallEdge = max(small.size.width, small.size.height)
         let largeEdge = max(large.size.width, large.size.height)
         XCTAssertLessThan(smallEdge, largeEdge + 0.5)
