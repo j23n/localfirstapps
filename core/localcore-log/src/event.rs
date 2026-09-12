@@ -36,6 +36,8 @@ pub const TYPE_PERSON_ME_CLEAR: &str = "person_me_clear";
 pub const TYPE_PERSON_RENAMED: &str = "person_renamed";
 pub const TYPE_PERSON_CONTACT_LINK_SET: &str = "person_contact_link_set";
 pub const TYPE_PERSON_CONTACT_LINK_CLEAR: &str = "person_contact_link_clear";
+/// Written last by UserDefaults → log migrate. Absence means migrate may retry.
+pub const TYPE_PERSON_MIGRATED: &str = "person_migrated";
 
 /// One NDJSON line. Field order matches the on-disk format.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -82,6 +84,7 @@ pub fn known_type(t: &str) -> bool {
             | TYPE_PERSON_RENAMED
             | TYPE_PERSON_CONTACT_LINK_SET
             | TYPE_PERSON_CONTACT_LINK_CLEAR
+            | TYPE_PERSON_MIGRATED
     )
 }
 
@@ -505,6 +508,7 @@ mod tests {
             TYPE_PERSON_RENAMED,
             TYPE_PERSON_CONTACT_LINK_SET,
             TYPE_PERSON_CONTACT_LINK_CLEAR,
+            TYPE_PERSON_MIGRATED,
         ] {
             assert!(known_type(t), "{t}");
         }

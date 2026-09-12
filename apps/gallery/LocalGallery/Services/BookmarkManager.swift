@@ -71,13 +71,18 @@ final class BookmarkManager {
     /// only recorded when the start call succeeds — recording it on failure
     /// would make the next `stopAccessing()` unbalanced (a documented kernel
     /// resource leak) and hide the access failure from diagnostics.
-    func startAccessing(_ url: URL) {
+    ///
+    /// Returns false when access was not granted (stale bookmark / denied
+    /// scope). Callers must not attach the person log in that case.
+    @discardableResult
+    func startAccessing(_ url: URL) -> Bool {
         stopAccessing()
         guard url.startAccessingSecurityScopedResource() else {
             Log.cache.error("Security-scoped access denied for \(Log.r.path(url))")
-            return
+            return false
         }
         activeURL = url
+        return true
     }
 
     func stopAccessing() {

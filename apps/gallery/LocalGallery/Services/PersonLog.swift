@@ -8,7 +8,9 @@ import Foundation
 /// Writes go through gallery-ffi (`person_log_append` /
 /// `person_log_project` / `person_log_migrate_from_snapshot`), which
 /// calls `localcore-log`. Lines are field order `id,ts,dev,type,body`,
-/// 9-digit UTC `ts`, no HTML escape.
+/// 9-digit UTC `ts`, no HTML escape. UserDefaults remains the process
+/// snapshot until cutover; the log is dual-write. Migrate is one-shot
+/// via a `person_migrated` marker written last.
 ///
 /// The device id is the ADR 0005 R5 UserDefaults exception and is not
 /// written into the synced folder.
@@ -25,13 +27,15 @@ enum PersonLog {
         return id
     }
 
+    /// ASCII `[A-Za-z0-9][A-Za-z0-9._-]*`, matching `localcore_log::valid_device`.
     static func isValidDevice(_ name: String) -> Bool {
-        guard let first = name.unicodeScalars.first,
-              CharacterSet.alphanumerics.contains(first)
-        else { return false }
-        return name.unicodeScalars.allSatisfy {
-            CharacterSet.alphanumerics.contains($0) || $0 == "." || $0 == "_" || $0 == "-"
-        }
+        var bytes = name.utf8.makeIterator()
+        guard let first = bytes.next(), isAsciiAlphanumeric(first) else { return false }
+        return bytes.allSatisfy { isAsciiAlphanumeric($0) || $0 == 0x2E || $0 == 0x5F || $0 == 0x2D }
+    }
+
+    private static func isAsciiAlphanumeric(_ b: UInt8) -> Bool {
+        (0x30...0x39).contains(b) || (0x41...0x5A).contains(b) || (0x61...0x7A).contains(b)
     }
 
     /// Pre-M2 dump of the five UserDefaults keys (ADR 0005 R19 fixture shape).
@@ -63,6 +67,14 @@ enum PersonLog {
             let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
             return String(data: data ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
         }
+
+        var isEmpty: Bool {
+            hiddenPeople.isEmpty
+                && pinnedPeople.isEmpty
+                && featuredPhotoByPerson.isEmpty
+                && mePersonPath.isEmpty
+                && personContactLinks.isEmpty
+        }
     }
 
     struct State: Equatable {
@@ -85,6 +97,10 @@ enum PersonLog {
             self.me = me
             self.featuredPhoto = featuredPhoto
             self.links = links
+        }
+
+        var isEmpty: Bool {
+            hidden.isEmpty && featured.isEmpty && me.isEmpty && featuredPhoto.isEmpty && links.isEmpty
         }
 
         init(_ record: PersonStateRecord) {
@@ -119,9 +135,9 @@ enum PersonLog {
         device: String,
         type: String,
         body: [(String, LogJSON)]
-    ) {
+    ) throws {
         let bodyJSON = "{" + body.map { "\(jsonString($0.0)):\($0.1.encoded)" }.joined(separator: ",") + "}"
-        try? personLogAppend(
+        try personLogAppend(
             root: path(libraryRoot),
             device: device,
             eventType: type,
@@ -129,26 +145,24 @@ enum PersonLog {
         )
     }
 
-    /// One-shot import. Returns events written (0 if this device already logged).
+    /// One-shot import. Returns events written (0 if this device already has
+    /// a `person_migrated` marker). Throws `PersonLogError` on FFI failure.
     @discardableResult
     static func migrate(
         libraryRoot: URL,
         device: String,
         snapshot: Snapshot
-    ) -> Int {
-        let n = try? personLogMigrateFromSnapshot(
+    ) throws -> Int {
+        let n = try personLogMigrateFromSnapshot(
             root: path(libraryRoot),
             device: device,
             snapshotJson: snapshot.jsonString()
         )
-        return Int(n ?? 0)
+        return Int(n)
     }
 
-    static func project(libraryRoot: URL) -> State? {
-        guard let record = try? personLogProject(root: path(libraryRoot)) else {
-            return nil
-        }
-        return State(record)
+    static func project(libraryRoot: URL) throws -> State {
+        State(try personLogProject(root: path(libraryRoot)))
     }
 
     /// Compact JSON string. `<` `>` `&` stay literal (Go `SetEscapeHTML(false)`).

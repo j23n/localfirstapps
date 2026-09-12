@@ -23,7 +23,7 @@ extension GalleryStore {
             url = active
         } else {
             guard let resolved = bookmarks.resolve() else { return }
-            bookmarks.startAccessing(resolved)
+            startAccessingFolder(resolved)
             url = resolved
         }
 

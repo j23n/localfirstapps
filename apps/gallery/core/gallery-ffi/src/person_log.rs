@@ -147,7 +147,8 @@ pub fn person_log_project(root: String) -> Result<PersonStateRecord, PersonLogEr
     ))
 }
 
-/// One-shot import of the five UserDefaults keys. Returns events written.
+/// One-shot import of the five UserDefaults keys. Returns events written
+/// (0 once this device has a `person_migrated` marker).
 #[uniffi::export]
 pub fn person_log_migrate_from_snapshot(
     root: String,
@@ -222,7 +223,7 @@ mod tests {
         let root = tmp.path().to_string_lossy().into_owned();
         let dump = m2_dump();
         let n = person_log_migrate_from_snapshot(root.clone(), "ios".into(), dump).unwrap();
-        assert_eq!(n, 7);
+        assert_eq!(n, 8);
         let state = person_log_project(root.clone()).unwrap();
         assert_eq!(state.hidden, vec!["People/Anna Schmidt".to_string()]);
         assert_eq!(

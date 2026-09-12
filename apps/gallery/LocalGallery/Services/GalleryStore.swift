@@ -435,6 +435,9 @@ final class GalleryStore {
         self.people.onWidgetAffectingChange = { [weak self] in
             self?.exportWidgetSnapshot()
         }
+        self.people.onLinksProjected = { [weak self] links in
+            self?.personContactLinks = links
+        }
 
         if let raw = defaults.string(forKey: "folderSortOrder"),
            let order = FolderSortOrder(rawValue: raw) {
@@ -572,11 +575,12 @@ final class GalleryStore {
     // MARK: - Bookmark / Security-Scoped Access (forwarded to BookmarkManager)
 
     func startAccessingFolder(_ url: URL) {
-        bookmarks.startAccessing(url)
+        guard bookmarks.startAccessing(url) else { return }
         attachPersonLog(to: url)
     }
 
     /// One-shot UserDefaults → `.gallery/log` once a library folder exists.
+    /// Contact links are applied inside `PeopleStore.applyProjection`.
     private func attachPersonLog(to url: URL) {
         let snapshot = PersonLog.Snapshot(
             hiddenPeople: Array(people.hiddenPeople),
@@ -587,9 +591,7 @@ final class GalleryStore {
             mePersonPath: people.mePersonPath,
             personContactLinks: personContactLinks
         )
-        if let state = people.attachLibrary(url, snapshot: snapshot) {
-            personContactLinks = state.personLinks()
-        }
+        _ = people.attachLibrary(url, snapshot: snapshot)
     }
 
     func saveBookmark(for url: URL) {

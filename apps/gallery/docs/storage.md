@@ -55,9 +55,17 @@ uses as a library — the cache is per-device.
 ## Person state (tier 2)
 
 Hidden / featured / me / cover-photo / contact-link decisions are
-operations in an append-only log, not UserDefaults snapshots:
+**dual-written**. UserDefaults is still the process snapshot
+(`hiddenPeople`, `pinnedPeople`, `featuredPhotoByPerson`,
+`mePersonPath`, `personContactLinks`). The same mutations also append
+to an event log at:
 
 `{library}/.gallery/log/<dev>/YYYY-MM.ndjson`
+
+The log is not yet the authority. On attach, this device may migrate
+the UserDefaults snapshot into the log (one-shot: a `person_migrated`
+marker written last). A later project can refresh in-memory state from
+the log, but UserDefaults remains until cutover.
 
 The log syncs with the library. The device id (`galleryDeviceId` in
 UserDefaults) is the ADR 0005 R5 per-device exception and must not
