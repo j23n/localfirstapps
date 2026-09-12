@@ -7,8 +7,8 @@
 //! ```
 //!
 //! Prints the same counters CoreScanner logs (`files`, `folders`, `list`,
-//! `hits`, `slow`, `probe`). `localcore-walk` is not on this branch, so the
-//! walk is `gallery-scan` over `StdVfs`. Not CI-gated.
+//! `hits`, `slow`, `probe`). The walk is `localcore-walk` via `gallery-scan`
+//! over `StdVfs`. `probe` is always 0 (local-only). Not CI-gated.
 
 use std::env;
 use std::path::Path;

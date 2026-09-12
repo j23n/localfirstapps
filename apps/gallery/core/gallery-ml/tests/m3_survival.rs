@@ -13,7 +13,7 @@ use gallery_meta::{
     read_view, write_faces, Area, FaceDecision, FaceRegionWrite, FaceWriteRequest,
 };
 use gallery_ml::cache::{ClusterRow, ClusterState, FaceLibraryStats, StoredFace, META_FACE_PACK};
-use gallery_ml::{CacheDb, MlError};
+use gallery_ml::{CacheDb, MlError, WorkState};
 use gallery_vfs::StdVfs;
 
 /// Stands in for `ModelPack::face_pack_key()` under buffalo_sc.
@@ -27,6 +27,7 @@ const ADA_AREA: (f64, f64, f64, f64) = (0.40, 0.35, 0.12, 0.16);
 struct Fixture {
     dir: tempfile::TempDir,
     cache: CacheDb,
+    photo: String,
     hash: [u8; 32],
     cluster_id: i64,
     sidecar_before: Vec<u8>,
@@ -76,6 +77,19 @@ impl Fixture {
         let other = cache.create_cluster(&[0.0, 1.0, 0.0]).unwrap();
         cache.put_merge_proposal(cluster_id, other, 0.81).unwrap();
 
+        // A `done` face-queue row under the old pack. `with_models` also
+        // calls `face_mark_stale_for_pack`; reset + set_meta alone would
+        // leave this Done.
+        cache.face_enqueue(&[photo.clone()]).unwrap();
+        assert!(cache.face_begin(&photo).unwrap());
+        assert!(cache
+            .face_finish_done(&photo, OLD_FACE_PACK, 1, None)
+            .unwrap());
+        assert_eq!(
+            cache.face_item(&photo).unwrap().unwrap().state,
+            WorkState::Done
+        );
+
         let area = Area::new(ADA_AREA.0, ADA_AREA.1, ADA_AREA.2, ADA_AREA.3);
         let request = FaceWriteRequest::new(
             [FaceRegionWrite {
@@ -109,6 +123,7 @@ impl Fixture {
         Fixture {
             dir,
             cache,
+            photo,
             hash,
             cluster_id,
             sidecar_before,
@@ -137,12 +152,15 @@ fn resolve_cluster_for_naming(cache: &CacheDb, cluster_id: i64) -> Result<Cluste
         .ok_or(MlError::ClusterNotFound { id: cluster_id })
 }
 
-/// The `face_pack_key` check inside [`gallery_ml::FaceEngine::with_models`].
+/// The `face_pack_key` check inside [`gallery_ml::FaceEngine::with_models`]:
+/// reset derived face tables, record the new key, then stale `face_work`
+/// rows produced under a different pack.
 fn adopt_face_pack_key(cache: &CacheDb, new_key: &str) {
     if cache.meta(META_FACE_PACK).unwrap().as_deref() != Some(new_key) {
         cache.reset_face_results().unwrap();
         cache.set_meta(META_FACE_PACK, new_key).unwrap();
     }
+    cache.face_mark_stale_for_pack(new_key).unwrap();
 }
 
 /// A pack re-key empties derived face tables, leaves `People/Ada` on disk,
@@ -156,12 +174,18 @@ fn a_pack_rekey_empties_clusters_and_leaves_xmp_people_on_disk() {
     assert_eq!(before.person_name.as_deref(), Some("Ada"));
 
     // The SFace+YuNet swap is a new `face_pack_key`. FaceEngine::with_models
-    // compares it to `meta.face_pack` and, on mismatch, calls this.
+    // compares it to `meta.face_pack` and, on mismatch, does the same three
+    // steps this helper does.
     adopt_face_pack_key(&f.cache, NEW_FACE_PACK);
 
     assert_eq!(
         f.cache.meta(META_FACE_PACK).unwrap().as_deref(),
         Some(NEW_FACE_PACK)
+    );
+    assert_eq!(
+        f.cache.face_item(&f.photo).unwrap().unwrap().state,
+        WorkState::Stale,
+        "a Done face_work row under the old pack must become Stale"
     );
     assert_eq!(
         f.cache.face_library_stats().unwrap(),

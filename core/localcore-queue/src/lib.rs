@@ -167,9 +167,9 @@ pub fn configure_connection(conn: &Connection) -> rusqlite::Result<()> {
 
 /// Create the standard work-table shape if it is missing.
 ///
-/// Production schemas (gallery's `ml_work` / `face_work` migrations) stay
-/// with the app. This is the substrate's documented shape, used by tests
-/// and by a new capability that has no other tables in the file.
+/// This crate's rustdoc owns that shape. Gallery's `MIGRATIONS` only
+/// migrate an existing file onto it — they do not redefine the columns.
+/// Used by tests and by a new capability that has no other tables in the file.
 pub fn ensure_table(conn: &Connection, q: Queue) -> rusqlite::Result<()> {
     let table = ident(q.table);
     let count = ident(q.count_col);
