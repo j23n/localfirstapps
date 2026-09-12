@@ -6,33 +6,34 @@ coordinates resolve to a locality and a country with no network I/O
 
 ## GeoNames
 
-City names, admin divisions, and coordinates in the gazetteer come from
-[GeoNames](https://www.geonames.org/) (`cities1000` / `cities500`).
+City names, admin divisions, and coordinates come from
+[GeoNames](https://www.geonames.org/) `allCountries`, **feature class
+`P` only** (populated places, including hamlets). Neighbourhood
+sections (`PPLX`) and historical/abandoned codes are dropped.
+`admin1CodesASCII` supplies first-order admin names.
+
+Streams, peaks, schools, hotels, and other non-`P` rows are not in the
+pack (ADR 0006 R11).
 
 Licence: [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 This product includes GeoNames data, © GeoNames contributors.
 
-The committed pack is a **subset** (a handful of cities) so this tree
-stays small and builds offline. `scripts/pack_geo.py` ingests a full
-GeoNames dump when one is available:
+Rebuild (needs network once; dumps stay in `data/cache/`, gitignored):
 
 ```
-python3 scripts/pack_geo.py \
-    --cities /path/to/cities1000.txt \
-    --admin0 /path/to/ne_10m_admin_0_countries.geojson \
-    --out data/places.bin
+python3 scripts/pack_geo.py --fetch
 ```
+
+`--dump cities500` / `--dump cities1000` still work. The committed
+artefact is `data/places.bin` (LCG1 v2). Keep it under 256 MB.
 
 ## Natural Earth
 
-Country names and admin-0 rings are intended to come from
-[Natural Earth](https://www.naturalearthdata.com/) `admin_0_countries`
-(public domain). The committed subset uses hand-simplified rings that
-are sufficient for:
+Country names and admin-0 rings come from
+[Natural Earth](https://www.naturalearthdata.com/) `ne_10m_admin_0_countries`
+(public domain). Country is point-in-polygon, never the nearest city's
+country code.
 
-- Paris (France) locality lookup
-- A Niagara River border test (United States / Canada)
-
-They are not a substitute for the 10 m Natural Earth set. Rebuild from
-NE when packing a full gazetteer so every land border is represented.
+The 8-city TSV / GeoJSON under `data/subset/` is a debug fixture
+(`python3 scripts/pack_geo.py --subset`). It is not what ships.

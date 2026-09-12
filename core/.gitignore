@@ -1,1 +1,4 @@
 /target
+# Raw GeoNames / Natural Earth dumps. The committed artefact is data/places.bin.
+/localcore-geo/data/cache/
+/localcore-geo/scripts/__pycache__/

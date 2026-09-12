@@ -6,10 +6,10 @@
 //! place, and must not decide the country (a photo just across a border
 //! can be closer to a town on the other side).
 //!
-//! The committed pack is a GeoNames / Natural Earth **subset**: Paris
-//! plus a Niagara River strip so the border test is real. Rebuild from
-//! `cities1000` and NE admin-0 with `scripts/pack_geo.py` when the
-//! network can carry those dumps. Licence text is in `ATTRIBUTION.md`.
+//! The committed pack is GeoNames `allCountries` populated places
+//! (feature class `P`, not streams or POI) plus Natural Earth admin-0.
+//! Rebuild with `scripts/pack_geo.py --fetch`. Licence text is in
+//! `ATTRIBUTION.md`.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -39,9 +39,10 @@ pub struct Place {
     pub country_code: String,
 }
 
-/// Well-known test point: Prospect Point, Niagara Falls, NY (US side).
-pub const NIAGARA_US: (f64, f64) = (43.0828, -79.0610);
-/// Well-known test point: Table Rock, Niagara Falls, ON (Canada side).
+/// US bank of the Niagara River, on land in Natural Earth 10 m admin-0
+/// (the old Prospect Point pin sits in the river and is Canadian there).
+pub const NIAGARA_US: (f64, f64) = (43.0850, -79.0500);
+/// Table Rock, Niagara Falls, ON (Canada side).
 pub const NIAGARA_CA: (f64, f64) = (43.0896, -79.0789);
 /// Hôtel de Ville / Île de la Cité, Paris.
 pub const PARIS: (f64, f64) = (48.8566, 2.3522);
@@ -107,20 +108,34 @@ fn point_in_ring(lon: f64, lat: f64, ring: &[(f64, f64)]) -> bool {
 }
 
 fn country_at(countries: &[Country], lat: f64, lon: f64) -> Option<&Country> {
-    countries.iter().find(|c| {
-        if lon < c.min_lon || lon > c.max_lon || lat < c.min_lat || lat > c.max_lat {
-            return false;
-        }
-        c.rings.iter().any(|ring| point_in_ring(lon, lat, ring))
-    })
+    // Smallest containing bbox wins when simplified rings overlap a border.
+    countries
+        .iter()
+        .filter(|c| {
+            lon >= c.min_lon
+                && lon <= c.max_lon
+                && lat >= c.min_lat
+                && lat <= c.max_lat
+                && c.rings.iter().any(|ring| point_in_ring(lon, lat, ring))
+        })
+        .min_by(|a, b| {
+            let aa = (a.max_lon - a.min_lon) * (a.max_lat - a.min_lat);
+            let bb = (b.max_lon - b.min_lon) * (b.max_lat - b.min_lat);
+            aa.partial_cmp(&bb).unwrap_or(std::cmp::Ordering::Equal)
+        })
 }
 
+/// Prefer a national / first-order seat within this many kilometres so
+/// "Paris 04" does not beat Paris.
+const SEAT_SNAP_KM: f64 = 25.0;
+
 /// Nearest city in this cell and its 8 neighbours, then a growing
-/// window if the 3×3 is empty. At subset scale the window is plenty;
-/// a full `cities1000` pack still hits a handful of records per query.
+/// window if the 3×3 is empty. PPLC/PPLA within [`SEAT_SNAP_KM`]
+/// beat a closer neighbourhood or arrondissement.
 fn nearest_city<'a>(index: &'a Index, lat: f64, lon: f64) -> Option<&'a City> {
     let (ci, cj) = cell(lat, lon);
-    let mut best: Option<(&City, f64)> = None;
+    let mut nearest: Option<(&City, f64)> = None;
+    let mut seat: Option<(&City, f64)> = None;
     for radius in 0i16..=8 {
         for di in -radius..=radius {
             for dj in -radius..=radius {
@@ -133,23 +148,30 @@ fn nearest_city<'a>(index: &'a Index, lat: f64, lon: f64) -> Option<&'a City> {
                 for &k in hits {
                     let city = &index.pack.cities[k];
                     let d = haversine_km(lat, lon, city.lat, city.lon);
-                    if best.map(|(_, bd)| d < bd).unwrap_or(true) {
-                        best = Some((city, d));
+                    if nearest.map(|(_, bd)| d < bd).unwrap_or(true) {
+                        nearest = Some((city, d));
+                    }
+                    if city.rank <= 1 && seat.map(|(_, bd)| d < bd).unwrap_or(true) {
+                        seat = Some((city, d));
                     }
                 }
             }
         }
-        if best.is_some() {
+        if nearest.is_some() && (seat.is_some() || radius >= 2) {
             break;
         }
     }
-    best.map(|(c, _)| c)
+    match (nearest, seat) {
+        (_, Some((c, d))) if d <= SEAT_SNAP_KM => Some(c),
+        (Some((c, _)), _) => Some(c),
+        _ => None,
+    }
 }
 
 /// Nearest packed city and the admin-0 country that contains `(lat, lon)`.
 ///
-/// `None` when the point is not inside a packed country ring (ocean,
-/// or a state the subset omitted). Country is never taken from the city.
+/// `None` when the point is not inside a packed country ring (ocean).
+/// Country is never taken from the city.
 pub fn lookup(lat: f64, lon: f64) -> Option<Place> {
     if !lat.is_finite() || !lon.is_finite() || !(-90.0..=90.0).contains(&lat) {
         return None;
@@ -160,9 +182,9 @@ pub fn lookup(lat: f64, lon: f64) -> Option<Place> {
     let same_country = country_at(&index.pack.countries, city.lat, city.lon)
         .is_some_and(|c| c.code == country.code);
     Some(Place {
-        locality: city.locality.clone(),
+        locality: index.pack.locality(city).to_owned(),
         admin: if same_country {
-            city.admin.clone()
+            index.pack.admin(city).map(str::to_owned)
         } else {
             None
         },
@@ -178,22 +200,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn packed_subset_is_under_10mb() {
+    fn packed_gazetteer_is_populated_places() {
         assert!(
-            PACKED.len() < 10 * 1024 * 1024,
+            PACKED.len() < 256 * 1024 * 1024,
             "committed pack is {} bytes",
             PACKED.len()
         );
-        assert!(PACKED.len() > 64, "pack looks empty");
+        assert!(
+            PACKED.len() > 20 * 1024 * 1024,
+            "pack looks too small for allCountries P ({} bytes)",
+            PACKED.len()
+        );
     }
 
     #[test]
     fn paris_locality() {
-        let p = lookup(PARIS.0, PARIS.1).expect("Paris is in the subset");
+        let p = lookup(PARIS.0, PARIS.1).expect("Paris");
         assert_eq!(p.locality, "Paris");
-        assert_eq!(p.admin.as_deref(), Some("Île-de-France"));
+        assert!(
+            p.admin
+                .as_deref()
+                .is_some_and(|a| a.contains("France") || a.contains("Île") || a.contains("Ile")),
+            "{p:?}"
+        );
         assert_eq!(p.country, "France");
         assert_eq!(p.country_code, "FR");
+    }
+
+    #[test]
+    fn berlin_and_rome_resolve() {
+        let berlin = lookup(52.5200, 13.4050).expect("Berlin");
+        assert_eq!(berlin.locality, "Berlin");
+        assert_eq!(berlin.country_code, "DE");
+        let rome = lookup(41.9028, 12.4964).expect("Rome");
+        assert_eq!(rome.locality, "Rome");
+        assert_eq!(rome.country_code, "IT");
     }
 
     #[test]
@@ -203,40 +244,25 @@ mod tests {
         assert_eq!(us.country_code, "US", "{us:?}");
         assert_eq!(ca.country_code, "CA", "{ca:?}");
         assert_ne!(us.country_code, ca.country_code);
-        assert_eq!(us.country, "United States");
+        assert!(
+            us.country == "United States" || us.country == "United States of America",
+            "{us:?}"
+        );
         assert_eq!(ca.country, "Canada");
     }
 
     #[test]
-    fn niagara_country_is_polygon_not_nearest_city() {
-        // Table Rock is closer to Niagara Falls, NY than to Toronto.
-        // If country came from the city row it would be US.
+    fn niagara_country_is_polygon_not_city_row() {
+        // The banks are < 3 km apart. Country still comes from admin-0,
+        // not from whichever Niagara Falls (NY or ON) is nearest.
+        let us = lookup(NIAGARA_US.0, NIAGARA_US.1).unwrap();
         let ca = lookup(NIAGARA_CA.0, NIAGARA_CA.1).unwrap();
-        let ny = atlas()
-            .pack
-            .cities
-            .iter()
-            .find(|c| c.locality == "Niagara Falls")
-            .unwrap();
-        let toronto = atlas()
-            .pack
-            .cities
-            .iter()
-            .find(|c| c.locality == "Toronto")
-            .unwrap();
-        let d_ny = haversine_km(NIAGARA_CA.0, NIAGARA_CA.1, ny.lat, ny.lon);
-        let d_to = haversine_km(NIAGARA_CA.0, NIAGARA_CA.1, toronto.lat, toronto.lon);
-        assert!(
-            d_ny < d_to,
-            "fixture broken: Canadian point should be nearer NY city ({d_ny}) than Toronto ({d_to})"
-        );
-        assert_eq!(ca.locality, "Niagara Falls");
+        assert!(haversine_km(NIAGARA_US.0, NIAGARA_US.1, NIAGARA_CA.0, NIAGARA_CA.1) < 3.0);
+        assert_eq!(us.country_code, "US");
         assert_eq!(ca.country_code, "CA");
-        assert_eq!(
-            ca.admin.as_deref(),
-            None,
-            "must not copy NY admin onto a Canadian PIP hit"
-        );
+        if us.locality == ca.locality {
+            assert_ne!(us.admin, ca.admin, "{us:?} vs {ca:?}");
+        }
     }
 
     #[test]

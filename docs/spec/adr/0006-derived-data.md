@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-11 (spikes: SFace; ε not ISA-sized); 2026-09-12 (R10 fixture-pack exception)
+- Revised: 2026-09-11 (r2); 2026-09-11 (spikes: SFace; ε not ISA-sized); 2026-09-12 (R10 fixture-pack exception, lifted the same day)
 
 ## Scope
 
@@ -71,30 +71,29 @@ grep does not discharge this requirement.
 resolve to a locality and a country entirely offline. The dataset is chosen
 at these two tiers:
 
-- **Locality** — a population-tiered gazetteer. GeoNames `cities1000`
-  (~130,000 records, roughly 4 MB packed) is the default; `cities500`
-  (~185,000) where finer resolution is wanted. Records carry coordinates,
-  name, admin division, and country. Licence CC BY 4.0, which permits
-  redistribution with attribution (R13).
+- **Locality** — GeoNames `allCountries` rows with feature class `P`
+  (populated places), including hamlets with population 0.
+  Neighbourhood sections (`PPLX`) and historical/abandoned codes are
+  omitted; lookup snaps to a PPLC/PPLA seat within 25 km so an
+  arrondissement does not beat the city. Streams, peaks, schools, and
+  other non-`P` features are not packed (R11). `cities500` /
+  `cities1000` remain rebuild options. Licence CC BY 4.0, which
+  permits redistribution with attribution (R13).
 - **Country** — point-in-polygon against a public-domain admin-0 boundary
   set (Natural Earth or equivalent). Nearest-locality search MUST NOT decide
   the country: near a border it picks the wrong one, and country is what tag
   and title data depends on.
 
-Total bundled place data MUST stay under 10 MB. A gazetteer of every named
-feature (GeoNames `allCountries`, ~11 million records, ~1.3 GB raw) is out of
-scope.
+The packed gazetteer is larger than the old 10 MB city-dump cap; it
+MUST stay under 256 MB. The raw `allCountries` file (every named
+feature) is not what ships — only class `P`.
 
 A lookup answers with the nearest populated place, which is not the same as
 the place that contains the point; a photo in open country may resolve to a
 town some distance away. This is accepted.
 
-**Exception (2026-09-12).** The committed pack is an 8-city / FR–US–CA
-fixture (Paris + Niagara strip) until `scripts/pack_geo.py` can run
-against cities1000 + NE admin-0 offline. The border test uses
-hand-simplified rings. The bundle still stays under 10 MB. This is the
-pack that ships until that offline rebuild is possible; it is not a
-change to the cities1000 default.
+The committed pack is GeoNames `allCountries` (class `P`) plus Natural
+Earth 10 m admin-0 (`scripts/pack_geo.py --fetch`).
 
 **R11.** **Points of interest are not a capability.** No POI or landmark
 dataset is bundled, and no landmark is inferred from coordinates. Proximity
@@ -189,7 +188,7 @@ discovered at runtime.
   network-path or reachability API.
 - The whole test suite passes with the network interface down, and place
   lookup returns a locality and a country while it is down.
-- Bundled place data totals under 10 MB, and its licences are recorded.
+- Bundled place data totals under 256 MB, and its licences are recorded.
 - Two coordinates either side of a land border resolve to different
   countries.
 - No POI or landmark dataset is present; a landmark name in a sidecar is
@@ -244,9 +243,10 @@ link-state observation existed only to decide whether to prefetch
 placeholders — which no longer exist. A rule with no exceptions is one an
 audit can check by searching for socket and HTTP crates.
 
-R10 costs about 4 MB — a rounding error beside the model pack — to retire the
-one outbound request in the family. R11 declines the much larger dataset that
-would follow, and does so on accuracy grounds before cost: coordinates say
-where the photographer stood, and the desktop tagger already identifies
-landmarks from the image itself and writes them where every app can read
-them.
+R10 costs on the order of 120 MB of packed class-`P` places — still
+small beside the model pack — to retire the one outbound request in
+the family. R11 declines the much larger dataset that would follow,
+and does so on accuracy grounds before cost: coordinates say where
+the photographer stood, and the desktop tagger already identifies
+landmarks from the image itself and writes them where every app can
+read them.
