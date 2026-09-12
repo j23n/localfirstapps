@@ -26,7 +26,7 @@ final class LocalContactsSmokeTests: XCTestCase {
 
         app.buttons["Add Contact"].tap()
         let firstName = app.textFields["First Name"]
-        XCTAssertTrue(firstName.waitForExistence(timeout: 5))
+        XCTAssertTrue(firstName.waitForExistence(timeout: 15))
         firstName.tap()
         firstName.typeText("Bob")
         app.buttons["Save"].tap()

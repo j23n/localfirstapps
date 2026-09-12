@@ -164,7 +164,7 @@ final class ScanActivityTests: XCTestCase {
         XCTAssertEqual(log.entries.last?.filename, "1.jpg")
     }
 
-    func testBeginRunClearsAndStaleIngestIsDropped() async {
+    func testBeginRunClearsAndStaleIngestIsDropped() async throws {
         let temp = TempDir.make()
         addTeardownBlock { temp.teardown() }
         let image = temp.appending("dog.jpg")

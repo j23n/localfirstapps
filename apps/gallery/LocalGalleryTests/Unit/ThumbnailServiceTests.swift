@@ -124,7 +124,8 @@ final class ThumbnailServiceTests: XCTestCase {
         let source = temp.appending("photo.jpg")
         try writeTinyJPEG(to: source, red: 0xE0, green: 0x10, blue: 0x10)
 
-        let first = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
+        let firstThumb = await service.thumbnail(for: source, size: CGSize(width: 64, height: 64))
+        let first = try XCTUnwrap(firstThumb)
         let firstSample = samplePixel(first)
         let firstPixel = try XCTUnwrap(firstSample)
 
@@ -134,7 +135,8 @@ final class ThumbnailServiceTests: XCTestCase {
             ofItemAtPath: source.path
         )
 
-        let second = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
+        let secondThumb = await service.thumbnail(for: source, size: CGSize(width: 64, height: 64))
+        let second = try XCTUnwrap(secondThumb)
         let secondSample = samplePixel(second)
         let secondPixel = try XCTUnwrap(secondSample)
         XCTAssertNotEqual(firstPixel.0, secondPixel.0, "stale red cache must not survive a blue replacement")
@@ -148,7 +150,8 @@ final class ThumbnailServiceTests: XCTestCase {
         let service = ThumbnailService(thumbnailDir: temp.appending("thumbs", isDirectory: true))
         let source = temp.appending("photo.jpg")
         try writeTinyJPEG(to: source, width: 8, height: 8, red: 0xE0, green: 0x10, blue: 0x10)
-        let first = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
+        let firstThumb = await service.thumbnail(for: source, size: CGSize(width: 64, height: 64))
+        let first = try XCTUnwrap(firstThumb)
         let firstSample = samplePixel(first)
         let firstPixel = try XCTUnwrap(firstSample)
         let originalMtime = try FileManager.default.attributesOfItem(atPath: source.path)[.modificationDate] as? Date
@@ -161,7 +164,8 @@ final class ThumbnailServiceTests: XCTestCase {
             )
         }
 
-        let second = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
+        let secondThumb = await service.thumbnail(for: source, size: CGSize(width: 64, height: 64))
+        let second = try XCTUnwrap(secondThumb)
         let secondSample = samplePixel(second)
         let secondPixel = try XCTUnwrap(secondSample)
         XCTAssertNotEqual(firstPixel.0, secondPixel.0)
@@ -186,7 +190,8 @@ final class ThumbnailServiceTests: XCTestCase {
             [.modificationDate: Date().addingTimeInterval(5)],
             ofItemAtPath: source.path
         )
-        let reloaded = try XCTUnwrap(await service.thumbnail(for: source, size: CGSize(width: 64, height: 64)))
+        let reloadedThumb = await service.thumbnail(for: source, size: CGSize(width: 64, height: 64))
+        let reloaded = try XCTUnwrap(reloadedThumb)
         let reloadedSample = samplePixel(reloaded)
         let pixel = try XCTUnwrap(reloadedSample)
         XCTAssertGreaterThan(pixel.2, pixel.0)
