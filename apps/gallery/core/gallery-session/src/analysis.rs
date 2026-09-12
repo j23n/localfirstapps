@@ -408,9 +408,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn readiness_mentions_nominatim() {
+    fn readiness_mentions_gazetteer() {
         let blurb = readiness_blurb(None, 3);
-        assert!(blurb.contains("Nominatim") || blurb.contains("Places"));
+        assert!(blurb.contains("gazetteer"), "{blurb}");
+        assert!(!blurb.contains("Nominatim"), "{blurb}");
     }
 
     #[test]

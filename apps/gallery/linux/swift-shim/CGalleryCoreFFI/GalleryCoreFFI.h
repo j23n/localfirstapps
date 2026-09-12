@@ -817,6 +817,11 @@ RustBuffer uniffi_gallery_ffi_fn_func_person_log_project(RustBuffer root, RustCa
 RustBuffer uniffi_gallery_ffi_fn_func_person_log_read(RustBuffer root, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_GAZETTEER_LOOKUP
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_GAZETTEER_LOOKUP
+RustBuffer uniffi_gallery_ffi_fn_func_gazetteer_lookup(double latitude, double longitude, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_IS_STRICT_PLACES_PREFIX
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_IS_STRICT_PLACES_PREFIX
 int8_t uniffi_gallery_ffi_fn_func_is_strict_places_prefix(RustBuffer existing, RustBuffer newer, RustCallStatus *_Nonnull out_status
@@ -830,7 +835,7 @@ uint64_t uniffi_gallery_ffi_fn_func_library_watch_refresh_interval_ms(RustCallSt
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_NOMINATIM_LOOKUP
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_NOMINATIM_LOOKUP
-RustBuffer uniffi_gallery_ffi_fn_func_nominatim_lookup(RustBuffer endpoint, double latitude, double longitude, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_gallery_ffi_fn_func_nominatim_lookup(RustBuffer _endpoint, double latitude, double longitude, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACE_FROM_PARTS
@@ -1255,6 +1260,12 @@ uint16_t uniffi_gallery_ffi_checksum_func_person_log_project(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_READ
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_READ
 uint16_t uniffi_gallery_ffi_checksum_func_person_log_read(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_GAZETTEER_LOOKUP
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_GAZETTEER_LOOKUP
+uint16_t uniffi_gallery_ffi_checksum_func_gazetteer_lookup(void
     
 );
 #endif

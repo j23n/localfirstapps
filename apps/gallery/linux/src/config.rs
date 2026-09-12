@@ -147,9 +147,12 @@ pub fn ml_cache_path() -> PathBuf {
     cache_dir().join("gallery-cache.sqlite")
 }
 
-/// Haversine place-lookup cache (version 3 — not the old Apple JSON).
+/// Haversine place-lookup cache (version 3).
+///
+/// Renamed from `nominatim-cache.json`; the old file is not migrated
+/// (one cache miss).
 pub fn geo_cache_path() -> PathBuf {
-    cache_dir().join("nominatim-cache.json")
+    cache_dir().join("geo-cache.json")
 }
 
 /// Load the geocode cache. Stale versions are empty; corrupt files are

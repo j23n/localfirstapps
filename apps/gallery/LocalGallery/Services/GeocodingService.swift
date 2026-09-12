@@ -1,5 +1,3 @@
-import Contacts
-import CoreLocation
 import Foundation
 import Observation
 import os
@@ -13,8 +11,9 @@ import os
 /// keyword plus `photoshop:City/State/Country`,
 /// `Iptc4xmpCore:CountryCode/Location`, and `phototools:CountryCode`.
 ///
-/// Lookups are serial. The host still paces and retries so a miss or a
-/// future gazetteer error does not stampede. A miss (`nil`) is not retried.
+/// Lookups are serial. Live lookup interval is zero (same as
+/// `gallery-session` `Gazetteer.min_interval()`). A miss (`nil`) is not
+/// retried. Thrown `GeoError.retryable` still retries.
 ///
     /// Photos whose **library row** already carries a `Places/*` name are
     /// not the Scan work queue (`needsLibraryPlaces`). The write path still
@@ -61,32 +60,18 @@ final class GeocodingService {
     /// Matches photo-tools' `gps.geocode_cache_radius_km`.
     static let cacheRadiusKm = 0.5
 
-    /// Floor between live lookups. Offline resolution does not need it;
-    /// the orchestrator still owns pacing.
-    static let minLookupInterval: TimeInterval = 1
-
-    /// Injected endpoint. Empty / unset uses the public OSM instance.
-    nonisolated static var nominatimEndpoint: String {
-        let env = ProcessInfo.processInfo.environment["LOCALGALLERY_NOMINATIM"] ?? ""
-        return env.isEmpty ? "https://nominatim.openstreetmap.org/reverse" : env
-    }
+    /// Floor between live lookups. Offline gazetteer: zero, matching
+    /// `gallery-session` `Gazetteer.min_interval()`.
+    static let minLookupInterval: TimeInterval = 0
 
     /// Live attempts per unique coordinate, including the first. A photo
     /// that exhausts these is counted failed and left eligible for the
     /// next run — nothing is written, so it is not skipped forever.
     static let maxLookupAttempts = 4
 
-    /// Cap on retry sleep so a throttled library pass cannot stall for
-    /// minutes on one coordinate.
+    /// Cap on retry sleep so a retryable gazetteer error cannot stall
+    /// a library pass on one coordinate.
     static let maxRetryBackoff: TimeInterval = 16
-
-    /// Lookup watchdog. Offline resolution is instant; the cap stays so a
-    /// hung FFI call cannot pin the UI.
-    nonisolated static let lookupTimeout: TimeInterval = 15
-
-    nonisolated enum LookupError: Error, Equatable, Sendable {
-        case timedOut
-    }
 
     private(set) var isRunning = false
     private(set) var progress: Progress?
@@ -98,10 +83,10 @@ final class GeocodingService {
     @ObservationIgnored private var cancelRequested = false
     @ObservationIgnored private var lastLiveLookupAt: Date?
     @ObservationIgnored var lookup: (@Sendable (Double, Double) async throws -> CacheEntry?)?
-    /// Sleep used for pacing and retry backoff. Tests replace this with a
-    /// recorder (or a no-op) so they do not wait a real second.
+    /// Sleep used for the (zero) pacing gap and retry backoff. Tests
+    /// replace this with a recorder (or a no-op).
     @ObservationIgnored var wait: (TimeInterval) async -> Void
-    /// Clock for the pacing gap. Injected so rate-limit tests do not depend
+    /// Clock for the pacing gap. Injected so wait tests do not depend
     /// on wall time.
     @ObservationIgnored var now: () -> Date = Date.init
     /// One photo this run just wrote, skipped, or failed. `LibraryAnalysis`
@@ -172,7 +157,7 @@ final class GeocodingService {
         return doc.rawTags.map { HierarchicalTag(raw: $0) }
     }
 
-    /// Reverse-geocode `photos` and write sidecars. Serial and paced.
+    /// Reverse-geocode `photos` and write sidecars. Serial.
     func geocode(_ photos: [PhotoFile], force: Bool = false) async -> Summary {
         guard !isRunning else { return lastSummary ?? Summary() }
         isRunning = true
@@ -363,34 +348,15 @@ final class GeocodingService {
         }
     }
 
-    /// Transient failures worth another try. Gazetteer misses are not; FFI
-    /// `GeoError.retryable`. Tests still inject `kCLErrorNetwork`.
+    /// Transient failures worth another try. The offline gazetteer does
+    /// not emit Core Location or URL errors; only `GeoError.retryable`.
     static func isRetryable(_ error: Error) -> Bool {
-        if case .retryable = error as? GeoError { return true }
-        let ns = error as NSError
-        if error is LookupError { return true }
-        if ns.domain == kCLErrorDomain {
-            return ns.code == CLError.Code.network.rawValue
-        }
-        if ns.domain == NSURLErrorDomain {
-            switch ns.code {
-            case NSURLErrorTimedOut,
-                 NSURLErrorCannotFindHost,
-                 NSURLErrorCannotConnectToHost,
-                 NSURLErrorNetworkConnectionLost,
-                 NSURLErrorDNSLookupFailed,
-                 NSURLErrorNotConnectedToInternet,
-                 NSURLErrorInternationalRoamingOff,
-                 NSURLErrorDataNotAllowed:
-                return true
-            default:
-                return false
-            }
-        }
+        if case .Retryable(_) = error as? GeoError { return true }
         return false
     }
 
-    /// 1s, 2s, 4s, … capped at `maxRetryBackoff`.
+    /// Exponential from `minLookupInterval`, capped at `maxRetryBackoff`.
+    /// With interval 0 this is zero.
     static func backoff(afterFailures failures: Int) -> TimeInterval {
         let raw = minLookupInterval * pow(2, Double(max(0, failures - 1)))
         return min(maxRetryBackoff, raw)
@@ -421,10 +387,10 @@ final class GeocodingService {
         }
     }
 
-    /// v1 was a bare `[CacheEntry]` array. Those rows often have no city
-    /// because we only read `CLPlacemark.locality`. Drop them so the next
-    /// scan re-queries with the fuller mapping.
-    private static let diskCacheVersion = 2
+    /// v1 was a bare `[CacheEntry]` array (CLGeocoder). v2 was the
+    /// Nominatim-era envelope. Drop both so the next scan re-queries
+    /// through the gazetteer. Rust session cache is already v3.
+    private static let diskCacheVersion = 3
 
     private struct DiskCache: Codable {
         var version: Int
@@ -441,44 +407,21 @@ final class GeocodingService {
         return []
     }
 
-    /// Off the main actor so a hung lookup cannot pin the UI.
+    /// Off the main actor so a slow FFI call cannot pin the UI.
     nonisolated private static func liveLookup(
         latitude: Double,
         longitude: Double
     ) async throws -> CacheEntry? {
         let started = Date()
-        let timeout = lookupTimeout
         Log.ml.info(
-            "Places lookup starting \(Log.r.gps(latitude, longitude)) timeout=\(Int(timeout))s"
+            "Places lookup starting \(Log.r.gps(latitude, longitude))"
         )
         do {
-            return try await withThrowingTaskGroup(of: CacheEntry?.self) { group in
-                group.addTask {
-                    try await Self.reverseGeocode(latitude: latitude, longitude: longitude)
-                }
-                group.addTask {
-                    var waited = 0
-                    let step = 5
-                    while waited + step < Int(timeout) {
-                        try await Task.sleep(for: .seconds(step))
-                        waited += step
-                        Log.ml.info(
-                            "Places lookup still waiting \(waited)s \(Log.r.gps(latitude, longitude))"
-                        )
-                    }
-                    try await Task.sleep(for: .seconds(timeout - Double(waited)))
-                    Log.ml.error(
-                        "Places lookup timed out after \(Int(timeout))s \(Log.r.gps(latitude, longitude))"
-                    )
-                    throw LookupError.timedOut
-                }
-                let first = try await group.next()!
-                group.cancelAll()
-                Log.ml.info(
-                    "Places lookup finished in \(Self.ms(since: started))ms \(Log.r.gps(latitude, longitude))"
-                )
-                return first
-            }
+            let entry = try reverseGeocode(latitude: latitude, longitude: longitude)
+            Log.ml.info(
+                "Places lookup finished in \(Self.ms(since: started))ms \(Log.r.gps(latitude, longitude))"
+            )
+            return entry
         } catch {
             Log.ml.error(
                 "Places lookup failed in \(Self.ms(since: started))ms: \(Log.r.error(error))"
@@ -494,12 +437,8 @@ final class GeocodingService {
     nonisolated private static func reverseGeocode(
         latitude: Double,
         longitude: Double
-    ) async throws -> CacheEntry? {
-        let built = try nominatimLookup(
-            endpoint: nominatimEndpoint,
-            latitude: latitude,
-            longitude: longitude
-        )
+    ) throws -> CacheEntry? {
+        let built = try gazetteerLookup(latitude: latitude, longitude: longitude)
         guard let built else { return nil }
         return CacheEntry(
             latitude: latitude,
@@ -511,70 +450,6 @@ final class GeocodingService {
             sublocation: built.sublocation,
             countryCode: built.countryCode
         )
-    }
-
-    /// The CLPlacemark fields Places actually reads. Isolated so tests can
-    /// feed a Paris-without-`locality` mark without constructing a placemark.
-    nonisolated struct PlacemarkParts: Equatable, Sendable {
-        var country: String? = nil
-        var state: String? = nil
-        var subAdministrativeArea: String? = nil
-        var locality: String? = nil
-        var postalCity: String? = nil
-        var subLocality: String? = nil
-        var isoCountryCode: String? = nil
-    }
-
-    nonisolated static func place(from mark: CLPlacemark, latitude: Double, longitude: Double) -> CacheEntry? {
-        place(
-            from: PlacemarkParts(
-                country: mark.country,
-                state: mark.administrativeArea,
-                subAdministrativeArea: mark.subAdministrativeArea,
-                locality: mark.locality,
-                postalCity: mark.postalAddress?.city,
-                subLocality: mark.subLocality,
-                isoCountryCode: mark.isoCountryCode
-            ),
-            latitude: latitude,
-            longitude: longitude
-        )
-    }
-
-    /// Apple often leaves `locality` nil for European cities (Paris is a
-    /// common case): the city sits on `postalAddress.city` or
-    /// `subAdministrativeArea` instead. Falling back through those — and
-    /// dropping duplicates of country/state — is what turns
-    /// `Places/France` + a country code into `Places/France/Île-de-France/Paris`.
-    nonisolated static func place(from parts: PlacemarkParts, latitude: Double, longitude: Double) -> CacheEntry? {
-        // Apple often leaves `locality` nil for European cities; the city
-        // sits on `postalAddress.city` or `subAdministrativeArea` instead.
-        // The core then collapses duplicate country/state/city levels.
-        let city = nonempty(parts.locality)
-            ?? nonempty(parts.postalCity)
-            ?? nonempty(parts.subAdministrativeArea)
-        guard let built = placeFromParts(
-            country: parts.country,
-            state: parts.state,
-            city: city,
-            sublocation: parts.subLocality,
-            countryCode: parts.isoCountryCode
-        ) else { return nil }
-        return CacheEntry(
-            latitude: latitude,
-            longitude: longitude,
-            path: built.path,
-            country: built.country,
-            state: built.state,
-            city: built.city,
-            sublocation: built.sublocation,
-            countryCode: built.countryCode
-        )
-    }
-
-    nonisolated private static func nonempty(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func write(_ path: String, place: CacheEntry) async throws -> Bool {

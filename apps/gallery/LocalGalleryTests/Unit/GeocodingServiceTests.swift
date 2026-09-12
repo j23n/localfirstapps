@@ -1,4 +1,3 @@
-import CoreLocation
 import Foundation
 import XCTest
 @testable import LocalGallery
@@ -11,8 +10,8 @@ final class GeocodingServiceTests: XCTestCase {
         return temp
     }
 
-    /// Live lookups are paced at 1/s; tests replace `wait` so they do not
-    /// actually sleep. Rate-limit tests install a recorder instead.
+    /// Live lookup interval is zero. Tests replace `wait` so a retry does
+    /// not sleep; wait tests install a recorder.
     private func makeService(
         _ temp: TempDir,
         cacheName: String = "geocode-cache.json",
@@ -34,10 +33,6 @@ final class GeocodingServiceTests: XCTestCase {
             sublocation: nil,
             countryCode: "FR"
         )
-    }
-
-    private func networkError() -> NSError {
-        NSError(domain: kCLErrorDomain, code: CLError.Code.network.rawValue)
     }
 
     func testEligibilityRequiresDownloadedStillWithGpsAndNoPlacesTag() throws {
@@ -306,7 +301,7 @@ final class GeocodingServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: temp.appending("eiffel.jpg.xmp").path))
     }
 
-    func testLiveLookupsArePacedAtOnePerSecond() async throws {
+    func testSecondDistinctCoordinateDoesNotWait() async throws {
         let frozen = Date(timeIntervalSince1970: 1_000)
         var waited: TimeInterval = 0
         let service = makeService(makeTemp()) { waited += $0 }
@@ -317,15 +312,11 @@ final class GeocodingServiceTests: XCTestCase {
         XCTAssertEqual(waited, 0, "the first live lookup is free")
 
         _ = try await service.resolve(latitude: 41.9028, longitude: 12.4964)
-        XCTAssertEqual(
-            waited,
-            GeocodingService.minLookupInterval,
-            accuracy: 0.001,
-            "a second distinct coordinate must wait out the 1s floor"
-        )
+        XCTAssertEqual(waited, 0, "a second distinct coordinate must not wait")
+        XCTAssertEqual(GeocodingService.minLookupInterval, 0)
     }
 
-    func testCacheHitDoesNotConsumeTheRateLimit() async throws {
+    func testCacheHitDoesNotWait() async throws {
         let frozen = Date(timeIntervalSince1970: 1_000)
         var waited: TimeInterval = 0
         let service = makeService(makeTemp()) { waited += $0 }
@@ -337,55 +328,7 @@ final class GeocodingServiceTests: XCTestCase {
         XCTAssertEqual(waited, 0, "a street-level cache hit must not sleep")
     }
 
-    func testNetworkThrottleIsRetriedThenSucceeds() async throws {
-        let service = makeService(makeTemp())
-        var calls = 0
-        service.lookup = { lat, lon in
-            calls += 1
-            if calls < 3 { throw self.networkError() }
-            return self.paris(lat: lat, lon: lon)
-        }
-
-        let hit = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
-        XCTAssertEqual(calls, 3)
-        XCTAssertEqual(hit?.city, "Paris")
-    }
-
-    func testRetryBudgetExhaustionFailsTheLookup() async {
-        let service = makeService(makeTemp())
-        var calls = 0
-        service.lookup = { _, _ in
-            calls += 1
-            throw self.networkError()
-        }
-
-        do {
-            _ = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
-            XCTFail("exhausted retries must throw")
-        } catch {
-            XCTAssertTrue(GeocodingService.isRetryable(error))
-        }
-        XCTAssertEqual(calls, GeocodingService.maxLookupAttempts)
-    }
-
-    func testNoResultIsNotRetried() async {
-        let service = makeService(makeTemp())
-        var calls = 0
-        service.lookup = { _, _ in
-            calls += 1
-            throw NSError(domain: kCLErrorDomain, code: CLError.Code.geocodeFoundNoResult.rawValue)
-        }
-
-        do {
-            _ = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
-            XCTFail("a miss must surface, not be swallowed")
-        } catch {
-            XCTAssertFalse(GeocodingService.isRetryable(error))
-        }
-        XCTAssertEqual(calls, 1)
-    }
-
-    func testNilPlacemarkIsASkipNotARetry() async throws {
+    func testNilLookupIsASkipNotARetry() async throws {
         let service = makeService(makeTemp())
         var calls = 0
         service.lookup = { _, _ in
@@ -397,113 +340,16 @@ final class GeocodingServiceTests: XCTestCase {
         XCTAssertEqual(calls, 1)
     }
 
-    func testIsRetryableCoversThrottleAndTransportOnly() {
-        XCTAssertTrue(GeocodingService.isRetryable(networkError()))
-        XCTAssertTrue(
-            GeocodingService.isRetryable(
-                NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
-            )
-        )
-        XCTAssertFalse(
-            GeocodingService.isRetryable(
-                NSError(domain: kCLErrorDomain, code: CLError.Code.geocodeFoundNoResult.rawValue)
-            )
-        )
-        XCTAssertFalse(
-            GeocodingService.isRetryable(
-                NSError(domain: kCLErrorDomain, code: CLError.Code.geocodeCanceled.rawValue)
-            )
-        )
-        XCTAssertTrue(GeocodingService.isRetryable(GeocodingService.LookupError.timedOut))
+    func testIsRetryableIsOnlyGeoErrorRetryable() {
+        XCTAssertTrue(GeocodingService.isRetryable(GeoError.Retryable(detail: "transient")))
+        XCTAssertFalse(GeocodingService.isRetryable(GeoError.Fatal(detail: "no")))
         XCTAssertFalse(GeocodingService.isRetryable(
             PlacesError.InvalidTag(tag: "Places/", reason: "Places/ with no country is not a place")
         ))
-    }
-
-    func testBackoffDoublesThenCaps() {
-        XCTAssertEqual(GeocodingService.backoff(afterFailures: 1), 1)
-        XCTAssertEqual(GeocodingService.backoff(afterFailures: 2), 2)
-        XCTAssertEqual(GeocodingService.backoff(afterFailures: 3), 4)
-        XCTAssertEqual(GeocodingService.backoff(afterFailures: 5), 16)
-        XCTAssertEqual(GeocodingService.backoff(afterFailures: 8), 16)
-    }
-
-    // MARK: - City extraction
-
-    func testPostalCityFillsInWhenLocalityIsMissing() {
-        let entry = GeocodingService.place(
-            from: GeocodingService.PlacemarkParts(
-                country: "France",
-                state: "Île-de-France",
-                locality: nil,
-                postalCity: "Paris",
-                isoCountryCode: "FR"
-            ),
-            latitude: 48.8584,
-            longitude: 2.2945
+        XCTAssertFalse(
+            GeocodingService.isRetryable(NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)),
+            "FFI does not return URL errors; they are not retryable"
         )
-        XCTAssertEqual(entry?.path, "Places/France/Île-de-France/Paris")
-        XCTAssertEqual(entry?.city, "Paris")
-        XCTAssertEqual(entry?.countryCode, "FR")
-    }
-
-    func testSubAdministrativeAreaIsTheCityWhenPostalCityIsMissingToo() {
-        let entry = GeocodingService.place(
-            from: GeocodingService.PlacemarkParts(
-                country: "France",
-                state: "Île-de-France",
-                subAdministrativeArea: "Paris",
-                isoCountryCode: "FR"
-            ),
-            latitude: 48.8584,
-            longitude: 2.2945
-        )
-        XCTAssertEqual(entry?.city, "Paris")
-        XCTAssertEqual(entry?.path, "Places/France/Île-de-France/Paris")
-    }
-
-    func testLocalityWinsOverTheFallbacks() {
-        let entry = GeocodingService.place(
-            from: GeocodingService.PlacemarkParts(
-                country: "United States",
-                state: "CA",
-                subAdministrativeArea: "San Francisco County",
-                locality: "San Francisco",
-                postalCity: "San Francisco",
-                isoCountryCode: "US"
-            ),
-            latitude: 37.77,
-            longitude: -122.42
-        )
-        XCTAssertEqual(entry?.city, "San Francisco")
-        XCTAssertEqual(entry?.state, "CA")
-    }
-
-    func testCityMatchingCountryOrStateIsDropped() {
-        let singapore = GeocodingService.place(
-            from: GeocodingService.PlacemarkParts(
-                country: "Singapore",
-                locality: "Singapore",
-                isoCountryCode: "SG"
-            ),
-            latitude: 1.29,
-            longitude: 103.85
-        )
-        XCTAssertEqual(singapore?.path, "Places/Singapore")
-        XCTAssertNil(singapore?.city)
-
-        let tokyo = GeocodingService.place(
-            from: GeocodingService.PlacemarkParts(
-                country: "Japan",
-                state: "Tokyo",
-                locality: "Tokyo",
-                isoCountryCode: "JP"
-            ),
-            latitude: 35.68,
-            longitude: 139.69
-        )
-        XCTAssertEqual(tokyo?.path, "Places/Japan/Tokyo")
-        XCTAssertNil(tokyo?.city)
     }
 
     func testABareLocalityArrayCacheIsNotReused() async throws {
@@ -531,6 +377,30 @@ final class GeocodingServiceTests: XCTestCase {
         }
         let hit = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
         XCTAssertEqual(lookups, 1, "v1 cache rows must not block a city re-query")
+        XCTAssertEqual(hit?.city, "Paris")
+    }
+
+    func testV2CacheEnvelopeIsDropped() async throws {
+        let temp = makeTemp()
+        let url = temp.appending("geocode-cache.json")
+        struct V2Envelope: Encodable {
+            var version: Int
+            var entries: [GeocodingService.CacheEntry]
+        }
+        let disk = V2Envelope(
+            version: 2,
+            entries: [paris(lat: 48.8584, lon: 2.2945)]
+        )
+        try JSONEncoder().encode(disk).write(to: url)
+        let service = GeocodingService(cacheURL: url)
+        service.wait = { _ in }
+        var lookups = 0
+        service.lookup = { lat, lon in
+            lookups += 1
+            return self.paris(lat: lat, lon: lon)
+        }
+        let hit = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
+        XCTAssertEqual(lookups, 1, "v2 Nominatim-era rows must be dropped")
         XCTAssertEqual(hit?.city, "Paris")
     }
 

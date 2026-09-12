@@ -86,7 +86,7 @@ recorded only when a mapping at that commit reproduces
 `taxonomy_paths_sha256`. Do not invent one.
 
 `People/*` is excluded (face recognition); `Landmarks/*` and
-`Places/*` are excluded (Nominatim / Places pass).
+`Places/*` are excluded (gazetteer / Places pass).
 
 ### Prompt template
 
