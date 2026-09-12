@@ -4,7 +4,7 @@
       "canonicalPath" : "Objects/Cup",
       "key" : "objects/cup",
       "photoIDs" : [
-        "46D5D0E0-4173-508F-8E94-CBCA7C31325D"
+        "C02991C5-8ADB-5708-B481-DCE0E5E2A359"
       ]
     },
     {
@@ -89,14 +89,14 @@
       "canonicalPath" : "Places/Türkiye",
       "key" : "places/türkiye",
       "photoIDs" : [
-        "D61B2BB5-4A23-534C-915C-D3A881B184EE"
+        "1168F488-0A5E-5AA0-90D7-F483485C8E67"
       ]
     },
     {
       "canonicalPath" : "Places/Türkiye/Istanbul",
       "key" : "places/türkiye/istanbul",
       "photoIDs" : [
-        "D61B2BB5-4A23-534C-915C-D3A881B184EE"
+        "1168F488-0A5E-5AA0-90D7-F483485C8E67"
       ]
     },
     {
@@ -235,7 +235,7 @@
     {
       "dateTaken" : "2023-11-01T12:00:00.000Z",
       "filename" : "café",
-      "id" : "46D5D0E0-4173-508F-8E94-CBCA7C31325D",
+      "id" : "C02991C5-8ADB-5708-B481-DCE0E5E2A359",
       "isVideo" : false,
       "path" : "/fixtures/idx/café.jpg",
       "tags" : [
@@ -245,7 +245,7 @@
     {
       "dateTaken" : "2023-12-01T12:00:00.000Z",
       "filename" : "İstanbul",
-      "id" : "D61B2BB5-4A23-534C-915C-D3A881B184EE",
+      "id" : "1168F488-0A5E-5AA0-90D7-F483485C8E67",
       "isVideo" : false,
       "path" : "/fixtures/idx/İstanbul.jpg",
       "tags" : [
