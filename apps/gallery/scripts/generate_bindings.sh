@@ -103,6 +103,47 @@ module GalleryCoreFFI {
 EOF
 copy_if_changed "$STAGING/module.modulemap.linux" "$SHIM/CGalleryCoreFFI/module.modulemap"
 
+# UniFFI copies rustdoc into Swift `/** */` blocks. A rustdoc `Foo/*` opens a
+# nested comment that never closes, and Xcode then fails at EOF.
+reject_nested_swift_block_comments() {
+    python3 -c '
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+depth = 0
+line = 1
+i = 0
+while i < len(text):
+    if text[i] == "\n":
+        line += 1
+        i += 1
+        continue
+    pair = text[i : i + 2]
+    if pair == "/*":
+        depth += 1
+        if depth > 1:
+            print(
+                f"{path}:{line}: nested /* inside a Swift block comment "
+                "(rewrite the rustdoc; `Places/*` is the usual culprit)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        i += 2
+        continue
+    if pair == "*/":
+        depth = max(0, depth - 1)
+        i += 2
+        continue
+    i += 1
+if depth:
+    print(f"{path}: unterminated block comment", file=sys.stderr)
+    sys.exit(1)
+' "$1"
+}
+
+reject_nested_swift_block_comments "$ROOT/LocalGallery/$MODULE.swift"
+reject_nested_swift_block_comments "$SHIM/Sources/GalleryFFICheck/GalleryCore.swift"
+
 echo
 echo "ios:  LocalGallery/$MODULE.swift"
 echo "hdr:  LocalGallery/${MODULE}FFI.h"

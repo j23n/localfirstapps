@@ -62,12 +62,25 @@ enum SyncConflict {
     /// Health event device ids: `[A-Za-z0-9][A-Za-z0-9._-]*`.
     private static func isDeviceID(_ s: String) -> Bool {
         var chars = s.makeIterator()
-        guard let first = chars.next(),
-              first.isASCII && (first.isLetter || first.isNumber) else {
+        guard let first = chars.next() else {
             return false
         }
-        return chars.allSatisfy { c in
-            (c.isASCII && (c.isLetter || c.isNumber)) || c == "." || c == "_" || c == "-"
+        if !isDeviceIDStart(first) {
+            return false
         }
+        for c in chars {
+            if !isDeviceIDContinue(c) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func isDeviceIDStart(_ c: Character) -> Bool {
+        c.isASCII && (c.isLetter || c.isNumber)
+    }
+
+    private static func isDeviceIDContinue(_ c: Character) -> Bool {
+        isDeviceIDStart(c) || c == "." || c == "_" || c == "-"
     }
 }

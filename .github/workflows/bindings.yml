@@ -79,7 +79,7 @@ jobs:
             build-essential pkg-config libssl-dev
 
       - name: Swift
-        uses: swift-actions/setup-swift@34e3d27dcea462441b3b7094961a83c85cd28b18 # v2
+        uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
           swift-version: "6.0"
 

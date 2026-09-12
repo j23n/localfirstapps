@@ -523,17 +523,18 @@ impl Window {
         let ops = self.inner.ops.borrow().clone();
         thread::spawn(move || {
             let progress_tx = tx.clone();
+            let on_progress = move |msg: &str, done: usize, total: usize| {
+                let _ = progress_tx.send(ScanEvent::Progress {
+                    token,
+                    msg: msg.to_string(),
+                    done,
+                    total,
+                });
+            };
             let result = crate::host::open_library_with_commit(
                 &root_thread,
                 &flag,
-                Some(&|msg, done, total| {
-                    let _ = progress_tx.send(ScanEvent::Progress {
-                        token,
-                        msg: msg.to_string(),
-                        done,
-                        total,
-                    });
-                }),
+                Some(&on_progress),
                 Some((&ops, token)),
             );
             let _ = tx.send(ScanEvent::Done {
@@ -1047,27 +1048,30 @@ impl Window {
             picture.set_size_request(140, 140);
             item.set_child(Some(&picture));
         });
-        factory.connect_bind(move |_, obj| {
-            let item = obj
-                .downcast_ref::<gtk::ListItem>()
-                .expect("factory item")
-                .clone();
-            let Some(boxed) = item.item().and_downcast::<glib::BoxedAnyObject>() else {
-                return;
-            };
-            let Some(picture) = item.child().and_downcast::<gtk::Picture>() else {
-                return;
-            };
-            let row = boxed.borrow::<PhotoRow>();
-            if row.is_video {
-                picture.set_alternative_text(Some("Video"));
-                picture.set_paintable(Option::<&gtk::gdk::Paintable>::None);
-            } else {
-                match row.utf8_path() {
-                    Ok(path) => thumbs.bind_grid(&picture, path, &row.id, scale),
-                    Err(err) => {
-                        picture.set_alternative_text(Some(&err.to_string()));
-                        picture.set_paintable(Option::<&gtk::gdk::Paintable>::None);
+        factory.connect_bind({
+            let thumbs = thumbs.clone();
+            move |_, obj| {
+                let item = obj
+                    .downcast_ref::<gtk::ListItem>()
+                    .expect("factory item")
+                    .clone();
+                let Some(boxed) = item.item().and_downcast::<glib::BoxedAnyObject>() else {
+                    return;
+                };
+                let Some(picture) = item.child().and_downcast::<gtk::Picture>() else {
+                    return;
+                };
+                let row = boxed.borrow::<PhotoRow>();
+                if row.is_video {
+                    picture.set_alternative_text(Some("Video"));
+                    picture.set_paintable(Option::<&gtk::gdk::Paintable>::None);
+                } else {
+                    match row.utf8_path() {
+                        Ok(path) => thumbs.bind_grid(&picture, path, &row.id, scale),
+                        Err(err) => {
+                            picture.set_alternative_text(Some(&err.to_string()));
+                            picture.set_paintable(Option::<&gtk::gdk::Paintable>::None);
+                        }
                     }
                 }
             }
@@ -1237,33 +1241,36 @@ impl Window {
             picture.set_size_request(48, 48);
             item.set_child(Some(&picture));
         });
-        factory.connect_bind(move |_, obj| {
-            let item = obj
-                .downcast_ref::<gtk::ListItem>()
-                .expect("factory item")
-                .clone();
-            let Some(s) = item.item().and_downcast::<gtk::StringObject>() else {
-                return;
-            };
-            let Some(picture) = item.child().and_downcast::<gtk::Picture>() else {
-                return;
-            };
-            let text = s.string();
-            let mut parts = text.split('\t');
-            let _i = parts.next();
-            let Some(path) = parts.next() else { return };
-            let Some(id) = parts.next() else { return };
-            let is_video = parts.next() == Some("1");
-            let current = parts.next() == Some("1");
-            if current {
-                picture.add_css_class("suggested-action");
-            } else {
-                picture.remove_css_class("suggested-action");
-            }
-            if is_video {
-                picture.set_paintable(Option::<&gdk::Paintable>::None);
-            } else {
-                thumbs.bind_grid(&picture, path, id, scale);
+        factory.connect_bind({
+            let thumbs = thumbs.clone();
+            move |_, obj| {
+                let item = obj
+                    .downcast_ref::<gtk::ListItem>()
+                    .expect("factory item")
+                    .clone();
+                let Some(s) = item.item().and_downcast::<gtk::StringObject>() else {
+                    return;
+                };
+                let Some(picture) = item.child().and_downcast::<gtk::Picture>() else {
+                    return;
+                };
+                let text = s.string();
+                let mut parts = text.split('\t');
+                let _i = parts.next();
+                let Some(path) = parts.next() else { return };
+                let Some(id) = parts.next() else { return };
+                let is_video = parts.next() == Some("1");
+                let current = parts.next() == Some("1");
+                if current {
+                    picture.add_css_class("suggested-action");
+                } else {
+                    picture.remove_css_class("suggested-action");
+                }
+                if is_video {
+                    picture.set_paintable(Option::<&gdk::Paintable>::None);
+                } else {
+                    thumbs.bind_grid(&picture, path, id, scale);
+                }
             }
         });
         let thumbs_unbind = thumbs.clone();

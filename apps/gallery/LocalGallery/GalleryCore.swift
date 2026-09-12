@@ -2461,13 +2461,14 @@ public func FfiConverterTypeMemoryGenerator_lower(_ value: MemoryGenerator) -> U
 /**
  * Progress during a walk.
  *
- * Fires on the scan thread every 500 photos and once at the end with the true
- * total. Do not call back into the core from this callback.
+ * Fires on the scan thread during the walk (content files, including `.xmp`)
+ * every 500 items, and once after assemble with the photo total. Do not call
+ * back into the core from this callback.
  */
 public protocol ScanProgressListener: AnyObject, Sendable {
     
     /**
-     * Photos discovered so far.
+     * Content files so far mid-walk; photo total on the last call.
      */
     func onProgress(discovered: UInt32) 
     
@@ -2475,8 +2476,9 @@ public protocol ScanProgressListener: AnyObject, Sendable {
 /**
  * Progress during a walk.
  *
- * Fires on the scan thread every 500 photos and once at the end with the true
- * total. Do not call back into the core from this callback.
+ * Fires on the scan thread during the walk (content files, including `.xmp`)
+ * every 500 items, and once after assemble with the photo total. Do not call
+ * back into the core from this callback.
  */
 open class ScanProgressListenerImpl: ScanProgressListener, @unchecked Sendable {
     fileprivate let handle: UInt64
@@ -2532,7 +2534,7 @@ open class ScanProgressListenerImpl: ScanProgressListener, @unchecked Sendable {
 
     
     /**
-     * Photos discovered so far.
+     * Content files so far mid-walk; photo total on the last call.
      */
 open func onProgress(discovered: UInt32)  {try! rustCall() {
         uniffiCallStatus in
@@ -6776,7 +6778,7 @@ public struct ScanRequest: Equatable, Hashable {
     public var cachedPhotos: [ScanPhoto]
     /**
      * Last pass's sidecar rows. A hit here is what lets a light scan skip
-     * re-probing an `.xmp`.
+     * rebuilding an `.xmp` row when the listing still matches.
      */
     public var cachedSidecarManifest: [ScanSidecarRow]
 
@@ -6791,7 +6793,7 @@ public struct ScanRequest: Equatable, Hashable {
          */cachedPhotos: [ScanPhoto], 
         /**
          * Last pass's sidecar rows. A hit here is what lets a light scan skip
-         * re-probing an `.xmp`.
+         * rebuilding an `.xmp` row when the listing still matches.
          */cachedSidecarManifest: [ScanSidecarRow]) {
         self.reuseCached = reuseCached
         self.cachedPhotos = cachedPhotos
@@ -11116,7 +11118,8 @@ public func personLogAppend(root: String, device: String, eventType: String, bod
 }
 }
 /**
- * One-shot import of the five UserDefaults keys. Returns events written.
+ * One-shot import of the five UserDefaults keys. Returns events written
+ * (0 once this device has a `person_migrated` marker).
  */
 public func personLogMigrateFromSnapshot(root: String, device: String, snapshotJson: String)throws  -> UInt32  {
     return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypePersonLogError_lift) {
@@ -11259,7 +11262,7 @@ public func placesStillNeeded(tags: [String]) -> Bool  {
  * Write a Places tag and the IPTC location fields into `image_path`'s sidecar.
  *
  * Returns whether bytes were actually written. A photo that already carries a
- * finished `Places/*` tag is left alone (`false`). A *strict prefix*
+ * finished `Places/…` tag is left alone (`false`). A *strict prefix*
  * (`Places/France` → `Places/France/…/Paris`) is upgraded.
  *
  * Concurrent sidecar writes retry a handful of times: tagging or a face
@@ -11504,7 +11507,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_person_log_append() != 29822) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_person_log_migrate_from_snapshot() != 59074) {
+    if (uniffi_gallery_ffi_checksum_func_person_log_migrate_from_snapshot() != 64294) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_person_log_project() != 61117) {
@@ -11537,7 +11540,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_places_still_needed() != 26000) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_write_places() != 29561) {
+    if (uniffi_gallery_ffi_checksum_func_write_places() != 33519) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_load_snapshot() != 40842) {
@@ -11693,7 +11696,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_memorygenerator_is_cancelled() != 63354) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_scanprogresslistener_on_progress() != 9650) {
+    if (uniffi_gallery_ffi_checksum_method_scanprogresslistener_on_progress() != 2334) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_scannersession_cancel() != 30242) {
