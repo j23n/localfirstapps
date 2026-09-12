@@ -25,6 +25,7 @@ It prints the CoreScanner totals line:
 Scan totals: N files in F folders, list=Xms hits=H slow=S probe=0
 ```
 
-Not CI-gated. The ignored `scan_bench` test writes a synthetic 10k
-tree of empty files; this example is the one that points at the
-generated (or a real) library.
+The ignored `e2e_generated_library` test walks that tree (cold + light)
+and is **not** a PR gate. Run it with `apps/gallery/scripts/e2e_20k.sh`
+or the `E2E 20k` workflow (`workflow_dispatch` only). The ignored
+`scan_bench` test writes a synthetic 10k tree of empty files.

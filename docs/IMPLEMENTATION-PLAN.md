@@ -418,7 +418,7 @@ R6-clean contacts FFI are Phase 3 work, not leftovers.
 | R8–R11 for gallery `.xmp` / music `.m3u` | later | Phase 5 / 4. |
 | gallery-ffi R6 rewrite (45 Records) | later | Phase 5 / R4 windowing. |
 | Health Go `internal/log` / `internal/blobs` delete | later | Phase 6. |
-| 20k-tree as a CI gate | ops / e2e | Generator: `apps/gallery/scripts/generate_test_library.py` (default `--count 20000 --seed 42`). Not committed. `scan_tree` + iOS `--install booted` consume it. |
+| 20k-tree as a CI gate | e2e, not PRs | `apps/gallery/scripts/e2e_20k.sh` and `.github/workflows/e2e-20k.yml` (`workflow_dispatch` only). Generator: `generate_test_library.py`. Tests are `#[ignore]`. |
 | Old-remote redirect READMEs | you | Whenever. Never Phase 2. |
 
 Size: L. All Linux-container work.
@@ -665,10 +665,9 @@ first `xcodebuild` of this tree has not run.
    `contacts-core` until it is green or the failure is understood.
    Contacts/music iOS jobs do not link the new Rust crates; a green
    contacts job does not prove gallery.
-5. Optional 20k e2e tree (not a merge gate): from `apps/gallery`,
-   `uv run scripts/generate_test_library.py --out /tmp/test-library`
-   then `scan_tree` that folder, or `--install booted` for the
-   simulator (`DriverUITests` looks for `TestLibrary`).
+5. Optional 20k e2e (not a PR gate): GitHub Actions → **E2E 20k** →
+   Run workflow, or `apps/gallery/scripts/e2e_20k.sh`. Simulator
+   install is still `--install booted` (`DriverUITests` / `TestLibrary`).
 6. Optional: redirect READMEs on the old standalone remotes.
 7. When 2–4 are green: next engineering move is Phase 3.1
    (`contacts-core` headless). You author dark tokens when 3.2 starts.

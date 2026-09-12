@@ -24,5 +24,7 @@ cd apps/gallery/core
 cargo run -p gallery-scan --release --example scan_tree -- /path/to/photos
 ```
 
-Prints the `Scan totals:` line CoreScanner logs. Not CI-gated.
+Prints the `Scan totals:` line CoreScanner logs. The ignored
+`e2e_generated_library` suite (`apps/gallery/scripts/e2e_20k.sh`,
+GitHub **E2E 20k** workflow) is the same walk; it does not run on PRs.
 See `apps/gallery/core/gallery-scan/README.md`.

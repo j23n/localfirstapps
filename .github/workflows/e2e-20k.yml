@@ -1,0 +1,92 @@
+# Generated ~20k library: scan + ignored perf tests.
+# Manual only — never on push or pull_request.
+name: E2E 20k
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: Still-photo count for generate_test_library.py
+        type: string
+        default: "20000"
+      today:
+        description: Anchor date YYYY-MM-DD (keeps the tree reproducible)
+        type: string
+        default: "2026-06-11"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-20k-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTUP_TOOLCHAIN: "1.97.1"
+  LOCALGALLERY_E2E_TODAY: ${{ inputs.today }}
+  LOCALGALLERY_E2E_COUNT: ${{ inputs.count }}
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+jobs:
+  generated-library:
+    name: generate and scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: "1.97.1"
+
+      - name: OS dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential \
+            python3 \
+            python3-venv \
+            python3-pip \
+            ffmpeg
+
+      - name: Generate test library
+        env:
+          OUT: ${{ runner.temp }}/test-library
+        run: |
+          python3 -m venv /tmp/e2e-lib
+          /tmp/e2e-lib/bin/pip install -q pillow piexif
+          /tmp/e2e-lib/bin/python apps/gallery/scripts/generate_test_library.py \
+            --out "${OUT}" \
+            --count "${LOCALGALLERY_E2E_COUNT}" \
+            --seed 42 \
+            --today "${LOCALGALLERY_E2E_TODAY}"
+          echo "LOCALGALLERY_E2E_LIBRARY=${OUT}" >> "${GITHUB_ENV}"
+
+      - name: Scan generated library (release, ignored)
+        working-directory: apps/gallery/core
+        run: |
+          cargo test --locked --release -p gallery-scan --test e2e_generated_library \
+            generated_library_scan_cold_and_light \
+            -- --ignored --nocapture --exact \
+            2>&1 | tee "${GITHUB_WORKSPACE}/e2e-20k-scan.log"
+
+      - name: Memories horizon (release, ignored)
+        working-directory: apps/gallery/core
+        run: |
+          cargo test --locked --release -p gallery-memories --test perf \
+            -- --ignored --nocapture \
+            2>&1 | tee -a "${GITHUB_WORKSPACE}/e2e-20k-scan.log"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: e2e-20k-logs
+          path: e2e-20k-scan.log
+          if-no-files-found: warn
+          retention-days: 14
