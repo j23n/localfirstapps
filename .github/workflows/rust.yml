@@ -1,4 +1,6 @@
 # Crate gate: cargo test for localcore-* and gallery crates.
+# App shells (gallery Linux/iOS, contacts, music, health log) are
+# `.github/workflows/apps.yml`.
 name: Rust
 
 on:

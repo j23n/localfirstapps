@@ -1,3 +1,4 @@
+# Nested copy for the old contacts remote. Monorepo gate: `.github/workflows/apps.yml`.
 name: Test
 
 on:

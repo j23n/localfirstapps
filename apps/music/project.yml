@@ -41,8 +41,10 @@ targets:
     postBuildScripts:
       - name: Set Build Number from Git
         basedOnDependencyAnalysis: false
+        # Info.plist as input, not $(SRCROOT)/.git/HEAD: in the monorepo
+        # apps/music is not the git root. `git -C "$SRCROOT"` still walks up.
         inputFiles:
-          - $(SRCROOT)/.git/HEAD
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
         outputFiles:
           - $(DERIVED_FILE_DIR)/build-number.stamp
         script: |

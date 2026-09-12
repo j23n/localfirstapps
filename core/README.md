@@ -9,8 +9,9 @@ Gallery remains at `apps/gallery/core` until later verticals move here.
 
 `.github/workflows/rust.yml` is the crate gate: `cargo test --locked
 --workspace --all-targets` on this workspace (`localcore` job) and on
-`apps/gallery/core` (`gallery-core` job). It does not run gallery Linux
-GTK tests, clippy/deny, or iOS xcodebuild.
+`apps/gallery/core` (`gallery-core` job). Gallery Linux GTK, iOS
+`xcodebuild`, contacts, music, and the health log suite are
+`.github/workflows/apps.yml`.
 
 ## 20k scan harness
 

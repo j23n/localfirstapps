@@ -375,17 +375,17 @@ fixture and a survival assertion):
 | **M2** | Tier-2 `UserDefaults` → event log | ADR 0005 R5/R13/R14. Gallery persists `me`, `hiddenPeople`, `featured`, `pinnedPeople`, `featuredPhotoByPerson`, `mePersonPath`, `personContactLinks` — all path-keyed snapshots, which R13 forbids. `migratePersonState` becomes a replayed `person_renamed` event. |
 | **M3** | Face-cluster re-key | Survival fixture is B. The SFace + YuNet pack swap is **out of B** (see leftovers). |
 
-> **Gate (Milestone B)** — amended 2026-09-12. Close B when this list is
-> true; do not wait for the leftovers table below.
+> **Gate (Milestone B)** — closed 2026-09-12 on the amended list. Leftovers
+> below are backlog, not unfinished extract.
 >
-> - Graph check green (done).
-> - Root CI runs `cargo test --locked --workspace` for `core/` and
->   `apps/gallery/core` (`rust.yml`); that job is green on `main`.
-> - Gallery iOS simulator tests and Linux headless tests are required
->   on the monorepo (today they still live under `apps/gallery/.github`
->   and do not fire).
-> - Conflict copies are never content in gallery, contacts, or music,
->   and those tests run in CI.
+> - Graph check green.
+> - Root `rust.yml` runs `cargo test --locked --workspace` for `core/`
+>   and `apps/gallery/core`.
+> - Root `apps.yml` requires gallery Linux headless + iOS simulator,
+>   contacts iOS, music iOS, and health `go test ./internal/log
+>   ./internal/event`. Nested `apps/*/.github` copies do not fire here.
+> - Conflict copies are never content. Gallery FFI scan asserts that on
+>   `gallery-minimal`; contacts/music `SyncConflictTests` run in `apps.yml`.
 > - `localcore-geo` border test passes. R10 fixture exception is written
 >   (8-city pack, not `cities1000`).
 > - `localcore-log` has a gallery replay test and a health Go↔Rust golden.
@@ -393,6 +393,9 @@ fixture and a survival assertion):
 >   is leftover. M3 is not a pack swap.
 > - 20k: `scan_tree` exists. A recorded `Scan totals:` baseline is ops,
 >   not a merge gate (no tree in-repo).
+> - Glue: `gazetteer_lookup` → sidecar (FFI + session + Swift); FFI scan
+>   excludes `.sync-conflict`. PersonLog attach and `StableUUIDVectorTests`
+>   are in `LocalGalleryTests` (gallery iOS job).
 
 **Moved out of B** (still owed; do not drop):
 
@@ -603,14 +606,16 @@ is the Phase 6 brief at `apps/health/reference/web-ui/`. Charts are one
 new ADR 0004 kind (plot IR as the payload), amended when a shell needs
 the binding — not a Chart.js port.
 
-**Phase 2 extract is on `main`. Milestone B is not closed.**
+**Milestone B is closed.** Phase 2 extract is on `main`. Phase 3 is
+`shell-kit` + localcontacts.
 
 On Linux: `localcore-{vfs,walk,id,conflict,queue,log,blob,geo}` exist;
 `gallery-geo` / Nominatim are gone; the graph check is green; conflict
 copies are not content in gallery, contacts, or music; `ProviderProbe`
 is off the UniFFI surface; ADR 0003 R6 is pinned expected-red; a 20k
-`scan_tree` harness exists (no tree in-repo, not CI-gated). `.github/workflows/rust.yml`
-runs `cargo test --locked --workspace` for `core/` and `apps/gallery/core`.
+`scan_tree` harness exists (no tree in-repo, not CI-gated). Root CI:
+`rust.yml` (both Cargo workspaces), `apps.yml` (gallery Linux/iOS,
+contacts, music, health log), `conformance.yml`, `bindings.yml`.
 
 Honest M1–M3 / geo scope:
 
@@ -620,7 +625,7 @@ Honest M1–M3 / geo scope:
 - **M2** dual-writes UserDefaults and `{library}/.gallery/log`. Attach
   will not apply an empty project over a non-empty snapshot. Migrate
   retries until a `person_migrated` marker. UserDefaults remains until
-  cutover. Swift attach tests exist; `xcodebuild` has not run them here.
+  cutover. Swift attach tests are in `LocalGalleryTests`.
 - **M3** is a pack-rekey survival fixture (SQL+XMP, including
   `face_work` stale). `buffalo_sc` is not swapped for SFace + YuNet.
 - **Geo** is offline `localcore-geo`. ADR 0006 R10 is amended: the
@@ -628,13 +633,8 @@ Honest M1–M3 / geo scope:
   calls `gazetteer_lookup`; `nominatim_lookup` is a thin wrapper.
   Two Places engines remain (session vs Swift `GeocodingService`).
 
-**Still open for B** (the amended gate, not the leftovers): hoist
-gallery iOS + Linux tests (and contacts/music/health log) so they fire
-on the monorepo; confirm `rust.yml` is green on GitHub; optional
-Places-write and FFI conflict-exclusion glue tests.
+**Moved out of B** — full table under Phase 2. Not “B is unfinished
+extract.” iOS `xcodebuild` first fires on GitHub (`macos-26`); this
+machine does not run it.
 
-**Moved out of B** — full table under Phase 2. Do not start Phase 3
-until B’s amended gate is true. The leftovers are backlog, not “B is
-unfinished extract.”
-
-Phase 3 is `shell-kit` + localcontacts, after B.
+Phase 3 is next.

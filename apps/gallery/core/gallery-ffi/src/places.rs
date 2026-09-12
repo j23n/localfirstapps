@@ -246,10 +246,7 @@ fn place_from_geo(place: localcore_geo::Place) -> Option<PlaceWrite> {
 /// English names. Country is admin-0 point-in-polygon. This is not
 /// Nominatim and does not contact public OSM (or any network).
 #[uniffi::export]
-pub fn gazetteer_lookup(
-    latitude: f64,
-    longitude: f64,
-) -> Result<Option<PlaceWrite>, GeoError> {
+pub fn gazetteer_lookup(latitude: f64, longitude: f64) -> Result<Option<PlaceWrite>, GeoError> {
     Ok(localcore_geo::lookup(latitude, longitude).and_then(place_from_geo))
 }
 
@@ -286,12 +283,31 @@ mod tests {
     #[test]
     fn nominatim_lookup_ignores_endpoint_and_matches_gazetteer() {
         let a = gazetteer_lookup(48.8566, 2.3522).unwrap();
-        let b = nominatim_lookup(
-            "https://example.invalid/reverse".into(),
-            48.8566,
-            2.3522,
-        )
-        .unwrap();
+        let b =
+            nominatim_lookup("https://example.invalid/reverse".into(), 48.8566, 2.3522).unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn gazetteer_lookup_writes_a_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("eiffel.jpg");
+        std::fs::write(&image, b"not-a-jpeg").unwrap();
+        let image_s = image.to_str().unwrap().to_string();
+        let place = gazetteer_lookup(48.8566, 2.3522).unwrap().unwrap();
+        assert!(
+            write_places(image_s.clone(), place).unwrap(),
+            "Paris from the bundled gazetteer must be a valid Places write"
+        );
+        let bytes = std::fs::read(gallery_meta::sidecar_path(&image_s)).unwrap();
+        let view = gallery_meta::read_view(&bytes).unwrap();
+        assert!(
+            view.tags_list
+                .iter()
+                .any(|t| t.starts_with("Places/France") && t.contains("Paris")),
+            "{:?}",
+            view.tags_list
+        );
+        assert_eq!(view.photo_tools.country_code.as_deref(), Some("FR"));
     }
 }

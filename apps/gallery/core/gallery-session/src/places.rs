@@ -146,7 +146,7 @@ fn sidecar_tag_paths(vfs: &dyn Vfs, image_path: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geo::ReverseGeocoder;
+    use crate::geo::{Gazetteer, ReverseGeocoder};
     use gallery_meta::place_from_parts;
     use gallery_model::photo::HierarchicalTag;
     use gallery_vfs::MemVfs;
@@ -243,5 +243,31 @@ mod tests {
             None,
         );
         assert_eq!(summary.written, 1);
+    }
+
+    #[test]
+    fn bundled_gazetteer_writes_a_sidecar() {
+        let vfs = MemVfs::new();
+        vfs.write_atomic("/lib/a.jpg", b"not-a-jpeg").unwrap();
+        let mut cache = GeoCache::new();
+        let summary = run_places(
+            &vfs,
+            &[still_with_gps()],
+            &Gazetteer,
+            &mut cache,
+            false,
+            &AtomicBool::new(false),
+            None,
+        );
+        assert_eq!(summary.written, 1, "{summary:?}");
+        let view = read_view(&vfs.read("/lib/a.jpg.xmp").unwrap()).unwrap();
+        assert!(
+            view.tags_list
+                .iter()
+                .any(|t| t.starts_with("Places/France") && t.contains("Paris")),
+            "{:?}",
+            view.tags_list
+        );
+        assert_eq!(view.photo_tools.country_code.as_deref(), Some("FR"));
     }
 }

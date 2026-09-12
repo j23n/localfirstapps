@@ -1,9 +1,10 @@
 # LocalContactsTests
 
 Unit + integration tests for LocalContacts. Run via the `LocalContacts`
-scheme — the test target is wired into it, and CI executes
-`xcodebuild test`. A UI-test target (`LocalContactsUITests`) is also on
-the scheme.
+scheme — the test target is wired into it, and the monorepo `contacts`
+job in `.github/workflows/apps.yml` executes `xcodebuild test`. A
+UI-test target (`LocalContactsUITests`) is also on the scheme. The
+nested `.github/workflows/test.yml` is for the old standalone remote.
 
 ## Conventions
 

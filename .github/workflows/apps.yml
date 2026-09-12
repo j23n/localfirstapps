@@ -1,0 +1,270 @@
+# App suites the nested apps/*/.github workflows cannot run on this
+# monorepo. Required on every push: gallery Linux + iOS, contacts iOS,
+# music iOS, health log/event. Nested copies stay for the old remotes.
+name: Apps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
+  LANGUAGE: en_US:en
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUSTUP_TOOLCHAIN: "1.97.1"
+  XCODE_VERSION: "26.6"
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+jobs:
+  gallery-linux:
+    name: gallery linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: "1.97.1"
+
+      - name: OS dependencies (OpenSSL, GTK)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libgdk-pixbuf-2.0-dev \
+            locales
+          sudo locale-gen en_US.UTF-8
+
+      - name: cargo test --locked --no-default-features
+        working-directory: apps/gallery/linux
+        run: cargo test --locked --no-default-features --all-targets 2>&1 | tee "${GITHUB_WORKSPACE}/gallery-linux-test.log"
+
+      - name: cargo check --locked --features ui
+        working-directory: apps/gallery/linux
+        run: cargo check --locked --features ui 2>&1 | tee -a "${GITHUB_WORKSPACE}/gallery-linux-test.log"
+
+      - name: Upload linux test logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: gallery-linux-test-logs
+          path: gallery-linux-test.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  gallery-ios:
+    name: gallery iOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          # set_build_number.sh stamps CFBundleVersion from `git rev-list --count`.
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "${{ env.XCODE_VERSION }}"
+
+      - name: Rust toolchain (iOS targets)
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt, clippy
+          targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          rustc --version
+          cargo --version
+          git rev-parse --is-shallow-repository
+          git rev-list --count HEAD
+
+      - name: Install XcodeGen
+        run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
+
+      - name: Stage model pack (optional)
+        working-directory: apps/gallery
+        run: /bin/bash scripts/prepare_pack.sh --optional
+
+      - name: Build Rust bindings and xcframework
+        working-directory: apps/gallery
+        run: /bin/bash scripts/build_core.sh
+
+      - name: Generate Xcode project
+        working-directory: apps/gallery
+        run: xcodegen
+
+      - name: Pick a simulator
+        id: pick
+        run: |
+          NAME="$(/bin/bash apps/gallery/scripts/pick_ios_simulator.sh)"
+          echo "device_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "using simulator: $NAME"
+
+      - name: Run tests
+        working-directory: apps/gallery
+        run: |
+          xcodebuild test \
+            -project LocalGallery.xcodeproj \
+            -scheme LocalGallery \
+            -destination "platform=iOS Simulator,name=${{ steps.pick.outputs.device_name }}" \
+            -testLanguage en \
+            -testRegion US \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild.log
+
+      - name: Upload logs and results
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: gallery-ios-test-logs
+          path: |
+            apps/gallery/xcodebuild.log
+            apps/gallery/TestResults.xcresult
+          if-no-files-found: warn
+          retention-days: 14
+
+  contacts:
+    name: contacts iOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "${{ env.XCODE_VERSION }}"
+
+      - name: Install XcodeGen
+        run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
+
+      - name: Generate Xcode project
+        working-directory: apps/contacts
+        run: xcodegen
+
+      - name: Pick a simulator
+        id: pick
+        run: |
+          NAME="$(/bin/bash apps/gallery/scripts/pick_ios_simulator.sh)"
+          echo "device_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "using simulator: $NAME"
+
+      - name: Run tests
+        working-directory: apps/contacts
+        run: |
+          xcodebuild test \
+            -project LocalContacts.xcodeproj \
+            -scheme LocalContacts \
+            -destination "platform=iOS Simulator,name=${{ steps.pick.outputs.device_name }},OS=latest" \
+            -resultBundlePath build/TestResults.xcresult \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild.log
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: contacts-ios-test-logs
+          path: |
+            apps/contacts/build/TestResults.xcresult
+            apps/contacts/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  music:
+    name: music iOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "${{ env.XCODE_VERSION }}"
+
+      - name: Install XcodeGen
+        run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
+
+      - name: Generate Xcode project
+        working-directory: apps/music
+        run: xcodegen
+
+      - name: Pick a simulator
+        id: pick
+        run: |
+          NAME="$(/bin/bash apps/gallery/scripts/pick_ios_simulator.sh)"
+          echo "device_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "using simulator: $NAME"
+
+      - name: Run tests
+        working-directory: apps/music
+        run: |
+          xcodebuild test \
+            -project LocalMusic.xcodeproj \
+            -scheme LocalMusic \
+            -destination "platform=iOS Simulator,name=${{ steps.pick.outputs.device_name }}" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild.log
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: music-ios-test-logs
+          path: apps/music/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  health-log:
+    name: health log
+    runs-on: ubuntu-24.04
+    env:
+      CGO_ENABLED: "1"
+      GOFLAGS: "-mod=vendor"
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: apps/health/go.mod
+          cache: false
+
+      - name: C compiler
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential
+
+      - name: go test log and event
+        working-directory: apps/health
+        run: go test ./internal/log ./internal/event

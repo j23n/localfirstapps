@@ -1095,6 +1095,54 @@ mod tests {
         }
     }
 
+    fn gallery_minimal() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../core/localcore-conflict/fixtures/trees/gallery-minimal")
+    }
+
+    #[test]
+    fn syncthing_copies_are_not_photos_or_sidecar_rows() {
+        let root = gallery_minimal();
+        assert!(
+            root.join("photo.heic").is_file(),
+            "fixture missing: {}",
+            root.display()
+        );
+        let session = ScannerSession::new();
+        let out = session
+            .scan(root.to_str().unwrap().to_string(), empty_request(), None)
+            .unwrap();
+
+        let names: Vec<&str> = out
+            .flat_photos
+            .iter()
+            .map(|p| p.path.rsplit('/').next().unwrap())
+            .collect();
+        assert_eq!(
+            names,
+            vec!["photo.heic"],
+            "FFI scan must hide conflict copies: {names:?}"
+        );
+        assert!(
+            out.flat_photos
+                .iter()
+                .all(|p| !p.path.contains("sync-conflict")),
+            "{:?}",
+            out.flat_photos.iter().map(|p| &p.path).collect::<Vec<_>>()
+        );
+        assert_eq!(out.sidecar_manifest.len(), 1);
+        assert!(
+            out.sidecar_manifest
+                .iter()
+                .all(|row| !row.sidecar_path.contains("sync-conflict")),
+            "{:?}",
+            out.sidecar_manifest
+                .iter()
+                .map(|r| &r.sidecar_path)
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn a_scan_reports_the_tree_as_slices_of_the_flat_list() {
         let dir = library();

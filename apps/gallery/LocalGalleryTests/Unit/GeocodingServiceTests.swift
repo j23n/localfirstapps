@@ -134,6 +134,22 @@ final class GeocodingServiceTests: XCTestCase {
         )
     }
 
+    func testGazetteerLookupWritesASidecar() throws {
+        let temp = makeTemp()
+        let image = temp.appending("eiffel.jpg")
+        XCTAssertTrue(FileManager.default.createFile(atPath: image.path, contents: Data("x".utf8)))
+
+        let place = try XCTUnwrap(try gazetteerLookup(latitude: 48.8566, longitude: 2.3522))
+        XCTAssertEqual(place.city, "Paris")
+        XCTAssertEqual(place.countryCode, "FR")
+        XCTAssertTrue(place.path.hasPrefix("Places/France"), place.path)
+
+        XCTAssertTrue(try writePlaces(imagePath: image.path, place: place))
+        let xml = try String(contentsOfFile: image.path + ".xmp", encoding: .utf8)
+        XCTAssertTrue(xml.contains("Places/France"), xml)
+        XCTAssertTrue(xml.contains("Paris"), xml)
+    }
+
     func testPlacesPathCollapsesMissingLevels() {
         XCTAssertEqual(
             GeocodingService.placesPath(

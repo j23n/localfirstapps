@@ -9,7 +9,8 @@ xcodebuild test \
   -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
 
-CI runs the suite on every PR via `.github/workflows/test.yml`.
+CI on this monorepo is the `music` job in `.github/workflows/apps.yml`.
+The nested `.github/workflows/test.yml` is for the old standalone remote.
 
 Tests use [Swift Testing](https://developer.apple.com/xcode/swift-testing/)
 (`@Test`, `#expect`, `#require`). XCTest assertions and `XCTestCase`

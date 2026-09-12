@@ -1,3 +1,5 @@
+# Nested copy for the old gallery remote. On this monorepo the required
+# jobs are `.github/workflows/{rust,apps,conformance,bindings}.yml`.
 name: Test
 
 on:
