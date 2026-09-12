@@ -580,21 +580,29 @@ On Linux: `localcore-{vfs,walk,id,conflict,queue,log,blob,geo}` exist;
 `gallery-geo` / Nominatim are gone; the graph check is green; conflict
 copies are not content in gallery, contacts, or music; `ProviderProbe`
 is off the UniFFI surface; ADR 0003 R6 is pinned expected-red; a 20k
-`scan_tree` harness exists (no tree in-repo, not CI-gated).
+`scan_tree` harness exists (no tree in-repo, not CI-gated). `.github/workflows/rust.yml`
+runs `cargo test --locked --workspace` for `core/` and `apps/gallery/core`.
 
-Honest M1–M3 scope, not the full table above:
+Honest M1–M3 / geo scope:
 
 - **M1** NFC-normalises in `localcore-id` and Swift. Survival fixture
-  passes. Thumbnail / widget / library-cache keys are not rewritten.
-- **M2** dual-writes UserDefaults and `{library}/.gallery/log`. The
-  dump fixture migrates. UserDefaults remains authority until cutover.
-- **M3** is a pack-rekey survival fixture only. `buffalo_sc` is not
-  swapped for SFace + YuNet.
+  and conformance fixture ids match the new hash. Thumbnail / widget /
+  library-cache keys are not rewritten.
+- **M2** dual-writes UserDefaults and `{library}/.gallery/log`. Attach
+  will not apply an empty project over a non-empty snapshot. Migrate
+  retries until a `person_migrated` marker. UserDefaults remains until
+  cutover. Swift attach tests exist; `xcodebuild` has not run them here.
+- **M3** is a pack-rekey survival fixture (SQL+XMP, including
+  `face_work` stale). `buffalo_sc` is not swapped for SFace + YuNet.
+- **Geo** is offline `localcore-geo`. ADR 0006 R10 is amended: the
+  committed pack is an 8-city FR–US–CA fixture, not `cities1000`. iOS
+  calls `gazetteer_lookup`; `nominatim_lookup` is a thin wrapper.
+  Two Places engines remain (session vs Swift `GeocodingService`).
 
 Still open for B: a measured 20k-tree cost replay; conflict **R8 merge
 policy** (detection/exclude only today); queueing places / thumbs /
-EXIF (ADR 0006 R1); iOS `xcodebuild`. Health Go `internal/log` and
-`internal/blobs` stay until Phase 6.
+EXIF (ADR 0006 R1); iOS `xcodebuild`; a real gazetteer pack. Health Go
+`internal/log` and `internal/blobs` stay until Phase 6.
 
 Still not Phase 2: redirect READMEs on the old standalone GitHub
 remotes. Phase 3 is `shell-kit` + localcontacts, after B.
