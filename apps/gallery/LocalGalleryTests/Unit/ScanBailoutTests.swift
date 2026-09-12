@@ -28,18 +28,20 @@ final class ScanBailoutTests: XCTestCase {
     private var temp: TempDir!
     private var defaults: UserDefaults!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         temp = TempDir.make()
         defaults = TestUserDefaults.make()
     }
 
-    override func tearDown() {
-        TestUserDefaults.cleanup(defaults)
+    override func tearDown() async throws {
+        if let defaults {
+            TestUserDefaults.cleanup(defaults)
+        }
         defaults = nil
         temp?.teardown()
         temp = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func makeStore() -> GalleryStore {

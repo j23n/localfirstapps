@@ -5,15 +5,15 @@ import XCTest
 final class FacePhotoLookupTests: XCTestCase {
     private var harness: TestGalleryStore.Harness!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         harness = TestGalleryStore.make()
     }
 
-    override func tearDown() {
-        harness.teardown()
+    override func tearDown() async throws {
+        harness?.teardown()
         harness = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testPhotoAtFindsALibraryPhotoThroughTheScannerURL() {
