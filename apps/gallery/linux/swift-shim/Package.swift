@@ -18,6 +18,11 @@ let package = Package(
             name: "GalleryFFICheck",
             dependencies: ["GalleryCoreFFI"],
             path: "Sources/GalleryFFICheck",
+            swiftSettings: [
+                // UniFFI emits top-level lets; Swift 6 treats that as script
+                // code and then rejects `@main` unless every file is a library.
+                .unsafeFlags(["-parse-as-library"]),
+            ],
             linkerSettings: [
                 .linkedLibrary("gallery_ffi"),
             ]
