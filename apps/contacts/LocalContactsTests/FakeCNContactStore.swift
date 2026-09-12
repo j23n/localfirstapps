@@ -90,6 +90,10 @@ func makeCNContact(
     return cn
 }
 
+// UserDefaults is thread-safe; Swift 6 still does not mark it Sendable,
+// so passing a suite into `CNSyncService` (an actor) fails the tests.
+extension UserDefaults: @unchecked @retroactive Sendable {}
+
 func makeIsolatedDefaults() -> UserDefaults {
     let name = "LocalContactsTests-Sync-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: name)!

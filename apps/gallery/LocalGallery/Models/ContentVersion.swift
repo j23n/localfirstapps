@@ -19,6 +19,12 @@ struct ContentVersion: Hashable, Codable, Sendable {
         self.size = size
     }
 
+    enum CodingKeys: String, CodingKey {
+        case contentIdentifier
+        case modificationDate
+        case size
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if let raw = try? c.decodeIfPresent(String.self, forKey: .contentIdentifier) {
