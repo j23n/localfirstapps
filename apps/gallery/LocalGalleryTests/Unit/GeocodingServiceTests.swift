@@ -143,7 +143,7 @@ final class GeocodingServiceTests: XCTestCase {
 
     func testPlacesPathCollapsesMissingLevels() {
         XCTAssertEqual(
-            GeocodingService.placesPath(
+            placesPath(
                 country: "Italy",
                 state: "Lazio",
                 city: "Rome",
@@ -152,7 +152,7 @@ final class GeocodingServiceTests: XCTestCase {
             "Places/Italy/Lazio/Rome/Trastevere"
         )
         XCTAssertEqual(
-            GeocodingService.placesPath(
+            placesPath(
                 country: "Italy",
                 state: nil,
                 city: "Rome",
@@ -161,7 +161,7 @@ final class GeocodingServiceTests: XCTestCase {
             "Places/Italy/Rome"
         )
         XCTAssertEqual(
-            GeocodingService.placesPath(
+            placesPath(
                 country: "  ",
                 state: nil,
                 city: "Rome",
@@ -170,7 +170,7 @@ final class GeocodingServiceTests: XCTestCase {
             "Places/Rome"
         )
         XCTAssertNil(
-            GeocodingService.placesPath(
+            placesPath(
                 country: nil,
                 state: nil,
                 city: nil,

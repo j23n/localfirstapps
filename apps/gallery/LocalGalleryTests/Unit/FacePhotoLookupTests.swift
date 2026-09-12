@@ -60,7 +60,7 @@ final class FacePhotoLookupTests: XCTestCase {
     func testApplyParsedSidecarsUnionsAPeopleTagTheScanWillNotReread() throws {
         let dir = harness.tempDir.appending("lib", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let image = dir.appending("ada.jpg")
+        let image = dir.appendingPathComponent("ada.jpg")
         XCTAssertTrue(FileManager.default.createFile(atPath: image.path, contents: Data("jpeg".utf8)))
         let photo = PhotoFile.fixture(
             url: CoreScanner.fileURL(image.path),
