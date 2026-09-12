@@ -1,8 +1,7 @@
 # gallery-scan
 
 Folder traversal: the tree, the flat photo list, and the diff against
-the last scan. Classification stays here; `localcore-walk` is not on
-this branch.
+the last scan. Classification stays here; the walk is `localcore-walk`.
 
 ## 20k harness
 
@@ -27,4 +26,5 @@ Scan totals: N files in F folders, list=Xms hits=H slow=S probe=0
 ```
 
 Not CI-gated. The ignored `scan_bench` test writes a synthetic 10k
-tree; this example is the one that points at a real library.
+tree of empty files; this example is the one that points at the
+generated (or a real) library.
