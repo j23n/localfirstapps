@@ -52,9 +52,9 @@ pub use person_log::{
     PersonKeyedString, PersonLogError, PersonStateRecord, GALLERY_STATE_DIR,
 };
 pub use places::{
-    is_strict_places_prefix, library_watch_refresh_interval_ms, nominatim_lookup, place_from_parts,
-    places_needed, places_path, places_still_needed, write_places, GeoError, PlaceWrite,
-    PlacesError,
+    gazetteer_lookup, is_strict_places_prefix, library_watch_refresh_interval_ms, nominatim_lookup,
+    place_from_parts, places_needed, places_path, places_still_needed, write_places, GeoError,
+    PlaceWrite, PlacesError,
 };
 pub use scanner::{
     load_snapshot, named_people_without_box, parse_xmp_bytes, probe_snapshot_version,

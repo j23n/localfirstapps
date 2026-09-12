@@ -8882,7 +8882,9 @@ public func FfiConverterTypeFaceFailure_lower(_ value: FaceFailure) -> RustBuffe
 
 
 /**
- * Why a Nominatim lookup failed.
+ * Why a place lookup failed. The offline gazetteer does not produce
+ * these; the variants stay so the UniFFI surface does not change.
+ * This is not a Nominatim error.
  */
 public 
 enum GeoError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
@@ -11013,7 +11015,8 @@ public func coreVersion() -> String  {
  * Rust-side `StableUUID.derive`, rendered lowercase hyphenated.
  *
  * The caller passes an already-standardized path string (Swift:
- * `url.standardized.path`) — this function does no normalization of its own.
+ * `url.standardized.path`). Unicode NFC is applied inside
+ * `localcore_id::derive` (ADR 0002 R4 / M1).
  */
 public func stableUuid(input: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
@@ -11151,6 +11154,21 @@ public func personLogRead(root: String)throws  -> String  {
 })
 }
 /**
+ * Reverse-geocode from the bundled offline gazetteer.
+ *
+ * English names. Country is admin-0 point-in-polygon. This is not
+ * Nominatim and does not contact public OSM (or any network).
+ */
+public func gazetteerLookup(latitude: Double, longitude: Double)throws  -> PlaceWrite?  {
+    return try  FfiConverterOptionTypePlaceWrite.lift(try rustCallWithError(FfiConverterTypeGeoError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_gazetteer_lookup(
+        FfiConverterDouble.lower(latitude),
+        FfiConverterDouble.lower(longitude),uniffiCallStatus
+    )
+})
+}
+/**
  * `Places/France` is a strict prefix of `Places/France/Île-de-France/Paris`.
  */
 public func isStrictPlacesPrefix(existing: String, newer: String) -> Bool  {
@@ -11173,9 +11191,9 @@ public func libraryWatchRefreshIntervalMs() -> UInt64  {
 })
 }
 /**
- * Reverse-geocode via Nominatim. `endpoint` is injected (empty = public OSM).
- *
- * English names. The host owns rate limiting and the haversine cache.
+ * Compatibility wrapper around [`gazetteer_lookup`]. `endpoint` is
+ * ignored and is not a URL — this is not Nominatim and does not
+ * contact public OSM. Kept so existing UniFFI bindings stay valid.
  */
 public func nominatimLookup(endpoint: String, latitude: Double, longitude: Double)throws  -> PlaceWrite?  {
     return try  FfiConverterOptionTypePlaceWrite.lift(try rustCallWithError(FfiConverterTypeGeoError_lift) {
@@ -11465,7 +11483,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_core_version() != 34772) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_stable_uuid() != 26629) {
+    if (uniffi_gallery_ffi_checksum_func_stable_uuid() != 60971) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_face_merge_direction() != 43698) {
@@ -11498,13 +11516,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_person_log_read() != 7200) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_func_gazetteer_lookup() != 4506) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_func_is_strict_places_prefix() != 7811) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_library_watch_refresh_interval_ms() != 10678) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_nominatim_lookup() != 32879) {
+    if (uniffi_gallery_ffi_checksum_func_nominatim_lookup() != 36779) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_place_from_parts() != 64575) {

@@ -30,7 +30,8 @@ const PACKED: &[u8] = include_bytes!("../data/places.bin");
 pub struct Place {
     /// Nearest packed populated place (GeoNames name).
     pub locality: String,
-    /// Admin-1 name when the gazetteer row has one.
+    /// Admin-1 name when the gazetteer row has one and that city sits
+    /// in the same admin-0 country as the query point.
     pub admin: Option<String>,
     /// English country name from admin-0.
     pub country: String,
@@ -156,9 +157,15 @@ pub fn lookup(lat: f64, lon: f64) -> Option<Place> {
     let index = atlas();
     let country = country_at(&index.pack.countries, lat, lon)?;
     let city = nearest_city(index, lat, lon)?;
+    let same_country = country_at(&index.pack.countries, city.lat, city.lon)
+        .is_some_and(|c| c.code == country.code);
     Some(Place {
         locality: city.locality.clone(),
-        admin: city.admin.clone(),
+        admin: if same_country {
+            city.admin.clone()
+        } else {
+            None
+        },
         country: country.name.clone(),
         country_code: std::str::from_utf8(&country.code)
             .expect("pack validated A-Z")
@@ -225,6 +232,11 @@ mod tests {
         );
         assert_eq!(ca.locality, "Niagara Falls");
         assert_eq!(ca.country_code, "CA");
+        assert_eq!(
+            ca.admin.as_deref(),
+            None,
+            "must not copy NY admin onto a Canadian PIP hit"
+        );
     }
 
     #[test]

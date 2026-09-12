@@ -198,6 +198,7 @@ pub fn places_needed(tags: Vec<String>, force: bool) -> bool {
 
 /// Why a place lookup failed. The offline gazetteer does not produce
 /// these; the variants stay so the UniFFI surface does not change.
+/// This is not a Nominatim error.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
 pub enum GeoError {
     /// Transient — retry.
@@ -222,37 +223,75 @@ impl std::fmt::Display for GeoError {
 
 impl std::error::Error for GeoError {}
 
-/// Reverse-geocode from the bundled gazetteer.
+fn place_from_geo(place: localcore_geo::Place) -> Option<PlaceWrite> {
+    gallery_meta::place_from_parts(
+        Some(place.country.as_str()),
+        place.admin.as_deref(),
+        Some(place.locality.as_str()),
+        None,
+        Some(place.country_code.as_str()),
+    )
+    .map(|r| PlaceWrite {
+        path: r.path,
+        country: r.country,
+        state: r.state,
+        city: r.city,
+        sublocation: r.sublocation,
+        country_code: r.country_code,
+    })
+}
+
+/// Reverse-geocode from the bundled offline gazetteer.
 ///
-/// `endpoint` is ignored (kept so existing UniFFI bindings stay valid).
-/// English names. Country is admin-0 point-in-polygon.
+/// English names. Country is admin-0 point-in-polygon. This is not
+/// Nominatim and does not contact public OSM (or any network).
+#[uniffi::export]
+pub fn gazetteer_lookup(
+    latitude: f64,
+    longitude: f64,
+) -> Result<Option<PlaceWrite>, GeoError> {
+    Ok(localcore_geo::lookup(latitude, longitude).and_then(place_from_geo))
+}
+
+/// Compatibility wrapper around [`gazetteer_lookup`]. `endpoint` is
+/// ignored and is not a URL — this is not Nominatim and does not
+/// contact public OSM. Kept so existing UniFFI bindings stay valid.
 #[uniffi::export]
 pub fn nominatim_lookup(
     _endpoint: String,
     latitude: f64,
     longitude: f64,
 ) -> Result<Option<PlaceWrite>, GeoError> {
-    Ok(localcore_geo::lookup(latitude, longitude).and_then(|p| {
-        gallery_meta::place_from_parts(
-            Some(p.country.as_str()),
-            p.admin.as_deref(),
-            Some(p.locality.as_str()),
-            None,
-            Some(p.country_code.as_str()),
-        )
-        .map(|r| PlaceWrite {
-            path: r.path,
-            country: r.country,
-            state: r.state,
-            city: r.city,
-            sublocation: r.sublocation,
-            country_code: r.country_code,
-        })
-    }))
+    gazetteer_lookup(latitude, longitude)
 }
 
 /// Watch debounce, milliseconds. Hosts implement the OS watcher.
 #[uniffi::export]
 pub fn library_watch_refresh_interval_ms() -> u64 {
     gallery_session::REFRESH_INTERVAL.as_millis() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gazetteer_lookup_paris() {
+        let p = gazetteer_lookup(48.8566, 2.3522).unwrap().unwrap();
+        assert_eq!(p.city.as_deref(), Some("Paris"));
+        assert_eq!(p.country_code.as_deref(), Some("FR"));
+        assert!(p.path.starts_with("Places/France"), "{}", p.path);
+    }
+
+    #[test]
+    fn nominatim_lookup_ignores_endpoint_and_matches_gazetteer() {
+        let a = gazetteer_lookup(48.8566, 2.3522).unwrap();
+        let b = nominatim_lookup(
+            "https://example.invalid/reverse".into(),
+            48.8566,
+            2.3522,
+        )
+        .unwrap();
+        assert_eq!(a, b);
+    }
 }
