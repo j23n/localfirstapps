@@ -254,7 +254,7 @@ struct ContactDetailView: View {
     /// row instead of crashing) when nothing dialable remains. Formatted numbers
     /// like "+1 (555) 123-4567" otherwise produce a nil URL that force-unwrapping
     /// would trap on.
-    static func dialURL(_ phone: String) -> URL? {
+    nonisolated static func dialURL(_ phone: String) -> URL? {
         let allowed = CharacterSet(charactersIn: "+0123456789*#,;")
         let filtered = String(phone.unicodeScalars.filter { allowed.contains($0) })
         guard !filtered.isEmpty else { return nil }
@@ -263,7 +263,7 @@ struct ContactDetailView: View {
 
     /// Build a `mailto:` URL, percent-encoding as needed. Returns `nil` for an
     /// empty or unencodable address so the caller can fall back to a plain row.
-    static func mailURL(_ email: String) -> URL? {
+    nonisolated static func mailURL(_ email: String) -> URL? {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if let url = URL(string: "mailto:\(trimmed)") {
@@ -276,7 +276,7 @@ struct ContactDetailView: View {
     }
 
     /// Accept `http(s)://` case-insensitively; otherwise prepend `https://`.
-    static func websiteURL(_ raw: String) -> URL? {
+    nonisolated static func websiteURL(_ raw: String) -> URL? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let lower = trimmed.lowercased()

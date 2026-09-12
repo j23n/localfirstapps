@@ -23,16 +23,7 @@ final class GeocodingServiceTests: XCTestCase {
     }
 
     private func paris(lat: Double, lon: Double) -> GeocodingService.CacheEntry {
-        GeocodingService.CacheEntry(
-            latitude: lat,
-            longitude: lon,
-            path: "Places/France/Île-de-France/Paris",
-            country: "France",
-            state: "Île-de-France",
-            city: "Paris",
-            sublocation: nil,
-            countryCode: "FR"
-        )
+        parisEntry(lat: lat, lon: lon)
     }
 
     func testEligibilityRequiresDownloadedStillWithGpsAndNoPlacesTag() throws {
@@ -197,10 +188,10 @@ final class GeocodingServiceTests: XCTestCase {
 
     func testResolveReusesACachedLookupWithinHalfAKilometre() async throws {
         let service = makeService(makeTemp())
-        var lookups = 0
+        let lookups = LookupCounter()
         service.lookup = { lat, lon in
-            lookups += 1
-            if lookups == 1 {
+            lookups.bump()
+            if lookups.value == 1 {
                 return GeocodingService.CacheEntry(
                     latitude: lat,
                     longitude: lon,
@@ -225,15 +216,15 @@ final class GeocodingServiceTests: XCTestCase {
         }
 
         let first = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
-        XCTAssertEqual(lookups, 1)
+        XCTAssertEqual(lookups.value, 1)
         XCTAssertEqual(first?.path, "Places/France/Île-de-France/Paris")
 
         let nearby = try await service.resolve(latitude: 48.8586, longitude: 2.2947)
-        XCTAssertEqual(lookups, 1, "a second photo from the same street must not hit the geocoder")
+        XCTAssertEqual(lookups.value, 1, "a second photo from the same street must not hit the geocoder")
         XCTAssertEqual(nearby?.path, first?.path)
 
         let far = try await service.resolve(latitude: 41.9028, longitude: 12.4964)
-        XCTAssertEqual(lookups, 2)
+        XCTAssertEqual(lookups.value, 2)
         XCTAssertEqual(far?.country, "Italy")
     }
 
@@ -258,13 +249,13 @@ final class GeocodingServiceTests: XCTestCase {
 
         let second = GeocodingService(cacheURL: url)
         second.wait = { _ in }
-        var lookups = 0
+        let lookups = LookupCounter()
         second.lookup = { _, _ in
-            lookups += 1
+            lookups.bump()
             return nil
         }
         let hit = try await second.resolve(latitude: 48.8584, longitude: 2.2945)
-        XCTAssertEqual(lookups, 0, "the on-disk cache must satisfy a relaunch")
+        XCTAssertEqual(lookups.value, 0, "the on-disk cache must satisfy a relaunch")
         XCTAssertEqual(hit?.city, "Paris")
     }
 
@@ -322,7 +313,7 @@ final class GeocodingServiceTests: XCTestCase {
         var waited: TimeInterval = 0
         let service = makeService(makeTemp()) { waited += $0 }
         service.now = { frozen }
-        service.lookup = { lat, lon in self.paris(lat: lat, lon: lon) }
+        service.lookup = { lat, lon in parisEntry(lat: lat, lon: lon) }
 
         _ = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
         XCTAssertEqual(waited, 0, "the first live lookup is free")
@@ -337,7 +328,7 @@ final class GeocodingServiceTests: XCTestCase {
         var waited: TimeInterval = 0
         let service = makeService(makeTemp()) { waited += $0 }
         service.now = { frozen }
-        service.lookup = { lat, lon in self.paris(lat: lat, lon: lon) }
+        service.lookup = { lat, lon in parisEntry(lat: lat, lon: lon) }
 
         _ = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
         _ = try await service.resolve(latitude: 48.8586, longitude: 2.2947)
@@ -346,14 +337,14 @@ final class GeocodingServiceTests: XCTestCase {
 
     func testNilLookupIsASkipNotARetry() async throws {
         let service = makeService(makeTemp())
-        var calls = 0
+        let calls = LookupCounter()
         service.lookup = { _, _ in
-            calls += 1
+            calls.bump()
             return nil
         }
         let hit = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
         XCTAssertNil(hit)
-        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(calls.value, 1)
     }
 
     func testIsRetryableIsOnlyGeoErrorRetryable() {
@@ -386,13 +377,13 @@ final class GeocodingServiceTests: XCTestCase {
         try JSONEncoder().encode(v1).write(to: url)
         let service = GeocodingService(cacheURL: url)
         service.wait = { _ in }
-        var lookups = 0
+        let lookups = LookupCounter()
         service.lookup = { lat, lon in
-            lookups += 1
-            return self.paris(lat: lat, lon: lon)
+            lookups.bump()
+            return parisEntry(lat: lat, lon: lon)
         }
         let hit = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
-        XCTAssertEqual(lookups, 1, "v1 cache rows must not block a city re-query")
+        XCTAssertEqual(lookups.value, 1, "v1 cache rows must not block a city re-query")
         XCTAssertEqual(hit?.city, "Paris")
     }
 
@@ -410,13 +401,13 @@ final class GeocodingServiceTests: XCTestCase {
         try JSONEncoder().encode(disk).write(to: url)
         let service = GeocodingService(cacheURL: url)
         service.wait = { _ in }
-        var lookups = 0
+        let lookups = LookupCounter()
         service.lookup = { lat, lon in
-            lookups += 1
-            return self.paris(lat: lat, lon: lon)
+            lookups.bump()
+            return parisEntry(lat: lat, lon: lon)
         }
         let hit = try await service.resolve(latitude: 48.8584, longitude: 2.2945)
-        XCTAssertEqual(lookups, 1, "v2 Nominatim-era rows must be dropped")
+        XCTAssertEqual(lookups.value, 1, "v2 Nominatim-era rows must be dropped")
         XCTAssertEqual(hit?.city, "Paris")
     }
 
@@ -503,4 +494,23 @@ final class GeocodingServiceTests: XCTestCase {
         XCTAssertFalse(isStrictPlacesPrefix("Places/France", of: "Places/France"))
         XCTAssertFalse(isStrictPlacesPrefix("Places/Italy", of: "Places/France/Paris"))
     }
+}
+
+private func parisEntry(lat: Double, lon: Double) -> GeocodingService.CacheEntry {
+    GeocodingService.CacheEntry(
+        latitude: lat,
+        longitude: lon,
+        path: "Places/France/Île-de-France/Paris",
+        country: "France",
+        state: "Île-de-France",
+        city: "Paris",
+        sublocation: nil,
+        countryCode: "FR"
+    )
+}
+
+/// Mutable count for `@Sendable` lookup closures under Swift 6.
+private final class LookupCounter: @unchecked Sendable {
+    private(set) var value = 0
+    func bump() { value += 1 }
 }
