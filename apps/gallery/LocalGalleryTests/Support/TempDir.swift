@@ -4,7 +4,10 @@ import XCTest
 /// Per-test temporary directory under `NSTemporaryDirectory()`. The dir is
 /// created on `make()` and removed on `teardown()`. Test classes hold on to
 /// the value as a stored property and call `teardown()` from `tearDown()`.
-final class TempDir {
+///
+/// `@unchecked Sendable` so `addTeardownBlock` can capture it: `url` is
+/// immutable and `teardown()` only deletes that path.
+final class TempDir: @unchecked Sendable {
     let url: URL
 
     private init(url: URL) { self.url = url }
