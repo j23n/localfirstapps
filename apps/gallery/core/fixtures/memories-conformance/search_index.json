@@ -65,7 +65,7 @@
       ]
     },
     {
-      "photoID" : "46D5D0E0-4173-508F-8E94-CBCA7C31325D",
+      "photoID" : "C02991C5-8ADB-5708-B481-DCE0E5E2A359",
       "terms" : [
         "café",
         "cup",
@@ -73,7 +73,7 @@
       ]
     },
     {
-      "photoID" : "D61B2BB5-4A23-534C-915C-D3A881B184EE",
+      "photoID" : "1168F488-0A5E-5AA0-90D7-F483485C8E67",
       "terms" : [
         "i̇stanbul",
         "istanbul",
@@ -225,7 +225,7 @@
     {
       "dateTaken" : "2023-11-01T12:00:00.000Z",
       "filename" : "café",
-      "id" : "46D5D0E0-4173-508F-8E94-CBCA7C31325D",
+      "id" : "C02991C5-8ADB-5708-B481-DCE0E5E2A359",
       "isVideo" : false,
       "path" : "/fixtures/idx/café.jpg",
       "tags" : [
@@ -235,7 +235,7 @@
     {
       "dateTaken" : "2023-12-01T12:00:00.000Z",
       "filename" : "İstanbul",
-      "id" : "D61B2BB5-4A23-534C-915C-D3A881B184EE",
+      "id" : "1168F488-0A5E-5AA0-90D7-F483485C8E67",
       "isVideo" : false,
       "path" : "/fixtures/idx/İstanbul.jpg",
       "tags" : [
@@ -303,8 +303,8 @@
         "4F866783-3B7D-566E-ACD2-22D16465BEF7",
         "EB203AE9-B15A-509D-B10E-630F980D9ADC",
         "3F4BE058-4622-599E-837B-F05897ACD718",
-        "D61B2BB5-4A23-534C-915C-D3A881B184EE",
-        "46D5D0E0-4173-508F-8E94-CBCA7C31325D",
+        "1168F488-0A5E-5AA0-90D7-F483485C8E67",
+        "C02991C5-8ADB-5708-B481-DCE0E5E2A359",
         "41713963-DE1B-5599-BFC5-B207F5008CF6",
         "2FE05266-1B18-575D-9A92-39B634E01E21",
         "52906CA2-2C92-57FD-B476-DA357C2316C1",
@@ -420,7 +420,7 @@
     },
     {
       "expectedPhotoIDs" : [
-        "46D5D0E0-4173-508F-8E94-CBCA7C31325D"
+        "C02991C5-8ADB-5708-B481-DCE0E5E2A359"
       ],
       "notes" : [
         "The query is precomposed (NFC); the filename on disk is decomposed (Foundation's URL(fileURLWithPath:) decomposes). Swift's String.contains compares by CANONICAL EQUIVALENCE, so it matches anyway.",
@@ -445,7 +445,7 @@
     },
     {
       "expectedPhotoIDs" : [
-        "D61B2BB5-4A23-534C-915C-D3A881B184EE"
+        "1168F488-0A5E-5AA0-90D7-F483485C8E67"
       ],
       "notes" : [
         "'İ'.lowercased() is 'i' + U+0307 COMBINING DOT ABOVE, which is not canonically equivalent to plain 'i'. Whatever this records is what a Turkish filename does today.",
@@ -528,8 +528,8 @@
     "4F866783-3B7D-566E-ACD2-22D16465BEF7",
     "EB203AE9-B15A-509D-B10E-630F980D9ADC",
     "3F4BE058-4622-599E-837B-F05897ACD718",
-    "D61B2BB5-4A23-534C-915C-D3A881B184EE",
-    "46D5D0E0-4173-508F-8E94-CBCA7C31325D",
+    "1168F488-0A5E-5AA0-90D7-F483485C8E67",
+    "C02991C5-8ADB-5708-B481-DCE0E5E2A359",
     "41713963-DE1B-5599-BFC5-B207F5008CF6",
     "2FE05266-1B18-575D-9A92-39B634E01E21",
     "52906CA2-2C92-57FD-B476-DA357C2316C1",
