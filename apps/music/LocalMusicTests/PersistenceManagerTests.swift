@@ -36,7 +36,8 @@ final class PersistenceManagerTests {
     deinit {
         ArtworkCache.directoryOverride = nil
         LyricsCache.directoryOverride = nil
-        defaults.removePersistentDomain(forName: defaultsName)
+        // Unique suite name per instance — skip UserDefaults here; it is not
+        // Sendable and deinit is nonisolated under Swift 6.
         try? FileManager.default.removeItem(at: tempDir)
         CacheTestLock.release()
     }

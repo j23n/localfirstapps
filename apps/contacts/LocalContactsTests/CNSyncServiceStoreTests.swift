@@ -9,15 +9,15 @@ struct CNSyncServiceStoreTests {
     private func makeService(
         store: FakeCNContactStore = FakeCNContactStore(),
         defaults: UserDefaults = makeIsolatedDefaults()
-    ) -> (CNSyncService, FakeCNContactStore, UserDefaults) {
-        (CNSyncService(store: store, defaults: defaults), store, defaults)
+    ) -> (CNSyncService, FakeCNContactStore) {
+        (CNSyncService(store: store, defaults: defaults), store)
     }
 
     @Test("pushContact first time executes and records a mapping")
     func pushFirstTime() async throws {
         let fake = FakeCNContactStore()
         fake.seedLocalContactsGroup()
-        let (svc, store, _) = makeService(store: fake)
+        let (svc, store) = makeService(store: fake)
         let contact = Contact(localContactsID: "lcid-new", familyName: "Wonder", givenName: "Alice")
         try await svc.pushContact(contact)
         #expect(store.executeCount >= 1)
@@ -32,7 +32,7 @@ struct CNSyncServiceStoreTests {
         let group = fake.seedLocalContactsGroup()
         let cn = makeCNContact()
         fake.add(cn, toGroup: group.identifier)
-        let (svc, store, _) = makeService(store: fake)
+        let (svc, store) = makeService(store: fake)
         await svc.setIDMapping(["lcid-1": cn.identifier])
         let contact = Contact(localContactsID: "lcid-1", familyName: "Wonder", givenName: "Alicia")
         try await svc.pushContact(contact)
@@ -45,7 +45,7 @@ struct CNSyncServiceStoreTests {
     func pushDenied() async throws {
         let fake = FakeCNContactStore()
         fake.authorizationStatus = .denied
-        let (svc, store, _) = makeService(store: fake)
+        let (svc, store) = makeService(store: fake)
         try await svc.pushContact(Contact(givenName: "Alice"))
         #expect(store.executeCount == 0)
     }
@@ -56,7 +56,7 @@ struct CNSyncServiceStoreTests {
         let group = fake.seedLocalContactsGroup()
         let cn = makeCNContact()
         fake.add(cn, toGroup: group.identifier)
-        let (svc, store, _) = makeService(store: fake)
+        let (svc, store) = makeService(store: fake)
         await svc.setIDMapping(["lcid-1": cn.identifier])
         try await svc.deleteContact(localContactsID: "lcid-1")
         #expect(store.executeCount >= 1)
@@ -68,7 +68,7 @@ struct CNSyncServiceStoreTests {
     func deleteUnmapped() async throws {
         let fake = FakeCNContactStore()
         fake.seedLocalContactsGroup()
-        let (svc, store, _) = makeService(store: fake)
+        let (svc, store) = makeService(store: fake)
         try await svc.deleteContact(localContactsID: "missing")
         #expect(store.executeCount == 0)
     }
@@ -77,7 +77,7 @@ struct CNSyncServiceStoreTests {
     func fetchTokensEqual() async {
         let fake = FakeCNContactStore()
         fake.currentHistoryToken = Data([0xAB])
-        let (svc, _, _) = makeService(store: fake)
+        let (svc, _) = makeService(store: fake)
         await svc.setStoredHistoryToken(Data([0xAB]))
         let events = await svc.fetchChanges(localContacts: [])
         #expect(events.isEmpty)
@@ -89,7 +89,7 @@ struct CNSyncServiceStoreTests {
         let fake = FakeCNContactStore()
         fake.seedLocalContactsGroup()
         fake.currentHistoryToken = Data([0x02])
-        let (svc, _, _) = makeService(store: fake)
+        let (svc, _) = makeService(store: fake)
         await svc.setIDMapping(["lcid-1": "cn-gone"])
         let local = Contact(localContactsID: "lcid-1", givenName: "Alice")
         let events = await svc.fetchChanges(localContacts: [local])
@@ -108,7 +108,7 @@ struct CNSyncServiceStoreTests {
         let cn = makeCNContact(given: "Alicia", phones: ["+15559999"], phoneLabel: CNLabelPhoneNumberMobile)
         fake.add(cn, toGroup: group.identifier)
         fake.currentHistoryToken = Data([0x03])
-        let (svc, _, _) = makeService(store: fake)
+        let (svc, _) = makeService(store: fake)
         await svc.setIDMapping(["lcid-1": cn.identifier])
         let local = Contact(
             localContactsID: "lcid-1",
@@ -133,7 +133,7 @@ struct CNSyncServiceStoreTests {
         let cn = makeCNContact(given: "Carol")
         fake.add(cn, toGroup: group.identifier)
         fake.currentHistoryToken = Data([0x04])
-        let (svc, _, _) = makeService(store: fake)
+        let (svc, _) = makeService(store: fake)
         let events = await svc.fetchChanges(localContacts: [])
         guard case .added(let data) = events.first?.kind else {
             Issue.record("expected added event")
@@ -149,7 +149,7 @@ struct CNSyncServiceStoreTests {
         fake.seedLocalContactsGroup()
         fake.fetchError = FakeStoreError.fetchFailed
         fake.currentHistoryToken = Data([0xFF])
-        let (svc, _, _) = makeService(store: fake)
+        let (svc, _) = makeService(store: fake)
         await svc.setStoredHistoryToken(Data([0xAA]))
         let events = await svc.fetchChanges(localContacts: [Contact(localContactsID: "x")])
         #expect(events.isEmpty)
@@ -161,7 +161,7 @@ struct CNSyncServiceStoreTests {
         let fake = FakeCNContactStore()
         let group = fake.seedLocalContactsGroup()
         fake.add(makeCNContact(), toGroup: group.identifier)
-        let (svc, store, _) = makeService(store: fake)
+        let (svc, store) = makeService(store: fake)
         await svc.setIDMapping(["old": "cn-old"])
         let contacts = [
             Contact(localContactsID: "lcid-a", givenName: "Alice"),
@@ -181,7 +181,7 @@ struct CNSyncServiceStoreTests {
         let group = fake.seedLocalContactsGroup()
         let cn = makeCNContact()
         fake.add(cn, toGroup: group.identifier)
-        let (svc, store, _) = makeService(store: fake)
+        let (svc, store) = makeService(store: fake)
         await svc.claimCNContact(cnIdentifier: cn.identifier, forLocalContactsID: "lcid-1")
         #expect(await svc.idMapping()["lcid-1"] == cn.identifier)
         let before = store.executeCount
@@ -194,7 +194,7 @@ struct CNSyncServiceStoreTests {
     func limitedIsNotFull() async {
         let fake = FakeCNContactStore()
         fake.authorizationStatus = .limited
-        let (svc, store, _) = makeService(store: fake)
+        let (svc, store) = makeService(store: fake)
         #expect(await svc.hasFullAccess == false)
         try? await svc.pushContact(Contact(givenName: "Alice"))
         #expect(store.executeCount == 0)
