@@ -403,7 +403,7 @@ fixture and a survival assertion):
 |---|---|---|
 | GeoNames `cities1000` + NE admin-0 pack | R10 exception: committed pack is an 8-city fixture | after B, before Places is trustworthy on a real library |
 | Unify iOS onto `gallery-session` `run_places` | Two Places engines (Swift `GeocodingService` vs session) | after B |
-| M2 UserDefaults cutover | Dual-write is the safe extract; cutover needs ios-test green | after B, after ios-test |
+| M2 UserDefaults cutover | Dual-write is the extract; log-wins-on-attach + swallowed append can clobber a newer snapshot | after `apps.yml` gallery-iOS; **do not copy** into contacts |
 | M1 thumbnail / widget / `library_cache` rewrite | R19: orphans until next scan; documented | after B or first release notes |
 | Conflict **R8–R11** merge policy | Detection/exclude is the extract; merge is new UI | **Phase 3 (contacts `.vcf`)**; gallery `.xmp` / music `.m3u` wait |
 | Queue places / thumbs / EXIF (ADR 0006 R1) | Tagging and faces already use `localcore-queue` | after B |
@@ -440,7 +440,11 @@ merge them. Linux has no Apple Contacts, so Fedora/Comet cannot satisfy
 | Leftover | In C? | Why |
 |---|---|---|
 | Conflict R8–R11 (contacts `.vcf`) | **yes** | Core-loop gate. New policy, not a port of `ContactMerge`. |
-| Dedup contacts/music `SyncConflict.swift` onto `localcore-conflict` | **yes** | First contacts-core commit; grammar already lives in Rust. |
+| Dedup contacts/music `SyncConflict.swift` onto `localcore-conflict` | **yes** | First contacts-core commit; grammar already lives in Rust. Tests must read `valid.txt` / `invalid.txt`, not pasted copies. |
+| Queue / scan cache keys NFC (or `StableId`) | **yes, before a second consumer** | PK is still raw path bytes. APFS NFD next launch = new row + false add/remove. Listing spelling stays on the row. |
+| `localcore-log` / blob through `Vfs` | **yes, before iOS contacts writes a log** | Today `std::fs`. Scoped-folder attach cannot be MemVfs-tested; iOS scope leaks become silent `Io`. |
+| Open event-type set | **yes, if contacts logs** | `known_type` is a closed health+gallery enum. Envelope stays shared; types stay per consumer. |
+| Do not copy PeopleStore dual-write | **yes (constraint)** | Log-wins-on-attach + fire-and-forget append can clobber a newer UserDefaults snapshot. One authority. |
 | Design tokens + dark (contacts first; four-app tables authored) | **yes** | ADR 0004 R11/R14. Gallery `Design.swift` is light-only literals. Contacts has no token file. |
 | `shell-kit-gtk` + generated enums | **yes** | The point of C. |
 | ADR 0003 R6 for **contacts-core** FFI | **yes** | Design the new surface clean. Do not rewrite `gallery-ffi`. |
@@ -466,11 +470,14 @@ workload before drawing shells).
    parse/write (~236 + writer); index/search/save through
    `localcore-vfs` atomic write; **R8–R11** with a fixture tree of
    Syncthing pairs (disjoint auto-merge, same-field choice plan,
-   canonical bytes, no silent delete). ~1k portable Swift
-   (`VCardParser`/`Writer`, store FS, `SyncConflict`) moves; store
-   chrome stays in the shell. UniFFI from day one, R6-clean: ids,
-   formatted strings, booleans, display rows — no `Contact` record on
-   the wire. `cargo test` is the gate; no GTK yet.
+   canonical bytes, no silent delete). NFC (or `StableId`) the queue
+   PK before contacts enqueues. If a folder log exists, write it
+   through `Vfs` with an open type set — do not clone `PeopleStore`
+   dual-write. Delete the two Swift `SyncConflict` twins; point tests
+   at the grammar files. ~1k portable Swift (`VCardParser`/`Writer`,
+   store FS) moves; store chrome stays in the shell. UniFFI from day
+   one, R6-clean: ids, formatted strings, booleans, display rows — no
+   `Contact` record on the wire. `cargo test` is the gate; no GTK yet.
 3. **3.2 Tokens + R14 codegen** (parallel with 3.1 once the vocabulary
    is frozen). One token table per app (accent, surfaces, ink, dark
    companions). Emit Swift + GTK CSS/named colours. Someone *authors*
@@ -685,6 +692,7 @@ parallel gallery track is under Phase 3. iOS `xcodebuild` first fires
 on GitHub (`macos-26`).
 
 **Phase 3, first:** watch `apps.yml`; then `contacts-core` headless
-(vCard + R8 fixtures) before `shell-kit`. Do not start C by drawing
-GTK. Gallery leftovers (`cities1000`, M3 pack, M2 cutover, `run_places`)
-are a parallel track, not C scope.
+(vCard + R8 fixtures, NFC queue keys, no dual-write clone) before
+`shell-kit`. Do not start C by drawing GTK. Gallery leftovers
+(`cities1000`, M3 pack, M2 cutover, `run_places`) are a parallel
+track, not C scope.
