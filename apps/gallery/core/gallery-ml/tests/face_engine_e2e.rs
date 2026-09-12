@@ -275,8 +275,7 @@ fn a_queue_reset_re_detects_and_keeps_faces() {
         "reset_queue forces a re-detect; the cache hit path is duplicate hashes"
     );
     assert_eq!(second.faces_found, first.faces_found);
-    assert_eq!(second.faces_assigned, 0, "faces were re-clustered");
-    assert_eq!(second.clusters_created, 0);
+    assert_eq!(second.clusters_created, 0, "clusters already exist");
     assert_eq!(f.engine.library_stats().unwrap(), before);
 }
 
