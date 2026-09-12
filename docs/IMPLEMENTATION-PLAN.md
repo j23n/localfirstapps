@@ -405,7 +405,7 @@ fixture and a survival assertion):
 | Unify iOS onto `gallery-session` `run_places` | Two Places engines (Swift `GeocodingService` vs session) | after B |
 | M2 UserDefaults cutover | Dual-write is the safe extract; cutover needs ios-test green | after B, after ios-test |
 | M1 thumbnail / widget / `library_cache` rewrite | R19: orphans until next scan; documented | after B or first release notes |
-| Conflict **R8–R11** merge policy | Detection/exclude is the extract; merge is new UI | after B; contacts vertical will feel this |
+| Conflict **R8–R11** merge policy | Detection/exclude is the extract; merge is new UI | **Phase 3 (contacts `.vcf`)**; gallery `.xmp` / music `.m3u` wait |
 | Queue places / thumbs / EXIF (ADR 0006 R1) | Tagging and faces already use `localcore-queue` | after B |
 | M3 pack swap (SFace + YuNet) | Survival fixture is B; quality is the top remaining risk | after B; named spike follow-through |
 | `ImageIOHeicDecoder` seam | Phase 2 table; not required to prove the extract | after B |
@@ -420,34 +420,81 @@ Size: L. All Linux-container work.
 
 ### Phase 3 — `shell-kit` and localcontacts, the first *shell* vertical (Milestone C)
 
-Scope corrected: this proves **ADR 0004 and the vCard merge**, not "core +
-two shells". `localcore` was settled in Phase 2.
+Scope corrected: this proves **ADR 0004 and the Syncthing vCard merge**,
+not "core + two shells". `localcore` was settled in Phase 2.
 
-1. `shell-kit-gtk` — one binding per slot kind (ADR 0004 R6), app-agnostic.
-   The reusable half of every Linux shell that follows.
-2. The three generated enums + token emission (ADR 0004 R14).
-3. **Design tokens and a dark palette.** `Design.swift` is a light-only
-   literal palette; there is no dark variant anywhere and libadwaita follows
-   the system preference, where most GNOME users run dark. This is a design
-   task — someone authors dark values for four apps — plus a small build step.
-   r1 had no entry for it, and it blocks one of the easiest conformance greps.
-4. `contacts-core`: vCard read/write, index, conflict handling. Absorbs ~1k
-   lines of portable Swift.
-5. iOS shell reduced to views over the core. `CNSyncService` (547) stays as an
-   iOS-only port — ADR 0007 R15, row "system address-book sync".
-6. GTK shell over `shell-kit`. Native host filesystem — a path, not a
-   portal grant. No Flatpak. Share is a file save (ADR 0007 R15).
-7. Comet: same binary, `--comet`.
+**Do not confuse the two conflict UIs.** Today's
+`ContactMerge` / `ConflictResolutionSheet` merge *Apple Contacts* onto a
+local card (`CNSyncService`, 459 lines). That is an iOS port (ADR 0007
+R15) and stays. The C-loop conflict is ADR 0005 R8: two `.vcf` files
+named by Syncthing, disjoint fields merge automatically, the same field
+on both sides is a choice, output is byte-identical under a canonical
+write (R9), losing copies are deleted only after an explicit choice
+(R10), delete-vs-modify keeps data (R11). Contacts already *exclude*
+conflict names (`SyncConflict.isConflictName`); they do not group or
+merge them. Linux has no Apple Contacts, so Fedora/Comet cannot satisfy
+"resolve a conflict" via the CN sheet.
 
-> **Gate:** localcontacts' **core loop** on iOS, Fedora and Comet — choose a
-> folder, list, search, view, edit, save, resolve a conflict. ADR 0004's
-> conformance passes over both shells. ADR 0003 R6's boundary test passes.
+**Leftovers — which enter C, which stay a parallel gallery track**
 
-Expect to revise ADR 0004 after this. That is the process working, not a
-failure — the vocabulary was derived from iOS and has never met a second
-toolkit.
+| Leftover | In C? | Why |
+|---|---|---|
+| Conflict R8–R11 (contacts `.vcf`) | **yes** | Core-loop gate. New policy, not a port of `ContactMerge`. |
+| Dedup contacts/music `SyncConflict.swift` onto `localcore-conflict` | **yes** | First contacts-core commit; grammar already lives in Rust. |
+| Design tokens + dark (contacts first; four-app tables authored) | **yes** | ADR 0004 R11/R14. Gallery `Design.swift` is light-only literals. Contacts has no token file. |
+| `shell-kit-gtk` + generated enums | **yes** | The point of C. |
+| ADR 0003 R6 for **contacts-core** FFI | **yes** | Design the new surface clean. Do not rewrite `gallery-ffi`. |
+| `cities1000` + NE admin-0 | no | Gallery Places quality. Parallel leftover track. |
+| Unify iOS `run_places` | no | Gallery. After or with the real pack. |
+| M2 UserDefaults cutover | no | After `apps.yml` gallery-iOS is green. |
+| M1 thumb/widget/`library_cache` rewrite | no | Orphans until next scan; release notes are enough. |
+| Queue places / thumbs / EXIF | no | Gallery; tagging/faces already on `localcore-queue`. |
+| M3 SFace + YuNet pack swap | no | Top remaining *product* risk. Parallel spike, not a C blocker. |
+| `ImageIOHeicDecoder` | no | Gallery seam. Phase 5-ish. |
+| gallery-ffi R6 rewrite (45 Records) | no | Phase 5 / R4 windowing. C gate is contacts-only. |
+| 20k-tree as CI | no | Ops. Harness stays. |
+| Health Go log/blobs delete | no | Phase 6. |
+| Old-remote redirect READMEs | no | Whenever. |
 
-Size: L.
+**Sequence** (same lesson as Phase 2: settle the core against a real
+workload before drawing shells).
+
+1. **3.0 Watch `apps.yml`.** First GitHub run of gallery/contacts/music
+   iOS. Fix fallout before a month of Swift rebound. Not a C feature.
+2. **3.1 `contacts-core` headless** in `core/` (ADR 0001 R9). Walk
+   `.vcf` through `localcore-walk` + `localcore-conflict` groups;
+   parse/write (~236 + writer); index/search/save through
+   `localcore-vfs` atomic write; **R8–R11** with a fixture tree of
+   Syncthing pairs (disjoint auto-merge, same-field choice plan,
+   canonical bytes, no silent delete). ~1k portable Swift
+   (`VCardParser`/`Writer`, store FS, `SyncConflict`) moves; store
+   chrome stays in the shell. UniFFI from day one, R6-clean: ids,
+   formatted strings, booleans, display rows — no `Contact` record on
+   the wire. `cargo test` is the gate; no GTK yet.
+3. **3.2 Tokens + R14 codegen** (parallel with 3.1 once the vocabulary
+   is frozen). One token table per app (accent, surfaces, ink, dark
+   companions). Emit Swift + GTK CSS/named colours. Someone *authors*
+   dark values — that is design time, not an agent guess. A colour
+   literal in a new shell file is a defect.
+4. **3.3 `shell-kit-gtk`** — one binding per ADR 0004 R4 kind, no app
+   core, no `localcore`. Dummy spec so a missing kind fails the build.
+   `shells/` workspace (ADR 0001 R9).
+5. **3.4 iOS shell over the core.** Views remain; `ContactsStore` FS
+   becomes FFI. `CNSyncService` stays a port. Keep the Apple conflict
+   sheet. Add the Syncthing-group sheet (the one Linux will also have).
+6. **3.5 GTK + Comet.** Same binary, `--comet` (compact + bottom nav).
+   Host filesystem is a path. No Flatpak. Share is a file save.
+7. **3.6 Milestone C review.** Expect to revise ADR 0004. Budget it.
+
+> **Gate (Milestone C):** localcontacts' **core loop** on iOS, Fedora
+> and Comet — choose a folder, list, search, view, edit, save, resolve
+> a **Syncthing `.vcf` group** (R8–R11). Apple Contacts sync remains
+> iOS-only. ADR 0004 conformance over both shells. `contacts-core` FFI
+> is R6-clean. `gallery-ffi` stays expected-red.
+
+Size: L. 3.1 is Linux-container. 3.4 needs `macos-26`.
+
+---
 
 ---
 
@@ -633,8 +680,11 @@ Honest M1–M3 / geo scope:
   calls `gazetteer_lookup`; `nominatim_lookup` is a thin wrapper.
   Two Places engines remain (session vs Swift `GeocodingService`).
 
-**Moved out of B** — full table under Phase 2. Not “B is unfinished
-extract.” iOS `xcodebuild` first fires on GitHub (`macos-26`); this
-machine does not run it.
+**Moved out of B** — full table under Phase 2. Routing into C vs a
+parallel gallery track is under Phase 3. iOS `xcodebuild` first fires
+on GitHub (`macos-26`).
 
-Phase 3 is next.
+**Phase 3, first:** watch `apps.yml`; then `contacts-core` headless
+(vCard + R8 fixtures) before `shell-kit`. Do not start C by drawing
+GTK. Gallery leftovers (`cities1000`, M3 pack, M2 cutover, `run_places`)
+are a parallel track, not C scope.
