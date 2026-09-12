@@ -313,7 +313,8 @@ final class SidecarSyncService {
         guard total > 0 else { state = .idle; return }
         activeTask?.cancel()
         let task = Task { [weak self] in
-            await self?.performFetch(candidates, policy: policy)
+            guard let self else { return }
+            await self.performFetch(candidates, policy: policy)
         }
         activeTask = task
     }
@@ -323,7 +324,8 @@ final class SidecarSyncService {
         guard total > 0 else { state = .idle; return }
         activeTask?.cancel()
         let task = Task { [weak self] in
-            await self?.performFetch(candidates, policy: policy)
+            guard let self else { return }
+            await self.performFetch(candidates, policy: policy)
         }
         activeTask = task
         await withTaskCancellationHandler {

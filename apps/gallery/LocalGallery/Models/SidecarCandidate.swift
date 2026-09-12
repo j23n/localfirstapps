@@ -21,6 +21,15 @@ struct SidecarCandidate: Codable, Equatable, Sendable {
     let currentVersion: ContentVersion
     let downloadStatus: DownloadStatus
 
+    /// Named so a custom `init`/`encode` still keys the same as the Rust
+    /// `SidecarCandidate` snapshot (`photoID`, `sidecarURL`, …).
+    enum CodingKeys: String, CodingKey {
+        case photoID
+        case sidecarURL
+        case currentVersion
+        case downloadStatus
+    }
+
     init(
         photoID: UUID,
         sidecarURL: URL,

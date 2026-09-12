@@ -18,7 +18,7 @@ struct CNSyncServiceStoreTests {
         let fake = FakeCNContactStore()
         fake.seedLocalContactsGroup()
         let (svc, store, _) = makeService(store: fake)
-        let contact = Contact(localContactsID: "lcid-new", givenName: "Alice", familyName: "Wonder")
+        let contact = Contact(localContactsID: "lcid-new", familyName: "Wonder", givenName: "Alice")
         try await svc.pushContact(contact)
         #expect(store.executeCount >= 1)
         let mapping = await svc.idMapping()
@@ -34,7 +34,7 @@ struct CNSyncServiceStoreTests {
         fake.add(cn, toGroup: group.identifier)
         let (svc, store, _) = makeService(store: fake)
         await svc.setIDMapping(["lcid-1": cn.identifier])
-        let contact = Contact(localContactsID: "lcid-1", givenName: "Alicia", familyName: "Wonder")
+        let contact = Contact(localContactsID: "lcid-1", familyName: "Wonder", givenName: "Alicia")
         try await svc.pushContact(contact)
         #expect(store.executeCount >= 1)
         let mapping = await svc.idMapping()
@@ -112,8 +112,8 @@ struct CNSyncServiceStoreTests {
         await svc.setIDMapping(["lcid-1": cn.identifier])
         let local = Contact(
             localContactsID: "lcid-1",
-            givenName: "Alice",
             familyName: "Wonder",
+            givenName: "Alice",
             phoneNumbers: [LabeledValue(label: "mobile", value: "+15551111")]
         )
         let events = await svc.fetchChanges(localContacts: [local])
