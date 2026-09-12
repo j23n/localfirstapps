@@ -256,23 +256,23 @@ fn parallel_workers_produce_the_same_partition_as_one() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn a_second_run_is_a_no_op_and_hits_the_detection_cache() {
+fn a_queue_reset_re_detects_and_keeps_faces() {
     let f = Fixture::new();
     f.enqueue_all(PHOTOS);
     let first = f.run();
     let before = f.engine.library_stats().unwrap();
 
-    // `done` rows are not claimable, so re-running needs the queue reset. The
-    // faces survive it, which is the point of splitting the tables.
+    // `done` rows are not claimable. `reset_queue` puts them back and sets
+    // `force_next`, so the next run ignores `face_scans` and re-detects.
+    // Detections and clusters stay in their own tables.
     f.engine.reset_queue().unwrap();
     f.enqueue_all(PHOTOS);
     let second = f.run();
 
     assert_eq!(second.processed, PHOTOS.len());
     assert_eq!(
-        second.cache_hits,
-        PHOTOS.len(),
-        "the second run re-detected instead of reading the cache"
+        second.cache_hits, 0,
+        "reset_queue forces a re-detect; the cache hit path is duplicate hashes"
     );
     assert_eq!(second.faces_found, first.faces_found);
     assert_eq!(second.faces_assigned, 0, "faces were re-clustered");
