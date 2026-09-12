@@ -121,7 +121,7 @@ state.
 |---|---|---|---|
 | **M1** | Stable ids re-key to NFC | Phase 2 | real; person state, thumbnails, memory ids and widget deep links are path-keyed |
 | **M2** | Tier-2 `UserDefaults` → event log | Phase 2 | real; seven path-keyed values in gallery alone |
-| **M3** | Face-cluster re-key on a model swap | Phase 2 | **real** — SFace + YuNet replace `buffalo_sc` |
+| **M3** | Face-cluster re-key on a model swap | Phase 2 fixture; pack swap **out of B** | survival fixture is B; SFace + YuNet still leftover |
 | **M4** | `LibrarySnapshot` sidecar identity | Phase 1 | **checked — not a migration.** See Phase 1. |
 | **M5** | Apple Health dated cutover | Phase 6 | real but trivial; a bounded first query, nothing rewritten |
 
@@ -373,14 +373,43 @@ fixture and a survival assertion):
 |---|---|---|
 | **M1** | Stable ids re-key NFC→ | ADR 0002 R4. Person state, thumbnails, memory ids and widget deep links are all path-keyed. |
 | **M2** | Tier-2 `UserDefaults` → event log | ADR 0005 R5/R13/R14. Gallery persists `me`, `hiddenPeople`, `featured`, `pinnedPeople`, `featuredPhotoByPerson`, `mePersonPath`, `personContactLinks` — all path-keyed snapshots, which R13 forbids. `migratePersonState` becomes a replayed `person_renamed` event. |
-| **M3** | Face-cluster re-key | Spike 0.6 swaps `buffalo_sc` for SFace + YuNet. New `face_pack_key` re-detects, re-embeds, re-clusters, and orphans every user-assigned name. |
+| **M3** | Face-cluster re-key | Survival fixture is B. The SFace + YuNet pack swap is **out of B** (see leftovers). |
 
-> **Gate (Milestone B):** gallery's `cargo test --workspace` and its iOS CI
-> green, no behaviour change. Harness replays a 20k tree and reproduces
-> today's scan costs. `localcore-geo` passes the border test. `localcore-log`
-> has a gallery replay test and a localhealth one. Conflict files no longer
-> appear as content in any app. The graph check is **green**. M1–M3 fixtures
-> pass.
+> **Gate (Milestone B)** — amended 2026-09-12. Close B when this list is
+> true; do not wait for the leftovers table below.
+>
+> - Graph check green (done).
+> - Root CI runs `cargo test --locked --workspace` for `core/` and
+>   `apps/gallery/core` (`rust.yml`); that job is green on `main`.
+> - Gallery iOS simulator tests and Linux headless tests are required
+>   on the monorepo (today they still live under `apps/gallery/.github`
+>   and do not fire).
+> - Conflict copies are never content in gallery, contacts, or music,
+>   and those tests run in CI.
+> - `localcore-geo` border test passes. R10 fixture exception is written
+>   (8-city pack, not `cities1000`).
+> - `localcore-log` has a gallery replay test and a health Go↔Rust golden.
+> - M1–M3 **survival fixtures** pass. M2 is still dual-write; cutover
+>   is leftover. M3 is not a pack swap.
+> - 20k: `scan_tree` exists. A recorded `Scan totals:` baseline is ops,
+>   not a merge gate (no tree in-repo).
+
+**Moved out of B** (still owed; do not drop):
+
+| Leftover | Why it left B | Lands |
+|---|---|---|
+| GeoNames `cities1000` + NE admin-0 pack | R10 exception: committed pack is an 8-city fixture | after B, before Places is trustworthy on a real library |
+| Unify iOS onto `gallery-session` `run_places` | Two Places engines (Swift `GeocodingService` vs session) | after B |
+| M2 UserDefaults cutover | Dual-write is the safe extract; cutover needs ios-test green | after B, after ios-test |
+| M1 thumbnail / widget / `library_cache` rewrite | R19: orphans until next scan; documented | after B or first release notes |
+| Conflict **R8–R11** merge policy | Detection/exclude is the extract; merge is new UI | after B; contacts vertical will feel this |
+| Queue places / thumbs / EXIF (ADR 0006 R1) | Tagging and faces already use `localcore-queue` | after B |
+| M3 pack swap (SFace + YuNet) | Survival fixture is B; quality is the top remaining risk | after B; named spike follow-through |
+| `ImageIOHeicDecoder` seam | Phase 2 table; not required to prove the extract | after B |
+| ADR 0003 R6 rewrite (45 domain Records) | Expected-red by design | Phase 5 / R4 windowing |
+| 20k-tree cost as a CI gate | No tree in-repo | ops; harness stays |
+| Health Go `internal/log` / `internal/blobs` delete | Port contract is the golden; Go stays the writer | Phase 6 |
+| Old-remote redirect READMEs | Never Phase 2 | whenever |
 
 Size: L. All Linux-container work.
 
@@ -599,10 +628,13 @@ Honest M1–M3 / geo scope:
   calls `gazetteer_lookup`; `nominatim_lookup` is a thin wrapper.
   Two Places engines remain (session vs Swift `GeocodingService`).
 
-Still open for B: a measured 20k-tree cost replay; conflict **R8 merge
-policy** (detection/exclude only today); queueing places / thumbs /
-EXIF (ADR 0006 R1); iOS `xcodebuild`; a real gazetteer pack. Health Go
-`internal/log` and `internal/blobs` stay until Phase 6.
+**Still open for B** (the amended gate, not the leftovers): hoist
+gallery iOS + Linux tests (and contacts/music/health log) so they fire
+on the monorepo; confirm `rust.yml` is green on GitHub; optional
+Places-write and FFI conflict-exclusion glue tests.
 
-Still not Phase 2: redirect READMEs on the old standalone GitHub
-remotes. Phase 3 is `shell-kit` + localcontacts, after B.
+**Moved out of B** — full table under Phase 2. Do not start Phase 3
+until B’s amended gate is true. The leftovers are backlog, not “B is
+unfinished extract.”
+
+Phase 3 is `shell-kit` + localcontacts, after B.
