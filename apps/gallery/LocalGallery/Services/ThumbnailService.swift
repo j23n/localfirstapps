@@ -155,9 +155,10 @@ final class ThumbnailService {
         thumbnailStamps.removeValue(forKey: key)
     }
 
-    /// Drops in-memory thumbnails, full images, and face crops for URLs the
-    /// scanner reported as modified. Disk JPEGs stay; the next load compares
-    /// size/mtime and regenerates when the source is newer.
+    /// Drops in-memory thumbnails, full images, face crops, and on-disk
+    /// JPEGs for URLs the scanner reported as modified. The next load
+    /// re-reads the source; relying on size/mtime alone can keep a stale
+    /// disk JPEG when Foundation still has cached resource values for the URL.
     func invalidateCachedImages(for urls: [URL]) {
         for url in urls {
             evictInMemoryThumbnail(for: url)
@@ -170,6 +171,13 @@ final class ThumbnailService {
                     faceCropCache.removeObject(forKey: cropKey)
                 }
             }
+            let stableID = PhotoFile.stableID(for: url).uuidString
+            let diskPath = thumbnailDiskCacheDir.appendingPathComponent(stableID + ".jpg")
+            try? FileManager.default.removeItem(at: diskPath)
+            try? FileManager.default.removeItem(at: Self.stampURL(nextTo: diskPath))
+            try? FileManager.default.removeItem(
+                at: thumbnailDiskCacheDir.appendingPathComponent(stableID + ".nothumb")
+            )
         }
     }
 
