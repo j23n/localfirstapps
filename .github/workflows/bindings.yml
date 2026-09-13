@@ -45,20 +45,28 @@ jobs:
         working-directory: apps/gallery
         run: ./scripts/generate_bindings.sh
 
+      - name: Regenerate contacts UniFFI Swift
+        working-directory: apps/contacts
+        run: ./scripts/generate_bindings.sh
+
       - name: Fail on drift
         run: |
           git add -N apps/gallery/LocalGallery/GalleryCore.swift \
                      apps/gallery/LocalGallery/GalleryCoreFFI.h \
                      apps/gallery/linux/swift-shim/Sources/GalleryFFICheck/GalleryCore.swift \
                      apps/gallery/linux/swift-shim/CGalleryCoreFFI/GalleryCoreFFI.h \
-                     apps/gallery/linux/swift-shim/CGalleryCoreFFI/module.modulemap
+                     apps/gallery/linux/swift-shim/CGalleryCoreFFI/module.modulemap \
+                     apps/contacts/LocalContacts/ContactsCore.swift \
+                     apps/contacts/LocalContacts/ContactsCoreFFI.h
           if ! git diff --exit-code -- \
                 apps/gallery/LocalGallery/GalleryCore.swift \
                 apps/gallery/LocalGallery/GalleryCoreFFI.h \
                 apps/gallery/linux/swift-shim/Sources/GalleryFFICheck/GalleryCore.swift \
                 apps/gallery/linux/swift-shim/CGalleryCoreFFI/GalleryCoreFFI.h \
-                apps/gallery/linux/swift-shim/CGalleryCoreFFI/module.modulemap; then
-            echo "UniFFI bindings drifted. Run apps/gallery/scripts/generate_bindings.sh and commit." >&2
+                apps/gallery/linux/swift-shim/CGalleryCoreFFI/module.modulemap \
+                apps/contacts/LocalContacts/ContactsCore.swift \
+                apps/contacts/LocalContacts/ContactsCoreFFI.h; then
+            echo "UniFFI bindings drifted. Run the app generate_bindings.sh and commit." >&2
             exit 1
           fi
 

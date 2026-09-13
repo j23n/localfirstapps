@@ -82,6 +82,23 @@ fn save_assigns_name_and_preserves_siblings() {
 }
 
 #[test]
+fn save_without_file_name_updates_the_existing_card() {
+    let vfs = MemVfs::new();
+    vfs.insert("/lib/alice.vcf", alice().into_bytes());
+    let mut store = Store::open(&vfs, "/lib").unwrap();
+    let mut card = Card::new("");
+    card.local_id = "alice-1".into();
+    card.full_name = "Alicia".into();
+    card.given_name = "Alicia".into();
+    store.save(&vfs, card).unwrap();
+    assert!(vfs.exists("/lib/alice.vcf"));
+    assert!(!vfs.exists("/lib/alicia.vcf"));
+    let disk = parse(&vfs.read("/lib/alice.vcf").unwrap(), "alice.vcf", false).unwrap();
+    assert_eq!(disk.full_name, "Alicia");
+    assert_eq!(store.cards().len(), 1);
+}
+
+#[test]
 fn delete_last_card_removes_file() {
     let vfs = MemVfs::new();
     vfs.insert("/lib/alice.vcf", alice().into_bytes());

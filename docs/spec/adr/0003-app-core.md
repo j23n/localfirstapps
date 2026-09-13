@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (`contacts-core` headless, Phase 3.1)
+- Revised: 2026-09-11 (r2); 2026-09-13 (`contacts-core` headless, Phase 3.1); 2026-09-13 (3.4 iOS writes through FFI)
 
 ## Scope
 
@@ -16,7 +16,8 @@ shells.
 `health-core`. Each is the sole owner of its file formats and its domain
 rules, and each serves both shells unchanged. `contacts-core` landed
 headless in Phase 3.1 (`core/contacts-core`, R6-clean `contacts-ffi`).
-The iOS shell still parses and writes until 3.4. `gallery-core` remains
+The iOS shell writes through `contacts-ffi` (Phase 3.4) and still
+parses vCard *text* for views and the CN port. `gallery-core` remains
 at `apps/gallery/core`. The other two cores are later phases.
 
 **R2.** An app core owns:

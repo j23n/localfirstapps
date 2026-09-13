@@ -6,12 +6,17 @@ from that directory.
 A file-based contact manager for iOS. Your contacts are stored as plain vCard (.vcf) files in a folder you control — not locked into any service or cloud platform.
 
 The headless core is `core/contacts-core` (parse/write, folder index,
-Syncthing R8–R11). `contacts-ffi` is R6-clean. The iOS shell still
-owns `VCardParser` / `ContactsStore` until Phase 3.4 binds FFI.
+Syncthing R8–R11). `contacts-ffi` is R6-clean. The iOS shell writes
+through `ContactsSession` and still parses vCard text for views and
+the Apple Contacts port. Syncthing groups use `SyncConflictGroupSheet`.
 Accent tokens are `design/tokens/contacts.toml` (`ContactsTokens`,
-light-only until Phase 3.5). Screens are `ui-spec/screens.toml`
-(`ContactsScreen`). `shell-kit-gtk` binds every slot kind; the GTK
-app is Phase 3.5.
+light-only until Phase 3.5). Screens are `ui-spec/screens.toml`.
+`shell-kit-gtk` binds every slot kind; the GTK app is Phase 3.5.
+
+```
+./scripts/generate_bindings.sh   # UniFFI Swift (Linux-safe)
+./scripts/build_ffi.sh           # xcframework (Mac / Xcode)
+```
 
 ## Why
 
@@ -23,7 +28,7 @@ Pair it with [Syncthing](https://syncthing.net/) (via [SyncTrain](https://apps.a
 
 - **Plain vCard files** — standard `.vcf` format, readable and portable
 - **Apple Contacts sync** — optionally syncs to the native Contacts app for caller ID, QuickType, and share sheets
-- **Conflict detection** — detects external edits/deletions and lets you choose which version to keep
+- **Conflict detection** — Apple Contacts edits/deletions, and Syncthing `.vcf` groups (R8–R11)
 - **Auto-import** — picks up contacts created in Apple Contacts
 - **Full contact fields** — name, org, phone, email, address, URL, birthday, photo, notes, tags
 - **Search and filter** — filter by tags, search by name/phone/email

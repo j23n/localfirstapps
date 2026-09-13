@@ -8,6 +8,7 @@ struct ContactListView: View {
     @State private var selectedContactIDs: Set<String> = []
     @State private var showBulkTagPicker = false
     @State private var showBulkDeleteConfirmation = false
+    @State private var showSyncConflicts = false
 
     var body: some View {
         @Bindable var store = store
@@ -77,6 +78,26 @@ struct ContactListView: View {
             .sheet(isPresented: $showAddContact) {
                 NavigationStack {
                     ContactEditView(contact: Contact(), isNew: true)
+                }
+            }
+            .sheet(isPresented: $showSyncConflicts) {
+                SyncConflictGroupSheet()
+            }
+            .safeAreaInset(edge: .top) {
+                if store.hasSyncConflictGroups {
+                    Button {
+                        showSyncConflicts = true
+                    } label: {
+                        Label(
+                            "\(store.syncConflictGroups.count) Sync Conflicts",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .accessibilityIdentifier("sync-conflict-group")
                 }
             }
             .onChange(of: showAddContact) { _, isAdding in

@@ -30,7 +30,7 @@ nested `.github/workflows/test.yml` is for the old standalone remote.
 | `VCardWriterTests` | Header order + CRLF, optional-field omission, escaping (NOTE, FN, TEL/EMAIL/URL), TYPE sanitization, BDAY, PHOTO folding, unknown-field round-trip, filename suggestion, end-to-end write→parse. |
 | `ContactTests` / `PostalAddressTests` | `displayName` / `initials` / `sortLetter`, `age`, `copy()` deep-copies addresses, `formatted` / `isEmpty`. |
 | `ContactsStoreTests` | `allTags`, search, tag/conflict filters, locale-aware sort, `groupedContacts`, all four `layoutMode` cases, `--contacts-folder` launch-arg parsing. |
-| `ContactsStoreFileSystemTests` | Load/save/delete against temp folders, ID migration, both layouts, filename collision, sibling preservation, disk sibling re-read, mixed-layout solo edit, corrupt-file sibling fallback, `save` with no folder, bulk delete, tag rewrite. |
+| `ContactsStoreFileSystemTests` | Load/save/delete through `ContactsSession`, ID migration, both layouts, filename collision, sibling preservation, disk sibling re-read, mixed-layout solo edit, corrupt-file sibling fallback, `save` with no folder, bulk delete, tag rewrite, Syncthing group list + auto-resolve. |
 | `ContactsStoreChangeEventTests` | `applyChangeEvents`: update/delete conflict state (no overwrite), empty list, unknown IDs, added → import + CN claim. |
 | `ContactMergeTests` | Field-by-field Apple/local selection, list replace (not merge-by-index), birthday, photo-only-if-nil, `conflictState` left intact. |
 | `BookmarkManagerTests` | save/load, `hasBookmark` / `clearBookmark`, corrupt stored data. |

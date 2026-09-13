@@ -13,9 +13,10 @@ now so every later vertical designs against it.
 
 It is **not** a gallery FFI rewrite. `gallery-ffi` stays as it is. The
 conformance check starts red and pins that red so a new Record cannot
-hide behind the known ones. `contacts-ffi` (Phase 3.1) is green:
-`TextRow` and `FieldRow` only. CI runs the same checker over
-`core/contacts-ffi/src` without `--expect-violations`.
+hide behind the known ones. `contacts-ffi` (Phase 3.1, mutations in 3.4) is green:
+`TextRow` and `FieldRow` only. Save/delete take and return strings.
+CI runs the same checker over `core/contacts-ffi/src` without
+`--expect-violations`.
 
 ## What may cross
 

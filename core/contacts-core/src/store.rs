@@ -141,10 +141,13 @@ impl Store {
             card.local_id = Uuid::new_v4().to_string();
         }
         if card.file_name.is_empty() {
-            card.file_name = match self.layout() {
-                Layout::SingleFile { file_name } => file_name,
-                _ => self.unique_file_name(vfs, &card),
-            };
+            card.file_name = self
+                .get(&card.local_id)
+                .map(|existing| existing.file_name.clone())
+                .unwrap_or_else(|| match self.layout() {
+                    Layout::SingleFile { file_name } => file_name,
+                    _ => self.unique_file_name(vfs, &card),
+                });
         }
         let path = join_root(&self.root, &card.file_name);
         let mut file_cards: Vec<Card> = if vfs.exists(&path) {

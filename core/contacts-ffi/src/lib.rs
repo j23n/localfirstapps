@@ -8,8 +8,8 @@ uniffi::setup_scaffolding!("ContactsCore");
 use std::sync::Mutex;
 
 use contacts_core::{
-    apply_merge, is_conflict_name as core_is_conflict_name, plan_merge, Card, MergeKind, Store,
-    StoreError, TEMP_PREFIX,
+    apply_merge, is_conflict_name as core_is_conflict_name, parse_multiple, plan_merge, write,
+    Card, MergeKind, Store, StoreError, TEMP_PREFIX,
 };
 use localcore_vfs::StdVfs;
 
@@ -123,6 +123,53 @@ impl ContactsSession {
         Ok(field_rows(card))
     }
 
+    /// Canonical vCard text for one card. The shell may parse it; `Card` does not cross.
+    pub fn vcard_text(&self, id: String) -> Result<String, ContactsError> {
+        let store = self.store.lock().expect("session lock");
+        let card = store.get(&id).ok_or(ContactsError::NotFound)?;
+        Ok(write(card))
+    }
+
+    /// Basename of the `.vcf` this id lives in.
+    pub fn file_name(&self, id: String) -> Result<String, ContactsError> {
+        let store = self.store.lock().expect("session lock");
+        let card = store.get(&id).ok_or(ContactsError::NotFound)?;
+        Ok(card.file_name.clone())
+    }
+
+    /// Parse `text` and write through [`Store::save`]. Returns the last id.
+    ///
+    /// `file_name` is the basename to update. Empty means assign (or
+    /// reuse the name already indexed for this id).
+    pub fn save_vcard(&self, text: String, file_name: String) -> Result<String, ContactsError> {
+        let mut store = self.store.lock().expect("session lock");
+        let cards = parse_multiple(text.as_bytes(), &file_name, false);
+        if cards.is_empty() {
+            return Err(ContactsError::Io {
+                message: "not a vCard".into(),
+            });
+        }
+        let mut last = String::new();
+        for card in cards {
+            last = store.save(&self.vfs, card)?.local_id;
+        }
+        Ok(last)
+    }
+
+    /// Delete one card (and its file when it was the last sibling).
+    pub fn delete(&self, id: String) -> Result<(), ContactsError> {
+        let mut store = self.store.lock().expect("session lock");
+        store.delete(&self.vfs, &id)?;
+        Ok(())
+    }
+
+    /// Re-walk the folder.
+    pub fn reload(&self) -> Result<(), ContactsError> {
+        let mut store = self.store.lock().expect("session lock");
+        *store = Store::open(&self.vfs, &store.root)?;
+        Ok(())
+    }
+
     /// Conflict groups as `text-row`s. Trailing is `needs choice` or `auto`.
     pub fn conflict_rows(&self) -> Result<Vec<TextRow>, ContactsError> {
         let store = self.store.lock().expect("session lock");
@@ -144,8 +191,40 @@ impl ContactsSession {
         Ok(rows)
     }
 
-    /// Apply an automatic (or R11) merge. Fails on [`ContactsError::NeedsChoice`].
-    pub fn resolve_group(&self, canonical_name: String) -> Result<(), ContactsError> {
+    /// `text-row`s for one group's field choices. `id` is `field|source`.
+    pub fn conflict_choice_rows(
+        &self,
+        canonical_name: String,
+    ) -> Result<Vec<TextRow>, ContactsError> {
+        let store = self.store.lock().expect("session lock");
+        let group = store
+            .conflict_groups()
+            .iter()
+            .find(|g| g.canonical_name == canonical_name)
+            .cloned()
+            .ok_or(ContactsError::NotFound)?;
+        let plan = plan_merge(&self.vfs, &store.root, &group)?;
+        let mut rows = Vec::new();
+        for conflict in plan.conflicts {
+            for (source, value) in conflict.sides {
+                rows.push(TextRow {
+                    id: format!("{}|{source}", conflict.field),
+                    title: conflict.field.clone(),
+                    subtitle: Some(source),
+                    trailing: Some(value),
+                });
+            }
+        }
+        Ok(rows)
+    }
+
+    /// Apply a merge. `choice_ids` are `field|source` from [`Self::conflict_choice_rows`].
+    /// Empty is enough for Auto / DeletedVersusModified. Choice without a pick fails.
+    pub fn resolve_group(
+        &self,
+        canonical_name: String,
+        choice_ids: Vec<String>,
+    ) -> Result<(), ContactsError> {
         let mut store = self.store.lock().expect("session lock");
         let group = store
             .conflict_groups()
@@ -154,12 +233,18 @@ impl ContactsSession {
             .cloned()
             .ok_or(ContactsError::NotFound)?;
         let plan = plan_merge(&self.vfs, &store.root, &group)?;
-        if plan.kind == MergeKind::Choice {
+        let choices: Vec<(String, String)> = choice_ids
+            .iter()
+            .filter_map(|raw| {
+                raw.split_once('|')
+                    .map(|(f, s)| (f.to_owned(), s.to_owned()))
+            })
+            .collect();
+        if plan.kind == MergeKind::Choice && choices.is_empty() {
             return Err(ContactsError::NeedsChoice);
         }
-        let card = apply_merge(&self.vfs, &store.root, &plan, &[])?;
+        apply_merge(&self.vfs, &store.root, &plan, &choices)?;
         *store = Store::open(&self.vfs, &store.root)?;
-        let _ = card;
         Ok(())
     }
 }

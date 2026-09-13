@@ -85,6 +85,41 @@ struct ContactsStoreFileSystemTests {
         #expect(store.contacts.count == 1)
         #expect(store.contacts.first?.fullName == "Alice")
         #expect(store.contacts.first?.fileName == "alice.vcf")
+        #expect(store.hasSyncConflictGroups)
+        #expect(store.syncConflictGroups.first?.id == "alice.vcf")
+    }
+
+    @Test("resolveSyncGroup auto-merges disjoint fields and drops the copy")
+    func resolveSyncGroupAuto() async throws {
+        let folder = try makeTempFolder()
+        defer { cleanup(folder) }
+
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nX-LOCALCONTACTS-ID:lcid-1\r\nTEL;TYPE=cell:1\r\nEND:VCARD\r\n",
+            named: "alice.vcf", in: folder
+        )
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nX-LOCALCONTACTS-ID:lcid-1\r\nEMAIL;TYPE=home:a@b.com\r\nEND:VCARD\r\n",
+            named: "alice.sync-conflict-20200901-120000-PHONE01.vcf", in: folder
+        )
+
+        let store = makeStore(folder: folder)
+        await store.loadContacts()
+        #expect(store.hasSyncConflictGroups)
+        #expect(store.syncConflictGroups.first?.trailing == "auto")
+
+        try await store.resolveSyncGroup(canonicalName: "alice.vcf")
+        #expect(!store.hasSyncConflictGroups)
+        #expect(store.contacts.count == 1)
+        let onDisk = try readFile("alice.vcf", in: folder)
+        #expect(onDisk.contains("TYPE=cell:1"))
+        #expect(onDisk.contains("a@b.com"))
+        let copyExists = FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent(
+                "alice.sync-conflict-20200901-120000-PHONE01.vcf"
+            ).path
+        )
+        #expect(!copyExists)
     }
 
     @Test("loadContacts ignores non-vcf files")

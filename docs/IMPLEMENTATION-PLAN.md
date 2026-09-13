@@ -413,10 +413,11 @@ block C.
 | Item | Phase | Notes |
 |---|---|---|
 | R8–R11 merge for contacts `.vcf` | **done (3.1)** | `contacts-core` + `fixtures/r8/`. Not a port of Apple `ContactMerge`. |
-| Delete contacts/music `SyncConflict` twins | **done (3.1)** | One shared `localcore-conflict/support/SyncConflict.swift`. Tests read the grammar files. FFI bind is 3.4. |
-| Queue / scan cache keys: NFC or `StableId` | **3.4** | No queue in 3.1. NFC before the first enqueue. |
-| `localcore-log` / blob through `Vfs` | **3.4** | No folder log in 3.1. Before iOS contacts writes one. |
-| Open event-type set | **3.4** | If contacts logs. Envelope stays; `known_type` is not a monorepo enum. |
+| Delete contacts/music `SyncConflict` twins | **done (3.1)** | One shared `localcore-conflict/support/SyncConflict.swift`. Tests read the grammar files. |
+| Queue / scan cache keys: NFC or `StableId` | **3.4 leftover** | No queue yet. NFC before the first enqueue. |
+| `localcore-log` / blob through `Vfs` | **3.4 leftover** | No folder log yet. Before iOS contacts writes one. |
+| Open event-type set | **3.4 leftover** | If contacts logs. Envelope stays; `known_type` is not a monorepo enum. |
+| iOS contacts FS → FFI + Syncthing sheet | **done (3.4)** | `ContactsSession`; Apple CN sheet unchanged. |
 | Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
 | Token tables + R14 vocab / token codegen | **done (3.2)** | Light-only. `scripts/gen_r14.py` refuses a `dark` key. |
 | Contacts UI spec + screen-id codegen | **done (3.3)** | `apps/contacts/ui-spec/screens.toml`. Real screens, not a dummy. |
@@ -476,7 +477,7 @@ workload before drawing shells).
    `SyncConflict` twins are one shared file under
    `localcore-conflict/support/`; tests read the grammar fixtures.
    UniFFI is R6-clean (`TextRow` / `FieldRow`); `cargo test` is the
-   gate. iOS still uses the Swift parser until 3.4. No GTK.
+   gate. iOS still parsed vCard on the shell until 3.4. No GTK.
 3. **3.2 Tokens + R14 codegen** — **done.** Light-only tables in
    `design/tokens/`. `scripts/gen_r14.py` emits R4 kinds and tokens.
    Gallery `Design.swift` aliases `GalleryTokens`. Dark companions
@@ -487,9 +488,13 @@ workload before drawing shells).
    not need a fake spec. The contacts UI spec is the real screen
    list (`folder-picker` … `sync-conflict-group`), and R14 emits
    `ContactsScreen`. The contacts GTK app is 3.5.
-5. **3.4 iOS shell over the core.** Views remain; `ContactsStore` FS
-   becomes FFI. `CNSyncService` stays a port. Keep the Apple conflict
-   sheet. Add the Syncthing-group sheet (the one Linux will also have).
+5. **3.4 iOS shell over the core.** **done.** Views remain and still
+   parse vCard text. `ContactsStore` load/save/delete go through
+   `ContactsSession`. `CNSyncService` stays a port. Apple CN sheet
+   stays. Syncthing groups use `conflict_rows` /
+   `conflict_choice_rows` / `resolve_group` and
+   `SyncConflictGroupSheet`. No folder log (NFC / Vfs-log still
+   before the first log write).
 6. **3.5 GTK + Comet.** Same binary, `--comet` (compact + bottom nav).
    Host filesystem is a path. No Flatpak. Share is a file save.
    Author dark token companions here (light-only until then).
@@ -661,9 +666,8 @@ first year's risk is concentrated in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**A, B, 3.0–3.3 are done.** Next engineering move is 3.4 (iOS
-contacts over `contacts-ffi`; add the Syncthing-group sheet). Dark
-palettes wait for 3.5 with the GTK shell.
+**A, B, 3.0–3.4 are done.** Next engineering move is 3.5 (contacts
+GTK + Comet over `shell-kit-gtk`, and dark token companions).
 
 **You, now**
 
