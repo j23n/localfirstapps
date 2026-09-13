@@ -4,7 +4,7 @@ import SwiftUI
 
 enum Design {
     // Values come from design/tokens/gallery.toml via GalleryTokens
-    // (`scripts/gen_r14.py`). Dark surfaces/ink are unauthored.
+    // (`scripts/gen_r14.py`). Light-only until Phase 3.5.
     static let accentColor  = GalleryTokens.accent
     static let accentSoft   = GalleryTokens.accent.opacity(GalleryTokens.accentSoftOpacity)
 

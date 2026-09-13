@@ -153,7 +153,7 @@ SHAs changed; `git log apps/<name>` keeps the original commits. The
 standalone GitHub remotes still need redirect READMEs — Phase 3,
 with 3.0.
 
-Current tree (`core/` is extracted; `shells/` is still Phase 3):
+Current tree (`core/` is extracted; `shells/` has `shell-kit-gtk`):
 
 ```
 .agents/            agent instructions (CONVENTIONS.md retired in 0.2)
@@ -165,8 +165,10 @@ mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
 conformance/        graph check (ADR 0002 R13) is green; R6 is expected-red
 core/               localcore-{vfs,walk,id,conflict,queue,log,blob,geo,ui}
                     + contacts-core / contacts-ffi
-design/tokens/      per-app token tables (3.2)
+shells/             shell-kit-gtk (3.3); contacts GTK app is 3.5
+design/tokens/      per-app token tables, light-only (dark is 3.5)
 docs/spec/ui/       R4 vocabulary.toml
+apps/contacts/ui-spec/  real contacts screens
 apps/gallery/       was localgallery (Swift + core/ + linux/)
 apps/contacts/      was localcontacts
 apps/music/         was localmusic
@@ -416,9 +418,10 @@ block C.
 | `localcore-log` / blob through `Vfs` | **3.4** | No folder log in 3.1. Before iOS contacts writes one. |
 | Open event-type set | **3.4** | If contacts logs. Envelope stays; `known_type` is not a monorepo enum. |
 | Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
-| Token tables + R14 vocab / token codegen | **done (3.2)** | `scripts/gen_r14.py`, `localcore-ui`, Swift + CSS. `--check` in conformance. |
-| Screen-identifier codegen | **3.3** | R14 row 2. Waits for per-app UI specs (dummy spec in 3.3). |
-| Author remaining dark surfaces / ink | **3.2 leftover / you** | Accents copied from existing colorsets. Do not invent a palette. |
+| Token tables + R14 vocab / token codegen | **done (3.2)** | Light-only. `scripts/gen_r14.py` refuses a `dark` key. |
+| Contacts UI spec + screen-id codegen | **done (3.3)** | `apps/contacts/ui-spec/screens.toml`. Real screens, not a dummy. |
+| `shell-kit-gtk` (one binding per R4 kind) | **done (3.3)** | `shells/` workspace. Exhaustive match is the missing-kind gate. |
+| Dark token palettes ×4 | **3.5** | Light-only until the GTK shell follows the system preference. Not an agent guess. |
 | Old-remote redirect READMEs | **3** | With 3.0. Standalone remotes still need them. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **4** | Playlist write through `localcore-vfs`. |
@@ -474,21 +477,22 @@ workload before drawing shells).
    `localcore-conflict/support/`; tests read the grammar fixtures.
    UniFFI is R6-clean (`TextRow` / `FieldRow`); `cargo test` is the
    gate. iOS still uses the Swift parser until 3.4. No GTK.
-3. **3.2 Tokens + R14 codegen** — **done.** One table per app in
-   `design/tokens/`. `scripts/gen_r14.py` emits R4 kinds (Rust + Swift)
-   and tokens (Rust hex, Swift `Color`, GTK CSS). Gallery
-   `Design.swift` aliases `GalleryTokens`. Dark surfaces and ink are
-   **unauthored** (accents came from the existing colorsets). Screen
-   identifiers wait for UI specs (3.3). Regenerating in CI produces
-   no diff.
-4. **3.3 `shell-kit-gtk`** — one binding per ADR 0004 R4 kind, no app
-   core, no `localcore`. Dummy spec so a missing kind fails the build.
-   `shells/` workspace (ADR 0001 R9).
+3. **3.2 Tokens + R14 codegen** — **done.** Light-only tables in
+   `design/tokens/`. `scripts/gen_r14.py` emits R4 kinds and tokens.
+   Gallery `Design.swift` aliases `GalleryTokens`. Dark companions
+   are Phase 3.5 — the generator refuses a `dark` key until then.
+4. **3.3 `shell-kit-gtk`** — **done.** `shells/` workspace. One
+   libadwaita binding per R4 kind; no app core, no `localcore`. A
+   missing kind is an exhaustive-match compile error — that does
+   not need a fake spec. The contacts UI spec is the real screen
+   list (`folder-picker` … `sync-conflict-group`), and R14 emits
+   `ContactsScreen`. The contacts GTK app is 3.5.
 5. **3.4 iOS shell over the core.** Views remain; `ContactsStore` FS
    becomes FFI. `CNSyncService` stays a port. Keep the Apple conflict
    sheet. Add the Syncthing-group sheet (the one Linux will also have).
 6. **3.5 GTK + Comet.** Same binary, `--comet` (compact + bottom nav).
    Host filesystem is a path. No Flatpak. Share is a file save.
+   Author dark token companions here (light-only until then).
 7. **3.6 Milestone C review.** Expect to revise ADR 0004. Budget it.
 
 > **Gate (Milestone C):** localcontacts' **core loop** on iOS, Fedora
@@ -657,19 +661,17 @@ first year's risk is concentrated in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**A, B, 3.0, 3.1, and 3.2 are done.** Next engineering move is 3.3
-`shell-kit-gtk` (dummy spec so a missing kind fails the build;
-screen-id codegen lands with that spec). No GTK in 3.1 or 3.2.
+**A, B, 3.0–3.3 are done.** Next engineering move is 3.4 (iOS
+contacts over `contacts-ffi`; add the Syncthing-group sheet). Dark
+palettes wait for 3.5 with the GTK shell.
 
 **You, now**
 
 1. Keep the four **root** workflows green on tip.
 2. **Phase 3:** redirect READMEs on the old standalone remotes.
-3. Author remaining dark surface and ink values (not an agent guess).
-   Accents are already in the tables from the colorsets.
-4. Local 20k e2e can be run anytime
+3. Local 20k e2e can be run anytime
    (`apps/gallery/scripts/e2e_20k.sh`; `LOCALGALLERY_E2E_RECORD=1`
    rewrites the golden). Promoting that suite to a GitHub job is
    **Phase 5**.
-5. Phase 4/5/6 backlog may run in parallel; it does not block C.
+4. Phase 4/5/6 backlog may run in parallel; it does not block C.
    The gazetteer pack is `allCountries` class `P`.

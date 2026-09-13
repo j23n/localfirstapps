@@ -3,9 +3,3 @@
   --accent: #336BC7;
   --card-radius: 12px;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --accent: #4D85DE;
-  }
-}

@@ -8,8 +8,10 @@ app core, and the R14 vocabulary crate:
 `localcore-ui` (ADR 0004 kinds + token hex; no UI toolkit),
 `contacts-core`, `contacts-ffi`.
 
-Token tables live in `design/tokens/`. Regenerate with
-`python3 scripts/gen_r14.py`; CI runs `--check`.
+Token tables live in `design/tokens/` (light-only until Phase 3.5).
+Contacts screens live in `apps/contacts/ui-spec/`. Regenerate with
+`python3 scripts/gen_r14.py`; CI runs `--check`. GTK bindings live in
+`shells/shell-kit-gtk`, not here.
 
 Gallery remains at `apps/gallery/core` until later verticals move here.
 

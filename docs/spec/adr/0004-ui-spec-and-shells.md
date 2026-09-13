@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2: vocabulary + tokens + codegen)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3: tokens light-only; contacts spec; shell-kit-gtk)
 
 ## Scope
 
@@ -159,16 +159,15 @@ labels the platform itself owns.
 - Generated sources are reproducible: regenerating in CI produces no diff
   (`python3 scripts/gen_r14.py --check`).
 
-### Progress (Phase 3.2)
+### Progress (Phase 3.2–3.3)
 
-R14 rows 1 (kinds) and 3 (tokens) are generated from
-`docs/spec/ui/vocabulary.toml` and `design/tokens/*.toml` into
-`core/localcore-ui`, `docs/spec/ui/generated/Kinds.swift`, each iOS
-app's `Generated/Tokens.swift`, and `design/tokens/generated/*.css`.
-Gallery `Design.swift` consumes `GalleryTokens`. Row 2 (screen
-identifiers) waits for per-app UI specs and lands with the 3.3 dummy
-spec. Dark surface and ink values are unauthored except accents
-copied from the existing `AccentColor.colorset`s.
+R14 rows 1–3 are generated from `docs/spec/ui/vocabulary.toml`,
+`design/tokens/*.toml`, and `apps/contacts/ui-spec/screens.toml`.
+Tokens are **light-only** until Phase 3.5 (`gen_r14.py` refuses a
+`dark` key). `shell-kit-gtk` binds every R4 kind; a missing arm is a
+compile error. The contacts spec lists the real screens, including
+`sync-conflict-group` (the C-loop Syncthing sheet). There is no dummy
+spec: kinds fail the build via exhaustive match, not via a fake app.
 
 ## Rationale
 

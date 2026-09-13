@@ -1,0 +1,108 @@
+# localcontacts screens. Semantic only (ADR 0004 R2).
+# Identifiers are generated into ContactsScreen (Rust + Swift).
+
+app = "contacts"
+
+[[screens]]
+id = "folder-picker"
+kind = "detail"
+title = "LocalContacts"
+affordances = ["primary-action"]
+# No folder chosen (ADR 0007 R3). Primary action opens the host folder picker.
+sections = [
+    { id = "welcome", item = "status-row" },
+]
+
+[[screens]]
+id = "contact-list"
+kind = "list"
+title = "Contacts"
+affordances = ["search", "filter", "selection", "primary-action", "confirm"]
+item_nav = { intent = "push", destination = "contact-detail" }
+# Filter: tags, and contacts that have a conflict.
+# Primary action: add contact → contact-edit (sheet).
+# Selection: tag / delete (confirm).
+# Settings is a sheet from the chrome, not a row.
+sections = [
+    { id = "contacts", item = "text-row" },
+]
+
+[[screens]]
+id = "contact-detail"
+kind = "detail"
+title = "Contact"
+affordances = ["banner", "overflow", "confirm"]
+# Banner: Apple CN conflict, or a Syncthing group waiting.
+# Overflow: edit → contact-edit (sheet). Confirm: delete the card.
+sections = [
+    { id = "fields", item = "field-row" },
+    { id = "actions", item = "action-row" },
+]
+
+[[screens]]
+id = "contact-edit"
+kind = "form"
+title = "Contact"
+affordances = ["primary-action", "confirm"]
+# Save / cancel. New contact or edit. Writes one .vcf.
+sections = [
+    { id = "fields", item = "field-row" },
+]
+
+[[screens]]
+id = "settings"
+kind = "settings"
+title = "Settings"
+# Folder first, domain middle, Info last (ADR 0007 R2).
+# Apple Contacts sync is iOS-only (ADR 0007 R15).
+sections = [
+    { id = "folder", item = "action-row" },
+    { id = "sync", item = "action-row" },
+    { id = "tags", item = "nav-row" },
+    { id = "info", item = "text-row" },
+    { id = "diagnostics", item = "nav-row" },
+]
+item_nav = { intent = "push", destination = "logs" }
+
+[[screens]]
+id = "tag-management"
+kind = "list"
+title = "Tags"
+affordances = ["confirm"]
+sections = [
+    { id = "tags", item = "text-row" },
+]
+
+[[screens]]
+id = "logs"
+kind = "list"
+title = "Logs"
+affordances = ["search", "filter", "overflow"]
+sections = [
+    { id = "entries", item = "text-row" },
+]
+
+[[screens]]
+id = "apple-conflict"
+kind = "detail"
+title = "Conflict"
+affordances = ["confirm"]
+# iOS host: merge Apple Contacts onto a local card (CNSyncService).
+# Not the Syncthing group. Linux has no binding for this host surface.
+sections = [
+    { id = "fields", item = "field-row" },
+    { id = "actions", item = "action-row" },
+]
+
+[[screens]]
+id = "sync-conflict-group"
+kind = "detail"
+title = "Sync Conflict"
+affordances = ["confirm"]
+# ADR 0005 R8–R11: Syncthing .vcf copies. Disjoint fields merge;
+# the same field is a choice; losing copies delete only after a choice.
+# Both shells will show this sheet (3.4 iOS, 3.5 GTK).
+sections = [
+    { id = "fields", item = "field-row" },
+    { id = "actions", item = "action-row" },
+]

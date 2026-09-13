@@ -2,7 +2,7 @@
 import SwiftUI
 
 enum GalleryTokens {
-    static let accent = Color(light: Color(red: 0.769, green: 0.541, blue: 0.243), dark: Color(red: 0.831, green: 0.600, blue: 0.302))
+    static let accent = Color(red: 0.769, green: 0.541, blue: 0.243)
     static let bg = Color(red: 0.980, green: 0.969, blue: 0.949)
     static let bgCard = Color(red: 1.000, green: 1.000, blue: 1.000)
     static let bgGrouped = Color(red: 0.949, green: 0.929, blue: 0.898)
@@ -16,17 +16,3 @@ enum GalleryTokens {
     static let separatorOpacity: Double = 0.1
     static let accentSoftOpacity: Double = 0.13
 }
-
-#if canImport(UIKit)
-import UIKit
-
-private extension Color {
-    init(light: Color, dark: Color) {
-        self.init(uiColor: UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(dark)
-                : UIColor(light)
-        })
-    }
-}
-#endif

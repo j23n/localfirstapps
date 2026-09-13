@@ -2,20 +2,6 @@
 import SwiftUI
 
 enum MusicTokens {
-    static let accent = Color(light: Color(red: 0.753, green: 0.224, blue: 0.169), dark: Color(red: 0.820, green: 0.278, blue: 0.220))
+    static let accent = Color(red: 0.753, green: 0.224, blue: 0.169)
     static let cardRadius: CGFloat = 12
 }
-
-#if canImport(UIKit)
-import UIKit
-
-private extension Color {
-    init(light: Color, dark: Color) {
-        self.init(uiColor: UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(dark)
-                : UIColor(light)
-        })
-    }
-}
-#endif

@@ -2,20 +2,6 @@
 import SwiftUI
 
 enum ContactsTokens {
-    static let accent = Color(light: Color(red: 0.200, green: 0.420, blue: 0.780), dark: Color(red: 0.302, green: 0.522, blue: 0.871))
+    static let accent = Color(red: 0.200, green: 0.420, blue: 0.780)
     static let cardRadius: CGFloat = 12
 }
-
-#if canImport(UIKit)
-import UIKit
-
-private extension Color {
-    init(light: Color, dark: Color) {
-        self.init(uiColor: UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(dark)
-                : UIColor(light)
-        })
-    }
-}
-#endif

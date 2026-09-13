@@ -74,6 +74,38 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  shell-kit:
+    name: shell-kit-gtk
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: "1.97.1"
+
+      - name: OS dependencies (GTK)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libgtk-4-dev \
+            libadwaita-1-dev
+
+      - name: cargo test --locked --workspace
+        working-directory: shells
+        run: cargo test --locked --workspace --all-targets 2>&1 | tee "${GITHUB_WORKSPACE}/shell-kit-test.log"
+
+      - name: Upload shell-kit test logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: shell-kit-test-logs
+          path: shell-kit-test.log
+          if-no-files-found: warn
+          retention-days: 7
+
   gallery-ios:
     name: gallery iOS
     runs-on: macos-26
