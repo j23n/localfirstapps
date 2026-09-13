@@ -20,7 +20,7 @@ CI (root `.github/workflows` only — nested `apps/*/.github` does not run here)
 
 | Workflow | What it proves |
 |---|---|
-| `conformance.yml` | Graph, Milestone A greps, ADR 0003 R6 (`gallery-ffi` expected-red; `contacts-ffi` green) |
+| `conformance.yml` | Graph, Milestone A greps, ADR 0003 R6 (`gallery-ffi` expected-red; `contacts-ffi` green), ADR 0004 R14 `--check` |
 | `bindings.yml` | UniFFI drift + Linux Swift shim |
 | `rust.yml` | `cargo test --locked --workspace` for `core/` and `apps/gallery/core` |
 | `apps.yml` | Gallery Linux + iOS, contacts iOS, music iOS, health log/event |

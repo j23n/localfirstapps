@@ -18,6 +18,7 @@ targets:
     sources:
       - LocalContacts
       - path: ../../core/localcore-conflict/support/SyncConflict.swift
+      - path: ../../docs/spec/ui/generated/Kinds.swift
     settings:
       base:
         INFOPLIST_FILE: LocalContacts/Info.plist

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2: vocabulary + tokens + codegen)
 
 ## Scope
 
@@ -156,7 +156,19 @@ labels the platform itself owns.
   assembly are still written per platform.
 - Removing a slot-kind binding from a shell fails that shell's build.
 - No shell links a spec parser or reads a spec file at runtime.
-- Generated sources are reproducible: regenerating in CI produces no diff.
+- Generated sources are reproducible: regenerating in CI produces no diff
+  (`python3 scripts/gen_r14.py --check`).
+
+### Progress (Phase 3.2)
+
+R14 rows 1 (kinds) and 3 (tokens) are generated from
+`docs/spec/ui/vocabulary.toml` and `design/tokens/*.toml` into
+`core/localcore-ui`, `docs/spec/ui/generated/Kinds.swift`, each iOS
+app's `Generated/Tokens.swift`, and `design/tokens/generated/*.css`.
+Gallery `Design.swift` consumes `GalleryTokens`. Row 2 (screen
+identifiers) waits for per-app UI specs and lands with the 3.3 dummy
+spec. Dark surface and ink values are unauthored except accents
+copied from the existing `AccentColor.colorset`s.
 
 ## Rationale
 

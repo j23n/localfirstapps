@@ -18,6 +18,7 @@ targets:
     sources:
       - LocalMusic
       - path: ../../core/localcore-conflict/support/SyncConflict.swift
+      - path: ../../docs/spec/ui/generated/Kinds.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localmusic.app

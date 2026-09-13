@@ -1,6 +1,7 @@
 # Graph check (ADR 0002 R13, green after localcore-geo), Milestone A
 # source greps (no FileProvider / MetricKit in production Swift/Go),
-# and ADR 0003 R6 (still red: gallery-ffi domain Records).
+# ADR 0003 R6 (still red: gallery-ffi domain Records), and ADR 0004 R14
+# generated-source drift.
 name: Conformance
 
 on:
@@ -59,3 +60,12 @@ jobs:
 
       - name: contacts-ffi is R6-clean
         run: python3 conformance/r6/check.py --src core/contacts-ffi/src
+
+  r14:
+    name: "ADR 0004 R14 generated sources"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Regenerating produces no diff
+        run: python3 scripts/gen_r14.py --check

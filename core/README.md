@@ -1,11 +1,15 @@
 # core
 
-This workspace holds `localcore-*` crates (ADR 0001 R9) and the first
-app core, `contacts-core` / `contacts-ffi` (Phase 3.1):
+This workspace holds `localcore-*` crates (ADR 0001 R9), the first
+app core, and the R14 vocabulary crate:
 
 `localcore-vfs`, `localcore-id`, `localcore-walk`, `localcore-conflict`,
 `localcore-queue`, `localcore-log`, `localcore-blob`, `localcore-geo`,
+`localcore-ui` (ADR 0004 kinds + token hex; no UI toolkit),
 `contacts-core`, `contacts-ffi`.
+
+Token tables live in `design/tokens/`. Regenerate with
+`python3 scripts/gen_r14.py`; CI runs `--check`.
 
 Gallery remains at `apps/gallery/core` until later verticals move here.
 

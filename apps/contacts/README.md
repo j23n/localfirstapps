@@ -8,6 +8,8 @@ A file-based contact manager for iOS. Your contacts are stored as plain vCard (.
 The headless core is `core/contacts-core` (parse/write, folder index,
 Syncthing R8–R11). `contacts-ffi` is R6-clean. The iOS shell still
 owns `VCardParser` / `ContactsStore` until Phase 3.4 binds FFI.
+Accent tokens are `design/tokens/contacts.toml` (`ContactsTokens`);
+surfaces are unauthored.
 
 ## Why
 

@@ -1,4 +1,4 @@
-# Crate gate: cargo test for localcore-* and gallery crates.
+# Crate gate: cargo test for localcore-* (including localcore-ui) and gallery crates.
 # App shells (gallery Linux/iOS, contacts, music, health log) are
 # `.github/workflows/apps.yml`. The 20k generated-library e2e is
 # local-only (`apps/gallery/scripts/e2e_20k.sh`); it is not a workflow.

@@ -56,6 +56,7 @@ targets:
           - Info.plist
           - LocalGallery.entitlements
           - GalleryCore-Bridging-Header.h
+      - path: ../../docs/spec/ui/generated/Kinds.swift
       # Committed UniFFI Swift. The pre-build phase regenerates it from
       # the dylib it just built; CI fails if that output drifts.
       # The on-device model pack (~157 MB), staged by

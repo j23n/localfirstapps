@@ -9,6 +9,7 @@ members = [
     "localcore-id",
     "localcore-log",
     "localcore-queue",
+    "localcore-ui",
     "localcore-vfs",
     "localcore-walk",
 ]

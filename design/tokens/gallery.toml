@@ -1,0 +1,40 @@
+# Gallery token table (ADR 0004 R11). Light surfaces and ink are the
+# values already in Design.swift. Accent light/dark are the existing
+# AccentColor.colorset components. Dark surfaces/ink are unauthored.
+
+app = "gallery"
+
+[colors.accent]
+light = "#C48A3E"
+dark = "#D4994D"
+
+[colors.bg]
+light = "#FAF7F2"
+# dark is unauthored — do not invent a palette.
+
+[colors.bg_card]
+light = "#FFFFFF"
+
+[colors.bg_grouped]
+light = "#F2EDE5"
+
+[colors.ink]
+light = "#1C1A16"
+
+[colors.ink2]
+light = "#5E574D"
+
+[colors.ink3]
+light = "#958D82"
+
+[colors.destructive]
+light = "#B24A3A"
+
+[colors.separator_ink]
+light = "#3C372D"
+
+[metrics]
+card_radius = 14
+memory_radius = 20
+separator_opacity = 0.10
+accent_soft_opacity = 0.13

@@ -1,0 +1,7 @@
+# Health token table. No iOS asset catalog yet; accent is unauthored.
+# Do not invent a palette here.
+
+app = "health"
+
+[metrics]
+card_radius = 12

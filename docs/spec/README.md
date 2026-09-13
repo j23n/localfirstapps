@@ -46,7 +46,7 @@ synchroniser has put in the folder is the whole of what exists.
 | [0002](adr/0002-localcore.md) | `localcore` — the folder projection engine |
 | [0003](adr/0003-app-core.md) | App cores — domain logic and view models |
 | [0003 R6](adr/0003-r6-surface.md) | Display-record surface (`gallery-ffi` known red) |
-| [0004](adr/0004-ui-spec-and-shells.md) | UI specification, slot vocabulary, shells |
+| [0004](adr/0004-ui-spec-and-shells.md) | UI specification, slot vocabulary, shells — kinds in [`ui/vocabulary.toml`](ui/vocabulary.toml); tokens in [`design/tokens/`](../../design/tokens/) |
 | [0005](adr/0005-files-sync-and-state.md) | Files, state tiers, conflicts, reconciliation |
 | [0006](adr/0006-derived-data.md) | Derived data, capabilities, model packs |
 | [0007](adr/0007-product-conventions.md) | Vocabulary, screens, host surfaces, testing |

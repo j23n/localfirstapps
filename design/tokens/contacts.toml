@@ -1,0 +1,11 @@
+# Contacts token table. Accent light/dark are the existing
+# AccentColor.colorset components. Surfaces/ink are unauthored.
+
+app = "contacts"
+
+[colors.accent]
+light = "#336BC7"
+dark = "#4D85DE"
+
+[metrics]
+card_radius = 12

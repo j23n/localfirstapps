@@ -163,7 +163,10 @@ docs/               index.html style.css screenshots/   (Pages source)
 docker/
 mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
 conformance/        graph check (ADR 0002 R13) is green; R6 is expected-red
-core/               localcore-{vfs,walk,id,conflict,queue,log,blob,geo}
+core/               localcore-{vfs,walk,id,conflict,queue,log,blob,geo,ui}
+                    + contacts-core / contacts-ffi
+design/tokens/      per-app token tables (3.2)
+docs/spec/ui/       R4 vocabulary.toml
 apps/gallery/       was localgallery (Swift + core/ + linux/)
 apps/contacts/      was localcontacts
 apps/music/         was localmusic
@@ -400,9 +403,10 @@ fixture and a survival assertion):
 
 **Backlog** (left B; one register). Deferral assigns a phase —
 nothing is "whenever," optional, or release-notes-only.
-`shell-kit`, tokens, and a R6-clean contacts FFI are Phase 3, not
-unphased leftovers. Rows marked 4/5/6 may start once gallery iOS is
-green; they still land in that phase and do not block 3.1.
+`shell-kit` is Phase 3 (3.3). Tokens and a R6-clean contacts FFI
+already landed in 3.2 / 3.1. Rows marked 4/5/6 may start once
+gallery iOS is green; they still land in that phase and do not
+block C.
 
 | Item | Phase | Notes |
 |---|---|---|
@@ -412,6 +416,9 @@ green; they still land in that phase and do not block 3.1.
 | `localcore-log` / blob through `Vfs` | **3.4** | No folder log in 3.1. Before iOS contacts writes one. |
 | Open event-type set | **3.4** | If contacts logs. Envelope stays; `known_type` is not a monorepo enum. |
 | Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
+| Token tables + R14 vocab / token codegen | **done (3.2)** | `scripts/gen_r14.py`, `localcore-ui`, Swift + CSS. `--check` in conformance. |
+| Screen-identifier codegen | **3.3** | R14 row 2. Waits for per-app UI specs (dummy spec in 3.3). |
+| Author remaining dark surfaces / ink | **3.2 leftover / you** | Accents copied from existing colorsets. Do not invent a palette. |
 | Old-remote redirect READMEs | **3** | With 3.0. Standalone remotes still need them. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **4** | Playlist write through `localcore-vfs`. |
@@ -467,10 +474,13 @@ workload before drawing shells).
    `localcore-conflict/support/`; tests read the grammar fixtures.
    UniFFI is R6-clean (`TextRow` / `FieldRow`); `cargo test` is the
    gate. iOS still uses the Swift parser until 3.4. No GTK.
-3. **3.2 Tokens + R14 codegen** (next). One token table per app
-   (accent, surfaces, ink, dark companions). Emit Swift + GTK CSS/named
-   colours. Someone *authors* dark values — that is design time, not
-   an agent guess. A colour literal in a new shell file is a defect.
+3. **3.2 Tokens + R14 codegen** — **done.** One table per app in
+   `design/tokens/`. `scripts/gen_r14.py` emits R4 kinds (Rust + Swift)
+   and tokens (Rust hex, Swift `Color`, GTK CSS). Gallery
+   `Design.swift` aliases `GalleryTokens`. Dark surfaces and ink are
+   **unauthored** (accents came from the existing colorsets). Screen
+   identifiers wait for UI specs (3.3). Regenerating in CI produces
+   no diff.
 4. **3.3 `shell-kit-gtk`** — one binding per ADR 0004 R4 kind, no app
    core, no `localcore`. Dummy spec so a missing kind fails the build.
    `shells/` workspace (ADR 0001 R9).
@@ -647,15 +657,16 @@ first year's risk is concentrated in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**A, B, 3.0, and 3.1 are done.** Next engineering move is 3.2
-(tokens + R14 codegen) — you author the dark values — then 3.3
-`shell-kit-gtk`. No GTK in 3.1.
+**A, B, 3.0, 3.1, and 3.2 are done.** Next engineering move is 3.3
+`shell-kit-gtk` (dummy spec so a missing kind fails the build;
+screen-id codegen lands with that spec). No GTK in 3.1 or 3.2.
 
 **You, now**
 
 1. Keep the four **root** workflows green on tip.
 2. **Phase 3:** redirect READMEs on the old standalone remotes.
-3. Author dark token values when 3.2 starts (not an agent guess).
+3. Author remaining dark surface and ink values (not an agent guess).
+   Accents are already in the tables from the colorsets.
 4. Local 20k e2e can be run anytime
    (`apps/gallery/scripts/e2e_20k.sh`; `LOCALGALLERY_E2E_RECORD=1`
    rewrites the golden). Promoting that suite to a GitHub job is
