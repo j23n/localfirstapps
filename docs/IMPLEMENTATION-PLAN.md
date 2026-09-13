@@ -119,9 +119,9 @@ state.
 
 | | Migration | Lands | Status |
 |---|---|---|---|
-| **M1** | Stable ids re-key to NFC | Phase 2 | real; person state, thumbnails, memory ids and widget deep links are path-keyed |
-| **M2** | Tier-2 `UserDefaults` → event log | Phase 2 | real; seven path-keyed values in gallery alone |
-| **M3** | Face-cluster re-key on a model swap | Phase 2 fixture; pack swap **out of B** | survival fixture is B; SFace + YuNet still leftover |
+| **M1** | Stable ids re-key to NFC | Phase 2 re-key; leftover cache rewrite **5** | person state, thumbnails, memory ids and widget deep links were path-keyed |
+| **M2** | Tier-2 `UserDefaults` → event log | Phase 2 dual-write; cutover **5** | seven path-keyed values in gallery alone |
+| **M3** | Face-cluster re-key on a model swap | Phase 2 fixture; pack swap **5** | survival fixture is B; SFace + YuNet lands in Phase 5 |
 | **M4** | `LibrarySnapshot` sidecar identity | Phase 1 | **checked — not a migration.** See Phase 1. |
 | **M5** | Apple Health dated cutover | Phase 6 | real but trivial; a bounded first query, nothing rewritten |
 
@@ -150,8 +150,8 @@ No app behaviour changes. Nothing here blocks on a Mac.
 `apps/{gallery,contacts,music,health}`
 
 SHAs changed; `git log apps/<name>` keeps the original commits. The
-standalone GitHub remotes still need redirect READMEs — that is left
-to do, not done here.
+standalone GitHub remotes still need redirect READMEs — Phase 3,
+with 3.0.
 
 Current tree (`core/` is extracted; `shells/` is still Phase 3):
 
@@ -273,9 +273,9 @@ pulling them forward ships a regression:
 
 | Deferred to | Deletion | Blocked on |
 |---|---|---|
-| Phase 2 | `gallery-geo` (~900 Rust) + `nominatim_lookup` FFI + 5 Linux call sites + `GeocodingService` (1,232 Swift) | `localcore-geo` existing, or gallery loses place names entirely |
-| Phase 2 | `ImageIOHeicDecoder` (~100) | the decoder seam consolidated |
-| Phase 2 | — | `localcore-conflict` before any app can be wired to it |
+| **5** (pack shipped in B) | `nominatim_lookup` FFI + Linux call sites + `GeocodingService` | Unify iOS onto `run_places`; `localcore-geo` already exists |
+| **5** | `ImageIOHeicDecoder` (~100) | the decoder seam consolidated |
+| **done (3.1)** | — | `contacts-core` wires `localcore-conflict` (R8–R11). |
 
 **Not deletions — r1 mislabelled these.** `PhotoExporter` (125) re-encodes for
 share-sheet export; it is not a decoder and no ADR retires it. `EXIFService`
@@ -373,7 +373,7 @@ fixture and a survival assertion):
 |---|---|---|
 | **M1** | Stable ids re-key NFC→ | ADR 0002 R4. Person state, thumbnails, memory ids and widget deep links are all path-keyed. |
 | **M2** | Tier-2 `UserDefaults` → event log | ADR 0005 R5/R13/R14. Gallery persists `me`, `hiddenPeople`, `featured`, `pinnedPeople`, `featuredPhotoByPerson`, `mePersonPath`, `personContactLinks` — all path-keyed snapshots, which R13 forbids. `migratePersonState` becomes a replayed `person_renamed` event. |
-| **M3** | Face-cluster re-key | Survival fixture is B. The SFace + YuNet pack swap is **out of B** (see leftovers). |
+| **M3** | Face-cluster re-key | Survival fixture is B. The SFace + YuNet pack swap is Phase 5. |
 
 > **Gate (Milestone B)** — closed 2026-09-12 on the amended list. The
 > backlog table below is not unfinished extract.
@@ -390,37 +390,41 @@ fixture and a survival assertion):
 >   `allCountries` (class `P`) + NE 10 m admin-0.
 > - `localcore-log` has a gallery replay test and a health Go↔Rust golden.
 > - M1–M3 **survival fixtures** pass. M2 is still dual-write; cutover
->   is leftover. M3 is not a pack swap.
+>   is Phase 5. M3 pack swap is Phase 5.
 > - 20k: `scan_tree` exists. Local `e2e_20k.sh` records scan / enrich /
->   index / memories against `e2e_baselines/` (not a merge gate; no
->   tree in-repo).
+>   index / memories against `e2e_baselines/` (not a merge gate yet;
+>   GitHub job is Phase 5; no tree in-repo).
 > - Glue: `gazetteer_lookup` → sidecar (FFI + session + Swift); FFI scan
 >   excludes `.sync-conflict`. PersonLog attach and `StableUUIDVectorTests`
 >   are in `LocalGalleryTests` (gallery iOS job).
 
-**Backlog** (left B; one register). `shell-kit`, tokens, and a
-R6-clean contacts FFI are Phase 3 work, not leftovers.
+**Backlog** (left B; one register). Deferral assigns a phase —
+nothing is "whenever," optional, or release-notes-only.
+`shell-kit`, tokens, and a R6-clean contacts FFI are Phase 3, not
+unphased leftovers. Rows marked 4/5/6 may start once gallery iOS is
+green; they still land in that phase and do not block 3.1.
 
-| Item | Track | Notes |
+| Item | Phase | Notes |
 |---|---|---|
-| R8–R11 merge for contacts `.vcf` | **C** | Core-loop. Not a port of Apple `ContactMerge`. |
-| Delete contacts/music `SyncConflict.swift`; tests read the grammar files | **C** | First `contacts-core` commit. |
-| Queue / scan cache keys: NFC or `StableId` | **C** | Before a second consumer enqueues. Listing spelling stays on the row. |
-| `localcore-log` / blob through `Vfs` | **C** | Before iOS contacts writes a folder log. |
-| Open event-type set | **C** | If contacts logs. Envelope stays; `known_type` is not a monorepo enum. |
-| Do not copy PeopleStore dual-write | **C constraint** | One authority. Log-wins-on-attach + swallowed append can clobber. |
-| `allCountries` class `P` + NE admin-0 pack | **done** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
-| Unify iOS onto `run_places` | gallery | Two orchestrators. With or after the real pack. |
-| M2 UserDefaults cutover | gallery | After gallery iOS is green. Do not copy the dual-write. |
-| M1 thumb / widget / `library_cache` rewrite | gallery | Orphans until next scan. Release notes are enough. |
-| Queue places / thumbs / EXIF | gallery | Tagging and faces already use `localcore-queue`. |
-| M3 pack swap (SFace + YuNet) | gallery | Top remaining product risk. Parallel spike, not C. |
-| `ImageIOHeicDecoder` | gallery | Phase 5-ish. |
-| R8–R11 for gallery `.xmp` / music `.m3u` | later | Phase 5 / 4. |
-| gallery-ffi R6 rewrite (45 Records) | later | Phase 5 / R4 windowing. |
-| Health Go `internal/log` / `internal/blobs` delete | later | Phase 6. |
-| 20k-tree as a CI gate | e2e, local-only | `apps/gallery/scripts/e2e_20k.sh`. Scan → enrich → index → memories on `generate_test_library.py`. Structural golden under `gallery-scan/tests/e2e_baselines/`; timings next to the tree. `#[ignore]`. Not a GitHub workflow. |
-| Old-remote redirect READMEs | you | Whenever. Never Phase 2. |
+| R8–R11 merge for contacts `.vcf` | **done (3.1)** | `contacts-core` + `fixtures/r8/`. Not a port of Apple `ContactMerge`. |
+| Delete contacts/music `SyncConflict` twins | **done (3.1)** | One shared `localcore-conflict/support/SyncConflict.swift`. Tests read the grammar files. FFI bind is 3.4. |
+| Queue / scan cache keys: NFC or `StableId` | **3.4** | No queue in 3.1. NFC before the first enqueue. |
+| `localcore-log` / blob through `Vfs` | **3.4** | No folder log in 3.1. Before iOS contacts writes one. |
+| Open event-type set | **3.4** | If contacts logs. Envelope stays; `known_type` is not a monorepo enum. |
+| Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
+| Old-remote redirect READMEs | **3** | With 3.0. Standalone remotes still need them. |
+| `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
+| R8–R11 for music `.m3u` | **4** | Playlist write through `localcore-vfs`. |
+| Unify iOS onto `run_places` | **5** | Two orchestrators. Pack is shipped; collapse the Swift loop. |
+| M2 UserDefaults cutover | **5** | After gallery iOS is green. Do not copy the dual-write into 3.1. |
+| M1 thumb / widget / `library_cache` rewrite | **5** | Path-keyed leftovers. Rewrite them; do not leave orphans as the plan. |
+| Queue places / thumbs / EXIF | **5** | Tagging and faces already use `localcore-queue`. |
+| M3 pack swap (SFace + YuNet) | **5** | Top remaining product risk. Spike may run during 3; swap lands here. |
+| `ImageIOHeicDecoder` | **5** | Decoder seam with the gallery core loop. |
+| R8–R11 for gallery `.xmp` | **5** | Same conflict grammar as contacts, on sidecars. |
+| gallery-ffi R6 rewrite (45 Records) | **5** | ADR 0003 R4 windowing. |
+| 20k-tree as a CI gate | **5** | Local `e2e_20k.sh` exists now (`#[ignore]`, structural golden under `e2e_baselines/`). The GitHub job lands with the gallery vertical. |
+| Health Go `internal/log` / `internal/blobs` delete | **6** | After the Rust projection reproduces a real archive. |
 
 Size: L. All Linux-container work.
 
@@ -443,32 +447,30 @@ conflict names (`SyncConflict.isConflictName`); they do not group or
 merge them. Linux has no Apple Contacts, so Fedora/Comet cannot satisfy
 "resolve a conflict" via the CN sheet.
 
-C-track backlog rows are done as 3.1. Gallery-track rows stay
-parallel and do not block C.
+Rows marked **3.1** are this phase. Rows marked **4 / 5 / 6** do not
+block C and may start once gallery iOS is green; they still land in
+the phase in the table.
 
 **Sequence** (same lesson as Phase 2: settle the core against a real
 workload before drawing shells).
 
-1. **3.0 Watch `apps.yml`.** First GitHub run of gallery/contacts/music
-   iOS. Fix fallout before a month of Swift rebound. Not a C feature.
-2. **3.1 `contacts-core` headless** in `core/` (ADR 0001 R9). Walk
-   `.vcf` through `localcore-walk` + `localcore-conflict` groups;
-   parse/write (~236 + writer); index/search/save through
-   `localcore-vfs` atomic write; **R8–R11** with a fixture tree of
-   Syncthing pairs (disjoint auto-merge, same-field choice plan,
-   canonical bytes, no silent delete). NFC (or `StableId`) the queue
-   PK before contacts enqueues. If a folder log exists, write it
-   through `Vfs` with an open type set — do not clone `PeopleStore`
-   dual-write. Delete the two Swift `SyncConflict` twins; point tests
-   at the grammar files. ~1k portable Swift (`VCardParser`/`Writer`,
-   store FS) moves; store chrome stays in the shell. UniFFI from day
-   one, R6-clean: ids, formatted strings, booleans, display rows — no
-   `Contact` record on the wire. `cargo test` is the gate; no GTK yet.
-3. **3.2 Tokens + R14 codegen** (parallel with 3.1 once the vocabulary
-   is frozen). One token table per app (accent, surfaces, ink, dark
-   companions). Emit Swift + GTK CSS/named colours. Someone *authors*
-   dark values — that is design time, not an agent guess. A colour
-   literal in a new shell file is a defect.
+1. **3.0 Watch `apps.yml`.** **Done** on `8423be8` — gallery iOS compiled
+   and the suite ran under Xcode 26.6. Not a C feature.
+2. **3.1 `contacts-core` headless** — **done.** `core/contacts-core`
+   + `contacts-ffi`. Walk `.vcf` through `localcore-walk` +
+   `localcore-conflict` groups; parse/write; index/search/save through
+   `localcore-vfs` atomic write; **R8–R11** on `fixtures/r8/`
+   (disjoint auto-merge, same-field choice, canonical bytes, no silent
+   delete, delete-vs-modify keeps data). No queue and no folder log
+   yet (NFC / Vfs-log are 3.4). Dual-write not copied. The two Swift
+   `SyncConflict` twins are one shared file under
+   `localcore-conflict/support/`; tests read the grammar fixtures.
+   UniFFI is R6-clean (`TextRow` / `FieldRow`); `cargo test` is the
+   gate. iOS still uses the Swift parser until 3.4. No GTK.
+3. **3.2 Tokens + R14 codegen** (next). One token table per app
+   (accent, surfaces, ink, dark companions). Emit Swift + GTK CSS/named
+   colours. Someone *authors* dark values — that is design time, not
+   an agent guess. A colour literal in a new shell file is a defect.
 4. **3.3 `shell-kit-gtk`** — one binding per ADR 0004 R4 kind, no app
    core, no `localcore`. Dummy spec so a missing kind fails the build.
    `shells/` workspace (ADR 0001 R9).
@@ -485,7 +487,7 @@ workload before drawing shells).
 > iOS-only. ADR 0004 conformance over both shells. `contacts-core` FFI
 > is R6-clean. `gallery-ffi` stays expected-red.
 
-Size: L. 3.1 is Linux-container. 3.4 needs `macos-26`.
+Size: L. 3.1 was Linux-container. 3.4 needs `macos-26`.
 
 ---
 
@@ -493,7 +495,8 @@ Size: L. 3.1 is Linux-container. 3.4 needs `macos-26`.
 
 Same shape, reusing `shell-kit`. Additions: the media port (AVFoundation /
 gstreamer), MPRIS on Linux (ADR 0007 R15), playlist writing through
-`localcore-vfs`'s atomic write.
+`localcore-vfs`'s atomic write, and **R8–R11** on Syncthing `.m3u`
+pairs (same grammar as contacts `.vcf`).
 
 Least portable logic (~750 lines) and the most views, so shell work dominates
 — which is exactly what `shell-kit` should now be absorbing. If Phase 4's GTK
@@ -520,6 +523,12 @@ Size: M.
 Plus: move the residual portable Swift into `gallery-core`; the FFI moves to
 ADR 0003 R4's structure/window split (this is where the 20k-item grid either
 scrolls or does not); media port for video thumbnails.
+
+Phase 5 also lands the deferred gallery rows: unify iOS onto
+`run_places`, M2 UserDefaults cutover, M1 thumb / widget /
+`library_cache` rewrite, queue places / thumbs / EXIF, M3 SFace +
+YuNet pack swap, `ImageIOHeicDecoder`, R8–R11 on `.xmp`, and the 20k
+e2e GitHub job (the local `e2e_20k.sh` suite already exists).
 
 That gap list is the difference between roughly 8k and 30k lines of GTK.
 Each row is a decision you can revisit later with a working app in hand.
@@ -638,41 +647,18 @@ first year's risk is concentrated in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**A and B are done.** Backlog is the one table under Phase 2. Phase 3
-starts after the human CI step below, with `contacts-core` headless —
-not GTK.
-
-This checkout has **no git remote**. Agents here do not push. The
-first `xcodebuild` of this tree has not run.
+**A, B, 3.0, and 3.1 are done.** Next engineering move is 3.2
+(tokens + R14 codegen) — you author the dark values — then 3.3
+`shell-kit-gtk`. No GTK in 3.1.
 
 **You, now**
 
-1. Push `main` to the monorepo GitHub remote (`git push origin main`
-   from a clone that has `origin`). Include at least `e7f520d` (root
-   `apps.yml`) through this tip.
-2. On that SHA, all four **root** workflows must finish:
-   - `Conformance`
-   - `Bindings`
-   - `Rust` — jobs `localcore` and `gallery-core`
-   - `Apps` — jobs `gallery linux`, `gallery iOS`, `contacts iOS`,
-     `music iOS`, `health log`
-   Nested `apps/*/.github` jobs do not count.
-3. **`Apps` / `gallery iOS` is the one that matters.** It is the first
-   simulator run of PersonLog attach, `StableUUIDVectorTests`, and
-   `testGazetteerLookupWritesASidecar`. Needs GitHub `macos-26` and
-   Xcode 26.6 (same pins as the old gallery remote). If the runner or
-   Xcode is missing, that is org/billing, not a code bug.
-4. If `gallery iOS` is red, stop. Paste the log. Do not start
-   `contacts-core` until it is green or the failure is understood.
-   Contacts/music iOS jobs do not link the new Rust crates; a green
-   contacts job does not prove gallery.
-5. Optional 20k e2e (local-only, not CI):
-   `apps/gallery/scripts/e2e_20k.sh`. `LOCALGALLERY_E2E_RECORD=1`
-   rewrites the structural golden and the tree's timing file.
-   Simulator install is still `--install booted`
-   (`DriverUITests` / `TestLibrary`).
-6. Optional: redirect READMEs on the old standalone remotes.
-7. When 2–4 are green: next engineering move is Phase 3.1
-   (`contacts-core` headless). You author dark tokens when 3.2 starts.
-   Gallery-track backlog (M3, M2, `run_places`) can run in parallel; it
-   does not block C. The gazetteer pack is `allCountries` class `P`.
+1. Keep the four **root** workflows green on tip.
+2. **Phase 3:** redirect READMEs on the old standalone remotes.
+3. Author dark token values when 3.2 starts (not an agent guess).
+4. Local 20k e2e can be run anytime
+   (`apps/gallery/scripts/e2e_20k.sh`; `LOCALGALLERY_E2E_RECORD=1`
+   rewrites the golden). Promoting that suite to a GitHub job is
+   **Phase 5**.
+5. Phase 4/5/6 backlog may run in parallel; it does not block C.
+   The gazetteer pack is `allCountries` class `P`.

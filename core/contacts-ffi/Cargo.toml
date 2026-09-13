@@ -1,0 +1,20 @@
+[package]
+name = "contacts-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "R6-clean UniFFI surface for contacts-core"
+
+[lib]
+name = "contacts_ffi"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[dependencies]
+contacts-core = { path = "../contacts-core" }
+localcore-vfs = { path = "../localcore-vfs" }
+uniffi = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,7 @@
+BEGIN:VCARD
+VERSION:3.0
+X-LOCALCONTACTS-ID:alice-r8
+FN:Alice
+N:;Alice;;;
+EMAIL;TYPE=home:alice@example.com
+END:VCARD

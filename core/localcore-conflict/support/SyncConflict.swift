@@ -1,10 +1,11 @@
 import Foundation
 
-/// Syncthing conflict-copy grammar, matching `localcore-conflict`
-/// (`is_conflict_name` / ADR 0005 R7, ADR 0002 R7).
+/// Syncthing conflict-copy grammar (ADR 0005 R7).
 ///
-/// A file matching
-/// `<base>.sync-conflict-<YYYYMMDD>-<HHMMSS>-<device>.<ext>` is never content.
+/// One copy, shared by contacts and music until those shells bind
+/// `contacts-ffi` / `is_conflict_name` (Phase 3.4). The authority is
+/// `localcore-conflict`; tests read
+/// `fixtures/grammar/{valid,invalid}.txt`.
 enum SyncConflict {
     /// Syncthing inserts this marker immediately before the final extension.
     private static let marker = ".sync-conflict-"
@@ -23,7 +24,6 @@ enum SyncConflict {
 
     /// `YYYYMMDD-HHMMSS-<device>.<ext>`
     private static func parseSuffix(_ rest: String) -> Bool {
-        // 8 date + '-' + 6 time + '-' + device + '.' + ext
         let bytes = Array(rest.utf8)
         if bytes.count < 8 + 1 + 6 + 1 + 1 + 1 + 1 {
             return false
@@ -59,7 +59,6 @@ enum SyncConflict {
         !bytes.isEmpty && bytes.allSatisfy { $0 >= UInt8(ascii: "0") && $0 <= UInt8(ascii: "9") }
     }
 
-    /// Health event device ids: `[A-Za-z0-9][A-Za-z0-9._-]*`.
     private static func isDeviceID(_ s: String) -> Bool {
         guard let first = s.first else {
             return false

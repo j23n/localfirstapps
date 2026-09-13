@@ -1,9 +1,11 @@
 # core
 
-This workspace holds `localcore-*` crates (ADR 0001 R9):
+This workspace holds `localcore-*` crates (ADR 0001 R9) and the first
+app core, `contacts-core` / `contacts-ffi` (Phase 3.1):
 
 `localcore-vfs`, `localcore-id`, `localcore-walk`, `localcore-conflict`,
-`localcore-queue`, `localcore-log`, `localcore-blob`, `localcore-geo`.
+`localcore-queue`, `localcore-log`, `localcore-blob`, `localcore-geo`,
+`contacts-core`, `contacts-ffi`.
 
 Gallery remains at `apps/gallery/core` until later verticals move here.
 

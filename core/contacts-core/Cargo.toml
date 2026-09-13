@@ -1,0 +1,18 @@
+[package]
+name = "contacts-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Headless contacts core: vCard parse/write, folder index, R8–R11 merge"
+
+[dependencies]
+base64 = "0.22"
+localcore-conflict = { path = "../localcore-conflict" }
+localcore-vfs = { path = "../localcore-vfs" }
+localcore-walk = { path = "../localcore-walk" }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+localcore-vfs = { path = "../localcore-vfs" }

@@ -2,6 +2,7 @@
 
 - Status: Accepted (design; gallery FFI is not rewritten here)
 - Date: 2026-09-12
+- Revised: 2026-09-13 (`contacts-ffi` is R6-green)
 - Parent: [0003-app-core.md](0003-app-core.md) R6, [0004-ui-spec-and-shells.md](0004-ui-spec-and-shells.md) R4
 
 ## Scope
@@ -12,7 +13,9 @@ now so every later vertical designs against it.
 
 It is **not** a gallery FFI rewrite. `gallery-ffi` stays as it is. The
 conformance check starts red and pins that red so a new Record cannot
-hide behind the known ones.
+hide behind the known ones. `contacts-ffi` (Phase 3.1) is green:
+`TextRow` and `FieldRow` only. CI runs the same checker over
+`core/contacts-ffi/src` without `--expect-violations`.
 
 ## What may cross
 
@@ -111,10 +114,11 @@ for one slot kind — then it is green and must not be listed.
 ## Conformance
 
 `conformance/r6/check.py` enumerates `uniffi::Record` and other
-exported types in `gallery-ffi`. The default run is red while any
-listed Record remains. `--expect-violations` succeeds only when the
+exported types. The default gallery-ffi run is red while any listed
+Record remains. `--expect-violations` succeeds only when the
 violation set equals `expected.txt`, so a new domain Record cannot
 hide. `--self-test` exercises the parser and the slot taxonomy.
+`contacts-ffi` is a second `--src` and must stay green.
 
 The check going green is the gallery (and then each later app) FFI
 rewrite, not this document.

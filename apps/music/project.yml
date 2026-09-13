@@ -17,6 +17,7 @@ targets:
     platform: iOS
     sources:
       - LocalMusic
+      - path: ../../core/localcore-conflict/support/SyncConflict.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.j23n.localmusic.app

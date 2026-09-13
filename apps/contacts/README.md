@@ -5,6 +5,10 @@ from that directory.
 
 A file-based contact manager for iOS. Your contacts are stored as plain vCard (.vcf) files in a folder you control — not locked into any service or cloud platform.
 
+The headless core is `core/contacts-core` (parse/write, folder index,
+Syncthing R8–R11). `contacts-ffi` is R6-clean. The iOS shell still
+owns `VCardParser` / `ContactsStore` until Phase 3.4 binds FFI.
+
 ## Why
 
 Contact data is personal and long-lived, but most contact apps store it in opaque databases tied to a specific service. LocalContacts stores each contact as a standard `.vcf` file on your filesystem. You own the files, you choose where they live, and you can read them with any text editor.

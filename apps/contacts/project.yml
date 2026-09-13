@@ -17,6 +17,7 @@ targets:
     platform: iOS
     sources:
       - LocalContacts
+      - path: ../../core/localcore-conflict/support/SyncConflict.swift
     settings:
       base:
         INFOPLIST_FILE: LocalContacts/Info.plist
