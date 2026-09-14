@@ -58,6 +58,7 @@ fn relativize(groups: Vec<ConflictGroup>, root: &Path) -> Vec<ConflictGroup> {
         .into_iter()
         .map(|g| ConflictGroup {
             canonical_name: g.canonical_name,
+            dir: strip_root(&g.dir, root),
             copies: g
                 .copies
                 .into_iter()
@@ -91,6 +92,7 @@ struct ExpectedCopy {
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 struct ExpectedGroup {
     canonical_name: String,
+    dir: String,
     copies: Vec<ExpectedCopy>,
 }
 
@@ -99,6 +101,7 @@ fn as_expected(groups: &[ConflictGroup]) -> Vec<ExpectedGroup> {
         .iter()
         .map(|g| ExpectedGroup {
             canonical_name: g.canonical_name.clone(),
+            dir: g.dir.clone(),
             copies: g
                 .copies
                 .iter()
@@ -169,9 +172,9 @@ fn tree_walk_groups_match_expected() {
         let root = tree_dir(tree);
         let paths = walk_files(&root);
         assert!(
-            paths.iter().any(|p| !is_conflict_name(
-                Path::new(p).file_name().unwrap().to_str().unwrap()
-            )),
+            paths
+                .iter()
+                .any(|p| !is_conflict_name(Path::new(p).file_name().unwrap().to_str().unwrap())),
             "{tree} must include a surviving original"
         );
         let got = relativize(groups(paths.iter().map(String::as_str)), &root);
@@ -191,10 +194,10 @@ fn groups_are_independent_of_walk_order() {
         paths.reverse();
         let reversed = groups(paths.iter().map(String::as_str));
         assert_eq!(baseline, reversed, "{tree} reversed");
-        let names: Vec<_> = baseline.iter().map(|g| g.canonical_name.as_str()).collect();
-        let mut sorted = names.clone();
+        let ids: Vec<_> = baseline.iter().map(ConflictGroup::id).collect();
+        let mut sorted = ids.clone();
         sorted.sort();
-        assert_eq!(names, sorted, "{tree} groups must be sorted by canonical_name");
+        assert_eq!(ids, sorted, "{tree} groups must be sorted by id");
     }
 }
 

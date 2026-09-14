@@ -127,8 +127,8 @@ pub struct WalkOutcome {
     pub directories: Vec<WalkDirectory>,
     /// Content files, in visit order (listing order within a directory).
     pub files: Vec<WalkFile>,
-    /// Conflict copies grouped by surviving basename. Empty when none
-    /// were seen. Never assigned an id here.
+    /// Conflict copies grouped by directory and surviving basename. Empty
+    /// when none were seen.
     pub conflict_groups: Vec<ConflictGroup>,
     /// **Decomposed** (NFD) paths of directories whose listing failed
     /// with a transient error (`PermissionDenied`, other I/O). `NotFound`
@@ -266,7 +266,9 @@ impl<'a> Walker<'a> {
 
                     let is_dir = match entry.kind {
                         EntryKind::Dir => true,
-                        EntryKind::Symlink => self.vfs.stat(&path).map(|s| s.is_dir).unwrap_or(false),
+                        EntryKind::Symlink => {
+                            self.vfs.stat(&path).map(|s| s.is_dir).unwrap_or(false)
+                        }
                         EntryKind::File => false,
                     };
                     if is_dir {
@@ -359,12 +361,11 @@ mod tests {
     }
 
     fn images_and_xmp(name: &str) -> bool {
-        let ext = name
-            .rsplit('.')
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        matches!(ext.as_str(), "heic" | "jpg" | "jpeg" | "xmp" | "mov" | "png")
+        let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+        matches!(
+            ext.as_str(),
+            "heic" | "jpg" | "jpeg" | "xmp" | "mov" | "png"
+        )
     }
 
     fn names(files: &[WalkFile]) -> Vec<&str> {
@@ -434,6 +435,29 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn equal_conflict_basenames_in_subfolders_stay_separate() {
+        let vfs = MemVfs::new();
+        vfs.insert(
+            "/lib/2024/photo.sync-conflict-20200901-120000-PHONE01.heic",
+            b"one",
+        );
+        vfs.insert(
+            "/lib/Archive/photo.sync-conflict-20200901-120000-PHONE01.heic",
+            b"two",
+        );
+
+        let out = walk(&vfs, "/lib", images_and_xmp);
+        let ids: Vec<_> = out.conflict_groups.iter().map(ConflictGroup::id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "/lib/2024/photo.heic".to_string(),
+                "/lib/Archive/photo.heic".to_string(),
+            ]
+        );
     }
 
     #[test]

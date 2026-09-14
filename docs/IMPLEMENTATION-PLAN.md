@@ -17,7 +17,7 @@ fiction. Six corrections, each of which moves real work:
 | "The 21.5k Foundation-only lines are the prize — they move to Rust more or less directly" | **~6–8k.** 19,666 of the 54,832 classified lines are XCTest. Another 3,349 in gallery alone — `FaceService`, `TaggingService`, `CoreScanner`, `CoreMemories`, `CoreLibraryIndex` — are *adapters for already-ported Rust*. They are replaced, not moved. |
 | Geocoding removal is one line in a deletion table | `gallery-geo` is **891 lines of live Nominatim client inside `core/`**, exported over FFI, used by `gallery-ffi`, `gallery-session` and `linux/`. And its replacement — a bundled gazetteer with point-in-polygon country resolution — is a **new crate**, not a deletion. |
 | Phase 2 deletions are "negative code, behaviourally identical" | `FileProviderDetector.ContentVersion` sits inside `SidecarCandidate` and `PhotoFile`, both inside `LibrarySnapshot` v20, **read and written by Rust**. It is a cross-language on-disk schema change forcing a full rescan. |
-| Nothing about model licences | `PACK_VARIANT=full\|tagging` existed *because* the face embedder was research/non-commercial. **Spike answered: OpenCV Zoo SFace + YuNet (Apache-2.0).** R12/R13 stand; one pack; M3 is real. |
+| Nothing about model licences | `PACK_VARIANT=full\|tagging` existed *because* the face embedder was research/non-commercial. The spike found an Apache-2.0 **candidate** (SFace + YuNet), but did not validate crop alignment, target-device performance, or personal-library clustering. Final selection remains Phase 5 evidence. |
 | `git subtree add` "preserving history" | **Verified: it does not.** `git log <path>` returns 1 commit where the original has 15; `--follow` returns 0. `filter-repo` then `merge --allow-unrelated-histories` returns all 15. |
 | Path-based agent routing | **27% of gallery's last 30 commits touch both Swift and `core/*.rs`**, and they are the architecturally significant ones. Routing by path routes file edits inside a work item, not work items. |
 
@@ -98,17 +98,16 @@ that you hold **one** mental model of the codebase, not two.
 
 | | Milestone | You review | Holds in your head |
 |---|---|---|---|
-| **A** | **Clean Slate** — monorepo, pure deletions, spec in tree, harness red, spikes answered | the ADRs themselves, against real directories | the old codebase, cleaned. Nothing new exists yet. |
+| **A** | **Service retirement** — monorepo, named cloud/diagnostic services removed, spec in tree, harness established | the ADRs themselves against real directories, including semantic leftovers | the old codebase, smaller but not semantically clean |
 | **B** | **`localcore` is real** — extracted, gallery running on it unchanged, headless harness green | the new architecture, against working code | the new core. The old shape is gone from `core/`. |
-| **C** | **First shell vertical** — contacts on three platforms over `shell-kit` | ADR 0004's vocabulary, having met a second toolkit | one app, end to end |
+| **C** | **First shell vertical** — contacts core loop on iOS, Fedora and Comet | ADR 0004's vocabulary against one product slice; `shell-kit` remains provisional until a second app | one app, end to end |
 | **D** | **Per app** — music, gallery, health core loops | the gap list, with a working app in hand | one app at a time |
 
-**A is the one that matters for the question this plan was reorganised
-around.** At A, four ADR requirements are already *true in the tree* rather
-than aspirational — you review ADR 0005 R2 against a codebase with no
-placeholder concept in it, not against one where you imagine its absence.
-Nothing has been built yet, so there is no future architecture to hold
-alongside the current one.
+**A remains an important review point, but its original “clean slate” label
+overclaimed the result.** Named provider services were removed while
+`PhotoLocality`, `DownloadStatus`, QuickLook placeholder handling and related
+FFI state remained. Review the semantic model rather than treating a
+framework-spelling grep as proof.
 
 ### The migration register
 
@@ -119,9 +118,9 @@ state.
 
 | | Migration | Lands | Status |
 |---|---|---|---|
-| **M1** | Stable ids re-key to NFC | Phase 2 re-key; leftover cache rewrite **5** | person state, thumbnails, memory ids and widget deep links were path-keyed |
-| **M2** | Tier-2 `UserDefaults` → event log | Phase 2 dual-write; cutover **5** | seven path-keyed values in gallery alone |
-| **M3** | Face-cluster re-key on a model swap | Phase 2 fixture; pack swap **5** | survival fixture is B; SFace + YuNet lands in Phase 5 |
+| **M1** | Stable ids re-key to NFC | Phase 2 changed the id function; dependent cache/state rewrite **5** | fixture proves the key changes, not that path-keyed state survives |
+| **M2** | Tier-2 `UserDefaults` → event log | Phase 2 added replay + dual-write; authority cutover **5** | encoding is exercised; UserDefaults remains authoritative |
+| **M3** | Face-cluster re-key on a model swap | Phase 2 preflight fixture; candidate validation and pack swap **5** | fixture proves XMP survives a cache reset, not a model migration |
 | **M4** | `LibrarySnapshot` sidecar identity | Phase 1 | **checked — not a migration.** See Phase 1. |
 | **M5** | Apple Health dated cutover | Phase 6 | real but trivial; a bounded first query, nothing rewritten |
 
@@ -228,13 +227,14 @@ One entry: `ort` / `ort-sys`, build-time, `ORT_LIB_LOCATION`. Phase 2
 deleted `gallery-geo`; the check is **green**. R6 stays expected-red
 (`conformance/r6/expected.txt`) until gallery-ffi is rewritten.
 
-**0.6 Three spikes — answered.** Written answers live in `docs/spec/spikes/`.
+**0.6 Three spikes — documented.** Written outcomes live in `docs/spec/spikes/`;
+their evidence is not equally complete.
 
 | Spike | Answer | Consequence |
 |---|---|---|
-| **Face licence** | **Outcome 1.** OpenCV Zoo SFace (Apache-2.0, 128-D ONNX, LFW 99.40%) + YuNet. AuraFace and FaceX MFN rejected. | R12/R13 stand. One pack; `PACK_VARIANT` retires. **M3 is real.** |
-| **Flatpak portal** | **Do not use Flatpak or portals.** Native GTK binary, host filesystem, folder is a path, share is a file save. | ADR 0002 R6 holds. ADR 0007 R15 Linux rows lose the portal. Phase 3 ships no Flatpak manifest. |
-| **Cross-ISA ε** | **ISA causes no significant difference.** No fixture; ε is not a measured ISA margin. | R16 amended: conventional retention band only. No Phase 2 ε work item. |
+| **Face licence** | SFace + YuNet is an Apache-2.0 candidate; product alignment, clustering quality and device cost were not measured. | Keep one-pack intent provisional. Validate against representative libraries before the Phase 5 swap. |
+| **Flatpak portal** | Native packaging was selected without running the proposed portal measurements. | Native-first; Flatpak is unsupported for now, not architecturally forbidden. |
+| **Cross-ISA ε** | No cross-ISA fixture was run; the note selected conventional hysteresis policy. | R16 uses a retention band, but makes no measured ISA claim. |
 
 > **Gate:** all four apps build and test exactly as before, from the new
 > layout, with no behaviour change. The graph check is red and its allowlist
@@ -246,9 +246,10 @@ Size: M. Almost entirely agent work.
 
 ### Phase 1 — Cleanup (Milestone A)
 
-**Deletions only. Nothing is replaced, nothing is built.** This phase exists
-so that the ADR review happens against one codebase rather than two, and so
-that `localcore` is extracted from a smaller surface.
+**Executed as deletions only.** The architecture review found that this was
+too mechanical: named services disappeared while parts of their state model
+remained. The phase still reduced extraction scope, but did not produce the
+semantic clean slate its gate claimed.
 
 Recorded before the cut (2026-09-12):
 
@@ -259,8 +260,8 @@ Recorded before the cut (2026-09-12):
 - **Gate scope.** Production Swift/Go: no `FileProvider` / `NSFileProvider*`
   / `ubiquitousItem*` / `MetricKit` / `MXMetric*`. Rust
   `Vfs::probe_provider` and generated `VfsProviderAttrs` stay until Phase 2
-  lifts Vfs. iOS uses a local-only probe (defaults); placeholders are
-  absent from the projection.
+  lifts Vfs. iOS uses local defaults, but placeholder/download concepts
+  remain in gallery models, QuickLook behavior, FFI and tests.
 - **Health web UI is preserved**, not deleted. `archive serve` leaves the
   product (ADR 0006 R9). The screens, charts, templates and goldens move
   to `apps/health/reference/web-ui/` as the Phase 6 brief. ADR 0004 has
@@ -333,9 +334,10 @@ something.
 
 The Swift deletions batch into one Mac session; the rest is container work.
 
-> **Gate (Milestone A):** all four apps build and test as before. No source
-> references a placeholder, download state, ubiquitous-item attribute, or
-> file-provider API. No source links a crash-reporting framework. The graph
+> **Recorded outcome (Milestone A):** named provider/MetricKit services and
+> host API linkages are gone, and the v20 fixture still decodes. Semantic
+> placeholder/download state remains and is explicit debt; the source checker
+> proves retired host API linkage only. The graph
 > check is red with exactly one un-allowlisted entry (`gallery-geo`), which is
 > the honest state until Phase 2. **`LibrarySnapshot` is still v20**, and a
 > fixture written by the pre-deletion build decodes on the post-deletion build
@@ -345,9 +347,10 @@ Size: M, and genuinely negative. **This is the ADR review point.**
 
 ---
 
-### Phase 2 — `localcore`, settled against gallery (Milestone B)
+### Phase 2 — `localcore`, exercised against gallery (Milestone B)
 
-**The API is settled by the app that will break it.** r1 proved "core + two
+**The API is exercised by the app most likely to break it, not declared
+stable.** r1 proved "core + two
 shells" on localcontacts, which has no scanner, no queue, no cache, no event
 log and no capability of any kind — so ADR 0006's 18 requirements and ADR
 0002's freshness tiers would have been designed against a workload that
@@ -394,8 +397,9 @@ fixture and a survival assertion):
 > - `localcore-geo` border test passes. The shipped pack is GeoNames
 >   `allCountries` (class `P`) + NE 10 m admin-0.
 > - `localcore-log` has a gallery replay test and a health Go↔Rust golden.
-> - M1–M3 **survival fixtures** pass. M2 is still dual-write; cutover
->   is Phase 5. M3 pack swap is Phase 5.
+> - M1–M3 **preflight/regression fixtures** pass. M1 dependent state
+>   rewrites, M2 authority cutover, and the M3 candidate validation/pack
+>   swap remain Phase 5.
 > - 20k: `scan_tree` exists. Local `e2e_20k.sh` records scan / enrich /
 >   index / memories against `e2e_baselines/` (not a merge gate yet;
 >   GitHub job is Phase 5; no tree in-repo).
@@ -405,8 +409,9 @@ fixture and a survival assertion):
 
 **Backlog** (left B; one register). Deferral assigns a phase —
 nothing is "whenever," optional, or release-notes-only.
-`shell-kit` is Phase 3 (3.3). Tokens and a R6-clean contacts FFI
-already landed in 3.2 / 3.1. Rows marked 4/5/6 may start once
+`shell-kit` began provisionally in Phase 3 (3.3). Tokens and a
+record-inventory-green contacts FFI landed in 3.2 / 3.1; serialized-vCard
+boundary debt remains. Rows marked 4/5/6 may start once
 gallery iOS is green; they still land in that phase and do not
 block C.
 
@@ -420,13 +425,13 @@ block C.
 | iOS contacts FS → FFI + Syncthing sheet | **done (3.4)** | `ContactsSession`; Apple CN sheet unchanged. |
 | Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
 | Token tables + R14 vocab / token codegen | **done (3.2)** | Tables + generator. Dark companions landed in 3.5. |
-| Contacts UI spec + screen-id codegen | **done (3.3)** | `apps/contacts/ui-spec/screens.toml`. Real screens, not a dummy. |
-| `shell-kit-gtk` (one binding per R4 kind) | **done (3.3)** | `shells/` workspace. Exhaustive match is the missing-kind gate. |
+| Contacts UI spec + screen-id codegen | **done (3.3)** | `apps/contacts/ui-spec/screens.toml` is a semantic inventory. Generated ids do not assemble or prove screens. |
+| `shell-kit-gtk` (one binding per R4 kind) | **provisional (3.3)** | `shells/` workspace. Enum exhaustiveness proves vocabulary coverage, not production-quality reusable behavior; music is the second-consumer test. |
 | Dark token palettes ×4 | **done (3.5)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery surfaces stay light (unsourced). Health has no catalog; not invented. |
-| Milestone C review (ADR 0004) | **done (3.6)** | Vocabulary held. R7/R14 weakened to kinds, not screens. Shared display surface in `contacts-core`. |
+| Milestone C review (ADR 0004) | **done (3.6)** | Contacts needed no new kind. That validates the inventory for this slice, not the family-wide UI architecture. Shared contact display/action state continues moving into `contacts-core`. |
 | `shell-kit-swift` | **4** | iOS contacts views are hand-rolled. Music is the next SwiftUI vertical. |
 | Contacts tags / logs / full GTK fields | **later / 4+** | Specified; not the C-loop. |
-| iOS contacts views parse vCard text | **later** | Writes go through FFI. CN port still needs text. |
+| iOS contacts views parse vCard text | **debt** | Writes go through FFI, but `vcard_text` is a serialized-domain escape hatch. Replace it with explicit read/command/host-port DTOs; do not call contacts R6-complete meanwhile. |
 | Old-remote redirect READMEs | **3** | With 3.0. Standalone remotes still need them. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **4** | Playlist write through `localcore-vfs`. |
@@ -447,8 +452,11 @@ Size: L. All Linux-container work.
 
 ### Phase 3 — `shell-kit` and localcontacts, the first *shell* vertical (Milestone C)
 
-Scope corrected: this proves **ADR 0004 and the Syncthing vCard merge**,
-not "core + two shells". `localcore` was settled in Phase 2.
+Scope corrected again after the architecture review: this proves the
+**contacts core loop and Syncthing vCard merge** across two toolkits. It
+exercises ADR 0004's vocabulary but does not prove family-wide `shell-kit`
+reuse, executable screens, or a complete R6 boundary. Phase 2 exercised
+`localcore`; it did not freeze those APIs.
 
 **Do not confuse the two conflict UIs.** Today's
 `ContactMerge` / `ConflictResolutionSheet` merge *Apple Contacts* onto a
@@ -480,18 +488,19 @@ workload before drawing shells).
    with 3.4. Dual-write not copied. The two Swift
    `SyncConflict` twins are one shared file under
    `localcore-conflict/support/`; tests read the grammar fixtures.
-   UniFFI is R6-clean (`TextRow` / `FieldRow`); `cargo test` is the
-   gate. iOS still parsed vCard on the shell until 3.4. No GTK.
+   UniFFI declarations use display records (`TextRow` / `FieldRow`);
+   `cargo test` is the gate. The later `vcard_text` read path remains
+   semantic R6 debt. No GTK.
 3. **3.2 Tokens + R14 codegen** — **done.** Light-only tables in
    `design/tokens/`. `scripts/gen_r14.py` emits R4 kinds and tokens.
    Gallery `Design.swift` aliases `GalleryTokens`. Dark companions
    landed in 3.5.
-4. **3.3 `shell-kit-gtk`** — **done.** `shells/` workspace. One
-   libadwaita binding per R4 kind; no app core, no `localcore`. A
-   missing kind is an exhaustive-match compile error — that does
-   not need a fake spec. The contacts UI spec is the real screen
-   list (`folder-picker` … `sync-conflict-group`), and R14 emits
-   `ContactsScreen`. The contacts GTK app landed in 3.5.
+4. **3.3 `shell-kit-gtk`** — **provisional.** `shells/` workspace.
+   It names one libadwaita binding per R4 kind and depends on no app
+   core or `localcore`. Exhaustive enums prove vocabulary inventory,
+   not that every binding is reusable or complete. The contacts UI
+   spec lists semantic screens and R14 emits `ContactsScreen`; neither
+   view tree consumes those ids. Music is the second-consumer test.
 5. **3.4 iOS shell over the core.** **done.** Views remain and still
    parse vCard text. `ContactsStore` load/save/delete go through
    `ContactsSession`. `CNSyncService` stays a port. Apple CN sheet
@@ -506,17 +515,19 @@ workload before drawing shells).
    No Flatpak. Share is a file save. Sourced dark accents in the
    token tables; generator emits `ACCENT_DARK` / `accentDark` /
    `prefers-color-scheme: dark`.
-7. **3.6 Milestone C review.** **done.** ADR 0004 revised: kinds still
-   fail the build; unbound screens are a gap list, not a missing
-   widget. Display rows / draft / logged actions moved into
-   `contacts-core` so FFI and GTK call the same functions. Comet
-   chrome follows window width. Vocabulary held — no new R4 kind.
+7. **3.6 Milestone C review.** **done.** No new kind was needed for
+   the contacts loop; unbound screens remain a gap list. Display rows,
+   typed conflict disposition, draft mapping and logged actions live in
+   `contacts-core`. Comet chrome follows allocated width. This is a
+   contacts result, not proof that the vocabulary or kit is settled.
 
 > **Gate (Milestone C):** localcontacts' **core loop** on iOS, Fedora
 > and Comet — choose a folder, list, search, view, edit, save, resolve
 > a **Syncthing `.vcf` group** (R8–R11). Apple Contacts sync remains
-> iOS-only. ADR 0004 conformance over both shells, as revised at C.
-> `contacts-core` FFI is R6-clean. `gallery-ffi` stays expected-red.
+> iOS-only. ADR 0004 was reviewed against both shells.
+> `contacts-ffi` is syntax-green for the record checker but remains
+> semantic R6 debt while iOS reparses `vcard_text`; `gallery-ffi`
+> stays expected-red.
 > Gaps that do not reopen C: Swift `shell-kit` (Phase 4); tags / logs /
 > full GTK edit fields; iOS still parses vCard text in views.
 

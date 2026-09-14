@@ -9,7 +9,8 @@ use gtk::gio;
 
 use contacts_core::{
     apply_draft, choice_rows, conflict_rows, delete_logged, draft_from_card, field_rows, list_rows,
-    resolve_logged, save_logged, write, Card, ContactDraft, StdVfs, Store, Vfs, TEMP_PREFIX,
+    resolve_logged, save_logged, write, Card, ContactDraft, MergeKind, StdVfs, Store, Vfs,
+    TEMP_PREFIX,
 };
 use shell_kit_gtk::{
     action_row, apply_token_css, banner, confirm_dialog, field_row, field_row_widget, list_page,
@@ -193,7 +194,13 @@ impl Window {
         });
 
         let sized = this.clone();
-        window.connect_default_width_notify(move |w| sized.apply_chrome(w.default_width()));
+        window.connect_realize(move |w| {
+            if let Some(surface) = w.surface() {
+                let on_layout = sized.clone();
+                surface.connect_layout(move |_, width, _| on_layout.apply_chrome(width));
+            }
+            sized.apply_chrome(w.width());
+        });
         this.apply_chrome(window.default_width());
         this.refill_settings();
         this
@@ -542,12 +549,12 @@ impl Window {
         for group in groups {
             let row = text_row(&TextRowData {
                 title: group.title.clone(),
-                subtitle: group.subtitle.clone(),
-                trailing: group.trailing.clone(),
+                subtitle: Some(group.subtitle.clone()),
+                trailing: Some(group.trailing.clone()),
             });
             column.append(&row);
             let name = group.id.clone();
-            if group.trailing.as_deref() == Some("needs choice") {
+            if group.disposition == MergeKind::Choice {
                 let choose = action_row(&ActionRowData {
                     label: "Choose fields".into(),
                     role: ActionRole::Normal,

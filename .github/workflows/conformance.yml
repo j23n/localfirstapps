@@ -47,7 +47,7 @@ jobs:
         run: python3 conformance/source/check.py
 
   r6:
-    name: "ADR 0003 R6 surface (gallery-ffi red; contacts-ffi green)"
+    name: "ADR 0003 R6 record inventory"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -58,7 +58,7 @@ jobs:
       - name: Display-record check (expected red)
         run: python3 conformance/r6/check.py --expect-violations
 
-      - name: contacts-ffi is R6-clean
+      - name: contacts-ffi Record inventory is green
         run: python3 conformance/r6/check.py --src core/contacts-ffi/src
 
   r14:

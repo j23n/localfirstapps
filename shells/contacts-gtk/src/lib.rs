@@ -138,7 +138,7 @@ mod tests {
     use super::*;
     use contacts_core::{
         apply_draft, conflict_rows, field_rows, list_rows, read_ops, save_logged, write, Card,
-        ContactDraft, MemVfs, Store, TYPE_CONTACT_SAVED,
+        ContactDraft, MemVfs, MergeKind, Store, TYPE_CONTACT_SAVED,
     };
     use shell_kit_gtk::ContactsScreen;
 
@@ -223,8 +223,9 @@ mod tests {
         let rows = conflict_rows(&vfs, &store).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "alice.vcf");
-        assert_eq!(rows[0].subtitle.as_deref(), Some("1 copies"));
-        assert_eq!(rows[0].trailing.as_deref(), Some("needs choice"));
+        assert_eq!(rows[0].subtitle, "1 copy");
+        assert_eq!(rows[0].trailing, "needs choice");
+        assert_eq!(rows[0].disposition, MergeKind::Choice);
     }
 
     #[test]

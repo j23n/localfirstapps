@@ -1,12 +1,13 @@
 # Spike: Face licence
 
-**Status:** answered, 2026-09-11  
+**Status:** licensing answered; product validation open, reviewed 2026-09-14  
 **Question:** Does a redistributable face embedder exist at acceptable quality?  
-**Outcome:** **1 — a permissive embedder is found.** ADR 0006 R12 and R13 stand unchanged.
+**Outcome:** **A permissive candidate exists.** Quality, alignment and device
+cost are not yet established for this product.
 
 ## Answer
 
-Yes. Ship **OpenCV Zoo SFace** as the face embedder, with **YuNet** as the detector.
+OpenCV Zoo **SFace** with **YuNet** is a license-compatible candidate.
 
 | | Current | Chosen |
 |---|---|---|
@@ -16,7 +17,9 @@ Yes. Ship **OpenCV Zoo SFace** as the face embedder, with **YuNet** as the detec
 | LFW (published) | InsightFace family, strong | **99.40%** (OpenCV Zoo `tools/eval`) |
 | Runtime | ONNX / `ort` | ONNX / `ort` — same ADR 0002 R13 allowlist entry |
 
-SFace is the standard commercial-safe recogniser paired with YuNet (LocalAI and OpenBiometrics both treat that pair as the default for this reason). Quality is a step down from the large InsightFace packs. That is accepted for personal-library clustering.
+Published LFW accuracy is not evidence for this app's crop alignment,
+personal-library clustering thresholds, migration UX, or target-device
+runtime. Those measurements are required before selection.
 
 ## Rejected
 
@@ -25,6 +28,9 @@ SFace is the standard commercial-safe recogniser paired with YuNet (LocalAI and 
 
 ## Consequences
 
-- One pack. `PACK_VARIANT=full|tagging` is retired — it existed only to hide the non-commercial embedder.
-- Swapping models changes `face_pack_key`. **M3 is real**, not conditional: re-detect, re-embed, re-cluster; user-assigned names are orphaned. ADR 0005 R19 applies.
-- No user-installed face pack. No capability drop. No amendment to R12 or R13.
+- One distributable pack remains the goal. Do not retire
+  `PACK_VARIANT=full|tagging` until the replacement passes product evidence.
+- A swap would change `face_pack_key`: re-detect, re-embed and re-cluster,
+  with ADR 0005 R19 migration handling.
+- Phase 5 must test representative clusters, crop/landmark alignment,
+  thresholds and target-device performance before choosing the pack.

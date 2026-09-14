@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -53,6 +53,45 @@ impl StdVfs {
     /// Prefix [`Vfs::write_atomic`] uses for sibling temp files.
     pub fn temp_prefix(&self) -> &str {
         self.temp_prefix
+    }
+
+    fn write_atomic_reader(&self, path: &str, reader: &mut dyn Read) -> VfsResult<u64> {
+        let target = resolve_symlink(Path::new(path))?;
+        let temp = temp_sibling(&target, self.temp_prefix)?;
+        let temp_str = temp.display().to_string();
+        let existing_perms = fs::metadata(&target).ok().map(|md| md.permissions());
+
+        let write_result = (|| -> std::io::Result<u64> {
+            let mut options = fs::OpenOptions::new();
+            options.create(true).truncate(true).write(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options.open(&temp)?;
+            let written = std::io::copy(reader, &mut file)?;
+            if let Some(perms) = existing_perms {
+                file.set_permissions(perms)?;
+            }
+            file.sync_all()?;
+            Ok(written)
+        })();
+
+        let written = match write_result {
+            Ok(written) => written,
+            Err(err) => {
+                let _ = fs::remove_file(&temp);
+                return Err(VfsError::from_io(&temp_str, &err));
+            }
+        };
+
+        if let Err(err) = fs::rename(&temp, &target) {
+            let _ = fs::remove_file(&temp);
+            return Err(VfsError::from_io(path, &err));
+        }
+        sync_parent(&target);
+        Ok(written)
     }
 }
 
@@ -120,6 +159,17 @@ fn temp_sibling(path: &Path, temp_prefix: &str) -> VfsResult<PathBuf> {
         n,
         nanos
     )))
+}
+
+fn sync_parent(path: &Path) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
 }
 
 /// `SystemTime` → [`FileTime`], for times before *and* after the epoch.
@@ -309,52 +359,13 @@ impl Vfs for StdVfs {
     }
 
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
-        let target = resolve_symlink(Path::new(path))?;
-        let temp = temp_sibling(&target, self.temp_prefix)?;
-        let temp_str = temp.display().to_string();
-
-        // Permissions of the file we are about to replace. A fresh temp file
-        // gets 0666 & !umask — usually 0644 — so replacing a deliberately
-        // private 0600 sidecar would quietly publish it to every other user on
-        // the machine. Copy the mode across instead.
-        let existing_perms = fs::metadata(&target).ok().map(|md| md.permissions());
-
-        // Scoped so the handle is closed (and flushed) before the rename.
-        let write_result = (|| -> std::io::Result<()> {
-            let mut f = fs::File::create(&temp)?;
-            f.write_all(bytes)?;
-            if let Some(perms) = existing_perms {
-                f.set_permissions(perms)?;
-            }
-            // fsync: a rename is atomic w.r.t. other readers, but without the
-            // sync a crash can leave the renamed entry pointing at unwritten
-            // blocks. Sidecars are the portable truth (overview §4); pay it.
-            f.sync_all()?;
-            Ok(())
-        })();
-
-        if let Err(e) = write_result {
-            let _ = fs::remove_file(&temp);
-            return Err(VfsError::from_io(&temp_str, &e));
-        }
-
-        if let Err(e) = fs::rename(&temp, &target) {
-            let _ = fs::remove_file(&temp);
-            return Err(VfsError::from_io(path, &e));
-        }
-
-        // fsync the directory too. `f.sync_all()` made the *contents* durable;
-        // the directory entry the rename created is a separate write, and a
-        // crash between the two can leave the old name pointing at nothing.
-        // Best-effort: opening a directory for this is not portable, and a
-        // failure here does not make the write any less correct than it was
-        // before this line existed.
-        if let Some(parent) = target.parent().filter(|p| !p.as_os_str().is_empty()) {
-            if let Ok(dir) = fs::File::open(parent) {
-                let _ = dir.sync_all();
-            }
-        }
+        let mut reader = std::io::Cursor::new(bytes);
+        self.write_atomic_reader(path, &mut reader)?;
         Ok(())
+    }
+
+    fn write_atomic_from(&self, path: &str, reader: &mut dyn Read) -> VfsResult<u64> {
+        self.write_atomic_reader(path, reader)
     }
 
     fn exists(&self, path: &str) -> bool {
@@ -371,7 +382,12 @@ impl Vfs for StdVfs {
     }
 
     fn rename(&self, from: &str, to: &str) -> VfsResult<()> {
-        fs::rename(from, to).map_err(|e| VfsError::from_io(from, &e))
+        fs::rename(from, to).map_err(|e| VfsError::from_io(from, &e))?;
+        sync_parent(Path::new(to));
+        if Path::new(from).parent() != Path::new(to).parent() {
+            sync_parent(Path::new(from));
+        }
+        Ok(())
     }
 }
 

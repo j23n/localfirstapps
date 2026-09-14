@@ -28,7 +28,8 @@ pub mod vcard;
 pub use actions::{delete_logged, resolve_logged, save_logged};
 pub use card::{Birthday, Card, Labeled, LabeledAddress, Layout, PostalAddress};
 pub use display::{
-    choice_rows, conflict_rows, field_rows, list_rows, merge_trailing, FieldRow, TextRow,
+    choice_rows, conflict_rows, field_rows, list_rows, merge_trailing, ConflictRow, FieldRow,
+    TextRow,
 };
 pub use draft::{apply_draft, draft_from_card, ContactDraft};
 pub use folder_log::{

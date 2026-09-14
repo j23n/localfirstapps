@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use localcore_log::{
-    append, has_blob_import, read_all, Event, Error, TYPE_NOTE, TYPE_SUPERSEDE,
+    append, has_blob_import, read_all, read_report, Error, Event, TYPE_NOTE, TYPE_SUPERSEDE,
 };
 use serde_json::json;
 
@@ -84,8 +84,13 @@ fn read_all_torn_tail() {
     f.write_all(br#"{"id":"01900000-torn"#).unwrap();
     drop(f);
 
-    let err = read_all(dst.path()).unwrap_err();
-    let torn = err.as_torn_tail().unwrap_or_else(|| panic!("want TornTail, got {err}"));
+    let report = read_report(dst.path()).unwrap();
+    assert_eq!(
+        report.events.len(),
+        6,
+        "complete records must remain readable"
+    );
+    let torn = report.torn_tails.first().expect("torn-tail diagnostic");
     assert_eq!(torn.path, path);
     assert_eq!(torn.offset, offset);
 }

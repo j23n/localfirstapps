@@ -19,10 +19,10 @@ struct SyncConflictGroupSheet: View {
                 }
                 ForEach(store.syncConflictGroups, id: \.id) { group in
                     Section(group.title) {
-                        Text(group.trailing ?? "")
+                        Text(group.trailing)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        if group.trailing == "needs choice" {
+                        if group.disposition == .choice {
                             Button("Choose fields") {
                                 showChoices(group.id)
                             }

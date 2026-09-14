@@ -12,7 +12,7 @@
 <header>
   <div class="prompt">$ ./localapps --info</div>
   <h1>Local Apps</h1>
-  <p class="tagline">three iOS apps for a local-first life</p>
+  <p class="tagline">four local-first apps for files you own</p>
 </header>
 
 <main>
@@ -20,7 +20,7 @@
   <section id="why">
     <h2>why</h2>
     <p>I try not to use the cloud for my personal files. Not because I can't, but because I already have a setup on Linux that works: photos managed in digikam, contacts in khard, music in a folder on a hard drive. I know exactly where those files are. I can inspect them, back them up, and open them with any tool I choose ten years from now.</p>
-    <p>Cloud services are convenient until they change their pricing, shut down, or decide you've violated a policy. <code>.vcf</code> files, <code>.mp3</code> files, <code>.jpeg</code> and <code>.png</code> files with up-to-date metadata - these will still be readable long after any particular app stops existing. The apps on this site are the iOS end of that setup. No accounts, no syncing to someone else's server, no lock-in.</p>
+    <p>Cloud services are convenient until they change their pricing, shut down, or decide you've violated a policy. <code>.vcf</code> files, <code>.mp3</code> files, <code>.jpeg</code> and <code>.png</code> files with up-to-date metadata - these will still be readable long after any particular app stops existing. These apps are native views over that setup on the platforms they support. No accounts, no syncing to someone else's server, no lock-in.</p>
   </section>
 
   <section id="apps">
@@ -51,7 +51,7 @@
           <figcaption>Playlist</figcaption>
         </figure>
       </div>
-      <p class="source"><a href="https://github.com/j23n/localmusic">github.com/j23n/localmusic</a></p>
+      <p class="source"><a href="https://github.com/j23n/localfirstapps/tree/main/apps/music">source</a></p>
       <p class="testflight"><a href="#">TestFlight — coming soon</a></p>
     </div>
 
@@ -80,7 +80,7 @@
           <figcaption>Collections</figcaption>
         </figure>
       </div>
-      <p class="source"><a href="https://github.com/j23n/localgallery">github.com/j23n/localgallery</a></p>
+      <p class="source"><a href="https://github.com/j23n/localfirstapps/tree/main/apps/gallery">source</a></p>
       <p class="testflight"><a href="#">TestFlight — coming soon</a></p>
     </div>
 
@@ -106,15 +106,26 @@
           <figcaption>Settings</figcaption>
         </figure>
       </div>
-      <p class="source"><a href="https://github.com/j23n/localcontacts">github.com/j23n/localcontacts</a></p>
+      <p class="source"><a href="https://github.com/j23n/localfirstapps/tree/main/apps/contacts">source</a></p>
       <p class="testflight"><a href="#">TestFlight — coming soon</a></p>
+    </div>
+
+    <div class="app">
+      <h3>LocalHealth</h3>
+      <p>A local-only personal health archive. Imports become an append-only event log plus content-addressed blobs; the SQLite projection can always be rebuilt from those files.</p>
+      <ul>
+        <li>Apple Health export ingestion</li>
+        <li>Portable export, restore and integrity checks</li>
+        <li>No accounts, telemetry or network access</li>
+      </ul>
+      <p class="source"><a href="https://github.com/j23n/localfirstapps/tree/main/apps/health">source</a></p>
     </div>
 
   </section>
 
   <section id="stack">
     <h2>the stack</h2>
-    <p>All three apps share the same sync layer: <a href="https://syncthing.net/">Syncthing</a> on Linux and <a href="https://github.com/pixelspark/sushitrain">Synctrain</a> on iOS. Syncthing is a decentralized, open-source P2P sync tool - no relay server required on a local network, no account, no data leaving your machines. Synctrain is the excellent iOS client that makes it seamless on iPhone.</p>
+    <p>The file-based apps can share folders through <a href="https://syncthing.net/">Syncthing</a> on Linux and <a href="https://github.com/pixelspark/sushitrain">Synctrain</a> on iOS. Syncthing is a decentralized, open-source P2P sync tool; synchronization remains outside the apps themselves.</p>
     <table>
       <thead>
         <tr><th>tool</th><th>role</th><th>platform</th></tr>
@@ -132,8 +143,8 @@
 
   <section id="privacy">
     <h2>privacy</h2>
-    <p>These apps collect no data. They make no network requests. There are no analytics, no crash reporters, no third-party SDKs of any kind.</p>
-    <p>All three apps read and write files in folders you choose on your device. File sync is handled by Synctrain at the OS level - the apps themselves are entirely unaware of the network.</p>
+    <p>These apps collect no telemetry and make no network requests. There are no accounts, analytics, or automatic crash uploads.</p>
+    <p>All four apps read and write files in folders you choose. File synchronization, when used, is handled outside the apps.</p>
 
     <h3>data collected</h3>
     <p>None.</p>
@@ -142,7 +153,7 @@
     <p>None. The apps do not initiate any network connections.</p>
 
     <h3>third-party SDKs</h3>
-    <p>None. These apps have no external dependencies beyond Apple's own frameworks.</p>
+    <p>No analytics, advertising, or cloud-service SDKs. Build-time and local runtime dependencies are documented in the repository.</p>
 
     <h3>data storage</h3>
     <p>All data lives in files in the folder you designate. App preferences are stored in the iOS standard UserDefaults. Deleting the app removes preferences; your files remain in the folder you chose.</p>

@@ -71,6 +71,7 @@ SLOT_KINDS: dict[str, dict[str, frozenset[str]]] = {
                 "trailing_value",
                 "leading_symbol",
                 "symbol",
+                "disposition",
             }
         ),
         "need_one_of": frozenset(),

@@ -7,9 +7,11 @@
 //!
 //! # Identity
 //!
-//! Conflict copies **never receive a stable id**. This crate does not assign,
-//! hash, or return identifiers. An app that derives ids from paths (ADR 0002
-//! R4) must skip every name this crate accepts.
+//! Conflict copies **never receive a stable id**. A [`ConflictGroup`] has an
+//! opaque, directory-qualified key so two equal basenames in different
+//! folders cannot collide, but the copies themselves are not content
+//! identities. An app that derives ids from paths (ADR 0002 R4) must skip
+//! every name this crate accepts.
 //!
 //! Resolution policy (ADR 0005 R8–R11) lives in each app core, not here.
 //!
@@ -72,9 +74,57 @@ pub struct ConflictGroup {
     /// Surviving file basename: `{base_stem}.{extension}`, or `base_stem`
     /// alone when the extension is empty.
     pub canonical_name: String,
-    /// Copies sharing [`Self::canonical_name`], sorted by
+    /// Directory that contains the copies and the surviving file, as
+    /// given on the paths passed to [`groups`]. Empty when the path
+    /// was a bare basename. Two `photo.jpg` files in different
+    /// folders are two groups.
+    pub dir: String,
+    /// Copies sharing [`Self::canonical_name`] *in [`Self::dir`]*, sorted by
     /// `(date, time, origin_device, name, path)`.
     pub copies: Vec<ConflictCopy>,
+}
+
+impl ConflictGroup {
+    /// Opaque group key: `dir/canonical_name`, or just the basename when
+    /// `dir` is empty.
+    #[must_use]
+    pub fn id(&self) -> String {
+        join_under(&self.dir, &self.canonical_name)
+    }
+
+    /// Path of the surviving file. Relative directories are resolved under
+    /// `root`; absolute directories are already rooted.
+    #[must_use]
+    pub fn surviving_path(&self, root: &str) -> String {
+        if self.dir.is_empty() || is_absolute_dir(&self.dir) {
+            join_under(
+                if self.dir.is_empty() { root } else { &self.dir },
+                &self.canonical_name,
+            )
+        } else {
+            join_under(root, &join_under(&self.dir, &self.canonical_name))
+        }
+    }
+}
+
+fn join_under(dir: &str, name: &str) -> String {
+    if dir.is_empty() {
+        name.to_owned()
+    } else if dir.ends_with(['/', '\\']) {
+        format!("{dir}{name}")
+    } else if dir.contains('\\') && !dir.contains('/') {
+        format!(r"{dir}\{name}")
+    } else {
+        format!("{dir}/{name}")
+    }
+}
+
+fn is_absolute_dir(dir: &str) -> bool {
+    dir.starts_with(['/', '\\'])
+        || dir
+            .as_bytes()
+            .get(1)
+            .is_some_and(|separator| *separator == b':')
 }
 
 /// Parse a basename. [`ConflictCopy::path`] equals `name`.
@@ -95,19 +145,20 @@ pub fn is_conflict_name(name: &str) -> bool {
     parse_name(name).is_some()
 }
 
-/// Group conflict copies that share `(base_stem, extension)`.
+/// Group conflict copies that share `(directory, base_stem, extension)`.
 ///
 /// Non-conflict paths are ignored — the surviving original is not a member.
-/// Groups are sorted by [`ConflictGroup::canonical_name`]; copies inside a
-/// group are sorted by `(date, time, origin_device, name, path)`. The result
-/// does not depend on walk order.
+/// Groups are sorted by [`ConflictGroup::id`]; copies inside a group are
+/// sorted by `(date, time, origin_device, name, path)`. The result does
+/// not depend on walk order.
 #[must_use]
 pub fn groups<'a>(paths: impl IntoIterator<Item = &'a str>) -> Vec<ConflictGroup> {
-    let mut by_key: BTreeMap<(String, String), Vec<ConflictCopy>> = BTreeMap::new();
+    let mut by_key: BTreeMap<(String, String, String), Vec<ConflictCopy>> = BTreeMap::new();
     for path in paths {
         if let Some(copy) = parse_path(path) {
+            let dir = parent_dir(&copy.path).to_owned();
             by_key
-                .entry((copy.base_stem.clone(), copy.extension.clone()))
+                .entry((dir, copy.base_stem.clone(), copy.extension.clone()))
                 .or_default()
                 .push(copy);
         }
@@ -115,16 +166,25 @@ pub fn groups<'a>(paths: impl IntoIterator<Item = &'a str>) -> Vec<ConflictGroup
 
     let mut out: Vec<ConflictGroup> = by_key
         .into_iter()
-        .map(|((base_stem, extension), mut copies)| {
+        .map(|((dir, base_stem, extension), mut copies)| {
             copies.sort_by(copy_order);
             ConflictGroup {
                 canonical_name: canonical_name(&base_stem, &extension),
+                dir,
                 copies,
             }
         })
         .collect();
-    out.sort_by(|a, b| a.canonical_name.cmp(&b.canonical_name));
+    out.sort_by(|a, b| a.id().cmp(&b.id()));
     out
+}
+
+fn parent_dir(path: &str) -> &str {
+    match path.rfind(['/', '\\']) {
+        Some(0) => &path[..1],
+        Some(i) => &path[..i],
+        _ => "",
+    }
 }
 
 fn copy_order(a: &ConflictCopy, b: &ConflictCopy) -> Ordering {
@@ -253,7 +313,10 @@ mod tests {
     fn parse_path_accepts_backslash_separators() {
         let path = r"C:\photos\alice.sync-conflict-20200901-120000-DEVICEABC.vcf";
         let copy = parse_path(path).unwrap();
-        assert_eq!(copy.name, "alice.sync-conflict-20200901-120000-DEVICEABC.vcf");
+        assert_eq!(
+            copy.name,
+            "alice.sync-conflict-20200901-120000-DEVICEABC.vcf"
+        );
         assert_eq!(copy.base_stem, "alice");
     }
 
@@ -265,6 +328,27 @@ mod tests {
             groups(["IMG_1234.sync-conflict-20200901-120000-DEVICEABC.HEIC"])[0].canonical_name,
             "IMG_1234.heic"
         );
+    }
+
+    #[test]
+    fn same_basename_in_two_directories_is_two_groups() {
+        let grouped = groups([
+            "/lib/2024/photo.sync-conflict-20200901-120000-PHONE01.jpg",
+            "/lib/Archive/photo.sync-conflict-20200901-120000-PHONE01.jpg",
+        ]);
+        assert_eq!(grouped.len(), 2);
+        assert_eq!(grouped[0].dir, "/lib/2024");
+        assert_eq!(grouped[1].dir, "/lib/Archive");
+        assert_eq!(grouped[0].canonical_name, "photo.jpg");
+        assert_eq!(grouped[0].id(), "/lib/2024/photo.jpg");
+        assert_eq!(grouped[0].surviving_path("/lib"), "/lib/2024/photo.jpg");
+    }
+
+    #[test]
+    fn relative_directory_resolves_under_root() {
+        let group = groups(["Archive/photo.sync-conflict-20200901-120000-PHONE01.jpg"]).remove(0);
+        assert_eq!(group.id(), "Archive/photo.jpg");
+        assert_eq!(group.surviving_path("/lib"), "/lib/Archive/photo.jpg");
     }
 
     #[test]

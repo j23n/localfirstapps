@@ -106,7 +106,7 @@ title = "Sync Conflict"
 affordances = ["confirm"]
 # ADR 0005 R8–R11: Syncthing .vcf copies. Disjoint fields merge;
 # the same field is a choice; losing copies delete only after a choice.
-# Both shells will show this sheet (3.4 iOS, 3.5 GTK).
+# Both shells show this sheet (3.4 iOS, 3.5 GTK).
 sections = [
     { id = "fields", item = "field-row" },
     { id = "actions", item = "action-row" },

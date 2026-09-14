@@ -54,9 +54,6 @@ final class LogStore: @unchecked Sendable {
                 entries.removeFirst(entries.count - maxEntries)
             }
         }
-        MainActor.assumeIsolated {
-            LogPersistence.shared.scheduleFlush()
-        }
     }
 
     func clear() {

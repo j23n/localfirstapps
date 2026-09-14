@@ -45,7 +45,7 @@ synchroniser has put in the folder is the whole of what exists.
 | [0001](adr/0001-layering.md) | Layered architecture and boundaries |
 | [0002](adr/0002-localcore.md) | `localcore` — the folder projection engine |
 | [0003](adr/0003-app-core.md) | App cores — domain logic and view models |
-| [0003 R6](adr/0003-r6-surface.md) | Display-record surface (`gallery-ffi` known red) |
+| [0003 R6](adr/0003-r6-surface.md) | Shell boundary DTOs (`gallery-ffi` known red; contacts serialized-vCard debt) |
 | [0004](adr/0004-ui-spec-and-shells.md) | UI specification, slot vocabulary, shells — kinds in [`ui/vocabulary.toml`](ui/vocabulary.toml); contacts screens in [`apps/contacts/ui-spec/`](../../apps/contacts/ui-spec/); tokens in [`design/tokens/`](../../design/tokens/) |
 | [0005](adr/0005-files-sync-and-state.md) | Files, state tiers, conflicts, reconciliation |
 | [0006](adr/0006-derived-data.md) | Derived data, capabilities, model packs |
@@ -73,9 +73,9 @@ expensive one.
    A view model hands back ordered *ids* and a generation; formatted values
    are fetched one visible window at a time. Returning a formatted collection
    marshals the whole library on every change.
-2. **No domain record reaches a shell** (ADR 0003 R6). This is not stylistic:
-   it is the only mechanism that makes ADR 0001 R4 mechanically true rather
-   than merely required.
+2. **No domain entity or serialized whole-domain payload reaches a shell**
+   (ADR 0003 R6). Explicit display, command and host-port DTOs make the
+   boundary reviewable; the record checker is a tripwire, not proof.
 3. **Convergence is by recorded decision, not by identical arithmetic**
    (ADR 0006 R15–R17). A capability reads what the file already says, retains
    decisions inside a retention band, defers to a newer pack, and writes
@@ -123,10 +123,10 @@ The amendments are the stronger claims that did not:
 | Was | Now | Because |
 |---|---|---|
 | A spec screen with no view fails the build | An R4 *kind* with no binding fails the build; an unbound *screen* is a gap | C built the core loop, not tags/logs; `ContactsScreen` is unused by both view trees |
-| Copy is authored once in the spec | Titles in the spec; C-loop body copy in the app core | R14 does not generate copy; both shells now call `contacts-core` display functions |
+| Copy is authored once in the spec | Titles in the spec; semantic facts and typed actions in the core; prose in localization resources | Shells must not branch on visible copy |
 | Comet is an adaptive layout | Same GTK binary; `--comet` plus chrome that follows width | 3.5 shipped a flag and a fixed size |
-| GTK and UniFFI surfaces "identical" | Same operations; display records produced in `contacts-core` | 3.5 formatted rows in the GTK crate |
-| `shell-kit` on every platform | `shell-kit-gtk` exists; `shell-kit-swift` is Phase 4 | iOS contacts views are hand-rolled |
+| GTK and UniFFI surfaces "identical" | Same contact operations and typed conflict state; boundary debt remains explicit | iOS reparses `vcard_text`; GTK still holds `Card` for editing |
+| `shell-kit` on every platform | `shell-kit-gtk` is provisional; extraction waits for demonstrated second-app reuse | iOS contacts views are hand-rolled |
 
 ## What changed in r2
 
@@ -134,14 +134,14 @@ The amendments are the stronger claims that did not:
 |---|---|---|
 | View models return formatted collections | Structure (ids + generation) and windowed content are separate reads — ADR 0003 R4 | UniFFI copies; localgallery already answers in ids for exactly this reason |
 | — | No domain record crosses to a shell — ADR 0003 R6 | ADR 0001 R4 was otherwise unenforceable; the existing GTK shell violates it in six files |
-| Five layers | Six, adding `shell-kit` — ADR 0001 R1 | ADR 0004 R6 requires per-platform bindings shared by four apps, and nothing could hold them |
+| Five layers | Six responsibilities, with `shell-kit` extracted only after reuse is demonstrated — ADR 0001 R1 | Package count is not an architecture invariant |
 | — | Two Cargo workspaces — ADR 0001 R9 | keeps GTK features out of app cores and makes the graph check one command |
 | Results must be bit-identical across devices | Results must converge, via idempotent writes, retention bands, and pack precedence — ADR 0006 R15–R17 | bit-identity across instruction sets is unachievable and was never what prevented conflicts |
 | — | Every thresholded decision carries a retention band — ADR 0006 R16 | tagging had one; face detection and auto-tag matching did not; ISA drift is assumed negligible |
 | — | Newer pack wins, older defers — ADR 0006 R17 | version skew is the one divergence no determinism rule absorbs |
 | "`cargo tree` contains no networking crate" | Graph check against a one-entry allowlist — ADR 0002 R13 | the r1 bullet was unsatisfiable the day it was written |
 | Temp prefix unspecified | A `Vfs` parameter, with an ignore rule per app — ADR 0002 R3 | a shared prefix would have four apps writing `.gallery-tmp-` |
-| "A missing binding MUST fail the build", with no mechanism | Generated enums, closed to three items — ADR 0004 R14 | the plan forbade codegen; both could not hold |
+| "A missing binding MUST fail the build", with no mechanism | Generated enums make vocabulary omissions fail — ADR 0004 R14 | Widget capability still requires tests and review |
 | Host differences undefined | Closed host-surfaces table — ADR 0007 R15 | ADR 0001 R6 read strictly forbade iOS-only widgets and read loosely bounded nothing |
 | — | Uncheckable requirements named and reviewed — ADR 0007 R16 | roughly a third of this spec is not mechanically checkable, and those are the ones that get broken |
 | — | Log growth and compaction stated per app — ADR 0005 R18 | an append-only log synced forever had no bound |

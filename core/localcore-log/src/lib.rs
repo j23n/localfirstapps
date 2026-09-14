@@ -50,6 +50,13 @@ pub struct TornTail {
     pub err: JsonError,
 }
 
+/// Events recovered from all complete lines plus any ignored torn tails.
+#[derive(Debug)]
+pub struct ReadReport {
+    pub events: Vec<Event>,
+    pub torn_tails: Vec<TornTail>,
+}
+
 impl std::fmt::Display for TornTail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -179,23 +186,39 @@ pub fn append_on(vfs: &dyn Vfs, root: &str, ev: &Event) -> Result<()> {
 
 /// Walk `log/*/*.ndjson` and return events sorted by `(ts, id)`.
 pub fn read_all(root: impl AsRef<Path>) -> Result<Vec<Event>> {
-    read_all_on(&std_vfs(), &root_str(root)?)
+    Ok(read_report_on(&std_vfs(), &root_str(root)?)?.events)
 }
 
 /// [`read_all`] through an explicit [`Vfs`].
 pub fn read_all_on(vfs: &dyn Vfs, root: &str) -> Result<Vec<Event>> {
+    Ok(read_report_on(vfs, root)?.events)
+}
+
+/// Walk a log and return valid events plus diagnostics for ignored torn tails.
+pub fn read_report(root: impl AsRef<Path>) -> Result<ReadReport> {
+    read_report_on(&std_vfs(), &root_str(root)?)
+}
+
+/// [`read_report`] through an explicit [`Vfs`].
+pub fn read_report_on(vfs: &dyn Vfs, root: &str) -> Result<ReadReport> {
     let dir = join_root(root, "log");
-    if !vfs.exists(&dir) {
-        return Ok(Vec::new());
+    if !vfs.try_exists(&dir)? {
+        return Ok(ReadReport {
+            events: Vec::new(),
+            torn_tails: Vec::new(),
+        });
     }
     let mut files = Vec::new();
     walk_ndjson(vfs, &dir, &mut files)?;
-    let mut out = Vec::new();
+    let mut events = Vec::new();
+    let mut torn_tails = Vec::new();
     for path in files {
-        out.extend(read_file(vfs, &path)?);
+        let (mut recovered, torn) = read_file(vfs, &path)?;
+        events.append(&mut recovered);
+        torn_tails.extend(torn);
     }
-    out.sort_by(|a, b| a.ts.cmp(&b.ts).then_with(|| a.id.cmp(&b.id)));
-    Ok(out)
+    events.sort_by(|a, b| a.ts.cmp(&b.ts).then_with(|| a.id.cmp(&b.id)));
+    Ok(ReadReport { events, torn_tails })
 }
 
 fn walk_ndjson(vfs: &dyn Vfs, dir: &str, out: &mut Vec<String>) -> Result<()> {
@@ -212,9 +235,10 @@ fn walk_ndjson(vfs: &dyn Vfs, dir: &str, out: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn read_file(vfs: &dyn Vfs, path: &str) -> Result<Vec<Event>> {
+fn read_file(vfs: &dyn Vfs, path: &str) -> Result<(Vec<Event>, Option<TornTail>)> {
     let bytes = vfs.read(path)?;
     let mut out = Vec::new();
+    let mut torn = None;
     let mut offset = 0u64;
     let mut line_no = 0usize;
     let mut rest = bytes.as_slice();
@@ -236,11 +260,12 @@ fn read_file(vfs: &dyn Vfs, path: &str) -> Result<Vec<Event>> {
             Ok(ev) => out.push(ev),
             Err(jerr) => {
                 if !has_nl {
-                    return Err(Error::TornTail(TornTail {
+                    torn = Some(TornTail {
                         path: PathBuf::from(path),
                         offset,
                         err: jerr,
-                    }));
+                    });
+                    break;
                 }
                 return Err(Error::Json {
                     path: PathBuf::from(path),
@@ -252,7 +277,7 @@ fn read_file(vfs: &dyn Vfs, path: &str) -> Result<Vec<Event>> {
         offset += n as u64;
         rest = next;
     }
-    Ok(out)
+    Ok((out, torn))
 }
 
 /// `read_all` as a JSON array. Used by the gallery FFI read helper.

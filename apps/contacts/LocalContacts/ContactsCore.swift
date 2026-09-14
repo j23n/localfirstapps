@@ -543,9 +543,9 @@ public protocol ContactsSessionProtocol: AnyObject, Sendable {
     func conflictChoiceRows(canonicalName: String) throws  -> [TextRow]
     
     /**
-     * Conflict groups as `text-row`s. Trailing is `needs choice` or `auto`.
+     * Conflict groups with display copy and a typed merge disposition.
      */
-    func conflictRows() throws  -> [TextRow]
+    func conflictRows() throws  -> [ConflictRow]
     
     /**
      * Delete one card (and its file when it was the last sibling).
@@ -678,10 +678,10 @@ open func conflictChoiceRows(canonicalName: String)throws  -> [TextRow]  {
 }
     
     /**
-     * Conflict groups as `text-row`s. Trailing is `needs choice` or `auto`.
+     * Conflict groups with display copy and a typed merge disposition.
      */
-open func conflictRows()throws  -> [TextRow]  {
-    return try  FfiConverterSequenceTypeTextRow.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+open func conflictRows()throws  -> [ConflictRow]  {
+    return try  FfiConverterSequenceTypeConflictRow.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
         uniffiCallStatus in
     uniffi_contacts_ffi_fn_method_contactssession_conflict_rows(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -840,6 +840,105 @@ public func FfiConverterTypeContactsSession_lower(_ value: ContactsSession) -> U
 }
 
 
+
+
+/**
+ * Display-ready conflict group plus typed disposition.
+ */
+public struct ConflictRow: Equatable, Hashable {
+    /**
+     * Opaque folder-relative key handed back to merge calls.
+     */
+    public var id: String
+    /**
+     * Surviving file path relative to the contacts folder.
+     */
+    public var title: String
+    /**
+     * Human-readable number of copies.
+     */
+    public var subtitle: String
+    /**
+     * Human-readable disposition.
+     */
+    public var trailing: String
+    /**
+     * Typed disposition for shell control flow.
+     */
+    public var disposition: MergeKind
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Opaque folder-relative key handed back to merge calls.
+         */id: String, 
+        /**
+         * Surviving file path relative to the contacts folder.
+         */title: String, 
+        /**
+         * Human-readable number of copies.
+         */subtitle: String, 
+        /**
+         * Human-readable disposition.
+         */trailing: String, 
+        /**
+         * Typed disposition for shell control flow.
+         */disposition: MergeKind) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.trailing = trailing
+        self.disposition = disposition
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ConflictRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictRow {
+        return
+            try ConflictRow(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterString.read(from: &buf), 
+                trailing: FfiConverterString.read(from: &buf), 
+                disposition: FfiConverterTypeMergeKind.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ConflictRow, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.subtitle, into: &buf)
+        FfiConverterString.write(value.trailing, into: &buf)
+        FfiConverterTypeMergeKind.write(value.disposition, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictRow_lift(_ buf: RustBuffer) throws -> ConflictRow {
+    return try FfiConverterTypeConflictRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictRow_lower(_ value: ConflictRow) -> RustBuffer {
+    return FfiConverterTypeConflictRow.lower(value)
+}
 
 
 /**
@@ -1121,6 +1220,91 @@ public func FfiConverterTypeContactsError_lower(_ value: ContactsError) -> RustB
     return FfiConverterTypeContactsError.lower(value)
 }
 
+
+/**
+ * Semantic conflict disposition. Shells use this for control flow.
+ */
+
+public enum MergeKind: Equatable, Hashable {
+    
+    /**
+     * All fields merge deterministically.
+     */
+    case auto
+    /**
+     * At least one field requires a user choice.
+     */
+    case choice
+    /**
+     * The surviving file disappeared while a copy retains the data.
+     */
+    case deletedVersusModified
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension MergeKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMergeKind: FfiConverterRustBuffer {
+    typealias SwiftType = MergeKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MergeKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .auto
+        
+        case 2: return .choice
+        
+        case 3: return .deletedVersusModified
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MergeKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .auto:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .choice:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .deletedVersusModified:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMergeKind_lift(_ buf: RustBuffer) throws -> MergeKind {
+    return try FfiConverterTypeMergeKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMergeKind_lower(_ value: MergeKind) -> RustBuffer {
+    return FfiConverterTypeMergeKind.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -1165,6 +1349,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeConflictRow: FfiConverterRustBuffer {
+    typealias SwiftType = [ConflictRow]
+
+    public static func write(_ value: [ConflictRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeConflictRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ConflictRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ConflictRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeConflictRow.read(from: &buf))
         }
         return seq
     }
@@ -1252,7 +1461,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_contacts_ffi_checksum_method_contactssession_conflict_choice_rows() != 60559) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_contacts_ffi_checksum_method_contactssession_conflict_rows() != 50405) {
+    if (uniffi_contacts_ffi_checksum_method_contactssession_conflict_rows() != 55083) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_contacts_ffi_checksum_method_contactssession_delete() != 58868) {

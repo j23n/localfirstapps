@@ -1,6 +1,6 @@
 //! Headless FFI: display rows only, no Contact record.
 
-use contacts_ffi::{is_conflict_name, ContactsSession};
+use contacts_ffi::{is_conflict_name, ContactsSession, MergeKind};
 use std::fs;
 use std::io::Write;
 
@@ -49,7 +49,8 @@ fn resolve_auto_group() {
     let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     let groups = session.conflict_rows().unwrap();
     assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].trailing.as_deref(), Some("auto"));
+    assert_eq!(groups[0].trailing, "auto");
+    assert_eq!(groups[0].disposition, MergeKind::Auto);
     session.resolve_group("alice.vcf".into(), vec![]).unwrap();
     let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     assert!(session.conflict_rows().unwrap().is_empty());
@@ -116,7 +117,8 @@ fn choice_group_needs_a_pick() {
     .unwrap();
     let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     let groups = session.conflict_rows().unwrap();
-    assert_eq!(groups[0].trailing.as_deref(), Some("needs choice"));
+    assert_eq!(groups[0].trailing, "needs choice");
+    assert_eq!(groups[0].disposition, MergeKind::Choice);
     assert!(session.resolve_group("bob.vcf".into(), vec![]).is_err());
     let rows = session.conflict_choice_rows("bob.vcf".into()).unwrap();
     assert!(rows.iter().any(|r| r.id.starts_with("tel:cell|")));

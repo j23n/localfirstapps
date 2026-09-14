@@ -1,12 +1,13 @@
 # Spike: Cross-ISA ε
 
-**Status:** answered, 2026-09-11  
+**Status:** policy chosen; measurement unanswered, reviewed 2026-09-14  
 **Question:** Same fixture scored on arm64 and x86-64 — maximum absolute score drift, versus the pack's `hysteresis_epsilon`.  
-**Outcome:** **ISA causes no significant difference.**
+**Outcome:** **Use conventional hysteresis; make no measured ISA claim.**
 
 ## Answer
 
-Cross-instruction-set score drift is assumed negligible. No arm64 / x86-64 fixture is run, and ε is not sized against one.
+No arm64 / x86-64 fixture was run, so cross-instruction-set score drift is
+unknown and epsilon is not sized against it.
 
 ADR 0006 R16 still requires a retention band on every thresholded decision that reaches tier 1 — two devices can still straddle a threshold for reasons other than ISA. What R16 no longer requires is that ε be a measured cross-ISA margin, or that a committed cross-ISA fixture exist.
 

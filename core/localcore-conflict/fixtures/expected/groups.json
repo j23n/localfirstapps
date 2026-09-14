@@ -2,6 +2,7 @@
   "gallery-minimal": [
     {
       "canonical_name": "photo.heic",
+      "dir": "",
       "copies": [
         {
           "path": "photo.sync-conflict-20200901-120000-PHONE01.heic",
@@ -25,6 +26,7 @@
     },
     {
       "canonical_name": "photo.heic.xmp",
+      "dir": "",
       "copies": [
         {
           "path": "photo.heic.sync-conflict-20200901-120000-PHONE01.xmp",
@@ -50,6 +52,7 @@
   "contacts-minimal": [
     {
       "canonical_name": "alice.vcf",
+      "dir": "",
       "copies": [
         {
           "path": "alice.sync-conflict-20200901-120000-PHONE01.vcf",
@@ -75,6 +78,7 @@
   "music-minimal": [
     {
       "canonical_name": "playlist.m3u",
+      "dir": "",
       "copies": [
         {
           "path": "playlist.sync-conflict-20200901-120000-PHONE01.m3u",

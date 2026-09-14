@@ -15,13 +15,16 @@ shells.
 **R1.** Four app cores exist: `gallery-core`, `contacts-core`, `music-core`,
 `health-core`. Each is the sole owner of its file formats and its domain
 rules, and each serves both shells unchanged. `contacts-core` landed
-headless in Phase 3.1 (`core/contacts-core`, R6-clean `contacts-ffi`).
+headless in Phase 3.1 (`core/contacts-core`, syntax-green
+`contacts-ffi`).
 The iOS shell writes through `contacts-ffi` (Phase 3.4) and still
 parses vCard *text* for views and the CN port. The GTK shell links
 `contacts-core` (Phase 3.5). List, detail, conflict, draft, and logged
 save/delete/resolve are functions on `contacts-core` (Milestone C);
-FFI copies the display rows onto UniFFI. Save, delete, and group
-resolve append to `.contacts/log/<dev>/`. `gallery-core` remains
+FFI copies the display rows onto UniFFI. `vcard_text` is documented
+boundary debt, not evidence that R6 is complete. Save, delete, and group
+resolve best-effort append to `.contacts/log/<dev>/` after the
+authoritative file mutation. `gallery-core` remains
 at `apps/gallery/core`. The other two cores are later phases.
 
 **R2.** An app core owns:
@@ -77,16 +80,20 @@ filtering, grouping, truncation, pluralisation, date and number formatting,
 label selection, and enablement are all decided in the app core. A shell
 receives strings and renders them.
 
-**R6.** Only these cross to a shell: ids, strings, booleans, numbers,
-enumerated variants, lists of those, and **display records** — structs whose
-every field is a display-ready value for exactly one slot kind in ADR 0004 R4.
+**R6.** Boundary types are primitives, enumerated variants and explicit DTOs
+in one of three roles:
 
-**No domain record crosses a language boundary.** A type that an app core
-keys domain logic on does not appear on the UniFFI wire, under any name.
-A GTK shell that links the crate still MUST NOT format, sort, or decide
-enablement: it binds display records the core already produced. Holding
-`Card` as the argument to `save_logged` is the mutation API, not a view
-model. Formatting `Card` fields in the shell is a defect.
+- **display records** carrying values ready for one ADR 0004 slot;
+- **command DTOs** carrying user intent back to the core; or
+- **host-port DTOs** carrying the minimal structured data a platform service
+  requires.
+
+**No domain entity or serialized whole-domain escape hatch crosses a language
+boundary.** A type that the app core keys domain logic on does not appear on
+the UniFFI wire under another name or as JSON/vCard text. DTOs are allowed
+because rich editors and host adapters need structured commands; banning them
+would merely encourage opaque strings. A GTK shell that links the crate still
+MUST NOT format, sort, or decide enablement.
 
 The display-record taxonomy, the slot-field vocabulary, and the current
 `gallery-ffi` inventory are in [0003-r6-surface.md](0003-r6-surface.md).
@@ -117,8 +124,10 @@ write, scanning, indexing and reconciliation are `localcore` (ADR 0002).
 - Each app core builds and its full test suite runs on a host with no UI
   toolkit installed.
 - Every screen in each app's UI spec resolves to exactly one view model.
-- No type crossing the FFI or the GTK binding carries a domain record; a test
-  enumerates the exported surface and asserts R6. That check starts red:
+- No type crossing the FFI or the GTK binding carries a domain entity or its
+  serialized representation; a test enumerates the exported surface and
+  asserts R6. The current syntax checker cannot detect serialized escape
+  hatches and is therefore necessary but insufficient. Gallery starts red:
   `conformance/r6/check.py` pins today's `gallery-ffi` Records
   ([0003-r6-surface.md](0003-r6-surface.md)).
 - No shell source contains a comparator, formatter, predicate over records,
@@ -160,13 +169,15 @@ generation counter is what makes windowed reads safe: without it a shell can
 fetch rows 200–220 of a list that was rebuilt between the structure read and
 the content read.
 
-R6 (r2) is the only mechanism in this specification that makes ADR 0001 R4
-mechanically true rather than merely required. The existing GTK shell, written
+R6 (r2) removes the raw material that lets domain policy leak into shells,
+but the record-shape checker alone does not make ADR 0001 R4 mechanically
+true. The existing GTK shell, written
 against a conventions document that forbade exactly this, carries 27
 comparator sites and 42 formatting sites today. Forbidding it again would
 produce the same result; removing the raw material does not.
 
-Milestone C put the contacts display records in `contacts-core` so the
-UniFFI copy and the GTK bind cannot drift. Holding `Card` for
-`save_logged` is the mutation API. Formatting it in a shell is still a
-defect. Windowed view models remain a Phase 5 gallery requirement.
+Milestone C put contact display records and typed conflict disposition in
+`contacts-core` so UniFFI and GTK control flow cannot drift. GTK still holds
+`Card` for editing and iOS reparses `vcard_text`; both are boundary debt to
+replace with command and host-port DTOs. Windowed view models remain a Phase
+5 gallery requirement.

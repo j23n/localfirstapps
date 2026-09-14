@@ -35,6 +35,21 @@ pub struct FieldRow {
     pub editable: bool,
 }
 
+/// A Syncthing conflict row with typed control-flow state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictRow {
+    /// Opaque folder-relative group key.
+    pub id: String,
+    /// Surviving file path, relative to the contacts folder.
+    pub title: String,
+    /// Human-readable number of conflict copies.
+    pub subtitle: String,
+    /// Human-readable disposition.
+    pub trailing: String,
+    /// Semantic merge disposition. Shells branch on this, never on copy.
+    pub disposition: MergeKind,
+}
+
 /// Sorted contact-list rows for `query` (core search).
 #[must_use]
 pub fn list_rows(store: &Store, query: &str) -> Vec<TextRow> {
@@ -104,16 +119,18 @@ pub fn merge_trailing(kind: MergeKind) -> &'static str {
     }
 }
 
-/// Syncthing groups as `text-row`s. Trailing is [`merge_trailing`].
-pub fn conflict_rows(vfs: &dyn Vfs, store: &Store) -> Result<Vec<TextRow>, StoreError> {
+/// Syncthing groups with a typed disposition and display copy.
+pub fn conflict_rows(vfs: &dyn Vfs, store: &Store) -> Result<Vec<ConflictRow>, StoreError> {
     let mut rows = Vec::new();
     for group in store.conflict_groups() {
         let plan = plan_merge(vfs, &store.root, group)?;
-        rows.push(TextRow {
-            id: group.canonical_name.clone(),
-            title: group.canonical_name.clone(),
-            subtitle: Some(format!("{} copies", group.copies.len())),
-            trailing: Some(merge_trailing(plan.kind).into()),
+        let id = store.conflict_id(group);
+        rows.push(ConflictRow {
+            title: id.clone(),
+            id,
+            subtitle: copies_label(group.copies.len()),
+            trailing: merge_trailing(plan.kind).into(),
+            disposition: plan.kind,
         });
     }
     Ok(rows)
@@ -126,9 +143,7 @@ pub fn choice_rows(
     canonical: &str,
 ) -> Result<Vec<TextRow>, StoreError> {
     let group = store
-        .conflict_groups()
-        .iter()
-        .find(|g| g.canonical_name == canonical)
+        .conflict_group(canonical)
         .cloned()
         .ok_or(StoreError::NotFound)?;
     let plan = plan_merge(vfs, &store.root, &group)?;
@@ -144,6 +159,14 @@ pub fn choice_rows(
         }
     }
     Ok(rows)
+}
+
+fn copies_label(count: usize) -> String {
+    if count == 1 {
+        "1 copy".into()
+    } else {
+        format!("{count} copies")
+    }
 }
 
 fn subtitle(card: &Card) -> Option<String> {

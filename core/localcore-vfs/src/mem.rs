@@ -1,8 +1,8 @@
 //! In-memory [`Vfs`] for tests.
 //!
-//! Exists for two reasons: it keeps the sidecar-writer tests off the disk, and
-//! it forces the trait to stay implementable by something that is not
-//! `std::fs` — which is the whole point of the seam (Android SAF is next).
+//! Exists for two reasons: it keeps sidecar-writer tests off disk, and it
+//! verifies that callers depend on the filesystem contract rather than
+//! `std::fs` details.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;

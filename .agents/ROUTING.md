@@ -13,12 +13,13 @@ committed-binding drift would otherwise go unnoticed.
 
 ## Where it runs
 
-Today the trees still live inside the apps. Phase 2 extracts `core/` and
-`shells/`; until then the paths below are the ones that exist.
+Shared crates now live in `core/`, and GTK shell work lives in `shells/`.
+Gallery's pre-migration Rust workspaces remain under `apps/gallery/` until
+its vertical moves; route by the whole work item across those boundaries.
 
 | Work | Environment | Verified by |
 |---|---|---|
-| `apps/gallery/core/**`, `apps/gallery/linux/**`, `apps/health/**`, `docs/**`, `conformance/**` | Fedora container (`docker/`) | `cargo test` / `go test`, seconds |
+| `core/**`, `shells/**`, `apps/gallery/core/**`, `apps/gallery/linux/**`, `apps/health/**`, `docs/**`, `conformance/**` | Fedora container (`docker/`) | `cargo test` / `go test`, seconds |
 | FFI surface change | container, then Mac | Linux `swift build` shim (Phase 0.4), then `macos-26` |
 | `apps/gallery/**` Swift, `apps/contacts/**`, `apps/music/**` | Mac (`mac/`) | `macos-26` by default; Mac VM interactively when >1 round |
 

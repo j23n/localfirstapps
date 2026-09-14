@@ -1,6 +1,8 @@
 //! ADR 0005 R8–R11 against the committed fixture trees.
 
-use contacts_core::{apply_merge, parse, plan_merge, write, MergeKind, Store, StoreError};
+use contacts_core::{
+    apply_merge, parse, plan_merge, write, Card, Labeled, MergeKind, Store, StoreError,
+};
 use localcore_vfs::{MemVfs, Vfs};
 
 fn load_tree(vfs: &MemVfs, root: &str, fixture_dir: &str) {
@@ -87,4 +89,65 @@ fn delete_versus_modify_keeps_the_copy() {
     let disk = parse(&vfs.read("/lib/carol.vcf").unwrap(), "carol.vcf", false).unwrap();
     assert_eq!(disk.full_name, "Carol");
     assert!(!vfs.exists("/lib/carol.sync-conflict-20200901-120000-PHONE01.vcf"));
+}
+
+#[test]
+fn nested_groups_write_the_survivor_in_their_own_directory() {
+    let vfs = MemVfs::new();
+    for dir in ["2024", "Archive"] {
+        let mut surviving = Card::new("photo.vcf");
+        surviving.local_id = format!("{dir}-id");
+        surviving.full_name = format!("{dir} Alice");
+        vfs.insert(
+            &format!("/lib/{dir}/photo.vcf"),
+            write(&surviving).into_bytes(),
+        );
+        vfs.insert(
+            &format!("/lib/{dir}/photo.sync-conflict-20200901-120000-PHONE01.vcf"),
+            write(&surviving).into_bytes(),
+        );
+    }
+
+    let store = Store::open(&vfs, "/lib").unwrap();
+    assert_eq!(store.conflict_groups().len(), 2);
+    for group in store.conflict_groups() {
+        let plan = plan_merge(&vfs, "/lib", group).unwrap();
+        assert!(plan.surviving_path.starts_with(&group.dir));
+        apply_merge(&vfs, "/lib", &plan, &[]).unwrap();
+    }
+
+    assert!(vfs.exists("/lib/2024/photo.vcf"));
+    assert!(vfs.exists("/lib/Archive/photo.vcf"));
+}
+
+#[test]
+fn repeated_values_with_the_same_label_are_not_collapsed() {
+    let vfs = MemVfs::new();
+    let mut card = Card::new("alice.vcf");
+    card.local_id = "alice".into();
+    card.full_name = "Alice".into();
+    card.phones = vec![
+        Labeled {
+            label: "cell".into(),
+            value: "111".into(),
+        },
+        Labeled {
+            label: "cell".into(),
+            value: "222".into(),
+        },
+    ];
+    let bytes = write(&card).into_bytes();
+    vfs.insert("/lib/alice.vcf", bytes.clone());
+    vfs.insert(
+        "/lib/alice.sync-conflict-20200901-120000-PHONE01.vcf",
+        bytes,
+    );
+
+    let store = Store::open(&vfs, "/lib").unwrap();
+    let plan = plan_merge(&vfs, "/lib", &store.conflict_groups()[0]).unwrap();
+
+    assert_eq!(plan.kind, MergeKind::Auto);
+    assert_eq!(plan.merged.phones.len(), 2);
+    assert_eq!(plan.merged.phones[0].value, "111");
+    assert_eq!(plan.merged.phones[1].value, "222");
 }

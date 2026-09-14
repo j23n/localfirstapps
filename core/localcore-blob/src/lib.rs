@@ -97,6 +97,21 @@ fn root_str(root: impl AsRef<Path>) -> Result<String> {
 
 static PUT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+struct HashingReader<R> {
+    inner: R,
+    hasher: Sha256,
+    size: u64,
+}
+
+impl<R: Read> Read for HashingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buf)?;
+        self.hasher.update(&buf[..read]);
+        self.size += read as u64;
+        Ok(read)
+    }
+}
+
 fn valid_sha256(h: &str) -> bool {
     h.len() == 64
         && h.bytes()
@@ -150,7 +165,7 @@ pub fn exists(root: impl AsRef<Path>, hash: &str) -> Result<bool> {
 
 /// [`exists`] through an explicit [`Vfs`].
 pub fn exists_on(vfs: &dyn Vfs, root: &str, hash: &str) -> Result<bool> {
-    Ok(vfs.exists(&path_on(root, hash)?))
+    Ok(vfs.try_exists(&path_on(root, hash)?)?)
 }
 
 /// Write `reader` into the store. `existed` is true when the digest was already present.
@@ -159,49 +174,55 @@ pub fn put(root: impl AsRef<Path>, reader: impl Read) -> Result<PutResult> {
 }
 
 /// [`put`] through an explicit [`Vfs`].
+///
+/// The reader is streamed once into a durable temporary file while hashing,
+/// then renamed to its content-addressed destination. It does not use the
+/// fsync-per-record log append primitive.
 pub fn put_on(vfs: &dyn Vfs, root: &str, mut reader: impl Read) -> Result<PutResult> {
     let tmp_dir = format!("{}/blobs/tmp", root.trim_end_matches('/'));
     vfs.create_dir_all(&tmp_dir)?;
     let n = PUT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
+        .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     let tmp = format!("{tmp_dir}/put-{n}-{nanos}");
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 64 * 1024];
-    let mut size = 0u64;
-    loop {
-        let got = reader.read(&mut buf)?;
-        if got == 0 {
-            break;
-        }
-        hasher.update(&buf[..got]);
-        vfs.append(&tmp, &buf[..got])?;
-        size += got as u64;
-    }
-    if size == 0 {
-        vfs.append(&tmp, b"")?;
-    }
-    let hash = encode_hex(&hasher.finalize());
-    let dest = path_on(root, &hash)?;
-    if vfs.exists(&dest) {
+    let mut hashing = HashingReader {
+        inner: &mut reader,
+        hasher: Sha256::new(),
+        size: 0,
+    };
+    if let Err(err) = vfs.write_atomic_from(&tmp, &mut hashing) {
         let _ = vfs.remove(&tmp);
-        return Ok(PutResult {
+        return Err(err.into());
+    }
+
+    let size = hashing.size;
+    let hash = encode_hex(&hashing.hasher.finalize());
+    let result = (|| -> Result<PutResult> {
+        let dest = path_on(root, &hash)?;
+        if vfs.try_exists(&dest)? {
+            let _ = vfs.remove(&tmp);
+            return Ok(PutResult {
+                hash,
+                size,
+                existed: true,
+            });
+        }
+        if let Some(parent) = dest.rsplit_once('/').map(|(parent, _)| parent) {
+            vfs.create_dir_all(parent)?;
+        }
+        vfs.rename(&tmp, &dest)?;
+        Ok(PutResult {
             hash,
             size,
-            existed: true,
-        });
+            existed: false,
+        })
+    })();
+    if result.is_err() {
+        let _ = vfs.remove(&tmp);
     }
-    if let Some(parent) = dest.rsplit_once('/').map(|(p, _)| p) {
-        vfs.create_dir_all(parent)?;
-    }
-    vfs.rename(&tmp, &dest)?;
-    Ok(PutResult {
-        hash,
-        size,
-        existed: false,
-    })
+    result
 }
 
 /// Open a stored blob.
@@ -217,7 +238,7 @@ pub fn list(root: impl AsRef<Path>) -> Result<Vec<BlobInfo>> {
 /// [`list`] through an explicit [`Vfs`].
 pub fn list_on(vfs: &dyn Vfs, root: &str) -> Result<Vec<BlobInfo>> {
     let base = format!("{}/blobs/sha256", root.trim_end_matches('/'));
-    if !vfs.exists(&base) {
+    if !vfs.try_exists(&base)? {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();

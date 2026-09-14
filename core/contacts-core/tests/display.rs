@@ -2,9 +2,10 @@
 
 use contacts_core::{
     apply_draft, choice_rows, conflict_rows, delete_logged, draft_from_card, field_rows, list_rows,
-    read_ops, save_logged, write, Card, ContactDraft, MemVfs, Store, TYPE_CONTACT_DELETED,
-    TYPE_CONTACT_SAVED,
+    read_ops, resolve_logged, save_logged, write, Card, ContactDraft, MemVfs, MergeKind, Store,
+    TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
 };
+use localcore_vfs::{Entry, ReadSeek, Stat, Vfs, VfsError, VfsResult};
 
 #[test]
 fn list_and_fields_match_ffi_copy() {
@@ -47,8 +48,9 @@ fn conflict_row_trailing_is_needs_choice() {
     );
     let store = Store::open(&vfs, "/lib").unwrap();
     let rows = conflict_rows(&vfs, &store).unwrap();
-    assert_eq!(rows[0].trailing.as_deref(), Some("needs choice"));
-    assert_eq!(rows[0].subtitle.as_deref(), Some("1 copies"));
+    assert_eq!(rows[0].trailing, "needs choice");
+    assert_eq!(rows[0].subtitle, "1 copy");
+    assert_eq!(rows[0].disposition, MergeKind::Choice);
     let choices = choice_rows(&vfs, &store, "alice.vcf").unwrap();
     assert!(choices.iter().any(|row| row.id.contains('|')));
 }
@@ -78,4 +80,91 @@ fn draft_round_trip_and_delete_log() {
         .unwrap()
         .iter()
         .any(|op| op.event_type == TYPE_CONTACT_DELETED));
+}
+
+struct AppendFails {
+    inner: MemVfs,
+}
+
+impl Vfs for AppendFails {
+    fn open(&self, path: &str) -> VfsResult<Box<dyn ReadSeek + Send>> {
+        self.inner.open(path)
+    }
+
+    fn stat(&self, path: &str) -> VfsResult<Stat> {
+        self.inner.stat(path)
+    }
+
+    fn list(&self, dir: &str) -> VfsResult<Vec<Entry>> {
+        self.inner.list(dir)
+    }
+
+    fn stat_entry(&self, path: &str) -> VfsResult<Entry> {
+        self.inner.stat_entry(path)
+    }
+
+    fn create_dir_all(&self, dir: &str) -> VfsResult<()> {
+        self.inner.create_dir_all(dir)
+    }
+
+    fn append(&self, path: &str, _bytes: &[u8]) -> VfsResult<()> {
+        Err(VfsError::PermissionDenied {
+            path: path.to_owned(),
+        })
+    }
+
+    fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
+        self.inner.write_atomic(path, bytes)
+    }
+
+    fn exists(&self, path: &str) -> bool {
+        self.inner.exists(path)
+    }
+
+    fn remove(&self, path: &str) -> VfsResult<()> {
+        self.inner.remove(path)
+    }
+
+    fn rename(&self, from: &str, to: &str) -> VfsResult<()> {
+        self.inner.rename(from, to)
+    }
+}
+
+#[test]
+fn tier_one_save_wins_when_the_folder_log_fails() {
+    let vfs = AppendFails {
+        inner: MemVfs::new(),
+    };
+    let mut store = Store::open(&vfs, "/lib").unwrap();
+    let mut card = Card::new("alice.vcf");
+    card.local_id = "alice".into();
+    card.full_name = "Alice".into();
+
+    let saved = save_logged(&vfs, &mut store, "linux-test", card).unwrap();
+
+    assert_eq!(saved.local_id, "alice");
+    assert!(vfs.exists("/lib/alice.vcf"));
+    assert!(store.get("alice").is_some());
+}
+
+#[test]
+fn resolution_rewalks_before_ignoring_a_folder_log_failure() {
+    let vfs = AppendFails {
+        inner: MemVfs::new(),
+    };
+    let mut card = Card::new("alice.vcf");
+    card.local_id = "alice".into();
+    card.full_name = "Alice".into();
+    let bytes = write(&card).into_bytes();
+    vfs.inner.insert("/lib/alice.vcf", bytes.clone());
+    vfs.inner.insert(
+        "/lib/alice.sync-conflict-20200901-120000-PHONE01.vcf",
+        bytes,
+    );
+    let mut store = Store::open(&vfs, "/lib").unwrap();
+
+    resolve_logged(&vfs, &mut store, "linux-test", "alice.vcf", &[]).unwrap();
+
+    assert!(store.conflict_groups().is_empty());
+    assert!(!vfs.exists("/lib/alice.sync-conflict-20200901-120000-PHONE01.vcf"));
 }

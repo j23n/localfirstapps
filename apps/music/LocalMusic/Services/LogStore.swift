@@ -35,8 +35,8 @@ final class LogStore: @unchecked Sendable {
     private(set) var entries: [Entry] = []
     private let maxEntries = 5000
 
-    /// Shared by `asText`. Callers (`LogPersistence.flushNow`, LogsView)
-    /// run on the main actor; DateFormatter is not thread-safe.
+    /// Shared by `asText`. `LogsView` runs on the main actor;
+    /// DateFormatter is not thread-safe.
     private static let asTextFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
@@ -58,12 +58,6 @@ final class LogStore: @unchecked Sendable {
         entries.append(entry)
         if entries.count > maxEntries {
             entries.removeFirst(entries.count - maxEntries)
-        }
-        // insert is only called on the main thread (see `append`); hop into
-        // the MainActor isolation domain so we can call into the @MainActor
-        // LogPersistence singleton without an extra task hop.
-        MainActor.assumeIsolated {
-            LogPersistence.shared.scheduleFlush()
         }
     }
 

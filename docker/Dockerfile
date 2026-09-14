@@ -243,6 +243,7 @@ RUN set -euo pipefail; \
       || { echo "FATAL: ssh client drop-in written but not included" >&2; exit 1; }
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY agent-home-CLAUDE.md /usr/local/share/agent/CLAUDE.md
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
 USER ${USERNAME}

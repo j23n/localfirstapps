@@ -71,7 +71,8 @@ impl Store {
         let mut cards = Vec::new();
         for file in &outcome.files {
             let bytes = vfs.read(&file.path)?;
-            let mut parsed = parse_multiple(&bytes, &file.name, false);
+            let file_name = relative_to_root(root, &file.path);
+            let mut parsed = parse_multiple(&bytes, &file_name, false);
             let mut rewrite = false;
             for card in &mut parsed {
                 if card.local_id.is_empty() {
@@ -102,6 +103,20 @@ impl Store {
     #[must_use]
     pub fn conflict_groups(&self) -> &[ConflictGroup] {
         &self.groups
+    }
+
+    /// Stable folder-relative key for a conflict group.
+    #[must_use]
+    pub(crate) fn conflict_id(&self, group: &ConflictGroup) -> String {
+        relative_to_root(&self.root, &group.id())
+    }
+
+    /// Conflict group selected by its opaque folder-relative key.
+    #[must_use]
+    pub(crate) fn conflict_group(&self, id: &str) -> Option<&ConflictGroup> {
+        self.groups
+            .iter()
+            .find(|group| self.conflict_id(group) == id)
     }
 
     /// Folder layout.
@@ -159,11 +174,14 @@ impl Store {
                 .map(|existing| existing.file_name.clone())
                 .unwrap_or_else(|| match self.layout() {
                     Layout::SingleFile { file_name } => file_name,
-                    _ => self.unique_file_name(vfs, &card),
+                    _ => String::new(),
                 });
+            if card.file_name.is_empty() {
+                card.file_name = self.unique_file_name(vfs, &card)?;
+            }
         }
         let path = join_root(&self.root, &card.file_name);
-        let mut file_cards: Vec<Card> = if vfs.exists(&path) {
+        let mut file_cards: Vec<Card> = if vfs.try_exists(&path)? {
             let bytes = vfs.read(&path)?;
             let mut disk = parse_multiple(&bytes, &card.file_name, false);
             for sibling in &mut disk {
@@ -221,7 +239,7 @@ impl Store {
             .cloned()
             .collect();
         if remaining.is_empty() {
-            if vfs.exists(&path) {
+            if vfs.try_exists(&path)? {
                 vfs.remove(&path)?;
             }
         } else {
@@ -239,19 +257,27 @@ impl Store {
         }
     }
 
-    fn unique_file_name(&self, vfs: &dyn Vfs, card: &Card) -> String {
+    fn unique_file_name(&self, vfs: &dyn Vfs, card: &Card) -> Result<String, StoreError> {
         let base = suggested_file_name(card);
         let stem = base.trim_end_matches(".vcf");
         let in_memory: std::collections::BTreeSet<&str> =
             self.cards.iter().map(|c| c.file_name.as_str()).collect();
         let mut candidate = base.clone();
         let mut n = 1;
-        while vfs.exists(&join_root(&self.root, &candidate))
+        while vfs.try_exists(&join_root(&self.root, &candidate))?
             || in_memory.contains(candidate.as_str())
         {
             candidate = format!("{stem}-{n}.vcf");
             n += 1;
         }
-        candidate
+        Ok(candidate)
     }
+}
+
+fn relative_to_root(root: &str, path: &str) -> String {
+    let root = root.trim_end_matches(['/', '\\']);
+    path.strip_prefix(root)
+        .and_then(|rest| rest.strip_prefix(['/', '\\']))
+        .unwrap_or(path)
+        .to_owned()
 }

@@ -120,9 +120,10 @@ pub enum EntryKind {
 pub struct Entry {
     /// Final path component, byte-exact as the platform reports it.
     ///
-    /// **Not normalized.** APFS hands back the spelling the file was created
-    /// with, and `stable_uuid` hashes UTF-8 bytes, so normalizing here would
-    /// change every id for NFC-named files arriving from outside.
+    /// **Not normalized.** This filesystem layer reports the spelling it was
+    /// given. Consumers must choose explicitly between byte-exact path
+    /// handling and normalized search/identity policy; `localcore-id`
+    /// currently NFC-normalizes before hashing.
     pub name: String,
     /// File, directory, or symlink.
     pub kind: EntryKind,
@@ -239,6 +240,9 @@ pub trait Vfs: Send + Sync {
     ///   directory, so a crash cannot leave the name pointing at unwritten
     ///   blocks.
     ///
+    /// Newly created files are private (0600) on Unix. Existing files keep
+    /// their prior permissions.
+    ///
     /// # Known limitations (deliberately not fixed)
     ///
     /// - **Extended attributes are lost.** macOS quarantine flags, Finder tags
@@ -253,8 +257,34 @@ pub trait Vfs: Send + Sync {
     ///   than an hour.
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()>;
 
-    /// Whether `path` exists. Never fails — a path that cannot be stat'd for
-    /// any reason reads as absent.
+    /// Stream a content write with the same guarantees as
+    /// [`Vfs::write_atomic`], returning the number of bytes written.
+    ///
+    /// The default buffers for simple in-memory/custom implementations.
+    /// Filesystem implementations should override this to keep large blobs
+    /// bounded in memory.
+    fn write_atomic_from(&self, path: &str, reader: &mut dyn Read) -> VfsResult<u64> {
+        let mut bytes = Vec::new();
+        reader
+            .read_to_end(&mut bytes)
+            .map_err(|err| VfsError::from_io(path, &err))?;
+        self.write_atomic(path, &bytes)?;
+        Ok(bytes.len() as u64)
+    }
+
+    /// Whether `path` exists, propagating errors other than absence.
+    fn try_exists(&self, path: &str) -> VfsResult<bool> {
+        match self.stat(path) {
+            Ok(_) => Ok(true),
+            Err(VfsError::NotFound { .. }) => Ok(false),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Best-effort existence check for non-authoritative UI and tests.
+    ///
+    /// A path that cannot be stat'd reads as absent. Code deciding whether to
+    /// overwrite, delete, or project user data must use [`Vfs::try_exists`].
     fn exists(&self, path: &str) -> bool;
 
     /// Read all of `path` into memory.
@@ -304,6 +334,7 @@ mod tests {
         let file = format!("{dir}/contract.txt");
 
         assert!(!vfs.exists(&file));
+        assert!(!vfs.try_exists(&file).unwrap());
         assert_eq!(
             vfs.stat(&file),
             Err(VfsError::NotFound { path: file.clone() })
@@ -311,6 +342,7 @@ mod tests {
 
         vfs.write_atomic(&file, b"hello").unwrap();
         assert!(vfs.exists(&file));
+        assert!(vfs.try_exists(&file).unwrap());
         assert_eq!(vfs.read(&file).unwrap(), b"hello");
         assert_eq!(vfs.stat(&file).unwrap().size, 5);
         assert!(!vfs.stat(&file).unwrap().is_dir);

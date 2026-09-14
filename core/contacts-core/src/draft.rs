@@ -56,7 +56,9 @@ pub fn apply_draft(card: &mut Card, draft: &ContactDraft) {
 
 fn set_first_labeled(rows: &mut Vec<Labeled>, default_label: &str, value: &str) {
     if value.is_empty() {
-        rows.clear();
+        if !rows.is_empty() {
+            rows.remove(0);
+        }
         return;
     }
     if let Some(first) = rows.first_mut() {
@@ -66,5 +68,60 @@ fn set_first_labeled(rows: &mut Vec<Labeled>, default_label: &str, value: &str) 
             label: default_label.into(),
             value: value.to_string(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clearing_visible_phone_preserves_additional_values() {
+        let mut card = Card::new("alice.vcf");
+        card.phones = vec![
+            Labeled {
+                label: "cell".into(),
+                value: "111".into(),
+            },
+            Labeled {
+                label: "work".into(),
+                value: "222".into(),
+            },
+        ];
+        let mut draft = draft_from_card(&card);
+        draft.phone.clear();
+
+        apply_draft(&mut card, &draft);
+
+        assert_eq!(
+            card.phones,
+            vec![Labeled {
+                label: "work".into(),
+                value: "222".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn editing_visible_email_preserves_additional_values() {
+        let mut card = Card::new("alice.vcf");
+        card.emails = vec![
+            Labeled {
+                label: "home".into(),
+                value: "old@example.com".into(),
+            },
+            Labeled {
+                label: "work".into(),
+                value: "work@example.com".into(),
+            },
+        ];
+        let mut draft = draft_from_card(&card);
+        draft.email = "new@example.com".into();
+
+        apply_draft(&mut card, &draft);
+
+        assert_eq!(card.emails.len(), 2);
+        assert_eq!(card.emails[0].value, "new@example.com");
+        assert_eq!(card.emails[1].value, "work@example.com");
     }
 }

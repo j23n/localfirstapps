@@ -12,7 +12,8 @@ use contacts_core::{
     choice_rows as core_choice_rows, conflict_rows as core_conflict_rows, delete_logged,
     field_rows as core_field_rows, is_conflict_name as core_is_conflict_name,
     list_rows as core_list_rows, parse_multiple, resolve_logged, save_logged, valid_device, write,
-    FieldRow as CoreFieldRow, Store, StoreError, TextRow as CoreTextRow, TEMP_PREFIX,
+    ConflictRow as CoreConflictRow, FieldRow as CoreFieldRow, MergeKind as CoreMergeKind, Store,
+    StoreError, TextRow as CoreTextRow, TEMP_PREFIX,
 };
 
 /// `text-row` (ADR 0004 R4).
@@ -39,6 +40,32 @@ pub struct FieldRow {
     pub value: String,
     /// Whether the shell may edit this row.
     pub editable: bool,
+}
+
+/// Semantic conflict disposition. Shells use this for control flow.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeKind {
+    /// All fields merge deterministically.
+    Auto,
+    /// At least one field requires a user choice.
+    Choice,
+    /// The surviving file disappeared while a copy retains the data.
+    DeletedVersusModified,
+}
+
+/// Display-ready conflict group plus typed disposition.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct ConflictRow {
+    /// Opaque folder-relative key handed back to merge calls.
+    pub id: String,
+    /// Surviving file path relative to the contacts folder.
+    pub title: String,
+    /// Human-readable number of copies.
+    pub subtitle: String,
+    /// Human-readable disposition.
+    pub trailing: String,
+    /// Typed disposition for shell control flow.
+    pub disposition: MergeKind,
 }
 
 /// Typed failures (ADR 0003 R8).
@@ -176,12 +203,12 @@ impl ContactsSession {
         Ok(())
     }
 
-    /// Conflict groups as `text-row`s. Trailing is `needs choice` or `auto`.
-    pub fn conflict_rows(&self) -> Result<Vec<TextRow>, ContactsError> {
+    /// Conflict groups with display copy and a typed merge disposition.
+    pub fn conflict_rows(&self) -> Result<Vec<ConflictRow>, ContactsError> {
         let store = self.store.lock().expect("session lock");
         Ok(core_conflict_rows(&self.vfs, &store)?
             .into_iter()
-            .map(to_text)
+            .map(to_conflict)
             .collect())
     }
 
@@ -231,5 +258,19 @@ fn to_field(row: CoreFieldRow) -> FieldRow {
         label: row.label,
         value: row.value,
         editable: row.editable,
+    }
+}
+
+fn to_conflict(row: CoreConflictRow) -> ConflictRow {
+    ConflictRow {
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        trailing: row.trailing,
+        disposition: match row.disposition {
+            CoreMergeKind::Auto => MergeKind::Auto,
+            CoreMergeKind::Choice => MergeKind::Choice,
+            CoreMergeKind::DeletedVersusModified => MergeKind::DeletedVersusModified,
+        },
     }
 }

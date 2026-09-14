@@ -43,8 +43,9 @@ pub struct MergePlan {
     pub conflicts: Vec<FieldConflict>,
     /// Absolute paths of copies to delete on apply.
     pub copy_paths: Vec<String>,
-    /// Absolute path of the surviving file, if it exists.
-    pub surviving_path: Option<String>,
+    /// Absolute path where the surviving file exists or will be written.
+    pub surviving_path: String,
+    sources: std::collections::BTreeMap<String, Card>,
 }
 
 /// Build a plan for one group. Does not write or delete.
@@ -53,8 +54,8 @@ pub fn plan_merge(
     root: &str,
     group: &ConflictGroup,
 ) -> Result<MergePlan, StoreError> {
-    let surviving_path = join_root(root, &group.canonical_name);
-    let surviving_exists = vfs.exists(&surviving_path);
+    let surviving_path = group.surviving_path(root);
+    let surviving_exists = vfs.try_exists(&surviving_path)?;
     let surviving = if surviving_exists {
         let bytes = vfs.read(&surviving_path)?;
         parse(&bytes, &group.canonical_name, false)
@@ -67,10 +68,10 @@ pub fn plan_merge(
         versions.push(("surviving".into(), card));
     }
     for copy in &group.copies {
-        let path = if copy.path.contains('/') {
+        let path = if is_absolute_path(&copy.path) {
             copy.path.clone()
         } else {
-            join_root(root, &copy.name)
+            join_root(root, &copy.path)
         };
         let bytes = vfs.read(&path)?;
         if let Some(card) = parse(&bytes, &group.canonical_name, false) {
@@ -82,6 +83,7 @@ pub fn plan_merge(
     }
 
     let (merged, conflicts) = merge_versions(&versions);
+    let sources = versions.iter().cloned().collect();
     let kind = if !surviving_exists {
         if conflicts.is_empty() {
             MergeKind::DeletedVersusModified
@@ -98,21 +100,22 @@ pub fn plan_merge(
         .copies
         .iter()
         .map(|c| {
-            if c.path.contains('/') {
+            if is_absolute_path(&c.path) {
                 c.path.clone()
             } else {
-                join_root(root, &c.name)
+                join_root(root, &c.path)
             }
         })
         .collect();
 
     Ok(MergePlan {
         kind,
-        canonical_name: group.canonical_name.clone(),
+        canonical_name: relative_to_root(root, &surviving_path),
         merged,
         conflicts,
         copy_paths,
-        surviving_path: surviving_exists.then_some(surviving_path),
+        surviving_path,
+        sources,
     })
 }
 
@@ -122,31 +125,37 @@ pub fn plan_merge(
 /// here so two devices converge on the same bytes (R9).
 pub fn apply_merge(
     vfs: &dyn Vfs,
-    root: &str,
+    _root: &str,
     plan: &MergePlan,
     choices: &[(String, String)],
 ) -> Result<Card, StoreError> {
-    if plan.kind == MergeKind::Choice {
-        for conflict in &plan.conflicts {
-            if !choices.iter().any(|(f, _)| f == &conflict.field) {
-                return Err(StoreError::IncompleteChoices);
-            }
+    for conflict in &plan.conflicts {
+        let Some((_, source)) = choices.iter().find(|(field, _)| field == &conflict.field) else {
+            return Err(StoreError::IncompleteChoices);
+        };
+        if !conflict
+            .sides
+            .iter()
+            .any(|(candidate, _)| candidate == source)
+        {
+            return Err(StoreError::IncompleteChoices);
         }
     }
     let mut card = plan.merged.clone();
     for (field, source) in choices {
-        if let Some(conflict) = plan.conflicts.iter().find(|c| &c.field == field) {
-            if let Some((_, value)) = conflict.sides.iter().find(|(s, _)| s == source) {
-                apply_choice(&mut card, field, value);
-            }
+        if plan.conflicts.iter().any(|conflict| &conflict.field == field) {
+            let source_card = plan
+                .sources
+                .get(source)
+                .ok_or(StoreError::IncompleteChoices)?;
+            apply_choice(&mut card, field, source_card);
         }
     }
     card.file_name = plan.canonical_name.clone();
     card.canonicalize();
-    let path = join_root(root, &plan.canonical_name);
-    vfs.write_atomic(&path, write(&card).as_bytes())?;
+    vfs.write_atomic(&plan.surviving_path, write(&card).as_bytes())?;
     for copy in &plan.copy_paths {
-        if vfs.exists(copy) {
+        if vfs.try_exists(copy)? {
             vfs.remove(copy)?;
         }
     }
@@ -356,31 +365,47 @@ fn merge_labeled(
     get: impl Fn(&Card) -> &Vec<Labeled>,
     conflicts: &mut Vec<FieldConflict>,
 ) {
-    let mut by_label: std::collections::BTreeMap<String, Vec<(String, String)>> =
-        std::collections::BTreeMap::new();
-    for (source, card) in versions {
-        for row in get(card) {
-            by_label
-                .entry(row.label.clone())
-                .or_default()
-                .push((source.clone(), row.value.clone()));
-        }
-    }
+    let labels: std::collections::BTreeSet<String> = versions
+        .iter()
+        .flat_map(|(_, card)| get(card).iter().map(|row| row.label.clone()))
+        .collect();
     let mut out = Vec::new();
-    for (label, sides) in by_label {
-        let unique: std::collections::BTreeSet<&str> =
-            sides.iter().map(|(_, v)| v.as_str()).collect();
-        if unique.len() > 1 {
-            dest_keep_first(&mut out, &label, &sides);
-            conflicts.push(FieldConflict {
-                field: format!("{kind}:{label}"),
-                sides,
-            });
-        } else if let Some((_, value)) = sides.first() {
-            out.push(Labeled {
-                label,
-                value: value.clone(),
-            });
+    for label in labels {
+        let occurrences = versions
+            .iter()
+            .map(|(_, card)| get(card).iter().filter(|row| row.label == label).count())
+            .max()
+            .unwrap_or(0);
+        for occurrence in 0..occurrences {
+            let sides: Vec<(String, String)> = versions
+                .iter()
+                .filter_map(|(source, card)| {
+                    get(card)
+                        .iter()
+                        .filter(|row| row.label == label)
+                        .nth(occurrence)
+                        .map(|row| (source.clone(), row.value.clone()))
+                })
+                .collect();
+            let unique: std::collections::BTreeSet<&str> =
+                sides.iter().map(|(_, value)| value.as_str()).collect();
+            if unique.len() > 1 {
+                dest_keep_first(&mut out, &label, &sides);
+                let suffix = if occurrence == 0 {
+                    String::new()
+                } else {
+                    format!(":{occurrence}")
+                };
+                conflicts.push(FieldConflict {
+                    field: format!("{kind}:{label}{suffix}"),
+                    sides,
+                });
+            } else if let Some((_, value)) = sides.first() {
+                out.push(Labeled {
+                    label: label.clone(),
+                    value: value.clone(),
+                });
+            }
         }
     }
     out.sort();
@@ -434,34 +459,72 @@ fn merge_addresses(
     merged.addresses = out;
 }
 
-fn apply_choice(card: &mut Card, field: &str, value: &str) {
+fn apply_choice(card: &mut Card, field: &str, source: &Card) {
     match field {
-        "fn" => card.full_name = value.to_owned(),
-        "family" => card.family_name = value.to_owned(),
-        "given" => card.given_name = value.to_owned(),
-        "org" => card.organization = value.to_owned(),
-        "title" => card.job_title = value.to_owned(),
-        "nickname" => card.nickname = value.to_owned(),
-        "note" => card.note = value.to_owned(),
-        "id" => card.local_id = value.to_owned(),
+        "fn" => card.full_name = source.full_name.clone(),
+        "family" => card.family_name = source.family_name.clone(),
+        "given" => card.given_name = source.given_name.clone(),
+        "org" => card.organization = source.organization.clone(),
+        "title" => card.job_title = source.job_title.clone(),
+        "nickname" => card.nickname = source.nickname.clone(),
+        "note" => card.note = source.note.clone(),
+        "id" => card.local_id = source.local_id.clone(),
+        "bday" => card.birthday = source.birthday.clone(),
+        "photo" => card.photo = source.photo.clone(),
         other if other.starts_with("tel:") => {
-            let label = &other[4..];
-            if let Some(row) = card.phones.iter_mut().find(|p| p.label == label) {
-                row.value = value.to_owned();
-            }
+            apply_labeled_choice(&mut card.phones, &source.phones, &other[4..]);
         }
         other if other.starts_with("email:") => {
-            let label = &other[6..];
-            if let Some(row) = card.emails.iter_mut().find(|p| p.label == label) {
-                row.value = value.to_owned();
-            }
+            apply_labeled_choice(&mut card.emails, &source.emails, &other[6..]);
         }
         other if other.starts_with("url:") => {
+            apply_labeled_choice(&mut card.urls, &source.urls, &other[4..]);
+        }
+        other if other.starts_with("adr:") => {
             let label = &other[4..];
-            if let Some(row) = card.urls.iter_mut().find(|p| p.label == label) {
-                row.value = value.to_owned();
+            if let (Some(dest), Some(selected)) = (
+                card.addresses.iter_mut().find(|row| row.label == label),
+                source.addresses.iter().find(|row| row.label == label),
+            ) {
+                *dest = selected.clone();
             }
         }
         _ => {}
     }
+}
+
+fn apply_labeled_choice(rows: &mut [Labeled], source: &[Labeled], key: &str) {
+    let (label, occurrence) = key
+        .rsplit_once(':')
+        .and_then(|(label, suffix)| suffix.parse::<usize>().ok().map(|index| (label, index)))
+        .unwrap_or((key, 0));
+    let selected = source
+        .iter()
+        .filter(|row| row.label == label)
+        .nth(occurrence);
+    if let (Some(row), Some(selected)) = (
+        rows
+        .iter_mut()
+        .filter(|row| row.label == label)
+        .nth(occurrence),
+        selected,
+    ) {
+        *row = selected.clone();
+    }
+}
+
+fn is_absolute_path(path: &str) -> bool {
+    path.starts_with(['/', '\\'])
+        || path
+            .as_bytes()
+            .get(1)
+            .is_some_and(|separator| *separator == b':')
+}
+
+fn relative_to_root(root: &str, path: &str) -> String {
+    let root = root.trim_end_matches(['/', '\\']);
+    path.strip_prefix(root)
+        .and_then(|rest| rest.strip_prefix(['/', '\\']))
+        .unwrap_or(path)
+        .to_owned()
 }

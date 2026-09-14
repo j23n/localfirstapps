@@ -15,7 +15,7 @@ final class ContactsStore {
     var errorMessage: String?
     var lastSyncedAt: Date?
     /// Syncthing `.vcf` groups (ADR 0005 R8). Not Apple CN conflicts.
-    var syncConflictGroups: [TextRow] = []
+    var syncConflictGroups: [ConflictRow] = []
 
     private let parser = VCardParser()
     private let writer = VCardWriter()
@@ -410,6 +410,9 @@ final class ContactsStore {
     private func refreshFromSession(_ session: ContactsSession) throws {
         let rows = try session.listRows()
         var loaded: [Contact] = []
+        // Architectural debt: iOS still reconstructs its domain model from
+        // serialized vCards. Replace this escape hatch with explicit read
+        // models and command DTOs when the R6 boundary is revised.
         for row in rows {
             let text = try session.vcardText(id: row.id)
             let fileName = try session.fileName(id: row.id)

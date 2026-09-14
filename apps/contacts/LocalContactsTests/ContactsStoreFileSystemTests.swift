@@ -87,6 +87,7 @@ struct ContactsStoreFileSystemTests {
         #expect(store.contacts.first?.fileName == "alice.vcf")
         #expect(store.hasSyncConflictGroups)
         #expect(store.syncConflictGroups.first?.id == "alice.vcf")
+        #expect(store.syncConflictGroups.first?.disposition == .choice)
     }
 
     @Test("resolveSyncGroup auto-merges disjoint fields and drops the copy")
@@ -107,6 +108,7 @@ struct ContactsStoreFileSystemTests {
         await store.loadContacts()
         #expect(store.hasSyncConflictGroups)
         #expect(store.syncConflictGroups.first?.trailing == "auto")
+        #expect(store.syncConflictGroups.first?.disposition == .auto)
 
         try await store.resolveSyncGroup(canonicalName: "alice.vcf")
         #expect(!store.hasSyncConflictGroups)

@@ -15,6 +15,6 @@ family spec. ADR 0007 is the sole home for convention.
 | Health ingestion | `docs/spec/adr/0008-health-ingestion.md` |
 
 Work-item routing (not path routing): [`ROUTING.md`](ROUTING.md).
-Graph check (ADR 0002 R13, starts red): [`conformance/`](../conformance/README.md).
+Graph check (ADR 0002 R13, currently green): [`conformance/`](../conformance/README.md).
 
 Do not add a second vocabulary table. Do not put domain state in a shell.

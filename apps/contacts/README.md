@@ -6,10 +6,11 @@ from that directory.
 A file-based contact manager for iOS. Your contacts are stored as plain vCard (.vcf) files in a folder you control — not locked into any service or cloud platform.
 
 The headless core is `core/contacts-core` (parse/write, folder index,
-Syncthing R8–R11, display rows and logged actions). `contacts-ffi`
-copies those rows onto UniFFI. The iOS shell writes through
+Syncthing R8–R11, display rows, typed conflict state and actions).
+`contacts-ffi` copies those rows onto UniFFI. The iOS shell writes through
 `ContactsSession` and still parses vCard text for views and the
-Apple Contacts port. Syncthing groups use `SyncConflictGroupSheet`.
+Apple Contacts port; that serialized read is tracked R6 debt, not a
+completed boundary. Syncthing groups use `SyncConflictGroupSheet`.
 Accent tokens are `design/tokens/contacts.toml` (`ContactsTokens`,
 sourced light/dark). Screens are `ui-spec/screens.toml`.
 The Linux shell is `shells/contacts-gtk` (`--comet` for Comet).
@@ -23,8 +24,9 @@ The Linux shell is `shells/contacts-gtk` (`--comet` for Comet).
 | Device id | per-device | iOS: `UserDefaults` `LocalContacts_DeviceId`. Linux: `$XDG_CONFIG_HOME/localcontacts/device-id` |
 | Folder bookmark / last path | per-device | iOS: `UserDefaults` security-scoped bookmark. Linux: `$XDG_CONFIG_HOME/localcontacts/folder` |
 
-Log growth is one event per user save, delete, or Syncthing-group
-resolve. That is a gesture log; no compaction.
+Log growth is at most one event per user save, delete, or
+Syncthing-group resolve. The Tier-2 append is best-effort after the
+authoritative vCard mutation. That is a gesture log; no compaction.
 
 ```
 ./scripts/generate_bindings.sh   # UniFFI Swift (Linux-safe)

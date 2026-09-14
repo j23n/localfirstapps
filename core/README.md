@@ -6,8 +6,9 @@ app core, and the R14 vocabulary crate:
 `localcore-vfs`, `localcore-id`, `localcore-walk`, `localcore-conflict`,
 `localcore-queue`, `localcore-log`, `localcore-blob`, `localcore-geo`,
 `localcore-ui` (ADR 0004 kinds + token hex; no UI toolkit),
-`contacts-core` (display rows and logged actions; both shells),
-`contacts-ffi` (R6-clean; iOS writes and logs through it).
+`contacts-core` (display rows, typed conflict state and actions),
+`contacts-ffi` (record-inventory green; iOS writes through it, while
+serialized-vCard reads remain R6 debt).
 
 Token tables live in `design/tokens/` (sourced dark accents as of
 3.5). Contacts screens live in `apps/contacts/ui-spec/`. Regenerate

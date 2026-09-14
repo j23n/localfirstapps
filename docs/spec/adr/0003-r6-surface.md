@@ -1,8 +1,8 @@
-# ADR 0003 R6 — display-record surface
+# ADR 0003 R6 — shell boundary surface
 
 - Status: Accepted (design; gallery FFI is not rewritten here)
 - Date: 2026-09-12
-- Revised: 2026-09-13 (`contacts-ffi` is R6-green); 2026-09-14 (Milestone C: rows produced in `contacts-core`)
+- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`; architecture review names serialized vCard debt)
 - Parent: [0003-app-core.md](0003-app-core.md) R6, [0004-ui-spec-and-shells.md](0004-ui-spec-and-shells.md) R4
 
 ## Scope
@@ -13,11 +13,14 @@ now so every later vertical designs against it.
 
 It is **not** a gallery FFI rewrite. `gallery-ffi` stays as it is. The
 conformance check starts red and pins that red so a new Record cannot
-hide behind the known ones. `contacts-ffi` (Phase 3.1, mutations in 3.4) is green:
-`TextRow` and `FieldRow` only. Save/delete take and return strings.
+hide behind the known ones. `contacts-ffi` (Phase 3.1, mutations in 3.4) is
+syntax-green for its Record inventory: `TextRow`, `FieldRow`, and typed
+`ConflictRow`. Save/delete take and return strings.
 Those rows are produced in `contacts-core` (Milestone C); the FFI
 crate copies them onto the wire. CI runs the same checker over
-`core/contacts-ffi/src` without `--expect-violations`.
+`core/contacts-ffi/src` without `--expect-violations`. The checker cannot see
+that `vcard_text` serializes a whole domain entity, so contacts is not
+semantically R6-complete.
 
 ## What may cross
 
@@ -31,17 +34,22 @@ Only these values cross to a shell:
 - **lists of those**
 - **display records** — structs whose every field is a display-ready
   value for *exactly one* item kind in ADR 0004 R4
+- **command DTOs** — explicit editable fields or action arguments sent back
+  to the core
+- **host-port DTOs** — the minimum structured values needed by a platform
+  service such as Contacts or media playback
 
 A bare `Vec<String>` of ids is structure (ADR 0003 R4) and is allowed.
 A struct that *contains* a list is not a display record: no ADR 0004
 item kind carries a list. Lists of formatted rows are the collection
 R4 forbids marshaling in one shot.
 
-**No domain record crosses**, under any name. A type an app core keys
-domain logic on — a photo, a folder, a memory, a face, a cluster, a
-sidecar, a scan outcome, a generation-inputs snapshot — does not
-appear in the exported surface. That is how ADR 0001 R4 is enforced
-where it can be enforced at all.
+**No domain entity crosses**, under any name or serialization. A type an app
+core keys domain logic on — a photo, contact/card, folder, memory, face,
+cluster, sidecar, scan outcome, or generation-inputs snapshot — does not
+appear in the exported surface as a Record, JSON string, vCard string, or
+other whole-domain payload. Explicit DTOs are preferable to opaque
+serialization because their purpose and fields are reviewable.
 
 ## Display-record taxonomy
 
@@ -53,7 +61,7 @@ key the row; it is not a domain key the shell interprets.
 
 | Slot kind | Required fields | Optional fields |
 |---|---|---|
-| `text-row` | `title` | `id`, `subtitle`, `trailing`, `trailing_value`, `leading_symbol`, `symbol` |
+| `text-row` | `title` | `id`, `subtitle`, `trailing`, `trailing_value`, `leading_symbol`, `symbol`, typed action/disposition |
 | `media-item` | one of `thumbnail`, `thumbnail_ref`, `thumbnail_id` | `id`, `label`, `badge`, and the unused thumbnail aliases |
 | `field-row` | `label`, `value` | `id`, `editable`, `editability` |
 | `toggle-row` | `label`, and one of `on`, `on_off`, `state` | `id` |
@@ -120,7 +128,9 @@ exported types. The default gallery-ffi run is red while any listed
 Record remains. `--expect-violations` succeeds only when the
 violation set equals `expected.txt`, so a new domain Record cannot
 hide. `--self-test` exercises the parser and the slot taxonomy.
-`contacts-ffi` is a second `--src` and must stay green.
+`contacts-ffi` is a second `--src` and its Record inventory must stay green.
+Semantic review additionally checks exported string payloads and command/host
+DTO purpose; the parser cannot establish those properties.
 
 The check going green is the gallery (and then each later app) FFI
 rewrite, not this document.

@@ -10,14 +10,14 @@ The layers every app is built from, and what may cross each boundary.
 
 ## Requirements
 
-**R1.** Every app is composed of exactly six layers:
+**R1.** The architecture separates six responsibilities:
 
 ```
 shell/        per platform, per app. Binds the UI spec to native widgets; owns
               host integration. SwiftUI (iOS) and GTK4/libadwaita (Linux, Comet).
-shell-kit/    per platform, shared by all apps. One native binding per slot kind
-              (ADR 0004 R4), written once and reused four times. Depends on the
-              slot vocabulary and nothing else — no app core, no domain type.
+shell-kit/    optional per-platform extraction for bindings proven reusable by
+              at least two apps. Depends on the slot vocabulary and nothing
+              else — no app core, no domain type.
               User input leaves it as an opaque action identifier through a
               callback its host shell installs; it never calls an app core.
 ui-spec/      per app. Screens, slots, actions, navigation, design tokens.
@@ -29,6 +29,10 @@ localcore/    shared by all apps. Locate, walk, index, project, reconcile,
 platform/     per platform, defined by app-core as narrow ports. Security
               scopes, media playback, system contacts, share sheets.
 ```
+
+These are ownership boundaries, not a required package count. A shell may
+hold a binding until a second app proves it reusable; extracting a
+`shell-kit` is an implementation decision, not evidence that reuse exists.
 
 **R2.** Dependencies point downward only. `localcore` MUST NOT depend on any
 app core. An app core MUST NOT depend on another app core. A shell MUST NOT
@@ -72,7 +76,7 @@ toolkit. Introducing a third toolkit is an amendment to this document.
 companion (digikam, khard, kew) MAY read and write the same folder, and
 formats MUST remain compatible with such tools, but no feature requires one.
 
-**R9.** The Rust source is **two Cargo workspaces**:
+**R9.** New shared Rust code is rooted in **two primary Cargo workspaces**:
 
 - `core/` — `localcore` and the four app cores. No member may depend on a UI
   toolkit, directly or transitively, which is what makes ADR 0002 R13's
@@ -80,6 +84,10 @@ formats MUST remain compatible with such tools, but no feature requires one.
 - `shells/` — the Linux shells and the GTK `shell-kit`.
   `shell-kit-gtk` landed in Phase 3.3 (vocabulary only; no app core).
   `contacts-gtk` landed in Phase 3.5 (kit + `contacts-core`).
+
+Gallery's existing core and Linux workspaces remain separate until its
+vertical migrates. The repository therefore currently tracks four lockfiles;
+the two-workspace shape is a destination, not a present-tense invariant.
 
 Feature unification is per workspace, so a GTK feature flag cannot reach an
 app core and `cargo test` in `core/` runs on a machine with no GUI libraries
@@ -91,7 +99,8 @@ installed.
   edge in R2 fails.
 - `cargo build` for each app core succeeds for iOS and Linux targets from
   unmodified sources.
-- `shell-kit`'s manifest names no app core and no domain crate.
+- A `shell-kit` manifest, when one exists, names no app core and no domain
+  crate.
 - No shell source file contains a sort comparator, a date or number
   formatter, a predicate over domain records, or an enablement rule.
 - Every trait a shell implements for its app core fits R5's one-sentence
@@ -111,11 +120,10 @@ R4 is the load-bearing requirement. A shell that computes anything is a shell
 that must be re-verified per platform, and with two toolkits and four apps
 that is eight places for the same bug.
 
-`shell-kit` (r2) exists because ADR 0004 R6 requires each slot binding to be
-written once per platform and reused by all four apps, and the original
-five-layer model had nowhere to put such a thing: every layer was either
-per-app or below the platform boundary. Without it, R6 was unimplementable
-without violating R2.
+`shell-kit` is a destination for demonstrated reuse, not a mandatory layer
+created from an inventory. `shell-kit-gtk` is provisional after contacts:
+music is the first opportunity to show whether its APIs remove real app-shell
+code without reducing native behavior to placeholder widgets.
 
 R9 (r2) records a split that already existed by accident — gallery's `linux/`
 has always carried its own lockfile — and makes it deliberate, because the

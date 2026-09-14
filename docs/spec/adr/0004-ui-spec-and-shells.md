@@ -83,19 +83,20 @@ it is never a one-off widget in one shell.
 
 ### Shells
 
-**R6.** A shell MUST provide exactly one native binding per kind in R4. Each
-binding is written once per platform and reused by all four apps, and it lives
-in that platform's `shell-kit` (ADR 0001 R1), which depends on this
-vocabulary and on no app core.
+**R6.** Every kind used by a screen MUST have a native binding on that
+platform. A binding proven reusable by a second app belongs in that
+platform's `shell-kit` (ADR 0001 R1), which depends on this vocabulary and on
+no app core. A generated enum arm proves inventory coverage; it does not by
+itself prove that a production-quality reusable binding exists.
 
-As of Milestone C, `shell-kit-gtk` exists and is exhaustive. There is no
-`shell-kit-swift`: the iOS contacts views are hand-rolled SwiftUI. The
-Swift kit is the cost of the next SwiftUI vertical (music, Phase 4), not
-a waiver of this requirement.
+As of Milestone C, `shell-kit-gtk` is a provisional extraction from one app.
+There is no `shell-kit-swift`: the iOS contacts views are hand-rolled
+SwiftUI. Music is the second-consumer test for both platforms; it decides
+which bindings are genuinely shared.
 
-**R7.** An R4 **kind** with no binding MUST fail the build (non-exhaustive
-match). That is the missing-widget gate. Silent omission of a kind is not
-permitted.
+**R7.** An R4 **kind** omitted from a vocabulary consumer MUST fail the build
+through a non-exhaustive match. Tests and review still verify that the
+matched implementation has the data and behavior the kind requires.
 
 A spec **screen** with no view on a platform that hosts it is a **product
 gap**, recorded on the implementation plan. It is not a missing kind.
@@ -149,23 +150,23 @@ fits, shells SHOULD use it in preference to a token. Tokens exist for the
 cases where the system has no opinion, chiefly the accent and the app's own
 surfaces.
 
-**R13.** Screen **titles** are authored in the spec. Body copy that both
-core-loop shells show MUST be identical and SHOULD be produced by the
-app core (field labels, conflict trailing tokens, list subtitles).
-Platform-idiomatic differences are confined to control labels the
-platform itself owns. Putting every string in the spec would be a
-fourth R14 output and is not opened here.
+**R13.** Screen **titles** are authored in the spec. The app core owns
+semantic facts, stable message/action keys, formatted domain values and
+action availability. User-facing prose belongs in per-app localization
+resources; shells MUST branch on typed actions or dispositions, never on
+visible copy. Platform-idiomatic differences are confined to control labels
+the platform itself owns.
 
 ## Conformance
 
 - Every screen in every app resolves to kinds drawn only from R4.
-- Each *kit* binds every kind in R4; a missing kind fails that kit's build.
-- GTK bindings live in `shell-kit-gtk` and are used by `contacts-gtk`.
-  The iOS kit is not yet written (Phase 4).
+- Each kind a shell uses has a native binding. Generated exhaustive matches
+  prove vocabulary coverage, while tests prove required data and behavior.
+- GTK's provisional bindings live in `shell-kit-gtk` and are used by
+  `contacts-gtk`. A second app has not yet established reuse.
 - No shell source contains a hard-coded colour outside generated tokens
   or a platform semantic colour (R12).
-- Core-loop copy that both shells show is produced in the app core or
-  matches by construction.
+- Shell control flow uses typed actions/dispositions rather than display copy.
 - The Comet build is the GTK binary; chrome follows width as well as
   `--comet`.
 - A new *kind* appears on GTK with no new widget code in the app shell.
@@ -184,10 +185,10 @@ fails the build until a view exists.
 
 | Finding | Disposition |
 |---|---|
-| R4 kinds were enough | Held. No amendment to the tables. |
-| `shell-kit-gtk` is exhaustive; iOS has no kit | R6 records the Swift kit as Phase 4. |
+| R4 kinds were enough for contacts | No amendment needed for this slice; gallery/media workloads remain untested. |
+| `shell-kit-gtk` exhaustively names kinds; iOS has no kit | Enum coverage is not reuse evidence. Both platforms wait for a second app before the kit boundary is considered stable. |
 | `ContactsScreen` is generated and unused by both view trees | R7/R14: kinds fail the build; unbound screens are a gap list. C-loop: `folder-picker`, `contact-list`, `contact-detail`, `contact-edit`, `settings` (partial), `sync-conflict-group`. Not built: `tag-management`, `logs`. `apple-conflict` is iOS-only (ADR 0007 R15). |
-| GTK 3.5 formatted rows in the shell | Moved `list_rows` / `field_rows` / `conflict_rows` / `choice_rows` / `ContactDraft` / logged save-delete-resolve into `contacts-core`. FFI copies those rows onto UniFFI. |
+| GTK 3.5 formatted rows in the shell | Moved `list_rows` / `field_rows` / typed `conflict_rows` / `choice_rows` / `ContactDraft` / logged save-delete-resolve into `contacts-core`. FFI copies those rows onto UniFFI. |
 | `--comet` was a fixed size, not adaptive | R8 now requires chrome to follow width (550 px). |
 | iOS uses `Color.accentColor` (asset catalog) | R12. Generated `accentDark` is for GTK CSS and any Swift that does not go through the catalog. |
 | GTK edit form is six fields | Product gap, not a kind gap. Full vCard fields stay on iOS. |
@@ -203,8 +204,9 @@ product, and is identical everywhere. How that screen is *drawn* is the
 platform's business, and imitating a foreign platform is the one thing that
 reliably reads as cheap.
 
-The closed vocabulary in R4 is the guard rail. Kept small, the spec is a
-cheap description that makes drift a build error. Allowed to grow toward
+The closed vocabulary in R4 is a review guard rail. Kept small, the spec is a
+cheap description that makes omissions in generated consumers a build error.
+It does not make incomplete widget behavior a compile error. Allowed to grow toward
 geometry, it becomes a UI framework, and a UI framework maintained by one
 person alongside four apps will consume the project. R2 and R4 exist to make
 that failure mode structurally hard rather than merely discouraged.
@@ -212,13 +214,13 @@ that failure mode structurally hard rather than merely discouraged.
 R14 (r2) resolves a contradiction in r1, which required a missing binding to
 fail *the build* while the implementation plan forbade codegen outright.
 Neither half was wrong; they simply could not both hold. Three enums and a
-token table are about fifty lines of build script and buy a compile error at
-exactly the boundary that matters. Everything past that is the framework, and
-the list is closed so that "just one more generated thing" is an amendment
-rather than an afternoon.
+token table keep vocabulary use explicit and reproducible. Widget capability
+still needs tests and review. Everything past that is the framework, and the
+list is closed so that "just one more generated thing" is an amendment rather
+than an afternoon.
 
-Milestone C (Phase 3.6) is the first time this document met a second
-toolkit. The vocabulary held. The claim that every spec screen fails the
-build did not: a core-loop vertical leaves later screens as gaps, and
-that has to be sayable without pretending a missing *kind*. The
-amendments above are that correction, not a new UI framework.
+Milestone C (Phase 3.6) is the first time this document met a second toolkit,
+but only through one app. Contacts needed no new kind. That is useful evidence
+for this vertical, not proof that the vocabulary or `shell-kit` abstractions
+serve media, grids, progress, or large collections. Music and a thin gallery
+probe provide the next evidence.
