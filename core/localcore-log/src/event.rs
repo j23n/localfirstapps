@@ -59,7 +59,21 @@ pub struct BlobImport {
     pub kind: String,
 }
 
-/// Whether `t` is an allowed event type.
+/// Whether `t` is a legal type token. Shape only: `[a-z][a-z0-9_]*`.
+///
+/// The envelope does not own a monorepo enum of types (Phase 3.4).
+/// [`known_type`] lists the health and gallery types this crate's helpers
+/// understand; apps may append any token that passes here.
+pub fn valid_type(t: &str) -> bool {
+    let mut chars = t.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Whether `t` is a health or gallery type this crate documents.
 pub fn known_type(t: &str) -> bool {
     matches!(
         t,
@@ -235,9 +249,8 @@ fn validate_ts(ts: &str) -> Result<(), Error> {
     if hour > 23 || minute > 59 || second > 60 {
         return Err(Error::Invalid(format!("ts: invalid time {ts}")));
     }
-    let rebuilt = format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:09}Z"
-    );
+    let rebuilt =
+        format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:09}Z");
     if rebuilt != ts {
         return Err(Error::Invalid(
             "ts must be UTC with 9 fractional digits".into(),
@@ -284,8 +297,11 @@ impl Event {
         if !valid_device(&self.dev) {
             return Err(Error::Invalid(format!("invalid device {:?}", self.dev)));
         }
-        if !known_type(&self.event_type) {
-            return Err(Error::Invalid(format!("unknown type {:?}", self.event_type)));
+        if !valid_type(&self.event_type) {
+            return Err(Error::Invalid(format!(
+                "invalid type {:?}",
+                self.event_type
+            )));
         }
         if self.body.is_null() {
             return Err(Error::Invalid("missing body".into()));
@@ -429,8 +445,10 @@ mod tests {
         ev.ts = "2024-01-15T12:00:00+00:00".into();
         assert!(ev.validate().is_err(), "accepted offset timestamp");
         ev.ts = "2024-01-15T12:00:00.000000000Z".into();
-        ev.event_type = "not_a_type".into();
-        assert!(ev.validate().is_err(), "accepted unknown type");
+        ev.event_type = "Not-A-Type".into();
+        assert!(ev.validate().is_err(), "accepted invalid type shape");
+        ev.event_type = "contact_saved".into();
+        ev.validate().unwrap();
     }
 
     #[test]
@@ -492,6 +510,16 @@ mod tests {
         let s = String::from_utf8(line).unwrap();
         assert!(s.contains("a<b>&c"), "{s}");
         assert!(!s.contains("\\u003c"), "{s}");
+    }
+
+    #[test]
+    fn type_shape_is_open() {
+        assert!(valid_type("contact_saved"));
+        assert!(valid_type("a"));
+        assert!(!valid_type(""));
+        assert!(!valid_type("Note"));
+        assert!(!valid_type("bad-type"));
+        assert!(!known_type("contact_saved"));
     }
 
     #[test]

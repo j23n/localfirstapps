@@ -758,6 +758,7 @@ dependencies = [
 name = "localcore-log"
 version = "0.1.0"
 dependencies = [
+ "localcore-vfs",
  "serde",
  "serde_json",
 ]
@@ -767,6 +768,7 @@ name = "localcore-queue"
 version = "0.1.0"
 dependencies = [
  "rusqlite",
+ "unicode-normalization",
 ]
 
 [[package]]

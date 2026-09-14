@@ -41,6 +41,12 @@ impl Vfs for StdVfs {
     fn stat_entry(&self, path: &str) -> VfsResult<Entry> {
         self.inner().stat_entry(path)
     }
+    fn create_dir_all(&self, dir: &str) -> VfsResult<()> {
+        self.inner().create_dir_all(dir)
+    }
+    fn append(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
+        self.inner().append(path, bytes)
+    }
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
         self.inner().write_atomic(path, bytes)
     }

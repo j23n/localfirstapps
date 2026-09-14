@@ -20,12 +20,26 @@ final class ContactsStore {
     private let parser = VCardParser()
     private let writer = VCardWriter()
     private var session: ContactsSession?
+    /// Per-device log partition (ADR 0005 R5). Not synced.
+    let deviceId: String
     let bookmarkManager = BookmarkManager()
     let folderAccess = FolderAccessManager()
     let syncService: CNSyncService
 
-    init(syncService: CNSyncService = CNSyncService()) {
+    static let deviceIdKey = "LocalContacts_DeviceId"
+
+    init(syncService: CNSyncService = CNSyncService(), deviceId: String? = nil) {
         self.syncService = syncService
+        self.deviceId = deviceId ?? Self.storedDeviceId()
+    }
+
+    static func storedDeviceId(defaults: UserDefaults = .standard) -> String {
+        if let existing = defaults.string(forKey: deviceIdKey), !existing.isEmpty {
+            return existing
+        }
+        let id = "ios-\(UUID().uuidString)"
+        defaults.set(id, forKey: deviceIdKey)
+        return id
     }
 
     // MARK: - Computed
@@ -147,7 +161,7 @@ final class ContactsStore {
         errorMessage = nil
 
         do {
-            let opened = try ContactsSession.open(root: url.path)
+            let opened = try ContactsSession.open(root: url.path, device: deviceId)
             session = opened
             try opened.reload()
             try refreshFromSession(opened)
@@ -388,7 +402,7 @@ final class ContactsStore {
     private func openSession() throws -> ContactsSession {
         if let session { return session }
         guard let url = folderURL else { throw ContactsStoreError.noFolder }
-        let opened = try ContactsSession.open(root: url.path)
+        let opened = try ContactsSession.open(root: url.path, device: deviceId)
         session = opened
         return opened
     }

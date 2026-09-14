@@ -648,12 +648,16 @@ open class ContactsSession: ContactsSessionProtocol, @unchecked Sendable {
     
     /**
      * Walk `root` and load surviving `.vcf` files.
+     *
+     * `device` is this device's log partition (ADR 0005 R4/R5). The
+     * identifier stays off the synced folder.
      */
-public static func `open`(root: String)throws  -> ContactsSession  {
+public static func `open`(root: String, device: String)throws  -> ContactsSession  {
     return try  FfiConverterTypeContactsSession_lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
         uniffiCallStatus in
     uniffi_contacts_ffi_fn_constructor_contactssession_open(
-        FfiConverterString.lower(root),uniffiCallStatus
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(device),uniffiCallStatus
     )
 })
 }
@@ -1275,7 +1279,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_contacts_ffi_checksum_method_contactssession_vcard_text() != 2677) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_contacts_ffi_checksum_constructor_contactssession_open() != 3129) {
+    if (uniffi_contacts_ffi_checksum_constructor_contactssession_open() != 60812) {
         return InitializationResult.apiChecksumMismatch
     }
 

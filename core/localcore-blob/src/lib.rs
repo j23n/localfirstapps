@@ -3,18 +3,17 @@
 //! Layout: `{root}/blobs/sha256/ab/cd/<64-hex>`
 //!
 //! Ported from health `internal/blobs`. The Go package stays until Phase 6.
+//! I/O goes through [`localcore_vfs::Vfs`].
 
 #![forbid(unsafe_code)]
 
+use localcore_vfs::{EntryKind, StdVfs, Vfs, VfsError};
 use sha2::{Digest, Sha256};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs::File;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-#[cfg(unix)]
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 
 /// Result of [`put`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,7 +38,10 @@ pub enum Error {
     InvalidHash,
     Io(io::Error),
     /// File at the content-addressed path hashes to a different digest.
-    VerifyMismatch { hash: String, actual: String },
+    VerifyMismatch {
+        hash: String,
+        actual: String,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -71,6 +73,30 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<VfsError> for Error {
+    fn from(e: VfsError) -> Self {
+        Error::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+    }
+}
+
+/// Temp prefix for Path wrappers over [`StdVfs`].
+pub const TEMP_PREFIX: &str = ".localcore-blob-tmp-";
+
+fn std_vfs() -> StdVfs {
+    StdVfs::new(TEMP_PREFIX)
+}
+
+fn root_str(root: impl AsRef<Path>) -> Result<String> {
+    root.as_ref().to_str().map(str::to_owned).ok_or_else(|| {
+        Error::Io(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "blob root is not UTF-8",
+        ))
+    })
+}
+
+static PUT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 fn valid_sha256(h: &str) -> bool {
     h.len() == 64
         && h.bytes()
@@ -85,14 +111,6 @@ fn encode_hex(bytes: &[u8]) -> String {
         out.push(HEX[(b & 0x0f) as usize] as char);
     }
     out
-}
-
-fn mkdir_private(path: &Path) -> io::Result<()> {
-    let mut b = fs::DirBuilder::new();
-    b.recursive(true);
-    #[cfg(unix)]
-    b.mode(0o700);
-    b.create(path)
 }
 
 /// Store path for a hex SHA-256 digest.
@@ -110,114 +128,75 @@ pub fn path(root: impl AsRef<Path>, hash: &str) -> Result<PathBuf> {
         .join(&h))
 }
 
+/// Store path for a hex SHA-256 digest, as a UTF-8 string.
+pub fn path_on(root: &str, hash: &str) -> Result<String> {
+    let h = hash.to_ascii_lowercase();
+    if !valid_sha256(&h) {
+        return Err(Error::InvalidHash);
+    }
+    let root = root.trim_end_matches('/');
+    Ok(format!(
+        "{root}/blobs/sha256/{}/{}/{}",
+        &h[..2],
+        &h[2..4],
+        h
+    ))
+}
+
 /// Whether the blob is already stored.
 pub fn exists(root: impl AsRef<Path>, hash: &str) -> Result<bool> {
-    let p = path(root, hash)?;
-    match fs::metadata(p) {
-        Ok(_) => Ok(true),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e.into()),
-    }
+    exists_on(&std_vfs(), &root_str(root)?, hash)
 }
 
-struct Tee<W> {
-    inner: W,
-    hasher: Sha256,
-    n: u64,
+/// [`exists`] through an explicit [`Vfs`].
+pub fn exists_on(vfs: &dyn Vfs, root: &str, hash: &str) -> Result<bool> {
+    Ok(vfs.exists(&path_on(root, hash)?))
 }
 
-impl<W: Write> Write for Tee<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let n = self.inner.write(buf)?;
-        self.hasher.update(&buf[..n]);
-        self.n += n as u64;
-        Ok(n)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
-    }
+/// Write `reader` into the store. `existed` is true when the digest was already present.
+pub fn put(root: impl AsRef<Path>, reader: impl Read) -> Result<PutResult> {
+    put_on(&std_vfs(), &root_str(root)?, reader)
 }
 
-struct RemoveOnDrop(Option<PathBuf>);
-
-impl Drop for RemoveOnDrop {
-    fn drop(&mut self) {
-        if let Some(p) = self.0.take() {
-            let _ = fs::remove_file(p);
-        }
-    }
-}
-
-impl RemoveOnDrop {
-    fn disarm(&mut self) {
-        self.0.take();
-    }
-}
-
-fn create_temp(tmp_dir: &Path) -> io::Result<(File, PathBuf)> {
-    let pid = process::id();
+/// [`put`] through an explicit [`Vfs`].
+pub fn put_on(vfs: &dyn Vfs, root: &str, mut reader: impl Read) -> Result<PutResult> {
+    let tmp_dir = format!("{}/blobs/tmp", root.trim_end_matches('/'));
+    vfs.create_dir_all(&tmp_dir)?;
+    let n = PUT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    for n in 0..1024u32 {
-        let p = tmp_dir.join(format!("put-{pid}-{nanos}-{n}"));
-        let mut opts = OpenOptions::new();
-        opts.write(true).create_new(true);
-        #[cfg(unix)]
-        opts.mode(0o600);
-        match opts.open(&p) {
-            Ok(f) => return Ok((f, p)),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(e),
+    let tmp = format!("{tmp_dir}/put-{n}-{nanos}");
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    let mut size = 0u64;
+    loop {
+        let got = reader.read(&mut buf)?;
+        if got == 0 {
+            break;
         }
+        hasher.update(&buf[..got]);
+        vfs.append(&tmp, &buf[..got])?;
+        size += got as u64;
     }
-    Err(io::Error::new(
-        io::ErrorKind::AlreadyExists,
-        "could not create a unique temp file in blobs/tmp",
-    ))
-}
-
-/// Write `reader` into the store. `existed` is true when the digest was already present.
-pub fn put(root: impl AsRef<Path>, mut reader: impl Read) -> Result<PutResult> {
-    let root = root.as_ref();
-    let tmp_dir = root.join("blobs").join("tmp");
-    mkdir_private(&tmp_dir)?;
-    let (tmp, tmp_name) = create_temp(&tmp_dir)?;
-    let mut guard = RemoveOnDrop(Some(tmp_name.clone()));
-    let mut tee = Tee {
-        inner: tmp,
-        hasher: Sha256::new(),
-        n: 0,
-    };
-    io::copy(&mut reader, &mut tee)?;
-    tee.flush()?;
-    let Tee {
-        inner,
-        hasher,
-        n: size,
-    } = tee;
-    inner.sync_all()?;
-    drop(inner);
+    if size == 0 {
+        vfs.append(&tmp, b"")?;
+    }
     let hash = encode_hex(&hasher.finalize());
-    let dest = path(root, &hash)?;
-    match fs::metadata(&dest) {
-        Ok(_) => {
-            return Ok(PutResult {
-                hash,
-                size,
-                existed: true,
-            });
-        }
-        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
-        Err(_) => {}
+    let dest = path_on(root, &hash)?;
+    if vfs.exists(&dest) {
+        let _ = vfs.remove(&tmp);
+        return Ok(PutResult {
+            hash,
+            size,
+            existed: true,
+        });
     }
-    if let Some(parent) = dest.parent() {
-        mkdir_private(parent)?;
+    if let Some(parent) = dest.rsplit_once('/').map(|(p, _)| p) {
+        vfs.create_dir_all(parent)?;
     }
-    fs::rename(&tmp_name, &dest)?;
-    guard.disarm();
+    vfs.rename(&tmp, &dest)?;
     Ok(PutResult {
         hash,
         size,
@@ -232,39 +211,35 @@ pub fn open(root: impl AsRef<Path>, hash: &str) -> Result<File> {
 
 /// Walk `blobs/sha256/ab/cd/<hash>`, skipping tmp. Sorted by hash.
 pub fn list(root: impl AsRef<Path>) -> Result<Vec<BlobInfo>> {
-    let base = root.as_ref().join("blobs").join("sha256");
-    match fs::metadata(&base) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e.into()),
-        Ok(_) => {}
+    list_on(&std_vfs(), &root_str(root)?)
+}
+
+/// [`list`] through an explicit [`Vfs`].
+pub fn list_on(vfs: &dyn Vfs, root: &str) -> Result<Vec<BlobInfo>> {
+    let base = format!("{}/blobs/sha256", root.trim_end_matches('/'));
+    if !vfs.exists(&base) {
+        return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    walk_blobs(&base, &mut out)?;
+    walk_blobs(vfs, &base, &mut out)?;
     out.sort_by(|a, b| a.sha256.cmp(&b.sha256));
     Ok(out)
 }
 
-fn walk_blobs(dir: &Path, out: &mut Vec<BlobInfo>) -> io::Result<()> {
-    for ent in fs::read_dir(dir)? {
-        let ent = ent?;
-        let path = ent.path();
-        let ft = ent.file_type()?;
-        if ft.is_dir() {
-            walk_blobs(&path, out)?;
+fn walk_blobs(vfs: &dyn Vfs, dir: &str, out: &mut Vec<BlobInfo>) -> Result<()> {
+    for ent in vfs.list(dir)? {
+        let path = format!("{}/{}", dir.trim_end_matches('/'), ent.name);
+        if ent.kind == EntryKind::Dir {
+            walk_blobs(vfs, &path, out)?;
             continue;
         }
-        let name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_owned(),
-            None => continue,
-        };
-        if !valid_sha256(&name) {
+        if !valid_sha256(&ent.name) {
             continue;
         }
-        let size = ent.metadata()?.len();
         out.push(BlobInfo {
-            sha256: name.to_ascii_lowercase(),
-            size,
-            path,
+            sha256: ent.name.to_ascii_lowercase(),
+            size: ent.size,
+            path: PathBuf::from(path),
         });
     }
     Ok(())

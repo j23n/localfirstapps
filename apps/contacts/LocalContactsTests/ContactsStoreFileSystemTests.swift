@@ -36,7 +36,7 @@ struct ContactsStoreFileSystemTests {
     }
 
     private func makeStore(folder: URL) -> ContactsStore {
-        let store = ContactsStore()
+        let store = ContactsStore(deviceId: "test")
         store.folderURL = folder
         return store
     }
@@ -187,6 +187,9 @@ struct ContactsStoreFileSystemTests {
         let onDisk = try readFile("alice-wonder.vcf", in: folder)
         #expect(onDisk.contains("FN:Alice Wonder"))
         #expect(store.contacts.count == 1)
+        let logDir = folder.appendingPathComponent(".contacts/log/test")
+        let logs = try FileManager.default.contentsOfDirectory(atPath: logDir.path)
+        #expect(logs.contains { $0.hasSuffix(".ndjson") })
     }
 
     @Test("save appends -1 when filename collides on disk")

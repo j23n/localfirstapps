@@ -13,6 +13,18 @@ Accent tokens are `design/tokens/contacts.toml` (`ContactsTokens`,
 light-only until Phase 3.5). Screens are `ui-spec/screens.toml`.
 `shell-kit-gtk` binds every slot kind; the GTK app is Phase 3.5.
 
+## Persisted values (ADR 0005 R5)
+
+| What | Tier | Where |
+|---|---|---|
+| `.vcf` files | 1 | Selected folder |
+| Folder event log | 2 | `.contacts/log/<dev>/YYYY-MM.ndjson` (syncs) |
+| Device id | per-device | `UserDefaults` `LocalContacts_DeviceId` |
+| Folder bookmark | per-device | `UserDefaults` security-scoped bookmark |
+
+Log growth is one event per user save, delete, or Syncthing-group
+resolve. That is a gesture log; no compaction.
+
 ```
 ./scripts/generate_bindings.sh   # UniFFI Swift (Linux-safe)
 ./scripts/build_ffi.sh           # xcframework (Mac / Xcode)

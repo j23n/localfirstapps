@@ -8,7 +8,8 @@ uniffi::setup_scaffolding!("ContactsCore");
 use std::sync::Mutex;
 
 use contacts_core::{
-    apply_merge, is_conflict_name as core_is_conflict_name, parse_multiple, plan_merge, write,
+    append_deleted, append_group_resolved, append_saved, apply_merge,
+    is_conflict_name as core_is_conflict_name, parse_multiple, plan_merge, valid_device, write,
     Card, MergeKind, Store, StoreError, TEMP_PREFIX,
 };
 use localcore_vfs::StdVfs;
@@ -85,18 +86,28 @@ pub fn is_conflict_name(name: String) -> bool {
 #[derive(uniffi::Object)]
 pub struct ContactsSession {
     vfs: StdVfs,
+    device: String,
     store: Mutex<Store>,
 }
 
 #[uniffi::export]
 impl ContactsSession {
     /// Walk `root` and load surviving `.vcf` files.
+    ///
+    /// `device` is this device's log partition (ADR 0005 R4/R5). The
+    /// identifier stays off the synced folder.
     #[uniffi::constructor]
-    pub fn open(root: String) -> Result<Self, ContactsError> {
+    pub fn open(root: String, device: String) -> Result<Self, ContactsError> {
+        if !valid_device(&device) {
+            return Err(ContactsError::Io {
+                message: format!("invalid device {device:?}"),
+            });
+        }
         let vfs = StdVfs::new(TEMP_PREFIX);
         let store = Store::open(&vfs, &root)?;
         Ok(Self {
             vfs,
+            device,
             store: Mutex::new(store),
         })
     }
@@ -153,6 +164,7 @@ impl ContactsSession {
         for card in cards {
             last = store.save(&self.vfs, card)?.local_id;
         }
+        append_saved(&self.vfs, &store.root, &self.device, &last)?;
         Ok(last)
     }
 
@@ -160,6 +172,7 @@ impl ContactsSession {
     pub fn delete(&self, id: String) -> Result<(), ContactsError> {
         let mut store = self.store.lock().expect("session lock");
         store.delete(&self.vfs, &id)?;
+        append_deleted(&self.vfs, &store.root, &self.device, &id)?;
         Ok(())
     }
 
@@ -244,6 +257,12 @@ impl ContactsSession {
             return Err(ContactsError::NeedsChoice);
         }
         apply_merge(&self.vfs, &store.root, &plan, &choices)?;
+        let kind = match plan.kind {
+            MergeKind::Auto => "auto",
+            MergeKind::Choice => "choice",
+            MergeKind::DeletedVersusModified => "keep_copy",
+        };
+        append_group_resolved(&self.vfs, &store.root, &self.device, &canonical_name, kind)?;
         *store = Store::open(&self.vfs, &store.root)?;
         Ok(())
     }

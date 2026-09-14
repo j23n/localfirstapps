@@ -255,7 +255,7 @@ void uniffi_contacts_ffi_fn_free_contactssession(uint64_t handle, RustCallStatus
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_CONSTRUCTOR_CONTACTSSESSION_OPEN
 #define UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_CONSTRUCTOR_CONTACTSSESSION_OPEN
-uint64_t uniffi_contacts_ffi_fn_constructor_contactssession_open(RustBuffer root, RustCallStatus *_Nonnull out_status
+uint64_t uniffi_contacts_ffi_fn_constructor_contactssession_open(RustBuffer root, RustBuffer device, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_METHOD_CONTACTSSESSION_CONFLICT_CHOICE_ROWS

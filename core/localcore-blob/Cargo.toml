@@ -8,6 +8,7 @@ publish.workspace = true
 description = "Content-addressed SHA-256 blob store (ported from health internal/blobs)."
 
 [dependencies]
+localcore-vfs = { path = "../localcore-vfs" }
 sha2.workspace = true
 
 [dev-dependencies]

@@ -29,6 +29,13 @@
 #![warn(missing_docs)]
 
 use rusqlite::{params, Connection, OptionalExtension};
+use unicode_normalization::UnicodeNormalization;
+
+/// NFC-normalise a path key (ADR 0002 R4). Call before every enqueue
+/// and every lookup so NFC and NFD spellings share one row.
+fn nfc_path(path: &str) -> String {
+    path.nfc().collect()
+}
 
 /// How many times a row is retried before it counts as permanently failed.
 ///
@@ -257,7 +264,7 @@ pub fn mark_stale(conn: &Connection, q: Queue, path: &str) -> rusqlite::Result<u
         params![
             WorkState::Stale.as_i64(),
             now_unix(),
-            path,
+            nfc_path(path),
             WorkState::Done.as_i64()
         ],
     )
@@ -278,7 +285,7 @@ pub fn enqueue(conn: &mut Connection, q: Queue, paths: &[String]) -> rusqlite::R
             ident(q.table)
         ))?;
         for path in paths {
-            inserted += stmt.execute(params![path, WorkState::Pending.as_i64(), now])?;
+            inserted += stmt.execute(params![nfc_path(path), WorkState::Pending.as_i64(), now])?;
         }
     }
     tx.commit()?;
@@ -324,6 +331,7 @@ pub fn claimable(
          LIMIT ?5",
         ident(q.table)
     );
+    let prefix = root_prefix.map(nfc_path);
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(
         params![
@@ -332,7 +340,7 @@ pub fn claimable(
             WorkState::Failed.as_i64(),
             MAX_RETRIES,
             if limit == 0 { -1i64 } else { limit as i64 },
-            root_prefix,
+            prefix.as_deref(),
         ],
         row_to_item,
     )?;
@@ -347,7 +355,7 @@ pub fn item(conn: &Connection, q: Queue, path: &str) -> rusqlite::Result<Option<
              FROM {} WHERE path = ?1",
             ident(q.table)
         ),
-        params![path],
+        params![nfc_path(path)],
         row_to_item,
     )
     .optional()
@@ -367,7 +375,7 @@ pub fn begin(conn: &Connection, q: Queue, path: &str) -> rusqlite::Result<bool> 
         params![
             WorkState::Hashing.as_i64(),
             now_unix(),
-            path,
+            nfc_path(path),
             WorkState::Pending.as_i64(),
             WorkState::Stale.as_i64(),
             WorkState::Failed.as_i64()
@@ -391,7 +399,7 @@ pub fn set_content_hash(
         params![
             hash.as_slice(),
             now_unix(),
-            path,
+            nfc_path(path),
             WorkState::Hashing.as_i64()
         ],
     )?;
@@ -422,7 +430,7 @@ pub fn finish_done(
             pack,
             count as i64,
             now_unix(),
-            path,
+            nfc_path(path),
             stat.map(|(size, _)| size as i64),
             stat.and_then(|(_, mtime)| mtime),
             WorkState::Hashing.as_i64()
@@ -449,7 +457,7 @@ pub fn finish_failed(
             WorkState::Failed.as_i64(),
             error_code,
             now_unix(),
-            path,
+            nfc_path(path),
             WorkState::Hashing.as_i64()
         ],
     )?;
@@ -476,7 +484,7 @@ pub fn finish_skipped(
             WorkState::Skipped.as_i64(),
             error_code,
             now_unix(),
-            path,
+            nfc_path(path),
             decoder_version as i64,
             WorkState::Hashing.as_i64()
         ],
@@ -495,7 +503,7 @@ pub fn release(conn: &Connection, q: Queue, path: &str) -> rusqlite::Result<()> 
         params![
             WorkState::Pending.as_i64(),
             now_unix(),
-            path,
+            nfc_path(path),
             WorkState::Hashing.as_i64()
         ],
     )?;

@@ -249,6 +249,65 @@ impl Vfs for StdVfs {
         })
     }
 
+    fn create_dir_all(&self, dir: &str) -> VfsResult<()> {
+        if dir.is_empty() {
+            return Err(VfsError::InvalidPath {
+                path: dir.to_string(),
+                reason: "empty path".into(),
+            });
+        }
+        let mut b = fs::DirBuilder::new();
+        b.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            b.mode(0o700);
+        }
+        b.create(dir).map_err(|e| VfsError::from_io(dir, &e))
+    }
+
+    fn append(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
+        if path.is_empty() {
+            return Err(VfsError::InvalidPath {
+                path: path.to_string(),
+                reason: "empty path".into(),
+            });
+        }
+        if let Some(parent) = Path::new(path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            self.create_dir_all(&parent.to_string_lossy())?;
+        }
+        let created = match fs::metadata(path) {
+            Ok(_) => false,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+            Err(e) => return Err(VfsError::from_io(path, &e)),
+        };
+        let mut opts = fs::OpenOptions::new();
+        opts.append(true).create(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(path).map_err(|e| VfsError::from_io(path, &e))?;
+        f.write_all(bytes)
+            .map_err(|e| VfsError::from_io(path, &e))?;
+        f.sync_all().map_err(|e| VfsError::from_io(path, &e))?;
+        if created {
+            if let Some(parent) = Path::new(path)
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+            {
+                if let Ok(dir) = fs::File::open(parent) {
+                    let _ = dir.sync_all();
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
         let target = resolve_symlink(Path::new(path))?;
         let temp = temp_sibling(&target, self.temp_prefix)?;

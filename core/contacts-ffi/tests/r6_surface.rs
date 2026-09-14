@@ -21,7 +21,7 @@ fn list_and_fields_are_display_rows() {
         b"BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:a1\r\nFN:Alice\r\nN:;Alice;;;\r\nEMAIL;TYPE=home:a@b.com\r\nEND:VCARD\r\n",
     )
     .unwrap();
-    let session = ContactsSession::open(root.into()).unwrap();
+    let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     let rows = session.list_rows().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "a1");
@@ -46,12 +46,12 @@ fn resolve_auto_group() {
         b"BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:a1\r\nFN:Alice\r\nEMAIL;TYPE=home:a@b.com\r\nEND:VCARD\r\n",
     )
     .unwrap();
-    let session = ContactsSession::open(root.into()).unwrap();
+    let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     let groups = session.conflict_rows().unwrap();
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].trailing.as_deref(), Some("auto"));
     session.resolve_group("alice.vcf".into(), vec![]).unwrap();
-    let session = ContactsSession::open(root.into()).unwrap();
+    let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     assert!(session.conflict_rows().unwrap().is_empty());
     let fields = session.field_rows("a1".into()).unwrap();
     assert!(fields.iter().any(|r| r.value == "a@b.com"));
@@ -61,7 +61,7 @@ fn resolve_auto_group() {
 fn save_and_delete_go_through_the_session() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_str().unwrap();
-    let session = ContactsSession::open(root.into()).unwrap();
+    let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     let id = session
         .save_vcard(
             "BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:z1\r\nFN:Zed\r\nEND:VCARD\r\n".into(),
@@ -86,7 +86,7 @@ fn save_existing_card_does_not_fork_the_file() {
         b"BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:a1\r\nFN:Alice\r\nN:;Alice;;;\r\nEND:VCARD\r\n",
     )
     .unwrap();
-    let session = ContactsSession::open(root.into()).unwrap();
+    let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     session
         .save_vcard(
             "BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:a1\r\nFN:Alicia\r\nN:;Alicia;;;\r\nEND:VCARD\r\n"
@@ -114,7 +114,7 @@ fn choice_group_needs_a_pick() {
         b"BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:b1\r\nFN:Bob\r\nTEL;TYPE=cell:2\r\nEND:VCARD\r\n",
     )
     .unwrap();
-    let session = ContactsSession::open(root.into()).unwrap();
+    let session = ContactsSession::open(root.into(), "test".into()).unwrap();
     let groups = session.conflict_rows().unwrap();
     assert_eq!(groups[0].trailing.as_deref(), Some("needs choice"));
     assert!(session.resolve_group("bob.vcf".into(), vec![]).is_err());
@@ -128,4 +128,26 @@ fn choice_group_needs_a_pick() {
         .clone();
     session.resolve_group("bob.vcf".into(), vec![pick]).unwrap();
     assert!(session.conflict_rows().unwrap().is_empty());
+}
+
+#[test]
+fn save_appends_a_folder_log_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_str().unwrap();
+    let session = ContactsSession::open(root.into(), "phone".into()).unwrap();
+    session
+        .save_vcard(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:z1\r\nFN:Zed\r\nEND:VCARD\r\n".into(),
+            String::new(),
+        )
+        .unwrap();
+    let log_dir = dir.path().join(".contacts/log/phone");
+    let files: Vec<_> = std::fs::read_dir(&log_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(files.len(), 1);
+    let text = std::fs::read_to_string(&files[0]).unwrap();
+    assert!(text.contains("\"type\":\"contact_saved\""));
+    assert!(text.contains("\"id\":\"z1\""));
 }

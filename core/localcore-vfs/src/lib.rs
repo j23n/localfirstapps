@@ -8,12 +8,15 @@
 //! security-scoped root and starts access before calling in, so the core
 //! only ever sees plain paths under an active scope.
 //!
-//! # Atomic writes
+//! # Writes
 //!
-//! [`Vfs::write_atomic`] is the only write primitive. It must never leave a
-//! partially written file visible: sidecars are read concurrently by
-//! `SidecarSyncService` and by cloud daemons, and a half-written `.xmp` is
-//! indistinguishable from a corrupt one.
+//! [`Vfs::write_atomic`] is the content write: temp file plus rename, so
+//! readers see the old file or the complete new one. Sidecars are read
+//! concurrently by `SidecarSyncService` and by cloud daemons, and a
+//! half-written `.xmp` is indistinguishable from a corrupt one.
+//!
+//! [`Vfs::append`] is the log primitive (ADR 0005 R4). A log file is never
+//! rewritten as a whole; a crash may leave a torn tail (R16).
 
 #![forbid(unsafe_code)]
 
@@ -192,6 +195,31 @@ pub trait Vfs: Send + Sync {
     /// [`Stat`] cannot serve: it has no creation time and no sub-seconds.
     fn stat_entry(&self, path: &str) -> VfsResult<Entry>;
 
+    /// Create `dir` and any missing parents. Idempotent.
+    ///
+    /// Default errors so existing test `Vfs` impls still compile.
+    fn create_dir_all(&self, dir: &str) -> VfsResult<()> {
+        Err(VfsError::Io {
+            path: dir.to_string(),
+            message: "not implemented".into(),
+        })
+    }
+
+    /// Append `bytes` to `path`, creating the file and parents if needed.
+    ///
+    /// The log primitive (ADR 0005 R4): the file is never rewritten as a
+    /// whole. A crash may leave a torn tail (R16). Content writes stay on
+    /// [`Vfs::write_atomic`].
+    ///
+    /// Default errors so existing test `Vfs` impls still compile.
+    fn append(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
+        let _ = bytes;
+        Err(VfsError::Io {
+            path: path.to_string(),
+            message: "not implemented".into(),
+        })
+    }
+
     /// Write `bytes` to `path` such that readers see either the old contents
     /// or the complete new contents — never anything in between.
     ///
@@ -328,7 +356,17 @@ mod tests {
 
         vfs.remove(&moved).unwrap();
         assert!(!vfs.exists(&moved));
-        assert!(vfs.list(dir).unwrap().iter().all(|e| e.name != "renamed.txt"));
+        assert!(vfs
+            .list(dir)
+            .unwrap()
+            .iter()
+            .all(|e| e.name != "renamed.txt"));
+
+        let log = format!("{dir}/log.txt");
+        vfs.append(&log, b"one\n").unwrap();
+        vfs.append(&log, b"two\n").unwrap();
+        assert_eq!(vfs.read(&log).unwrap(), b"one\ntwo\n");
+        vfs.remove(&log).unwrap();
     }
 
     #[test]

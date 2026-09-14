@@ -9,6 +9,11 @@ Health Go remains the writer until Phase 6. The copy under
 and `read_all` must return the same `id` / `ts` / `dev` / `type` / `body`
 from both trees.
 
+I/O goes through `localcore-vfs` (`append_on` / `read_all_on`). Type
+tokens are open (`valid_type`: `[a-z][a-z0-9_]*`). `known_type` lists
+the health and gallery helpers this crate documents; it is not a
+monorepo enum and does not gate append.
+
 ## On-disk contract
 
 - Layout: `log/<dev>/YYYY-MM.ndjson`

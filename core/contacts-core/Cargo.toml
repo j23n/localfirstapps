@@ -10,8 +10,10 @@ description = "Headless contacts core: vCard parse/write, folder index, R8–R11
 [dependencies]
 base64 = "0.22"
 localcore-conflict = { path = "../localcore-conflict" }
+localcore-log = { path = "../localcore-log" }
 localcore-vfs = { path = "../localcore-vfs" }
 localcore-walk = { path = "../localcore-walk" }
+serde_json.workspace = true
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]

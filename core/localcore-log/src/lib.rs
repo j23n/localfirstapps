@@ -11,34 +11,32 @@
 //! Go remains the writer until Phase 6; `tests/health_golden.rs` is the port
 //! contract (byte-identical m0 log + `read_all` parity). Gallery writes under
 //! `{library}/.gallery` (M2); this crate's `root` is that directory.
+//! I/O goes through [`localcore_vfs::Vfs`]. Type tokens are open
+//! (`valid_type`); `known_type` is not a monorepo enum.
 
 #![forbid(unsafe_code)]
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
+use localcore_vfs::{EntryKind, StdVfs, Vfs, VfsError};
 use serde_json::Error as JsonError;
-
-#[cfg(unix)]
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 
 pub mod event;
 pub mod gallery;
 
 pub use event::{
-    known_type, new_event_id, now_utc, parse_blob_import, ts_with_nanos, valid_device, BlobImport,
-    Event, TS_FORMAT, TYPE_BLOB_IMPORT, TYPE_EXTRACTION, TYPE_FEATURED_PHOTO_CLEAR,
+    known_type, new_event_id, now_utc, parse_blob_import, ts_with_nanos, valid_device, valid_type,
+    BlobImport, Event, TS_FORMAT, TYPE_BLOB_IMPORT, TYPE_EXTRACTION, TYPE_FEATURED_PHOTO_CLEAR,
     TYPE_FEATURED_PHOTO_SET, TYPE_MEDITATION, TYPE_MED_EVENT, TYPE_MED_START, TYPE_MED_STOP,
     TYPE_NOTE, TYPE_OBSERVATION, TYPE_PERSON_CONTACT_LINK_CLEAR, TYPE_PERSON_CONTACT_LINK_SET,
     TYPE_PERSON_FEATURED, TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_CLEAR, TYPE_PERSON_ME_SET,
     TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED, TYPE_PERSON_UNHIDDEN,
-    TYPE_RETRACT,
-    TYPE_SUPERSEDE,
+    TYPE_RETRACT, TYPE_SUPERSEDE,
 };
 pub use gallery::{
     append_person, is_person_event_type, migrate_from_snapshot, migrate_from_snapshot_json,
-    project_people, project_people_at, PersonSnapshot, PeopleState,
+    project_people, project_people_at, PeopleState, PersonSnapshot,
 };
 
 /// A final line that lacks a trailing newline and is not valid JSON.
@@ -124,107 +122,113 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<VfsError> for Error {
+    fn from(e: VfsError) -> Self {
+        Error::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+    }
+}
+
 impl From<JsonError> for Error {
     fn from(e: JsonError) -> Self {
         Error::Invalid(e.to_string())
     }
 }
 
-fn mkdir_private(path: &Path) -> io::Result<()> {
-    let mut b = fs::DirBuilder::new();
-    b.recursive(true);
-    #[cfg(unix)]
-    b.mode(0o700);
-    b.create(path)
+/// Temp prefix for Path wrappers over [`StdVfs`].
+pub const TEMP_PREFIX: &str = ".localcore-log-tmp-";
+
+fn std_vfs() -> StdVfs {
+    StdVfs::new(TEMP_PREFIX)
 }
 
-fn sync_dir(dir: &Path) -> io::Result<()> {
-    let d = File::open(dir)?;
-    d.sync_all()
+fn root_str(root: impl AsRef<Path>) -> Result<String> {
+    root.as_ref()
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| Error::Invalid("log root is not UTF-8".into()))
+}
+
+fn join_root(root: &str, rest: &str) -> String {
+    let root = root.trim_end_matches('/');
+    if rest.is_empty() {
+        root.to_owned()
+    } else {
+        format!("{root}/{rest}")
+    }
 }
 
 /// Write one event line to `log/<dev>/YYYY-MM.ndjson`.
 pub fn append(root: impl AsRef<Path>, ev: &Event) -> Result<()> {
+    append_on(&std_vfs(), &root_str(root)?, ev)
+}
+
+/// [`append`] through an explicit [`Vfs`].
+pub fn append_on(vfs: &dyn Vfs, root: &str, ev: &Event) -> Result<()> {
     ev.validate()?;
     let month = ev.month();
     if month.is_empty() {
         return Err(Error::Invalid("event ts has no month".into()));
     }
-    let dir = root.as_ref().join("log").join(&ev.dev);
-    mkdir_private(&dir)?;
+    let dir = join_root(root, &format!("log/{}", ev.dev));
+    vfs.create_dir_all(&dir)?;
     let line = ev.marshal_line()?;
-    let path = dir.join(format!("{month}.ndjson"));
-    let created = match fs::metadata(&path) {
-        Ok(_) => false,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => true,
-        Err(e) => return Err(e.into()),
-    };
-    let mut opts = OpenOptions::new();
-    opts.append(true).create(true).write(true);
-    #[cfg(unix)]
-    opts.mode(0o600);
-    let mut f = opts.open(&path)?;
-    f.write_all(&line)?;
-    f.sync_all()?;
-    if created {
-        sync_dir(&dir)?;
-    }
+    let path = join_root(&dir, &format!("{month}.ndjson"));
+    vfs.append(&path, &line)?;
     Ok(())
 }
 
 /// Walk `log/*/*.ndjson` and return events sorted by `(ts, id)`.
 pub fn read_all(root: impl AsRef<Path>) -> Result<Vec<Event>> {
-    let dir = root.as_ref().join("log");
-    match fs::metadata(&dir) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e.into()),
-        Ok(_) => {}
+    read_all_on(&std_vfs(), &root_str(root)?)
+}
+
+/// [`read_all`] through an explicit [`Vfs`].
+pub fn read_all_on(vfs: &dyn Vfs, root: &str) -> Result<Vec<Event>> {
+    let dir = join_root(root, "log");
+    if !vfs.exists(&dir) {
+        return Ok(Vec::new());
     }
     let mut files = Vec::new();
-    walk_ndjson(&dir, &mut files)?;
+    walk_ndjson(vfs, &dir, &mut files)?;
     let mut out = Vec::new();
     for path in files {
-        out.extend(read_file(&path)?);
+        out.extend(read_file(vfs, &path)?);
     }
     out.sort_by(|a, b| a.ts.cmp(&b.ts).then_with(|| a.id.cmp(&b.id)));
     Ok(out)
 }
 
-fn walk_ndjson(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
-    for ent in fs::read_dir(dir)? {
-        let ent = ent?;
-        let path = ent.path();
-        if ent.file_type()?.is_dir() {
-            walk_ndjson(&path, out)?;
+fn walk_ndjson(vfs: &dyn Vfs, dir: &str, out: &mut Vec<String>) -> Result<()> {
+    for ent in vfs.list(dir)? {
+        let path = join_root(dir, &ent.name);
+        if ent.kind == EntryKind::Dir {
+            walk_ndjson(vfs, &path, out)?;
             continue;
         }
-        if path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.ends_with(".ndjson"))
-        {
+        if ent.name.ends_with(".ndjson") {
             out.push(path);
         }
     }
     Ok(())
 }
 
-fn read_file(path: &Path) -> Result<Vec<Event>> {
-    let f = File::open(path)?;
-    let mut br = BufReader::with_capacity(64 * 1024, f);
+fn read_file(vfs: &dyn Vfs, path: &str) -> Result<Vec<Event>> {
+    let bytes = vfs.read(path)?;
     let mut out = Vec::new();
     let mut offset = 0u64;
     let mut line_no = 0usize;
-    loop {
-        let mut line = Vec::new();
-        let n = br.read_until(b'\n', &mut line)?;
-        if n == 0 {
-            break;
-        }
+    let mut rest = bytes.as_slice();
+    while !rest.is_empty() {
+        let (line, next) = match rest.iter().position(|&b| b == b'\n') {
+            Some(i) => (&rest[..=i], &rest[i + 1..]),
+            None => (rest, &[][..]),
+        };
+        let n = line.len();
         let has_nl = line.last() == Some(&b'\n');
         let raw = line.trim_ascii();
         if raw.is_empty() {
             offset += n as u64;
+            rest = next;
             continue;
         }
         line_no += 1;
@@ -233,19 +237,20 @@ fn read_file(path: &Path) -> Result<Vec<Event>> {
             Err(jerr) => {
                 if !has_nl {
                     return Err(Error::TornTail(TornTail {
-                        path: path.to_path_buf(),
+                        path: PathBuf::from(path),
                         offset,
                         err: jerr,
                     }));
                 }
                 return Err(Error::Json {
-                    path: path.to_path_buf(),
+                    path: PathBuf::from(path),
                     line: line_no,
                     source: jerr,
                 });
             }
         }
         offset += n as u64;
+        rest = next;
     }
     Ok(out)
 }

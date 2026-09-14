@@ -259,3 +259,14 @@ fn a_retryable_failure_counts_as_pending_not_failed() {
     assert_eq!(s.pending, 1);
     assert_eq!(s.failed, 0);
 }
+
+#[test]
+fn enqueue_nfc_and_nfd_share_one_row() {
+    let mut conn = mem();
+    let nfc = "/lib/caf\u{00E9}.jpg".to_string();
+    let nfd = "/lib/cafe\u{0301}.jpg".to_string();
+    assert_eq!(enqueue(&mut conn, Q, &[nfd.clone()]).unwrap(), 1);
+    assert_eq!(enqueue(&mut conn, Q, &[nfc.clone()]).unwrap(), 0);
+    let row = item(&conn, Q, &nfd).unwrap().unwrap();
+    assert_eq!(row.path, nfc);
+}

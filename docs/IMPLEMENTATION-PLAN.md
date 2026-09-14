@@ -414,9 +414,9 @@ block C.
 |---|---|---|
 | R8–R11 merge for contacts `.vcf` | **done (3.1)** | `contacts-core` + `fixtures/r8/`. Not a port of Apple `ContactMerge`. |
 | Delete contacts/music `SyncConflict` twins | **done (3.1)** | One shared `localcore-conflict/support/SyncConflict.swift`. Tests read the grammar files. |
-| Queue / scan cache keys: NFC or `StableId` | **3.4 leftover** | No queue yet. NFC before the first enqueue. |
-| `localcore-log` / blob through `Vfs` | **3.4 leftover** | No folder log yet. Before iOS contacts writes one. |
-| Open event-type set | **3.4 leftover** | If contacts logs. Envelope stays; `known_type` is not a monorepo enum. |
+| Queue / scan cache keys: NFC or `StableId` | **done (3.4 leftover)** | `localcore-queue` NFC-normalises the path key on enqueue and lookup. Contacts still has no queue. Gallery scan-cache leftovers stay Phase 5. |
+| `localcore-log` / blob through `Vfs` | **done (3.4 leftover)** | `append` / `create_dir_all` on `Vfs`. Path wrappers keep health/gallery callers. |
+| Open event-type set | **done (3.4 leftover)** | Envelope stays. `valid_type` is shape-only; `known_type` is not a gate. |
 | iOS contacts FS → FFI + Syncthing sheet | **done (3.4)** | `ContactsSession`; Apple CN sheet unchanged. |
 | Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
 | Token tables + R14 vocab / token codegen | **done (3.2)** | Light-only. `scripts/gen_r14.py` refuses a `dark` key. |
@@ -472,8 +472,8 @@ workload before drawing shells).
    `localcore-conflict` groups; parse/write; index/search/save through
    `localcore-vfs` atomic write; **R8–R11** on `fixtures/r8/`
    (disjoint auto-merge, same-field choice, canonical bytes, no silent
-   delete, delete-vs-modify keeps data). No queue and no folder log
-   yet (NFC / Vfs-log are 3.4). Dual-write not copied. The two Swift
+   delete, delete-vs-modify keeps data). Queue/log leftovers landed
+   with 3.4. Dual-write not copied. The two Swift
    `SyncConflict` twins are one shared file under
    `localcore-conflict/support/`; tests read the grammar fixtures.
    UniFFI is R6-clean (`TextRow` / `FieldRow`); `cargo test` is the
@@ -493,8 +493,9 @@ workload before drawing shells).
    `ContactsSession`. `CNSyncService` stays a port. Apple CN sheet
    stays. Syncthing groups use `conflict_rows` /
    `conflict_choice_rows` / `resolve_group` and
-   `SyncConflictGroupSheet`. No folder log (NFC / Vfs-log still
-   before the first log write).
+   `SyncConflictGroupSheet`. Folder log at `.contacts/log/<dev>/`
+   (`contact_saved` / `contact_deleted` / `group_resolved`). Queue
+   keys NFC; log/blob through `Vfs`; event types are open.
 6. **3.5 GTK + Comet.** Same binary, `--comet` (compact + bottom nav).
    Host filesystem is a path. No Flatpak. Share is a file save.
    Author dark token companions here (light-only until then).

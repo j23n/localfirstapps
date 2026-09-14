@@ -176,6 +176,32 @@ impl Vfs for MemVfs {
         })
     }
 
+    fn create_dir_all(&self, dir: &str) -> VfsResult<()> {
+        if dir.is_empty() {
+            return Err(VfsError::InvalidPath {
+                path: dir.to_string(),
+                reason: "empty path".into(),
+            });
+        }
+        Ok(())
+    }
+
+    fn append(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
+        if path.is_empty() {
+            return Err(VfsError::InvalidPath {
+                path: path.to_string(),
+                reason: "empty path".into(),
+            });
+        }
+        self.files
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(path.to_string())
+            .or_default()
+            .extend_from_slice(bytes);
+        Ok(())
+    }
+
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
         if path.is_empty() {
             return Err(VfsError::InvalidPath {

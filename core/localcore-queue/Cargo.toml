@@ -9,6 +9,7 @@ description = "Persistent work-queue substrate for derived-data capabilities (AD
 
 [dependencies]
 rusqlite = { version = "0.40", features = ["bundled"] }
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

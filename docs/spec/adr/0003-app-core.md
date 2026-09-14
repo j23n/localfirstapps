@@ -17,7 +17,8 @@ shells.
 rules, and each serves both shells unchanged. `contacts-core` landed
 headless in Phase 3.1 (`core/contacts-core`, R6-clean `contacts-ffi`).
 The iOS shell writes through `contacts-ffi` (Phase 3.4) and still
-parses vCard *text* for views and the CN port. `gallery-core` remains
+parses vCard *text* for views and the CN port. Save, delete, and
+group resolve append to `.contacts/log/<dev>/`. `gallery-core` remains
 at `apps/gallery/core`. The other two cores are later phases.
 
 **R2.** An app core owns:

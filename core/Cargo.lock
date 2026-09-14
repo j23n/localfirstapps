@@ -75,8 +75,10 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "localcore-conflict",
+ "localcore-log",
  "localcore-vfs",
  "localcore-walk",
+ "serde_json",
  "uuid",
 ]
 
@@ -306,6 +308,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 name = "localcore-blob"
 version = "0.1.0"
 dependencies = [
+ "localcore-vfs",
  "sha2",
  "tempfile",
 ]
@@ -337,6 +340,7 @@ dependencies = [
 name = "localcore-log"
 version = "0.1.0"
 dependencies = [
+ "localcore-vfs",
  "serde",
  "serde_json",
  "tempfile",
@@ -348,6 +352,7 @@ version = "0.1.0"
 dependencies = [
  "rusqlite",
  "tempfile",
+ "unicode-normalization",
 ]
 
 [[package]]
