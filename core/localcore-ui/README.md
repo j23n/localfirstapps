@@ -9,4 +9,4 @@ python3 scripts/gen_r14.py --check  # CI: no drift
 ```
 
 Inputs: `docs/spec/ui/vocabulary.toml`, `design/tokens/*.toml`,
-`apps/*/ui-spec/screens.toml`. Tokens are light-only until Phase 3.5.
+`apps/*/ui-spec/screens.toml`. A `dark` key is a sourced companion.

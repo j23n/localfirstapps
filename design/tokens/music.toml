@@ -1,10 +1,12 @@
-# Music token table. Light-only until Phase 3.5. Accent is the
-# light component of AccentColor.colorset. Surfaces/ink are unauthored.
+# Music token table. Accent light/dark are the two appearances in
+# AccentColor.colorset. Surfaces/ink are unauthored; shells use
+# platform semantic colours (ADR 0004 R12).
 
 app = "music"
 
 [colors.accent]
 light = "#C0392B"
+dark = "#D14738"
 
 [metrics]
 card_radius = 12

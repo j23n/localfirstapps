@@ -1,10 +1,12 @@
-# Contacts token table. Light-only until Phase 3.5. Accent is the
-# light component of AccentColor.colorset. Surfaces/ink are unauthored.
+# Contacts token table. Accent light/dark are the two appearances in
+# AccentColor.colorset. Surfaces/ink are unauthored; shells use
+# platform semantic colours (ADR 0004 R12).
 
 app = "contacts"
 
 [colors.accent]
 light = "#336BC7"
+dark = "#4D85DE"
 
 [metrics]
 card_radius = 12

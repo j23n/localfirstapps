@@ -1,0 +1,19 @@
+[package]
+name = "contacts-gtk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "LocalContacts GTK shell — laptop and Mecha Comet"
+
+[[bin]]
+name = "localcontacts"
+path = "src/main.rs"
+
+[dependencies]
+shell-kit-gtk = { path = "../shell-kit-gtk" }
+contacts-core = { path = "../../core/contacts-core" }
+localcore-vfs = { path = "../../core/localcore-vfs" }
+gtk = { package = "gtk4", version = "0.8", features = ["v4_14"] }
+adw = { package = "libadwaita", version = "0.6", features = ["v1_5"] }

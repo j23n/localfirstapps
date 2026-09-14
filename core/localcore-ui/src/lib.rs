@@ -40,8 +40,13 @@ mod tests {
     }
 
     #[test]
-    fn gallery_accent_is_light_only() {
+    fn sourced_dark_accents() {
         assert_eq!(gallery::ACCENT, "#C48A3E");
+        assert_eq!(gallery::ACCENT_DARK, "#D4994D");
+        assert_eq!(contacts::ACCENT, "#336BC7");
+        assert_eq!(contacts::ACCENT_DARK, "#4D85DE");
+        assert_eq!(music::ACCENT, "#C0392B");
+        assert_eq!(music::ACCENT_DARK, "#D14738");
     }
 
     #[test]

@@ -34,7 +34,7 @@ Coverage today — 4.5 of 12 cells:
 | | iOS | Fedora | Comet |
 |---|---|---|---|
 | localgallery | 40.5k Swift | 6.3k GTK | `--comet` |
-| localcontacts | 7.2k Swift | — | — |
+| localcontacts | 7.2k Swift | contacts-gtk | `--comet` |
 | localmusic | 7.1k Swift | — | — |
 | localhealth | — | Go CLI; web UI preserved at `reference/web-ui/` (not shipped) | — |
 
@@ -153,7 +153,7 @@ SHAs changed; `git log apps/<name>` keeps the original commits. The
 standalone GitHub remotes still need redirect READMEs — Phase 3,
 with 3.0.
 
-Current tree (`core/` is extracted; `shells/` has `shell-kit-gtk`):
+Current tree (`core/` is extracted; `shells/` has the kit and contacts-gtk):
 
 ```
 .agents/            agent instructions (CONVENTIONS.md retired in 0.2)
@@ -165,8 +165,8 @@ mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
 conformance/        graph check (ADR 0002 R13) is green; R6 is expected-red
 core/               localcore-{vfs,walk,id,conflict,queue,log,blob,geo,ui}
                     + contacts-core / contacts-ffi
-shells/             shell-kit-gtk (3.3); contacts GTK app is 3.5
-design/tokens/      per-app token tables, light-only (dark is 3.5)
+shells/             shell-kit-gtk + contacts-gtk (`--comet`)
+design/tokens/      per-app tables; sourced dark accents (3.5)
 docs/spec/ui/       R4 vocabulary.toml
 apps/contacts/ui-spec/  real contacts screens
 apps/gallery/       was localgallery (Swift + core/ + linux/)
@@ -419,10 +419,10 @@ block C.
 | Open event-type set | **done (3.4 leftover)** | Envelope stays. `valid_type` is shape-only; `known_type` is not a gate. |
 | iOS contacts FS → FFI + Syncthing sheet | **done (3.4)** | `ContactsSession`; Apple CN sheet unchanged. |
 | Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
-| Token tables + R14 vocab / token codegen | **done (3.2)** | Light-only. `scripts/gen_r14.py` refuses a `dark` key. |
+| Token tables + R14 vocab / token codegen | **done (3.2)** | Tables + generator. Dark companions landed in 3.5. |
 | Contacts UI spec + screen-id codegen | **done (3.3)** | `apps/contacts/ui-spec/screens.toml`. Real screens, not a dummy. |
 | `shell-kit-gtk` (one binding per R4 kind) | **done (3.3)** | `shells/` workspace. Exhaustive match is the missing-kind gate. |
-| Dark token palettes ×4 | **3.5** | Light-only until the GTK shell follows the system preference. Not an agent guess. |
+| Dark token palettes ×4 | **done (3.5)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery surfaces stay light (unsourced). Health has no catalog; not invented. |
 | Old-remote redirect READMEs | **3** | With 3.0. Standalone remotes still need them. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **4** | Playlist write through `localcore-vfs`. |
@@ -481,13 +481,13 @@ workload before drawing shells).
 3. **3.2 Tokens + R14 codegen** — **done.** Light-only tables in
    `design/tokens/`. `scripts/gen_r14.py` emits R4 kinds and tokens.
    Gallery `Design.swift` aliases `GalleryTokens`. Dark companions
-   are Phase 3.5 — the generator refuses a `dark` key until then.
+   landed in 3.5.
 4. **3.3 `shell-kit-gtk`** — **done.** `shells/` workspace. One
    libadwaita binding per R4 kind; no app core, no `localcore`. A
    missing kind is an exhaustive-match compile error — that does
    not need a fake spec. The contacts UI spec is the real screen
    list (`folder-picker` … `sync-conflict-group`), and R14 emits
-   `ContactsScreen`. The contacts GTK app is 3.5.
+   `ContactsScreen`. The contacts GTK app landed in 3.5.
 5. **3.4 iOS shell over the core.** **done.** Views remain and still
    parse vCard text. `ContactsStore` load/save/delete go through
    `ContactsSession`. `CNSyncService` stays a port. Apple CN sheet
@@ -496,9 +496,12 @@ workload before drawing shells).
    `SyncConflictGroupSheet`. Folder log at `.contacts/log/<dev>/`
    (`contact_saved` / `contact_deleted` / `group_resolved`). Queue
    keys NFC; log/blob through `Vfs`; event types are open.
-6. **3.5 GTK + Comet.** Same binary, `--comet` (compact + bottom nav).
-   Host filesystem is a path. No Flatpak. Share is a file save.
-   Author dark token companions here (light-only until then).
+6. **3.5 GTK + Comet.** **done.** `shells/contacts-gtk` over
+   `shell-kit-gtk` + `contacts-core` (no UniFFI). Same binary,
+   `--comet` (540×620 + bottom nav). Host filesystem is a path.
+   No Flatpak. Share is a file save. Sourced dark accents in the
+   token tables; generator emits `ACCENT_DARK` / `accentDark` /
+   `prefers-color-scheme: dark`.
 7. **3.6 Milestone C review.** Expect to revise ADR 0004. Budget it.
 
 > **Gate (Milestone C):** localcontacts' **core loop** on iOS, Fedora
@@ -667,8 +670,8 @@ first year's risk is concentrated in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**A, B, 3.0–3.4 are done.** Next engineering move is 3.5 (contacts
-GTK + Comet over `shell-kit-gtk`, and dark token companions).
+**A, B, 3.0–3.5 are done.** Next engineering move is 3.6
+(Milestone C review — hold both shells against ADR 0004).
 
 **You, now**
 

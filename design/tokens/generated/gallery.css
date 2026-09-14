@@ -14,3 +14,8 @@
   --separator-opacity: 0.1;
   --accent-soft-opacity: 0.13;
 }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #D4994D;
+  }
+}

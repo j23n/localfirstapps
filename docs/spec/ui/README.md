@@ -1,8 +1,8 @@
 # UI vocabulary and tokens
 
 ADR 0004 R4 lives in `vocabulary.toml` (closed lists). Per-app token
-tables live in [`design/tokens/`](../../../design/tokens/) (light-only
-until Phase 3.5). The contacts screen list is
+tables live in [`design/tokens/`](../../../design/tokens/) (sourced
+dark accents as of 3.5). The contacts screen list is
 [`apps/contacts/ui-spec/screens.toml`](../../../apps/contacts/ui-spec/screens.toml).
 
 ```

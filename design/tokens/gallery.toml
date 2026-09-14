@@ -1,11 +1,13 @@
-# Gallery token table (ADR 0004 R11). Light-only until Phase 3.5.
-# Surfaces and ink are the values that were in Design.swift. Accent
-# is the light component of AccentColor.colorset.
+# Gallery token table (ADR 0004 R11). Surfaces and ink are the light
+# values that were in Design.swift — no sourced dark companions exist
+# for those roles; do not invent them. Accent light/dark are the two
+# appearances in AccentColor.colorset.
 
 app = "gallery"
 
 [colors.accent]
 light = "#C48A3E"
+dark = "#D4994D"
 
 [colors.bg]
 light = "#FAF7F2"

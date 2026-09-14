@@ -3,6 +3,7 @@ import SwiftUI
 
 enum GalleryTokens {
     static let accent = Color(red: 0.769, green: 0.541, blue: 0.243)
+    static let accentDark = Color(red: 0.831, green: 0.600, blue: 0.302)
     static let bg = Color(red: 0.980, green: 0.969, blue: 0.949)
     static let bgCard = Color(red: 1.000, green: 1.000, blue: 1.000)
     static let bgGrouped = Color(red: 0.949, green: 0.929, blue: 0.898)

@@ -8,6 +8,6 @@ python3 scripts/gen_r14.py   # emits ContactsScreen in Rust + Swift
 ```
 
 `sync-conflict-group` is the Milestone C Syncthing sheet (ADR 0005
-R8–R11). It is specified here before the 3.4 iOS bind and the 3.5
-GTK shell exist. `apple-conflict` is the existing CN merge sheet
-(ADR 0007 R15, iOS host).
+R8–R11). iOS binds it as `SyncConflictGroupSheet`; GTK as the
+contacts-gtk conflict sheet. `apple-conflict` is the existing CN
+merge sheet (ADR 0007 R15, iOS host).

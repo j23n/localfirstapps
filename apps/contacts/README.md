@@ -10,8 +10,8 @@ Syncthing R8–R11). `contacts-ffi` is R6-clean. The iOS shell writes
 through `ContactsSession` and still parses vCard text for views and
 the Apple Contacts port. Syncthing groups use `SyncConflictGroupSheet`.
 Accent tokens are `design/tokens/contacts.toml` (`ContactsTokens`,
-light-only until Phase 3.5). Screens are `ui-spec/screens.toml`.
-`shell-kit-gtk` binds every slot kind; the GTK app is Phase 3.5.
+sourced light/dark). Screens are `ui-spec/screens.toml`.
+The Linux shell is `shells/contacts-gtk` (`--comet` for Comet).
 
 ## Persisted values (ADR 0005 R5)
 
@@ -19,8 +19,8 @@ light-only until Phase 3.5). Screens are `ui-spec/screens.toml`.
 |---|---|---|
 | `.vcf` files | 1 | Selected folder |
 | Folder event log | 2 | `.contacts/log/<dev>/YYYY-MM.ndjson` (syncs) |
-| Device id | per-device | `UserDefaults` `LocalContacts_DeviceId` |
-| Folder bookmark | per-device | `UserDefaults` security-scoped bookmark |
+| Device id | per-device | iOS: `UserDefaults` `LocalContacts_DeviceId`. Linux: `$XDG_CONFIG_HOME/localcontacts/device-id` |
+| Folder bookmark / last path | per-device | iOS: `UserDefaults` security-scoped bookmark. Linux: `$XDG_CONFIG_HOME/localcontacts/folder` |
 
 Log growth is one event per user save, delete, or Syncthing-group
 resolve. That is a gesture log; no compaction.
@@ -28,6 +28,14 @@ resolve. That is a gesture log; no compaction.
 ```
 ./scripts/generate_bindings.sh   # UniFFI Swift (Linux-safe)
 ./scripts/build_ffi.sh           # xcframework (Mac / Xcode)
+```
+
+Linux / Comet (from the monorepo root):
+
+```
+cd shells
+cargo run -p contacts-gtk
+cargo run -p contacts-gtk -- --comet
 ```
 
 ## Why

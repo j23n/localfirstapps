@@ -96,6 +96,7 @@ jobs:
       - name: cargo test --locked --workspace
         working-directory: shells
         run: cargo test --locked --workspace --all-targets 2>&1 | tee "${GITHUB_WORKSPACE}/shell-kit-test.log"
+        # Covers shell-kit-gtk and contacts-gtk (Phase 3.5).
 
       - name: Upload shell-kit test logs
         if: always()

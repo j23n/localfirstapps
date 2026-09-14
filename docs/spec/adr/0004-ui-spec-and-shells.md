@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3: tokens light-only; contacts spec; shell-kit-gtk)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3: tokens light-only; contacts spec; shell-kit-gtk); 2026-09-14 (Phase 3.5: sourced dark accents; contacts-gtk)
 
 ## Scope
 
@@ -159,15 +159,19 @@ labels the platform itself owns.
 - Generated sources are reproducible: regenerating in CI produces no diff
   (`python3 scripts/gen_r14.py --check`).
 
-### Progress (Phase 3.2–3.3)
+### Progress (Phase 3.2–3.5)
 
 R14 rows 1–3 are generated from `docs/spec/ui/vocabulary.toml`,
 `design/tokens/*.toml`, and `apps/contacts/ui-spec/screens.toml`.
-Tokens are **light-only** until Phase 3.5 (`gen_r14.py` refuses a
-`dark` key). `shell-kit-gtk` binds every R4 kind; a missing arm is a
-compile error. The contacts spec lists the real screens, including
-`sync-conflict-group` (the C-loop Syncthing sheet). There is no dummy
-spec: kinds fail the build via exhaustive match, not via a fake app.
+A `dark` key is a sourced companion: accents come from each iOS
+`AccentColor.colorset`. Gallery surfaces stay light (no sourced dark).
+Health has no catalog. `gen_r14.py` emits light plus `*_DARK` /
+`accentDark` / `@media (prefers-color-scheme: dark)` when present.
+`shell-kit-gtk` binds every R4 kind; a missing arm is a compile
+error. `shells/contacts-gtk` is the Linux / Comet shell (same binary,
+`--comet`). The contacts spec lists the real screens, including
+`sync-conflict-group`. There is no dummy spec: kinds fail the build
+via exhaustive match, not via a fake app.
 
 ## Rationale
 

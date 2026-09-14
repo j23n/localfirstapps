@@ -124,7 +124,8 @@ Tests live in `LocalGalleryTests/Unit` with fixtures in
 `LocalGalleryTests/Support` and `core/fixtures/`. Architecture:
 [docs/architecture.md](docs/architecture.md).
 Design tokens are `design/tokens/gallery.toml`; `Design.swift`
-aliases the generated `GalleryTokens`. Light-only until Phase 3.5.
+aliases the generated `GalleryTokens`. Accent has a sourced dark
+companion; surfaces stay light.
 
 ## CI
 

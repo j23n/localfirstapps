@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (`shells/shell-kit-gtk` exists)
+- Revised: 2026-09-11 (r2); 2026-09-13 (`shells/shell-kit-gtk` exists); 2026-09-14 (`contacts-gtk`)
 
 ## Scope
 
@@ -77,7 +77,7 @@ formats MUST remain compatible with such tools, but no feature requires one.
   dependency check a single command over one lockfile.
 - `shells/` — the Linux shells and the GTK `shell-kit`.
   `shell-kit-gtk` landed in Phase 3.3 (vocabulary only; no app core).
-  The contacts GTK app is Phase 3.5.
+  `contacts-gtk` landed in Phase 3.5 (kit + `contacts-core`).
 
 Feature unification is per workspace, so a GTK feature flag cannot reach an
 app core and `cargo test` in `core/` runs on a machine with no GUI libraries
