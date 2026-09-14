@@ -1,4 +1,5 @@
-//! LocalContacts GTK binary. `--comet` is compact + bottom nav.
+//! LocalContacts GTK binary. `--comet` is the compact default size;
+//! chrome follows window width (ADR 0004 R8).
 
 use adw::prelude::*;
 

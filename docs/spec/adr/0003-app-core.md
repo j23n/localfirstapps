@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (`contacts-core` headless, Phase 3.1); 2026-09-13 (3.4 iOS writes through FFI)
+- Revised: 2026-09-11 (r2); 2026-09-13 (`contacts-core` headless, Phase 3.1); 2026-09-13 (3.4 iOS writes through FFI); 2026-09-14 (Milestone C: shared display surface)
 
 ## Scope
 
@@ -17,8 +17,11 @@ shells.
 rules, and each serves both shells unchanged. `contacts-core` landed
 headless in Phase 3.1 (`core/contacts-core`, R6-clean `contacts-ffi`).
 The iOS shell writes through `contacts-ffi` (Phase 3.4) and still
-parses vCard *text* for views and the CN port. Save, delete, and
-group resolve append to `.contacts/log/<dev>/`. `gallery-core` remains
+parses vCard *text* for views and the CN port. The GTK shell links
+`contacts-core` (Phase 3.5). List, detail, conflict, draft, and logged
+save/delete/resolve are functions on `contacts-core` (Milestone C);
+FFI copies the display rows onto UniFFI. Save, delete, and group
+resolve append to `.contacts/log/<dev>/`. `gallery-core` remains
 at `apps/gallery/core`. The other two cores are later phases.
 
 **R2.** An app core owns:
@@ -59,6 +62,10 @@ a view model. A view model is read in two steps, and the split is mandatory:
 collection.** Structure crosses the boundary whole; content crosses one
 visible window at a time.
 
+Contacts is an exception on size, not on principle: `list_rows` returns
+the whole (small) collection. The two-step shape remains mandatory for
+gallery (Phase 5). Milestone C did not implement view models.
+
 A window fetch MAY be asynchronous, and a row MAY render as a placeholder
 until its values arrive. This is the pattern the family already uses for
 thumbnails, where a cell's load is a task keyed on the item and the cell
@@ -74,10 +81,12 @@ receives strings and renders them.
 enumerated variants, lists of those, and **display records** — structs whose
 every field is a display-ready value for exactly one slot kind in ADR 0004 R4.
 
-**No domain record crosses.** A type that an app core keys domain logic on
-does not appear in the exported surface, under any name. This is how ADR 0001
-R4 is enforced where it can be enforced at all: a shell given no record has
-nothing to sort and no field to format.
+**No domain record crosses a language boundary.** A type that an app core
+keys domain logic on does not appear on the UniFFI wire, under any name.
+A GTK shell that links the crate still MUST NOT format, sort, or decide
+enablement: it binds display records the core already produced. Holding
+`Card` as the argument to `save_logged` is the mutation API, not a view
+model. Formatting `Card` fields in the shell is a defect.
 
 The display-record taxonomy, the slot-field vocabulary, and the current
 `gallery-ffi` inventory are in [0003-r6-surface.md](0003-r6-surface.md).
@@ -156,3 +165,8 @@ mechanically true rather than merely required. The existing GTK shell, written
 against a conventions document that forbade exactly this, carries 27
 comparator sites and 42 formatting sites today. Forbidding it again would
 produce the same result; removing the raw material does not.
+
+Milestone C put the contacts display records in `contacts-core` so the
+UniFFI copy and the GTK bind cannot drift. Holding `Card` for
+`save_logged` is the mutation API. Formatting it in a shell is still a
+defect. Windowed view models remain a Phase 5 gallery requirement.

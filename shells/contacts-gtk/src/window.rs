@@ -7,8 +7,10 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
-use contacts_core::{write, Card, Store, TEMP_PREFIX};
-use localcore_vfs::{StdVfs, Vfs};
+use contacts_core::{
+    apply_draft, choice_rows, conflict_rows, delete_logged, draft_from_card, field_rows, list_rows,
+    resolve_logged, save_logged, write, Card, ContactDraft, StdVfs, Store, Vfs, TEMP_PREFIX,
+};
 use shell_kit_gtk::{
     action_row, apply_token_css, banner, confirm_dialog, field_row, field_row_widget, list_page,
     nav_row, primary_action, push_page, search_entry, settings_page, sheet, status_row, text_row,
@@ -16,11 +18,7 @@ use shell_kit_gtk::{
     StatusSeverity, TextRowData,
 };
 
-use crate::{
-    apply_draft, choice_views, conflict_summaries, delete_logged, detail_fields, draft_from_card,
-    format_store_error, hostname, list_rows, resolve_logged, save_logged, ContactDraft, Paths,
-    APP_TITLE,
-};
+use crate::{hostname, Paths, APP_TITLE, COMPACT_WIDTH};
 
 const TOKEN_CSS: &str = include_str!("../../../design/tokens/generated/contacts.css");
 const ADW_ACCENT: &str =
@@ -33,7 +31,9 @@ pub struct Window {
 
 struct Inner {
     window: adw::ApplicationWindow,
-    comet: bool,
+    header: adw::HeaderBar,
+    switcher: adw::ViewSwitcher,
+    switcher_bar: adw::ViewSwitcherBar,
     nav: adw::NavigationView,
     root_page: adw::NavigationPage,
     root_stack: gtk::Stack,
@@ -118,26 +118,22 @@ impl Window {
         let stack = adw::ViewStack::new();
         let contacts_page = stack.add_titled(&nav, Some("contacts"), "Contacts");
         contacts_page.set_icon_name(Some("avatar-default-symbolic"));
-        if comet {
-            let settings_page = stack.add_titled(&settings_box, Some("settings"), "Settings");
-            settings_page.set_icon_name(Some("emblem-system-symbolic"));
-        }
+        let settings_page = stack.add_titled(&settings_box, Some("settings"), "Settings");
+        settings_page.set_icon_name(Some("emblem-system-symbolic"));
+
+        let switcher = adw::ViewSwitcher::new();
+        switcher.set_stack(Some(&stack));
+        switcher.set_policy(adw::ViewSwitcherPolicy::Wide);
 
         let switcher_bar = adw::ViewSwitcherBar::new();
         switcher_bar.set_stack(Some(&stack));
-        switcher_bar.set_reveal(comet);
 
         let header = adw::HeaderBar::new();
-        header.set_title_widget(Some(&gtk::Label::new(Some(APP_TITLE))));
+        header.set_title_widget(Some(&switcher));
 
         let add = primary_action("Add");
         add.set_sensitive(false);
         header.pack_end(&add);
-
-        let settings_btn = gtk::Button::from_icon_name("emblem-system-symbolic");
-        settings_btn.set_tooltip_text(Some("Settings"));
-        settings_btn.set_visible(!comet);
-        header.pack_end(&settings_btn);
 
         let toolbar = adw::ToolbarView::new();
         toolbar.add_top_bar(&header);
@@ -153,7 +149,9 @@ impl Window {
 
         let inner = Rc::new(Inner {
             window: window.clone(),
-            comet,
+            header: header.clone(),
+            switcher: switcher.clone(),
+            switcher_bar: switcher_bar.clone(),
             nav: nav.clone(),
             root_page: root_page.clone(),
             root_stack: root_stack.clone(),
@@ -177,9 +175,6 @@ impl Window {
         let added = this.clone();
         add.connect_clicked(move |_| added.present_edit(None));
 
-        let settings = this.clone();
-        settings_btn.connect_clicked(move |_| settings.present_settings());
-
         let review = this.clone();
         conflict_banner.connect_button_clicked(move |_| review.present_conflicts());
 
@@ -197,8 +192,26 @@ impl Window {
             }
         });
 
+        let sized = this.clone();
+        window.connect_default_width_notify(move |w| sized.apply_chrome(w.default_width()));
+        this.apply_chrome(window.default_width());
         this.refill_settings();
         this
+    }
+
+    fn apply_chrome(&self, width: i32) {
+        let compact = width <= COMPACT_WIDTH;
+        self.inner.switcher_bar.set_reveal(compact);
+        if compact {
+            self.inner
+                .header
+                .set_title_widget(Option::<&gtk::Widget>::None);
+            self.inner.window.set_title(Some(APP_TITLE));
+        } else {
+            self.inner
+                .header
+                .set_title_widget(Some(&self.inner.switcher));
+        }
     }
 
     fn toast(&self, message: &str) {
@@ -250,7 +263,7 @@ impl Window {
                 self.refill_list();
                 self.refill_settings();
             }
-            Err(err) => self.toast(&format_store_error(&err)),
+            Err(err) => self.toast(&err.to_string()),
         }
     }
 
@@ -286,7 +299,7 @@ impl Window {
                 self.inner.list.append(&widget);
             }
         }
-        match conflict_summaries(&self.inner.vfs, &store) {
+        match conflict_rows(&self.inner.vfs, &store) {
             Ok(groups) => {
                 if groups.is_empty() {
                     self.inner.banner.set_revealed(false);
@@ -297,7 +310,7 @@ impl Window {
                     self.inner.banner.set_revealed(true);
                 }
             }
-            Err(err) => self.toast(&format_store_error(&err)),
+            Err(err) => self.toast(&err.to_string()),
         }
     }
 
@@ -312,12 +325,18 @@ impl Window {
         if self.inner.nav.navigation_stack().n_items() > 1 {
             self.inner.nav.pop();
         }
+        let fields = field_rows(&card);
+        let title = fields
+            .iter()
+            .find(|row| row.id.as_deref() == Some("fn"))
+            .map(|row| row.value.clone())
+            .unwrap_or_else(|| card.local_id.clone());
         let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
         column.set_margin_top(12);
         column.set_margin_bottom(12);
         column.set_margin_start(12);
         column.set_margin_end(12);
-        for field in detail_fields(&card) {
+        for field in fields {
             column.append(&field_row(&FieldRowData {
                 label: field.label,
                 value: field.value,
@@ -343,7 +362,7 @@ impl Window {
         column.append(&export);
         column.append(&delete);
         let scroll = gtk::ScrolledWindow::builder().child(&column).build();
-        let page = push_page(&card.display_name(), &scroll);
+        let page = push_page(&title, &scroll);
         self.inner.nav.push(&page);
 
         let editor = self.clone();
@@ -377,7 +396,7 @@ impl Window {
                     this.inner.nav.pop_to_page(&this.inner.root_page);
                     this.refill_list();
                 }
-                Some(Err(err)) => this.toast(&format_store_error(&err)),
+                Some(Err(err)) => this.toast(&err.to_string()),
                 None => this.toast("No folder selected. Please select a contacts folder first."),
             }
         });
@@ -454,7 +473,7 @@ impl Window {
                     this.inner.nav.pop_to_page(&this.inner.root_page);
                     this.refill_list();
                 }
-                Some(Err(err)) => this.toast(&format_store_error(&err)),
+                Some(Err(err)) => this.toast(&err.to_string()),
                 None => this.toast("No folder selected. Please select a contacts folder first."),
             }
         });
@@ -494,10 +513,10 @@ impl Window {
         let Some(store) = self.inner.store.borrow().clone() else {
             return;
         };
-        let groups = match conflict_summaries(&self.inner.vfs, &store) {
+        let groups = match conflict_rows(&self.inner.vfs, &store) {
             Ok(groups) => groups,
             Err(err) => {
-                self.toast(&format_store_error(&err));
+                self.toast(&err.to_string());
                 return;
             }
         };
@@ -522,26 +541,25 @@ impl Window {
 
         for group in groups {
             let row = text_row(&TextRowData {
-                title: group.canonical.clone(),
-                subtitle: Some(format!("{} copies", group.copies)),
-                trailing: Some(group.trailing.into()),
+                title: group.title.clone(),
+                subtitle: group.subtitle.clone(),
+                trailing: group.trailing.clone(),
             });
             column.append(&row);
-            if group.trailing == "needs choice" {
+            let name = group.id.clone();
+            if group.trailing.as_deref() == Some("needs choice") {
                 let choose = action_row(&ActionRowData {
                     label: "Choose fields".into(),
                     role: ActionRole::Normal,
                     enabled: true,
                 });
                 let this = self.clone();
-                let name = group.canonical.clone();
                 let host = dialog.clone();
                 choose.connect_clicked(move |_| this.present_choices(&name, Some(&host)));
                 column.append(&choose);
             } else {
                 let resolve = primary_action("Resolve");
                 let this = self.clone();
-                let name = group.canonical.clone();
                 let host = dialog.clone();
                 resolve.connect_clicked(move |_| {
                     this.resolve_group(&name, &[], Some(&host));
@@ -557,41 +575,52 @@ impl Window {
         let Some(store) = self.inner.store.borrow().clone() else {
             return;
         };
-        let rows = match choice_views(&self.inner.vfs, &store, canonical) {
+        let rows = match choice_rows(&self.inner.vfs, &store, canonical) {
             Ok(rows) => rows,
             Err(err) => {
-                self.toast(&format_store_error(&err));
+                self.toast(&err.to_string());
                 return;
             }
         };
         let mut fields: Vec<String> = Vec::new();
-        let mut by_field: HashMap<String, Vec<crate::ChoiceView>> = HashMap::new();
+        let mut by_field: HashMap<String, Vec<contacts_core::TextRow>> = HashMap::new();
         for row in rows {
-            if !by_field.contains_key(&row.field) {
-                fields.push(row.field.clone());
+            if !by_field.contains_key(&row.title) {
+                fields.push(row.title.clone());
             }
-            by_field.entry(row.field.clone()).or_default().push(row);
+            by_field.entry(row.title.clone()).or_default().push(row);
         }
 
         let page = adw::PreferencesPage::new();
         let picks: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
+        let checks: Rc<RefCell<Vec<(String, String, gtk::Image)>>> =
+            Rc::new(RefCell::new(Vec::new()));
         for field in &fields {
             let group = adw::PreferencesGroup::new();
             group.set_title(field);
             for choice in by_field.get(field).into_iter().flatten() {
+                let source = choice.subtitle.clone().unwrap_or_default();
+                let value = choice.trailing.clone().unwrap_or_default();
                 let row = adw::ActionRow::builder()
-                    .title(&choice.source)
-                    .subtitle(&choice.value)
+                    .title(&source)
+                    .subtitle(&value)
                     .activatable(true)
                     .build();
                 let check = gtk::Image::from_icon_name("object-select-symbolic");
                 check.set_visible(false);
                 row.add_suffix(&check);
+                checks
+                    .borrow_mut()
+                    .push((field.clone(), choice.id.clone(), check.clone()));
                 let picks = picks.clone();
+                let checks = checks.clone();
                 let field = field.clone();
                 let id = choice.id.clone();
                 row.connect_activated(move |_| {
                     picks.borrow_mut().insert(field.clone(), id.clone());
+                    for (f, choice_id, image) in checks.borrow().iter() {
+                        image.set_visible(f == &field && choice_id == &id);
+                    }
                 });
                 group.add(&row);
             }
@@ -639,24 +668,16 @@ impl Window {
                     }
                 }
             }
-            Some(Err(err)) => self.toast(&format_store_error(&err)),
+            Some(Err(err)) => self.toast(&err.to_string()),
             None => self.toast("No folder selected. Please select a contacts folder first."),
         }
-    }
-
-    fn present_settings(&self) {
-        let page = self.settings_page_widget();
-        let dialog = sheet("Settings", &page);
-        dialog.present(&self.inner.window);
     }
 
     fn refill_settings(&self) {
         while let Some(child) = self.inner.settings_box.first_child() {
             self.inner.settings_box.remove(&child);
         }
-        if self.inner.comet {
-            self.inner.settings_box.append(&self.settings_page_widget());
-        }
+        self.inner.settings_box.append(&self.settings_page_widget());
     }
 
     fn settings_page_widget(&self) -> adw::PreferencesPage {

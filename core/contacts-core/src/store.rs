@@ -43,6 +43,19 @@ pub enum StoreError {
     IncompleteChoices,
 }
 
+impl std::fmt::Display for StoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(message) => write!(f, "{message}"),
+            Self::NotFound => write!(f, "Not found"),
+            Self::NeedsChoice => write!(f, "This group needs a field choice"),
+            Self::IncompleteChoices => write!(f, "Choose a value for every field"),
+        }
+    }
+}
+
+impl std::error::Error for StoreError {}
+
 impl From<VfsError> for StoreError {
     fn from(err: VfsError) -> Self {
         Self::Io(err.to_string())

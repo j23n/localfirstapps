@@ -1,5 +1,10 @@
 # localcontacts screens. Semantic only (ADR 0004 R2).
 # Identifiers are generated into ContactsScreen (Rust + Swift).
+# Milestone C (core loop): folder-picker, contact-list, contact-detail,
+# contact-edit, settings (partial), sync-conflict-group.
+# Not in the C-loop: tag-management, logs. apple-conflict is iOS-only
+# (ADR 0007 R15). A missing kind still fails the kit build; an unbound
+# later screen is a gap, not a missing widget.
 
 app = "contacts"
 

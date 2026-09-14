@@ -1,14 +1,12 @@
-//! LocalContacts GTK shell. Headless helpers live here so tests need no display.
+//! LocalContacts GTK shell. Host paths and `--comet` live here so tests
+//! need no display. Display rows and logged actions come from
+//! `contacts-core` (Milestone C).
 
 #![forbid(unsafe_code)]
 
 use std::path::{Path, PathBuf};
 
-use contacts_core::{
-    append_deleted, append_group_resolved, append_saved, apply_merge, plan_merge, valid_device,
-    Card, Labeled, MergeKind, Store, StoreError,
-};
-use localcore_vfs::Vfs;
+use contacts_core::valid_device;
 
 mod window;
 
@@ -20,6 +18,9 @@ pub const APP_ID: &str = "com.j23n.LocalContacts";
 pub const APP_TITLE: &str = "LocalContacts";
 /// XDG application directory (ADR 0005 R5 exceptions).
 pub const CONFIG_DIR_NAME: &str = "localcontacts";
+
+/// Width at or below which the GTK shell uses Comet chrome (bottom nav).
+pub const COMPACT_WIDTH: i32 = 550;
 
 /// True when `--comet` is among the process arguments.
 #[must_use]
@@ -132,299 +133,14 @@ fn xdg_config_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Edit form. Shell mapping; the core still owns [`Card`].
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ContactDraft {
-    /// Existing id when editing.
-    pub id: Option<String>,
-    /// N given.
-    pub given: String,
-    /// N family.
-    pub family: String,
-    /// ORG.
-    pub organization: String,
-    /// First TEL, or empty.
-    pub phone: String,
-    /// First EMAIL, or empty.
-    pub email: String,
-    /// NOTE.
-    pub note: String,
-}
-
-/// Prefill a draft from a card.
-#[must_use]
-pub fn draft_from_card(card: &Card) -> ContactDraft {
-    ContactDraft {
-        id: Some(card.local_id.clone()),
-        given: card.given_name.clone(),
-        family: card.family_name.clone(),
-        organization: card.organization.clone(),
-        phone: card
-            .phones
-            .first()
-            .map(|p| p.value.clone())
-            .unwrap_or_default(),
-        email: card
-            .emails
-            .first()
-            .map(|e| e.value.clone())
-            .unwrap_or_default(),
-        note: card.note.clone(),
-    }
-}
-
-/// Apply form fields. FN is left empty so write uses [`Card::display_name`].
-pub fn apply_draft(card: &mut Card, draft: &ContactDraft) {
-    card.given_name = draft.given.trim().to_string();
-    card.family_name = draft.family.trim().to_string();
-    card.full_name.clear();
-    card.organization = draft.organization.trim().to_string();
-    card.note = draft.note.trim().to_string();
-    set_first_labeled(&mut card.phones, "cell", draft.phone.trim());
-    set_first_labeled(&mut card.emails, "home", draft.email.trim());
-}
-
-fn set_first_labeled(rows: &mut Vec<Labeled>, default_label: &str, value: &str) {
-    if value.is_empty() {
-        rows.clear();
-        return;
-    }
-    if let Some(first) = rows.first_mut() {
-        first.value = value.to_string();
-    } else {
-        rows.push(Labeled {
-            label: default_label.into(),
-            value: value.to_string(),
-        });
-    }
-}
-
-/// One contact-list row. Copy matches `contacts-ffi` `list_rows`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListRow {
-    /// `X-LOCALCONTACTS-ID`.
-    pub id: String,
-    /// Display name.
-    pub title: String,
-    /// Organization, else first email.
-    pub subtitle: Option<String>,
-}
-
-/// Sorted list rows for `query` (core search).
-#[must_use]
-pub fn list_rows(store: &Store, query: &str) -> Vec<ListRow> {
-    store
-        .search(query)
-        .into_iter()
-        .map(|card| ListRow {
-            id: card.local_id.clone(),
-            title: card.display_name(),
-            subtitle: if !card.organization.is_empty() {
-                Some(card.organization.clone())
-            } else {
-                card.emails.first().map(|e| e.value.clone())
-            },
-        })
-        .collect()
-}
-
-/// One detail field. Copy matches `contacts-ffi` `field_rows`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldView {
-    /// Field label.
-    pub label: String,
-    /// Ready-to-show value.
-    pub value: String,
-}
-
-/// Detail fields for one card.
-#[must_use]
-pub fn detail_fields(card: &Card) -> Vec<FieldView> {
-    let mut rows = vec![FieldView {
-        label: "Name".into(),
-        value: card.display_name(),
-    }];
-    if !card.organization.is_empty() {
-        rows.push(FieldView {
-            label: "Organization".into(),
-            value: card.organization.clone(),
-        });
-    }
-    for phone in &card.phones {
-        rows.push(FieldView {
-            label: phone.label.clone(),
-            value: phone.value.clone(),
-        });
-    }
-    for email in &card.emails {
-        rows.push(FieldView {
-            label: email.label.clone(),
-            value: email.value.clone(),
-        });
-    }
-    if !card.note.is_empty() {
-        rows.push(FieldView {
-            label: "Note".into(),
-            value: card.note.clone(),
-        });
-    }
-    rows
-}
-
-/// Trailing string on a conflict row. Same as `contacts-ffi`.
-#[must_use]
-pub fn merge_trailing(kind: MergeKind) -> &'static str {
-    match kind {
-        MergeKind::Auto => "auto",
-        MergeKind::Choice => "needs choice",
-        MergeKind::DeletedVersusModified => "keep copy",
-    }
-}
-
-/// One Syncthing group as a list row.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConflictSummary {
-    /// Surviving basename.
-    pub canonical: String,
-    /// Number of conflict copies.
-    pub copies: usize,
-    /// `auto` / `needs choice` / `keep copy`.
-    pub trailing: &'static str,
-}
-
-/// Conflict groups for the banner and sheet.
-pub fn conflict_summaries(
-    vfs: &dyn Vfs,
-    store: &Store,
-) -> Result<Vec<ConflictSummary>, StoreError> {
-    let mut rows = Vec::new();
-    for group in store.conflict_groups() {
-        let plan = plan_merge(vfs, &store.root, group)?;
-        rows.push(ConflictSummary {
-            canonical: group.canonical_name.clone(),
-            copies: group.copies.len(),
-            trailing: merge_trailing(plan.kind),
-        });
-    }
-    Ok(rows)
-}
-
-/// One field-choice side. `id` is `field|source`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChoiceView {
-    /// `field|source`.
-    pub id: String,
-    /// Field key.
-    pub field: String,
-    /// `surviving` or a copy name.
-    pub source: String,
-    /// Formatted value.
-    pub value: String,
-}
-
-/// Choice rows for one group.
-pub fn choice_views(
-    vfs: &dyn Vfs,
-    store: &Store,
-    canonical: &str,
-) -> Result<Vec<ChoiceView>, StoreError> {
-    let group = store
-        .conflict_groups()
-        .iter()
-        .find(|g| g.canonical_name == canonical)
-        .cloned()
-        .ok_or(StoreError::NotFound)?;
-    let plan = plan_merge(vfs, &store.root, &group)?;
-    let mut rows = Vec::new();
-    for conflict in plan.conflicts {
-        for (source, value) in conflict.sides {
-            rows.push(ChoiceView {
-                id: format!("{}|{source}", conflict.field),
-                field: conflict.field.clone(),
-                source,
-                value,
-            });
-        }
-    }
-    Ok(rows)
-}
-
-/// Save and append `contact_saved`.
-pub fn save_logged(
-    vfs: &dyn Vfs,
-    store: &mut Store,
-    device: &str,
-    card: Card,
-) -> Result<Card, StoreError> {
-    let saved = store.save(vfs, card)?;
-    append_saved(vfs, &store.root, device, &saved.local_id)?;
-    Ok(saved)
-}
-
-/// Delete and append `contact_deleted`.
-pub fn delete_logged(
-    vfs: &dyn Vfs,
-    store: &mut Store,
-    device: &str,
-    id: &str,
-) -> Result<(), StoreError> {
-    store.delete(vfs, id)?;
-    append_deleted(vfs, &store.root, device, id)?;
-    Ok(())
-}
-
-/// Apply a merge, log it, and re-walk.
-pub fn resolve_logged(
-    vfs: &dyn Vfs,
-    store: &mut Store,
-    device: &str,
-    canonical: &str,
-    choice_ids: &[String],
-) -> Result<(), StoreError> {
-    let group = store
-        .conflict_groups()
-        .iter()
-        .find(|g| g.canonical_name == canonical)
-        .cloned()
-        .ok_or(StoreError::NotFound)?;
-    let plan = plan_merge(vfs, &store.root, &group)?;
-    if plan.kind == MergeKind::Choice && choice_ids.is_empty() {
-        return Err(StoreError::NeedsChoice);
-    }
-    let choices: Vec<(String, String)> = choice_ids
-        .iter()
-        .filter_map(|raw| {
-            raw.split_once('|')
-                .map(|(field, source)| (field.to_owned(), source.to_owned()))
-        })
-        .collect();
-    apply_merge(vfs, &store.root, &plan, &choices)?;
-    let kind = match plan.kind {
-        MergeKind::Auto => "auto",
-        MergeKind::Choice => "choice",
-        MergeKind::DeletedVersusModified => "keep_copy",
-    };
-    append_group_resolved(vfs, &store.root, device, canonical, kind)?;
-    *store = Store::open(vfs, &store.root)?;
-    Ok(())
-}
-
-/// User-visible [`StoreError`].
-#[must_use]
-pub fn format_store_error(err: &StoreError) -> String {
-    match err {
-        StoreError::Io(message) => message.clone(),
-        StoreError::NotFound => "Not found".into(),
-        StoreError::NeedsChoice => "This group needs a field choice".into(),
-        StoreError::IncompleteChoices => "Choose a value for every field".into(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use contacts_core::{read_ops, write, TYPE_CONTACT_SAVED};
-    use localcore_vfs::MemVfs;
+    use contacts_core::{
+        apply_draft, conflict_rows, field_rows, list_rows, read_ops, save_logged, write, Card,
+        ContactDraft, MemVfs, Store, TYPE_CONTACT_SAVED,
+    };
+    use shell_kit_gtk::ContactsScreen;
 
     #[test]
     fn comet_flag_is_opt_in() {
@@ -486,7 +202,7 @@ mod tests {
         assert_eq!(rows[0].id, saved.local_id);
         assert_eq!(rows[0].title, "Ada Lovelace");
         assert_eq!(rows[0].subtitle.as_deref(), Some("Analytical"));
-        let fields = detail_fields(store.get(&saved.local_id).unwrap());
+        let fields = field_rows(store.get(&saved.local_id).unwrap());
         assert_eq!(fields[0].label, "Name");
         let ops = read_ops(&vfs, "/lib").unwrap();
         assert_eq!(ops[0].event_type, TYPE_CONTACT_SAVED);
@@ -504,11 +220,11 @@ mod tests {
             b"BEGIN:VCARD\nVERSION:3.0\nFN:Alice Phone\nEND:VCARD\n".to_vec(),
         );
         let store = Store::open(&vfs, "/lib").unwrap();
-        let rows = conflict_summaries(&vfs, &store).unwrap();
+        let rows = conflict_rows(&vfs, &store).unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].canonical, "alice.vcf");
-        assert_eq!(rows[0].copies, 1);
-        assert_eq!(rows[0].trailing, "needs choice");
+        assert_eq!(rows[0].title, "alice.vcf");
+        assert_eq!(rows[0].subtitle.as_deref(), Some("1 copies"));
+        assert_eq!(rows[0].trailing.as_deref(), Some("needs choice"));
     }
 
     #[test]
@@ -517,5 +233,24 @@ mod tests {
         assert!(css.contains("#336BC7"));
         assert!(css.contains("#4D85DE"));
         assert!(css.contains("prefers-color-scheme: dark"));
+    }
+
+    #[test]
+    fn c_loop_screens_are_in_the_spec() {
+        use ContactsScreen::*;
+        for screen in [
+            FolderPicker,
+            ContactList,
+            ContactDetail,
+            ContactEdit,
+            Settings,
+            SyncConflictGroup,
+        ] {
+            let _ = screen.as_str();
+            let _ = screen.kind();
+        }
+        assert_eq!(AppleConflict.as_str(), "apple-conflict");
+        assert_eq!(TagManagement.as_str(), "tag-management");
+        assert_eq!(Logs.as_str(), "logs");
     }
 }

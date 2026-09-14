@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (`shells/shell-kit-gtk` exists); 2026-09-14 (`contacts-gtk`)
+- Revised: 2026-09-11 (r2); 2026-09-13 (`shell-kit-gtk`); 2026-09-14 (`contacts-gtk`); 2026-09-14 (Milestone C)
 
 ## Scope
 
@@ -32,9 +32,9 @@ platform/     per platform, defined by app-core as narrow ports. Security
 
 **R2.** Dependencies point downward only. `localcore` MUST NOT depend on any
 app core. An app core MUST NOT depend on another app core. A shell MUST NOT
-depend on `localcore` directly; everything it needs is re-exposed by its app
-core. `shell-kit` MUST NOT depend on any app core or on `localcore`: it is
-reachable from a shell and reaches nothing but the slot vocabulary.
+path-depend on a `localcore-*` crate; everything it needs is re-exposed by
+its app core. `shell-kit` MUST NOT depend on any app core or on `localcore`:
+it is reachable from a shell and reaches nothing but the slot vocabulary.
 
 **R3.** `localcore` and every app core are written in Rust and MUST compile
 for every target platform with the same source. Platform-conditional
@@ -57,10 +57,12 @@ app core and implemented by the shell. A port MUST be narrow enough to state
 in one sentence. Ports carry data, never platform objects.
 
 **R6.** iOS shells reach their app core through UniFFI. GTK shells link the
-crates directly. The exposed surface MUST be identical in both, **except for
-the host surfaces enumerated in ADR 0007 R15**. A capability available on one
-platform and not the other, and not on that list, is a specification defect,
-not a platform difference.
+app-core crate directly. The **operations** MUST be identical in both
+(list, search, save, delete, resolve a Syncthing group), **except for
+the host surfaces enumerated in ADR 0007 R15**. Display records are
+produced in the app core in both cases. A capability available on one
+platform and not the other, and not on that list, is a specification
+defect, not a platform difference.
 
 **R7.** Two UI toolkits exist: SwiftUI and GTK4/libadwaita. The Mecha Comet
 runs the GTK shell with an adaptive layout (ADR 0004 R8), not a third
@@ -118,3 +120,8 @@ without violating R2.
 R9 (r2) records a split that already existed by accident — gallery's `linux/`
 has always carried its own lockfile — and makes it deliberate, because the
 alternative unifies `ort` and `gtk4-sys` features across the same graph.
+
+Milestone C is why R2 forbids a shell path-dep on `localcore-*` and why
+R6 says display records are produced in the app core: `contacts-gtk`
+3.5 formatted rows itself and reached `localcore-vfs` directly. The
+operations were the same; the answers were not.

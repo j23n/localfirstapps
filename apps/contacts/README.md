@@ -6,9 +6,10 @@ from that directory.
 A file-based contact manager for iOS. Your contacts are stored as plain vCard (.vcf) files in a folder you control — not locked into any service or cloud platform.
 
 The headless core is `core/contacts-core` (parse/write, folder index,
-Syncthing R8–R11). `contacts-ffi` is R6-clean. The iOS shell writes
-through `ContactsSession` and still parses vCard text for views and
-the Apple Contacts port. Syncthing groups use `SyncConflictGroupSheet`.
+Syncthing R8–R11, display rows and logged actions). `contacts-ffi`
+copies those rows onto UniFFI. The iOS shell writes through
+`ContactsSession` and still parses vCard text for views and the
+Apple Contacts port. Syncthing groups use `SyncConflictGroupSheet`.
 Accent tokens are `design/tokens/contacts.toml` (`ContactsTokens`,
 sourced light/dark). Screens are `ui-spec/screens.toml`.
 The Linux shell is `shells/contacts-gtk` (`--comet` for Comet).

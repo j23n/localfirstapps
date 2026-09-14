@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3: tokens light-only; contacts spec; shell-kit-gtk); 2026-09-14 (Phase 3.5: sourced dark accents; contacts-gtk)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C)
 
 ## Scope
 
@@ -14,8 +14,9 @@ that, and what a shell is allowed to be.
 ### The specification
 
 **R1.** Each app carries a **UI spec**: a declarative, platform-neutral
-description of its screens, checked into the app's repository and read by
-both shells and by the app core's tests.
+description of its screens, checked into the app's repository. It is a
+**build-time** input (R14). Shells MUST NOT parse it at runtime. App-core
+tests MAY read it.
 
 **R2.** The spec is **semantic**. It declares what a screen contains and what
 it offers. It MUST NOT declare geometry, spacing, sizing, fonts, arrangement,
@@ -87,18 +88,28 @@ binding is written once per platform and reused by all four apps, and it lives
 in that platform's `shell-kit` (ADR 0001 R1), which depends on this
 vocabulary and on no app core.
 
-**R7.** A screen declared in a spec with no binding available on a platform
-MUST fail the build for that platform. Silent omission is not permitted.
+As of Milestone C, `shell-kit-gtk` exists and is exhaustive. There is no
+`shell-kit-swift`: the iOS contacts views are hand-rolled SwiftUI. The
+Swift kit is the cost of the next SwiftUI vertical (music, Phase 4), not
+a waiver of this requirement.
 
-This is achieved by R14's generated enums: an unhandled slot kind is a
-non-exhaustive match in Rust and a non-exhaustive switch in Swift, both of
-which are compile errors. No runtime interpretation of the spec is involved.
+**R7.** An R4 **kind** with no binding MUST fail the build (non-exhaustive
+match). That is the missing-widget gate. Silent omission of a kind is not
+permitted.
+
+A spec **screen** with no view on a platform that hosts it is a **product
+gap**, recorded on the implementation plan. It is not a missing kind.
+Host-only screens (ADR 0007 R15) have no view on the other platform.
+`apple-conflict` on Linux is that case.
 
 **R8.** Shells render with **native controls and native navigation**. iOS
 uses SwiftUI navigation, sheets, and system controls; GTK shells use
 libadwaita navigation and controls. A shell MUST NOT imitate another
-platform's chrome, and the Mecha Comet is an adaptive layout of the GTK shell
-(compact window, bottom navigation), not a distinct toolkit.
+platform's chrome. The Mecha Comet is the **same GTK binary**, not a
+distinct toolkit. `--comet` selects the compact default size (540×620).
+Chrome MUST follow window width: at or below 550 CSS pixels the shell
+uses bottom navigation, whether it was launched with `--comet` or a
+laptop window was resized.
 
 **R9.** A shell owns, and is the only layer that owns: rendering; gesture and
 input handling; host integration behind app-core ports; window, scene and
@@ -112,7 +123,7 @@ list is closed:
 | Generated | Into | Why |
 |---|---|---|
 | slot-kind, screen-kind, affordance and nav-intent enums | Rust and Swift | makes R7 a compile error |
-| screen identifiers | Rust and Swift | a spec screen with no view model fails to build |
+| screen identifiers | Rust and Swift | a shell can match; unused ids are a gap, not a compile error until view models exist (ADR 0003 R4) |
 | design tokens (R11) | each platform's native colour/metric form | makes R11's "no literal" check trivial |
 
 Nothing else is generated. Layout, widgets, bindings and navigation are
@@ -138,40 +149,50 @@ fits, shells SHOULD use it in preference to a token. Tokens exist for the
 cases where the system has no opinion, chiefly the accent and the app's own
 surfaces.
 
-**R13.** Copy is authored once, in the spec or the app core, and is identical
-across platforms. Platform-idiomatic differences are confined to control
-labels the platform itself owns.
+**R13.** Screen **titles** are authored in the spec. Body copy that both
+core-loop shells show MUST be identical and SHOULD be produced by the
+app core (field labels, conflict trailing tokens, list subtitles).
+Platform-idiomatic differences are confined to control labels the
+platform itself owns. Putting every string in the spec would be a
+fourth R14 output and is not opened here.
 
 ## Conformance
 
 - Every screen in every app resolves to kinds drawn only from R4.
-- Each shell binds every kind in R4; a missing binding fails the build.
-- Each binding is implemented once per platform and used by all four apps.
-- No shell source contains a hard-coded colour outside generated tokens.
-- The same user-visible strings appear in both shells for the same screen.
-- The Comet build is the GTK shell with an adaptive layout, sharing its
-  bindings.
-- A screen added to a spec that reuses existing kinds appears on both
-  platforms with no new *widget* code; its view model and its screen
-  assembly are still written per platform.
-- Removing a slot-kind binding from a shell fails that shell's build.
+- Each *kit* binds every kind in R4; a missing kind fails that kit's build.
+- GTK bindings live in `shell-kit-gtk` and are used by `contacts-gtk`.
+  The iOS kit is not yet written (Phase 4).
+- No shell source contains a hard-coded colour outside generated tokens
+  or a platform semantic colour (R12).
+- Core-loop copy that both shells show is produced in the app core or
+  matches by construction.
+- The Comet build is the GTK binary; chrome follows width as well as
+  `--comet`.
+- A new *kind* appears on GTK with no new widget code in the app shell.
+  A new *screen* still needs per-platform assembly.
 - No shell links a spec parser or reads a spec file at runtime.
 - Generated sources are reproducible: regenerating in CI produces no diff
   (`python3 scripts/gen_r14.py --check`).
 
-### Progress (Phase 3.2–3.5)
+### Milestone C (Phase 3.6)
 
-R14 rows 1–3 are generated from `docs/spec/ui/vocabulary.toml`,
-`design/tokens/*.toml`, and `apps/contacts/ui-spec/screens.toml`.
-A `dark` key is a sourced companion: accents come from each iOS
-`AccentColor.colorset`. Gallery surfaces stay light (no sourced dark).
-Health has no catalog. `gen_r14.py` emits light plus `*_DARK` /
-`accentDark` / `@media (prefers-color-scheme: dark)` when present.
-`shell-kit-gtk` binds every R4 kind; a missing arm is a compile
-error. `shells/contacts-gtk` is the Linux / Comet shell (same binary,
-`--comet`). The contacts spec lists the real screens, including
-`sync-conflict-group`. There is no dummy spec: kinds fail the build
-via exhaustive match, not via a fake app.
+Held both contacts shells against this document after 3.5. The closed
+vocabulary **survived**: no new R4 kind was required for the C-loop
+(folder, list, search, detail, edit, save, Syncthing group). What did
+not survive is the stronger reading of R7/R14 — that every spec screen
+fails the build until a view exists.
+
+| Finding | Disposition |
+|---|---|
+| R4 kinds were enough | Held. No amendment to the tables. |
+| `shell-kit-gtk` is exhaustive; iOS has no kit | R6 records the Swift kit as Phase 4. |
+| `ContactsScreen` is generated and unused by both view trees | R7/R14: kinds fail the build; unbound screens are a gap list. C-loop: `folder-picker`, `contact-list`, `contact-detail`, `contact-edit`, `settings` (partial), `sync-conflict-group`. Not built: `tag-management`, `logs`. `apple-conflict` is iOS-only (ADR 0007 R15). |
+| GTK 3.5 formatted rows in the shell | Moved `list_rows` / `field_rows` / `conflict_rows` / `choice_rows` / `ContactDraft` / logged save-delete-resolve into `contacts-core`. FFI copies those rows onto UniFFI. |
+| `--comet` was a fixed size, not adaptive | R8 now requires chrome to follow width (550 px). |
+| iOS uses `Color.accentColor` (asset catalog) | R12. Generated `accentDark` is for GTK CSS and any Swift that does not go through the catalog. |
+| GTK edit form is six fields | Product gap, not a kind gap. Full vCard fields stay on iOS. |
+| List filter / selection / tags | Spec affordances; not in the C-loop. |
+| ADR 0003 R4 windowed view models | Not built for contacts. Lists are small. Remains mandatory for gallery (Phase 5). |
 
 ## Rationale
 
@@ -195,3 +216,9 @@ token table are about fifty lines of build script and buy a compile error at
 exactly the boundary that matters. Everything past that is the framework, and
 the list is closed so that "just one more generated thing" is an amendment
 rather than an afternoon.
+
+Milestone C (Phase 3.6) is the first time this document met a second
+toolkit. The vocabulary held. The claim that every spec screen fails the
+build did not: a core-loop vertical leaves later screens as gaps, and
+that has to be sayable without pretending a missing *kind*. The
+amendments above are that correction, not a new UI framework.

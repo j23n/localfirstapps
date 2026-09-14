@@ -86,7 +86,6 @@ dependencies = [
  "contacts-core",
  "gtk4",
  "libadwaita",
- "localcore-vfs",
  "shell-kit-gtk",
 ]
 

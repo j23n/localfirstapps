@@ -115,6 +115,19 @@ purpose. There is no separate drop-in note.
 The one exception is that ADR 0005 R19 requires migrations to *exist* as
 first-class work with fixtures. It does not say when they happen.
 
+## What changed at Milestone C (2026-09-14)
+
+Held ADR 0004 against both contacts shells. The closed vocabulary survived.
+The amendments are the stronger claims that did not:
+
+| Was | Now | Because |
+|---|---|---|
+| A spec screen with no view fails the build | An R4 *kind* with no binding fails the build; an unbound *screen* is a gap | C built the core loop, not tags/logs; `ContactsScreen` is unused by both view trees |
+| Copy is authored once in the spec | Titles in the spec; C-loop body copy in the app core | R14 does not generate copy; both shells now call `contacts-core` display functions |
+| Comet is an adaptive layout | Same GTK binary; `--comet` plus chrome that follows width | 3.5 shipped a flag and a fixed size |
+| GTK and UniFFI surfaces "identical" | Same operations; display records produced in `contacts-core` | 3.5 formatted rows in the GTK crate |
+| `shell-kit` on every platform | `shell-kit-gtk` exists; `shell-kit-swift` is Phase 4 | iOS contacts views are hand-rolled |
+
 ## What changed in r2
 
 | Was | Now | Because |

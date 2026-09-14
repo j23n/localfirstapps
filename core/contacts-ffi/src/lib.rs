@@ -7,12 +7,13 @@ uniffi::setup_scaffolding!("ContactsCore");
 
 use std::sync::Mutex;
 
+use contacts_core::StdVfs;
 use contacts_core::{
-    append_deleted, append_group_resolved, append_saved, apply_merge,
-    is_conflict_name as core_is_conflict_name, parse_multiple, plan_merge, valid_device, write,
-    Card, MergeKind, Store, StoreError, TEMP_PREFIX,
+    choice_rows as core_choice_rows, conflict_rows as core_conflict_rows, delete_logged,
+    field_rows as core_field_rows, is_conflict_name as core_is_conflict_name,
+    list_rows as core_list_rows, parse_multiple, resolve_logged, save_logged, valid_device, write,
+    FieldRow as CoreFieldRow, Store, StoreError, TextRow as CoreTextRow, TEMP_PREFIX,
 };
-use localcore_vfs::StdVfs;
 
 /// `text-row` (ADR 0004 R4).
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
@@ -115,15 +116,9 @@ impl ContactsSession {
     /// `text-row` list, sorted by title.
     pub fn list_rows(&self) -> Result<Vec<TextRow>, ContactsError> {
         let store = self.store.lock().expect("session lock");
-        Ok(store
-            .search("")
+        Ok(core_list_rows(&store, "")
             .into_iter()
-            .map(|c| TextRow {
-                id: c.local_id.clone(),
-                title: c.display_name(),
-                subtitle: subtitle(c),
-                trailing: None,
-            })
+            .map(to_text)
             .collect())
     }
 
@@ -131,7 +126,7 @@ impl ContactsSession {
     pub fn field_rows(&self, id: String) -> Result<Vec<FieldRow>, ContactsError> {
         let store = self.store.lock().expect("session lock");
         let card = store.get(&id).ok_or(ContactsError::NotFound)?;
-        Ok(field_rows(card))
+        Ok(core_field_rows(card).into_iter().map(to_field).collect())
     }
 
     /// Canonical vCard text for one card. The shell may parse it; `Card` does not cross.
@@ -162,17 +157,15 @@ impl ContactsSession {
         }
         let mut last = String::new();
         for card in cards {
-            last = store.save(&self.vfs, card)?.local_id;
+            last = save_logged(&self.vfs, &mut store, &self.device, card)?.local_id;
         }
-        append_saved(&self.vfs, &store.root, &self.device, &last)?;
         Ok(last)
     }
 
     /// Delete one card (and its file when it was the last sibling).
     pub fn delete(&self, id: String) -> Result<(), ContactsError> {
         let mut store = self.store.lock().expect("session lock");
-        store.delete(&self.vfs, &id)?;
-        append_deleted(&self.vfs, &store.root, &self.device, &id)?;
+        delete_logged(&self.vfs, &mut store, &self.device, &id)?;
         Ok(())
     }
 
@@ -186,22 +179,10 @@ impl ContactsSession {
     /// Conflict groups as `text-row`s. Trailing is `needs choice` or `auto`.
     pub fn conflict_rows(&self) -> Result<Vec<TextRow>, ContactsError> {
         let store = self.store.lock().expect("session lock");
-        let mut rows = Vec::new();
-        for group in store.conflict_groups() {
-            let plan = plan_merge(&self.vfs, &store.root, group)?;
-            let trailing = match plan.kind {
-                MergeKind::Auto => "auto",
-                MergeKind::Choice => "needs choice",
-                MergeKind::DeletedVersusModified => "keep copy",
-            };
-            rows.push(TextRow {
-                id: group.canonical_name.clone(),
-                title: group.canonical_name.clone(),
-                subtitle: Some(format!("{} copies", group.copies.len())),
-                trailing: Some(trailing.into()),
-            });
-        }
-        Ok(rows)
+        Ok(core_conflict_rows(&self.vfs, &store)?
+            .into_iter()
+            .map(to_text)
+            .collect())
     }
 
     /// `text-row`s for one group's field choices. `id` is `field|source`.
@@ -210,25 +191,10 @@ impl ContactsSession {
         canonical_name: String,
     ) -> Result<Vec<TextRow>, ContactsError> {
         let store = self.store.lock().expect("session lock");
-        let group = store
-            .conflict_groups()
-            .iter()
-            .find(|g| g.canonical_name == canonical_name)
-            .cloned()
-            .ok_or(ContactsError::NotFound)?;
-        let plan = plan_merge(&self.vfs, &store.root, &group)?;
-        let mut rows = Vec::new();
-        for conflict in plan.conflicts {
-            for (source, value) in conflict.sides {
-                rows.push(TextRow {
-                    id: format!("{}|{source}", conflict.field),
-                    title: conflict.field.clone(),
-                    subtitle: Some(source),
-                    trailing: Some(value),
-                });
-            }
-        }
-        Ok(rows)
+        Ok(core_choice_rows(&self.vfs, &store, &canonical_name)?
+            .into_iter()
+            .map(to_text)
+            .collect())
     }
 
     /// Apply a merge. `choice_ids` are `field|source` from [`Self::conflict_choice_rows`].
@@ -239,81 +205,31 @@ impl ContactsSession {
         choice_ids: Vec<String>,
     ) -> Result<(), ContactsError> {
         let mut store = self.store.lock().expect("session lock");
-        let group = store
-            .conflict_groups()
-            .iter()
-            .find(|g| g.canonical_name == canonical_name)
-            .cloned()
-            .ok_or(ContactsError::NotFound)?;
-        let plan = plan_merge(&self.vfs, &store.root, &group)?;
-        let choices: Vec<(String, String)> = choice_ids
-            .iter()
-            .filter_map(|raw| {
-                raw.split_once('|')
-                    .map(|(f, s)| (f.to_owned(), s.to_owned()))
-            })
-            .collect();
-        if plan.kind == MergeKind::Choice && choices.is_empty() {
-            return Err(ContactsError::NeedsChoice);
-        }
-        apply_merge(&self.vfs, &store.root, &plan, &choices)?;
-        let kind = match plan.kind {
-            MergeKind::Auto => "auto",
-            MergeKind::Choice => "choice",
-            MergeKind::DeletedVersusModified => "keep_copy",
-        };
-        append_group_resolved(&self.vfs, &store.root, &self.device, &canonical_name, kind)?;
-        *store = Store::open(&self.vfs, &store.root)?;
+        resolve_logged(
+            &self.vfs,
+            &mut store,
+            &self.device,
+            &canonical_name,
+            &choice_ids,
+        )?;
         Ok(())
     }
 }
 
-fn subtitle(card: &Card) -> Option<String> {
-    if !card.organization.is_empty() {
-        Some(card.organization.clone())
-    } else {
-        card.emails.first().map(|e| e.value.clone())
+fn to_text(row: CoreTextRow) -> TextRow {
+    TextRow {
+        id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        trailing: row.trailing,
     }
 }
 
-fn field_rows(card: &Card) -> Vec<FieldRow> {
-    let mut rows = vec![FieldRow {
-        id: Some("fn".into()),
-        label: "Name".into(),
-        value: card.display_name(),
-        editable: true,
-    }];
-    if !card.organization.is_empty() {
-        rows.push(FieldRow {
-            id: Some("org".into()),
-            label: "Organization".into(),
-            value: card.organization.clone(),
-            editable: true,
-        });
+fn to_field(row: CoreFieldRow) -> FieldRow {
+    FieldRow {
+        id: row.id,
+        label: row.label,
+        value: row.value,
+        editable: row.editable,
     }
-    for (i, phone) in card.phones.iter().enumerate() {
-        rows.push(FieldRow {
-            id: Some(format!("tel:{i}")),
-            label: phone.label.clone(),
-            value: phone.value.clone(),
-            editable: true,
-        });
-    }
-    for (i, email) in card.emails.iter().enumerate() {
-        rows.push(FieldRow {
-            id: Some(format!("email:{i}")),
-            label: email.label.clone(),
-            value: email.value.clone(),
-            editable: true,
-        });
-    }
-    if !card.note.is_empty() {
-        rows.push(FieldRow {
-            id: Some("note".into()),
-            label: "Note".into(),
-            value: card.note.clone(),
-            editable: true,
-        });
-    }
-    rows
 }

@@ -2,7 +2,7 @@
 
 - Status: Accepted (design; gallery FFI is not rewritten here)
 - Date: 2026-09-12
-- Revised: 2026-09-13 (`contacts-ffi` is R6-green)
+- Revised: 2026-09-13 (`contacts-ffi` is R6-green); 2026-09-14 (Milestone C: rows produced in `contacts-core`)
 - Parent: [0003-app-core.md](0003-app-core.md) R6, [0004-ui-spec-and-shells.md](0004-ui-spec-and-shells.md) R4
 
 ## Scope
@@ -15,8 +15,9 @@ It is **not** a gallery FFI rewrite. `gallery-ffi` stays as it is. The
 conformance check starts red and pins that red so a new Record cannot
 hide behind the known ones. `contacts-ffi` (Phase 3.1, mutations in 3.4) is green:
 `TextRow` and `FieldRow` only. Save/delete take and return strings.
-CI runs the same checker over `core/contacts-ffi/src` without
-`--expect-violations`.
+Those rows are produced in `contacts-core` (Milestone C); the FFI
+crate copies them onto the wire. CI runs the same checker over
+`core/contacts-ffi/src` without `--expect-violations`.
 
 ## What may cross
 

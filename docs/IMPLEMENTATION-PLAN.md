@@ -423,6 +423,10 @@ block C.
 | Contacts UI spec + screen-id codegen | **done (3.3)** | `apps/contacts/ui-spec/screens.toml`. Real screens, not a dummy. |
 | `shell-kit-gtk` (one binding per R4 kind) | **done (3.3)** | `shells/` workspace. Exhaustive match is the missing-kind gate. |
 | Dark token palettes ×4 | **done (3.5)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery surfaces stay light (unsourced). Health has no catalog; not invented. |
+| Milestone C review (ADR 0004) | **done (3.6)** | Vocabulary held. R7/R14 weakened to kinds, not screens. Shared display surface in `contacts-core`. |
+| `shell-kit-swift` | **4** | iOS contacts views are hand-rolled. Music is the next SwiftUI vertical. |
+| Contacts tags / logs / full GTK fields | **later / 4+** | Specified; not the C-loop. |
+| iOS contacts views parse vCard text | **later** | Writes go through FFI. CN port still needs text. |
 | Old-remote redirect READMEs | **3** | With 3.0. Standalone remotes still need them. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **4** | Playlist write through `localcore-vfs`. |
@@ -502,13 +506,19 @@ workload before drawing shells).
    No Flatpak. Share is a file save. Sourced dark accents in the
    token tables; generator emits `ACCENT_DARK` / `accentDark` /
    `prefers-color-scheme: dark`.
-7. **3.6 Milestone C review.** Expect to revise ADR 0004. Budget it.
+7. **3.6 Milestone C review.** **done.** ADR 0004 revised: kinds still
+   fail the build; unbound screens are a gap list, not a missing
+   widget. Display rows / draft / logged actions moved into
+   `contacts-core` so FFI and GTK call the same functions. Comet
+   chrome follows window width. Vocabulary held — no new R4 kind.
 
 > **Gate (Milestone C):** localcontacts' **core loop** on iOS, Fedora
 > and Comet — choose a folder, list, search, view, edit, save, resolve
 > a **Syncthing `.vcf` group** (R8–R11). Apple Contacts sync remains
-> iOS-only. ADR 0004 conformance over both shells. `contacts-core` FFI
-> is R6-clean. `gallery-ffi` stays expected-red.
+> iOS-only. ADR 0004 conformance over both shells, as revised at C.
+> `contacts-core` FFI is R6-clean. `gallery-ffi` stays expected-red.
+> Gaps that do not reopen C: Swift `shell-kit` (Phase 4); tags / logs /
+> full GTK edit fields; iOS still parses vCard text in views.
 
 Size: L. 3.1 was Linux-container. 3.4 needs `macos-26`.
 
@@ -670,8 +680,9 @@ first year's risk is concentrated in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**A, B, 3.0–3.5 are done.** Next engineering move is 3.6
-(Milestone C review — hold both shells against ADR 0004).
+**A, B, and Phase 3 (through 3.6 / Milestone C) are done.** Next
+engineering move is Phase 4 (localmusic over `shell-kit`, and
+`shell-kit-swift` if that vertical is to share iOS bindings).
 
 **You, now**
 
