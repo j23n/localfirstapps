@@ -79,10 +79,42 @@ func TestExportAndFsckCLI(t *testing.T) {
 	}
 
 	dest := t.TempDir()
-	if err := portable.Restore(out1, dest); err != nil {
+	if got := runOK(t, "-root", dest, "restore", "-from", out1); !strings.Contains(got, "restored ") {
+		t.Fatalf("restore: %s", got)
+	}
+	afterFirst, err := log.ReadAll(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runOK(t, "-root", dest, "restore", "-from", out1)
+	afterSecond, err := log.ReadAll(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterFirst) != len(afterSecond) {
+		t.Fatalf("double restore events %d then %d", len(afterFirst), len(afterSecond))
+	}
+	for i := range afterFirst {
+		if afterFirst[i].ID != afterSecond[i].ID {
+			t.Fatalf("double restore changed event %d: %s vs %s", i, afterFirst[i].ID, afterSecond[i].ID)
+		}
+	}
+	runOK(t, "-root", dest, "rebuild")
+	dbFirst, err := os.ReadFile(projection.DBPath(dest))
+	if err != nil {
 		t.Fatal(err)
 	}
 	runOK(t, "-root", dest, "rebuild")
+	dbSecond, err := os.ReadFile(projection.DBPath(dest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(dbFirst, dbSecond) {
+		t.Fatal("restored rebuild is not deterministic")
+	}
+	if got := runOK(t, "-root", dest, "fsck"); !strings.Contains(got, "ok") {
+		t.Fatalf("restored fsck: %s", got)
+	}
 	db2, err := projection.Open(dest)
 	if err != nil {
 		t.Fatal(err)
@@ -105,6 +137,16 @@ func TestExportAndFsckCLI(t *testing.T) {
 	}
 	if len(n1) != len(n2) {
 		t.Fatalf("events %d vs %d", len(n1), len(n2))
+	}
+}
+
+func TestRestoreRequiresFromCLI(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := run(&out, &errb, []string{"-root", t.TempDir(), "restore"}); code == 0 {
+		t.Fatal("restore without -from should fail")
+	}
+	if !strings.Contains(errb.String(), "restore: -from is required") {
+		t.Fatalf("restore error: %s", errb.String())
 	}
 }
 

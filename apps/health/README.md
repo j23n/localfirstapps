@@ -73,6 +73,8 @@ go build -o archive ./cmd/archive
 ./archive observations -kind StepCount -on 2026-09-01
 ./archive fsck
 ./archive export -out /tmp/archive-copy
+./archive -root /tmp/restored restore -from /tmp/archive-copy
+./archive -root /tmp/restored rebuild
 ```
 
 `-root` defaults to `$ARCHIVE_ROOT` or `./archive`.
@@ -94,6 +96,7 @@ commands:
   sources       list observation sourceNames
   stats         counts and observation date range
   export        write a portable copy of the archive to -out DIR
+  restore       restore a portable export from -from DIR
   fsck          verify blob hashes and references (read-only)
 ```
 

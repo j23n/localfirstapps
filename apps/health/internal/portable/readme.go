@@ -50,4 +50,17 @@ Bulk sensor samples stay inside these files. The event log only records that the
 ## Checking integrity
 
 For each entry in ` + "`manifest.json`" + ` → ` + "`blobs`" + `, hash the file at ` + "`blobs/sha256/<first two hex>/<next two>/<full hash>`" + ` and confirm it matches. ` + "`event_count`" + ` should equal the number of non-empty lines in ` + "`events.ndjson`" + `.
+
+## Restoring with archive
+
+Restore this portable export into a new archive root, then rebuild its
+disposable projection:
+
+` + "```sh" + `
+archive -root /path/to/restored restore -from .
+archive -root /path/to/restored rebuild
+archive -root /path/to/restored fsck
+` + "```" + `
+
+Running ` + "`restore`" + ` again is safe: existing event ids and blobs are skipped.
 `

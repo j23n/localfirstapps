@@ -65,6 +65,8 @@ func run(stdout, stderr io.Writer, args []string) int {
 		err = cmdStats(stdout, root, args[1:])
 	case "export":
 		err = cmdExport(stdout, root, args[1:])
+	case "restore":
+		err = cmdRestore(stdout, root, args[1:])
 	case "fsck":
 		err = cmdFsck(stdout, root, args[1:])
 	default:
@@ -95,6 +97,7 @@ commands:
   sources       list observation sourceNames
   stats         counts and observation date range
   export        write a portable copy of the archive to -out DIR
+  restore       restore a portable export from -from DIR
   fsck          verify blob hashes and references (read-only)
 
 Local calendar dates (-on/-from/-to) use $ARCHIVE_TZ (IANA or +0200), else the process local zone.
@@ -323,6 +326,26 @@ func cmdExport(stdout io.Writer, root string, args []string) error {
 		return err
 	}
 	fmt.Fprintf(stdout, "exported %d events %d blobs -> %s\n", man.EventCount, man.BlobCount, *out)
+	return nil
+}
+
+func cmdRestore(stdout io.Writer, root string, args []string) error {
+	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	from := fs.String("from", "", "portable export directory")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("restore: %w", err)
+	}
+	if *from == "" {
+		return fmt.Errorf("restore: -from is required")
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("restore: unexpected arguments")
+	}
+	if err := portable.Restore(*from, root); err != nil {
+		return fmt.Errorf("restore: %w", err)
+	}
+	fmt.Fprintf(stdout, "restored %s -> %s\n", *from, root)
 	return nil
 }
 

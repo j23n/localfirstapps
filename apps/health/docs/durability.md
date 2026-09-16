@@ -67,6 +67,18 @@ restic restore path. Recovery from restic uses the native `log/` + `blobs/`
 layout. Restoring a portable export into a root that already contains some of
 its events appends only the missing ones.
 
+To recover from that portable form:
+
+```bash
+archive -root /path/to/restored restore -from /path/to/export
+archive -root /path/to/restored rebuild
+archive -root /path/to/restored fsck
+```
+
+`restore` keeps event ids, hashes every blob into the content-addressed store,
+and is idempotent: running the same command again does not append duplicate
+events. It does not repair or rewrite an existing log.
+
 `archive fsck` is read-only. It never repairs. It reports:
 
 - a blob whose bytes do not match its path,
