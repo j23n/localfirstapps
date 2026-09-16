@@ -15,7 +15,8 @@ Design: [docs/plan.md](docs/plan.md). Backup and recovery:
 - **Append-only event log.** Corrections are new `supersede` / `retract` events. Log lines are never rewritten.
 - **Content-addressed blobs.** Bulk sensor data stays in the source file. An import appends one `blob_import` event.
 - **Disposable SQLite projection.** `derived/archive.db` is rebuilt from `log/` + `blobs/`. No migrations.
-- **Offline.** No cloud APIs, telemetry, or CDN. The loopback UI is preserved at `reference/web-ui/` and is not shipped.
+- **Offline.** No cloud APIs, telemetry, or CDN. UI information architecture
+  and data contracts are static references under `ui-spec/`; no UI is shipped.
 - **Apple identifiers as vocabulary.** Every other source maps into that namespace. No parallel taxonomy.
 
 ## Build
@@ -109,17 +110,19 @@ Local calendar dates (`-on` / `-from` / `-to`) use `$ARCHIVE_TZ` (IANA name or
 |---|---|
 | `$ARCHIVE_ROOT` | Archive directory (default `./archive`) |
 | `$ARCHIVE_TZ` | Display timezone for local calendar dates |
-| `config/*.toml` in this repo | Embedded defaults: `kinds.toml`, `ui.toml`, `projection.toml`, `sources.toml` |
+| `config/*.toml` in this repo | Embedded projection/source defaults: `projection.toml`, `sources.toml` |
 | `<archive root>/config/<name>.toml` | Per-archive overrides of those files |
 
 Configuration is read from those two places only, so a rebuild depends on
-nothing but the archive root and the binary.
+nothing but the archive root and the binary. `ui-spec/*.toml` is static design
+reference and is never loaded by the Go program.
 
 ## Privacy and security
 
-- The loopback web UI (`archive serve`) is no longer a product command.
-  Screens, charts and goldens live at `reference/web-ui/` for the Phase 6
-  native shells. That tree is not compiled and opens no socket.
+- The loopback web UI (`archive serve`) and its server/frontend implementation
+  are deleted. The curated Phase 6 screen inventory, data contracts, and
+  deterministic fixtures live at [`ui-spec/`](ui-spec/); that static reference
+  is not compiled and opens no socket.
 - Archive files are written mode `0600`, directories `0700`.
 - Exclude
   `derived/` from backup; see [docs/durability.md](docs/durability.md).
@@ -169,17 +172,16 @@ archive/                 # data, gitignored — never commit
   log/<device>/YYYY-MM.ndjson
   blobs/sha256/ab/cd/<hash>
   derived/archive.db
-  derived/uiusage.log
   config/                # optional per-archive TOML overrides
 cmd/archive/
 config/                  # embedded defaults
 internal/
   adapters/apple/
   blobs/  event/  log/  portable/  projection/
-  ui/                    # Chart.js + Recursive, embedded
   uuid/  version/
 docs/plan.md
 docs/durability.md
+ui-spec/                 # static screen/data contracts; not runtime input
 CHANGELOG.md
 scripts/release.sh       # writes CHANGELOG + annotated tag
 testdata/                # anonymized fixtures
@@ -190,7 +192,9 @@ vendor/                  # mattn/go-sqlite3 + sqlite.org amalgamation
 
 Implemented: event log, blob store, UUIDv7, Apple Health adapter (Records,
 Correlations, Workouts including GPX routes, ActivitySummary), SQLite
-projection, gaps report, portable export / restore / fsck. The web UI is preserved at `reference/web-ui/` (not shipped).
+projection, gaps report, portable export / restore / fsck. The former web UI's
+portable screen and data contracts are curated at `ui-spec/`; no UI or server
+is shipped.
 
 Not implemented: Garmin Instinct 1 Solar FIT adapter (`muktihari/fit`),
 dedicated medication/meditation commands (generic `append` only), local lab

@@ -335,8 +335,6 @@ jobs:
       - name: C compiler
         run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential
 
-      # reference/web-ui is a frozen separate module with its own go.mod, so
-      # this root-module pattern intentionally does not select it.
       - name: go test root module
         working-directory: apps/health
         run: go test ./...

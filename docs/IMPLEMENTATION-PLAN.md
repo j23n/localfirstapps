@@ -36,7 +36,7 @@ Coverage today — 4.5 of 12 cells:
 | localgallery | 40.5k Swift | 6.3k GTK | `--comet` |
 | localcontacts | 7.2k Swift | contacts-gtk | `--comet` |
 | localmusic | 7.1k Swift | — | — |
-| localhealth | — | Go CLI; web UI preserved at `reference/web-ui/` (not shipped) | — |
+| localhealth | — | Go CLI; static Phase 6 UI contracts at `ui-spec/`, no shell | — |
 
 Honest Swift classification, production only (test targets excluded):
 
@@ -270,17 +270,18 @@ Recorded before the cut (2026-09-12):
   `Vfs::probe_provider` and generated `VfsProviderAttrs` stay until Phase 2
   lifts Vfs. iOS uses local defaults, but placeholder/download concepts
   remain in gallery models, QuickLook behavior, FFI and tests.
-- **Health web UI is preserved**, not deleted. `archive serve` leaves the
-  product (ADR 0006 R9). The screens, charts, templates and goldens move
-  to `apps/health/reference/web-ui/` as the Phase 6 brief. ADR 0004 has
-  no `chart` / metric-card kind; that is an R4 amendment when health
-  gets shells, not a one-off widget.
+- **Health web UI follow-up is complete.** `archive serve` left the product
+  at Phase 1 (ADR 0006 R9). The useful screen, chart-data, provenance, and
+  deterministic fixture contracts are now curated at `apps/health/ui-spec/`;
+  the non-building server, templates, rendered goldens, Chart.js, and font are
+  deleted. ADR 0004 still has no `chart` / metric-card kind; that is an R4
+  amendment when health gets shells, not a one-off widget.
 
 | Delete / move | Makes true |
 |---|---|
 | `PhotoMaterializer`, `CloudStorageService`, `FileProviderDetector`, `RemoteBadge`, `CoreProviderProbe`, Cloud Storage settings, materialize/cloud APIs | Removes app-initiated materialisation; legacy placeholder/download fields remain compatibility debt |
 | `CrashDiagnosticsService` ×3 (MetricKit) and its Settings chrome | ADR 0006 R9, ADR 0007 R17 |
-| `archive serve` (loopback). UI relocated, not deleted | ADR 0006 R9 |
+| `archive serve` (loopback); static UI contracts retained separately | ADR 0006 R9 |
 
 **What cannot move here, and why.** Three deletions are replacement-gated;
 pulling them forward ships a regression:
@@ -435,6 +436,7 @@ block C.
 | Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
 | Token tables + R14 vocab / token codegen | **done (3.2)** | Tables + generator. Dark companions landed in 3.5. |
 | Contacts UI spec + screen-id codegen | **done (3.3)** | `apps/contacts/ui-spec/screens.toml` is a semantic inventory. Generated ids do not assemble or prove screens. |
+| Health web-reference curation | **done (pre-6)** | `apps/health/ui-spec/` retains screen/data contracts and deterministic fixtures; HTTP/frontend files are deleted. No chart kind, shell, or accent was added. |
 | `shell-kit-gtk` (one binding per R4 kind) | **provisional (3.3)** | `shells/` workspace. Enum exhaustiveness proves vocabulary coverage, not production-quality reusable behavior; music is the second-consumer test. |
 | Dark token palettes ×4 | **done (3.5)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery surfaces stay light (unsourced). Health has no catalog; not invented. |
 | Milestone C review (ADR 0004) | **done (3.6)** | Contacts needed no new kind. That validates the inventory for this slice, not the family-wide UI architecture. Shared contact display/action state continues moving into `contacts-core`. |
@@ -611,11 +613,11 @@ ADR 0008 retires the riskiest component instead of porting it.
 5. Gaps report carries ADR 0008 R8's wording: HealthKit cannot report a
    denied read, so "none seen" never means "complete".
 6. Two shells, **core loop only**: ingest, browse, one chart, gaps report.
-   The IA brief is `apps/health/reference/web-ui/`. A chart / metric-card
-   is an ADR 0004 R4 amendment (one native binding per platform), not a
-   port of Chart.js.
+   The static IA and data-contract brief is `apps/health/ui-spec/`. A chart /
+   metric-card is an ADR 0004 R4 amendment (one native binding per platform),
+   not a port of the retired Chart.js renderer.
 7. Go tree deleted once the projection reproduces a real archive. The
-   reference web UI stays until that amendment is written.
+   curated static UI reference stays until that amendment is written.
 
 What survives from r1's differential plan: the Go projection's golden
 fixtures still pin the **projection**, compared as a canonical ordered JSON

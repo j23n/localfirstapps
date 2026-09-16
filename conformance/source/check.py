@@ -8,7 +8,6 @@ Excluded on purpose:
 - Generated UniFFI (`GalleryCore.swift`) — skipped; the generated file is
   not production Swift for this check.
 - `apps/gallery/linux/swift-shim/` — copy of the same generated surface.
-- `apps/health/reference/web-ui/` — preserved brief, not the product.
 - `vendor/` — third-party Go.
 
 Usage (from the monorepo root):
@@ -39,7 +38,6 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 SKIP_DIR_NAMES = frozenset(
     {
         "vendor",
-        "reference",
         "swift-shim",
         ".git",
         "target",
@@ -136,10 +134,7 @@ def run_self_test() -> int:
 
     skipped = is_skipped(REPO / "apps/gallery/LocalGallery/GalleryCore.swift", REPO)
     assert skipped
-    skipped_ref = is_skipped(
-        REPO / "apps/health/reference/web-ui/serve.go", REPO
-    )
-    assert skipped_ref
+    assert not is_skipped(REPO / "apps/health/internal/log/log.go", REPO)
     print("self-test: ok")
     return 0
 

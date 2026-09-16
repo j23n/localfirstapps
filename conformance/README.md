@@ -73,8 +73,9 @@ python3 conformance/source/check.py --self-test
 
 Production Swift/Go must not import `FileProvider` or `MetricKit`, or
 name `NSFileProvider*`, `ubiquitousItem*`, or `MXMetric*`. Generated
-`GalleryCore.swift`, the Linux UniFFI shim, `vendor/`, and
-`apps/health/reference/web-ui/` are excluded.
+`GalleryCore.swift`, the Linux UniFFI shim, and `vendor/` are excluded.
+Health has no source-tree exception; its retired web implementation was
+deleted and `apps/health/ui-spec/` contains static TOML/JSON only.
 
 This is a regression check for host APIs retired at Milestone A, not a ban on
 selecting a provider-backed folder whose bytes are already local. ADR 0005 R2

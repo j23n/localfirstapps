@@ -19,11 +19,9 @@ Everything else can be thrown away.
 
 ## What must not be preserved
 
-**`derived/`** — the SQLite projection (`derived/archive.db`) and the local UI
-usage log (`derived/uiusage.log`, rotated to `uiusage.log.1` at 4 MiB). The
-projection is rebuilt from `log/` + `blobs/`; the usage log records which UI
-views are opened (path and query), is never transmitted, and can be deleted at
-any time. Exclude the whole `derived/` directory from backup and sync.
+**`derived/`** — disposable outputs such as the SQLite projection
+(`derived/archive.db`). The projection is rebuilt from `log/` + `blobs/`.
+Exclude the whole `derived/` directory from backup and sync.
 
 Do not sync `derived/` (or the rest of the archive) through Dropbox, Nextcloud,
 OneDrive, iCloud, or Google Drive. The CLI warns at startup if `$ARCHIVE_ROOT`

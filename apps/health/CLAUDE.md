@@ -15,7 +15,9 @@ Violating any of these is a bug, not a tradeoff.
 1. **The log is append-only.** Never rewrite, edit, or delete a line in `log/`. Corrections are new `supersede` / `retract` events.
 2. **Bulk data never enters the log.** Apple's millions of `Record` elements and Garmin's HR samples stay inside their blobs. Ingesting a source appends exactly ONE `blob_import` event.
 3. **`derived/archive.db` is disposable.** Fully reconstructible from `log/` + `blobs/` by `archive rebuild`. No migrations — change the projection and rebuild.
-4. **No network in any code path.** No cloud APIs, no telemetry, no CDN links, no runtime fetching. UI assets are `//go:embed`ed. The app must work fully offline.
+4. **No network in any code path.** No cloud APIs, no telemetry, no CDN links,
+   no runtime fetching. The app must work fully offline. `ui-spec/` is static
+   design input, not a runtime UI.
 5. **Nothing binds beyond `127.0.0.1`.**
 6. **All timestamps stored UTC.** Convert at display only.
 7. **Imports are idempotent.** Re-running produces zero new events and zero DB changes.
@@ -34,15 +36,16 @@ Violating any of these is a bug, not a tradeoff.
 | FIT parsing | `github.com/muktihari/fit` |
 | DB | `github.com/mattn/go-sqlite3` (cgo, sqlite.org amalgamation) |
 | **Everything else** | **Go stdlib** |
-| Frontend | Chart.js, vendored, embedded |
 
-**Write in stdlib, don't import:** JSON, SHA-256, XML streaming, HTTP serving, asset embedding, **UUIDv7** (~20 lines over `crypto/rand`).
+**Write in stdlib, don't import:** JSON, SHA-256, XML streaming, **UUIDv7**
+(~20 lines over `crypto/rand`).
 
 **Do not use `tormoder/fit`** — unmaintained since Sept 2024; its own README points to `muktihari/fit`.
 
 **Never write:** a FIT parser, an XML parser, a CRDT, a sync engine, an ORM, an auth system.
 
-**Supply chain:** vendored (`go mod vendor`, `GOFLAGS=-mod=vendor`), exact pinned versions, `govulncheck` in CI. Frontend assets have a hash-assertion test — if the bytes change, the test fails. SQLite is cgo; `CGO_ENABLED=1`.
+**Supply chain:** vendored (`go mod vendor`, `GOFLAGS=-mod=vendor`), exact
+pinned versions, `govulncheck` in CI. SQLite is cgo; `CGO_ENABLED=1`.
 
 ---
 
@@ -53,10 +56,9 @@ archive/                     # data, gitignored, NEVER committed
   log/<device>/YYYY-MM.ndjson
   blobs/sha256/ab/cd/<hash>
   derived/archive.db
-  derived/uiusage.log        # local UI usage log; delete to clear
   config/                    # optional per-archive TOML overrides
 cmd/archive/                 # CLI entrypoint
-config/                      # embedded defaults (kinds, ui, projection, sources)
+config/                      # embedded defaults (projection, sources)
 internal/
   log/                       # event append + read
   blobs/                     # content-addressed store
@@ -68,13 +70,11 @@ internal/
   adapters/labs/             # not implemented: Ollama vision extraction
   projection/                # log+blobs -> sqlite
   portable/                  # export, restore, fsck
-  ui/                        # embedded Chart.js UI
-    assets/                  # app.js, app.css, fonts/, vendor/chart
-    templates/
 docs/plan.md
 docs/durability.md
 notes/fields.md              # reverse-engineered FIT field findings
 testdata/                    # anonymized fixtures — never commit real exports or GPX
+ui-spec/                     # static screen/data contracts, not runtime input
 vendor/
 ```
 
@@ -82,12 +82,13 @@ vendor/
 
 ## Config and file permissions
 
-Embedded defaults: `config/kinds.toml`, `ui.toml`, `projection.toml`, `sources.toml`.
+Embedded defaults: `config/projection.toml`, `sources.toml`.
 Per-archive overrides: `<archive root>/config/<name>.toml`. Those two places are
 the only config sources — never the working directory, never environment
 variables — so a rebuild depends on the root and the binary alone. The only
 environment variables are `$ARCHIVE_ROOT` (root path) and `$ARCHIVE_TZ`
-(display zone).
+(display zone). Files under `ui-spec/` are static references, never runtime
+configuration.
 
 All archive files are written `0600`; directories `0700`.
 
@@ -159,7 +160,12 @@ Silently scrambles data if wrong.
 
 ## Status
 
-**Implemented:** event log, blob store, UUIDv7, Apple Health adapter (Records, Correlations, Workouts including GPX routes, ActivitySummary), SQLite projection, gaps report, portable export / restore / fsck. The loopback web UI is preserved at `reference/web-ui/` and is not a product command. Backup is external (restic) — do not add backup tooling.
+**Implemented:** event log, blob store, UUIDv7, Apple Health adapter (Records,
+Correlations, Workouts including GPX routes, ActivitySummary), SQLite
+projection, gaps report, portable export / restore / fsck. The retired
+loopback UI is represented only by curated static contracts at `ui-spec/`; no
+UI/server implementation remains. Backup is external (restic) — do not add
+backup tooling.
 
 **Not implemented:** FIT importer (mount → blob → one `blob_import` → projection maps into Apple's vocabulary; Instinct 1 Solar only, no gen-2 fields), dedicated medication/meditation commands (generic `append` only), lab extraction (Ollama), sync.
 
