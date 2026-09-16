@@ -37,11 +37,13 @@ struct FolderPickerView: View {
             }
             .navigationTitle("LocalContacts")
             .sheet(isPresented: $showPicker) {
-                DocumentPickerView { url in
-                    Task {
-                        await store.setFolder(url)
+                ContactsRouter.destination(
+                    DocumentPickerView { url in
+                        Task {
+                            await store.setFolder(url)
+                        }
                     }
-                }
+                )
             }
         }
     }

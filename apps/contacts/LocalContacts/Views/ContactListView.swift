@@ -73,15 +73,17 @@ struct ContactListView: View {
                 }
             }
             .sheet(isPresented: $showSettings) {
-                SettingsView()
+                ContactsRouter.destination(SettingsView())
             }
             .sheet(isPresented: $showAddContact) {
                 NavigationStack {
-                    ContactEditView(contact: Contact(), isNew: true)
+                    ContactsRouter.destination(
+                        ContactEditView(contact: Contact(), isNew: true)
+                    )
                 }
             }
             .sheet(isPresented: $showSyncConflicts) {
-                SyncConflictGroupSheet()
+                ContactsRouter.destination(SyncConflictGroupSheet())
             }
             .safeAreaInset(edge: .top) {
                 if store.hasSyncConflictGroups {
@@ -97,7 +99,7 @@ struct ContactListView: View {
                     .buttonStyle(.borderedProminent)
                     .padding(.horizontal)
                     .padding(.bottom, 8)
-                    .accessibilityIdentifier("sync-conflict-group")
+                    .accessibilityIdentifier(ContactsScreen.syncConflictGroup.rawValue)
                 }
             }
             .onChange(of: showAddContact) { _, isAdding in
@@ -162,7 +164,7 @@ struct ContactListView: View {
             .environment(\.editMode, isSelecting ? .constant(.active) : .constant(.inactive))
             .navigationDestination(for: String.self) { contactID in
                 if let contact = store.contacts.first(where: { $0.localContactsID == contactID }) {
-                    ContactDetailView(contact: contact)
+                    ContactsRouter.destination(ContactDetailView(contact: contact))
                 } else {
                     ContentUnavailableView("Contact Not Found",
                         systemImage: "person.crop.circle.badge.xmark",

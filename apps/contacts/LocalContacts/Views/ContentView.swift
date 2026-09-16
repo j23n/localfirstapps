@@ -6,9 +6,9 @@ struct ContentView: View {
     var body: some View {
         Group {
             if store.folderURL != nil {
-                ContactListView()
+                ContactsRouter.destination(ContactListView())
             } else {
-                FolderPickerView()
+                ContactsRouter.destination(FolderPickerView())
             }
         }
     }

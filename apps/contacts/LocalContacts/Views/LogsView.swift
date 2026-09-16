@@ -186,5 +186,7 @@ struct LogsView: View {
 }
 
 #Preview {
-    NavigationStack { LogsView() }
+    NavigationStack {
+        ContactsRouter.destination(LogsView())
+    }
 }

@@ -119,7 +119,7 @@ struct SettingsView: View {
 
                 Section("Tags") {
                     NavigationLink {
-                        TagManagementView()
+                        ContactsRouter.destination(TagManagementView())
                     } label: {
                         LabeledContent {
                             Text("\(store.allTags.count)")
@@ -198,11 +198,13 @@ struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $showFolderPicker) {
-                DocumentPickerView { url in
-                    Task {
-                        await store.setFolder(url)
+                ContactsRouter.destination(
+                    DocumentPickerView { url in
+                        Task {
+                            await store.setFolder(url)
+                        }
                     }
-                }
+                )
             }
         }
     }
@@ -238,7 +240,7 @@ struct SettingsView: View {
     private var diagnosticsSection: some View {
         Section {
             NavigationLink {
-                LogsView()
+                ContactsRouter.destination(LogsView())
             } label: {
                 Label("Logs", systemImage: "doc.text.magnifyingglass")
             }

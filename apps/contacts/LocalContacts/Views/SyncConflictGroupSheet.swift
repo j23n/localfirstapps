@@ -36,7 +36,7 @@ struct SyncConflictGroupSheet: View {
             }
             .navigationTitle("Sync Conflicts")
             .navigationBarTitleDisplayMode(.inline)
-            .accessibilityIdentifier("sync-conflict-group")
+            .accessibilityIdentifier(ContactsScreen.syncConflictGroup.rawValue)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

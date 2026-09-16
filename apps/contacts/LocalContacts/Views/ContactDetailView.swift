@@ -213,14 +213,16 @@ struct ContactDetailView: View {
         }
         .sheet(isPresented: $showEdit) {
             NavigationStack {
-                ContactEditView(contact: contact.copy(), isNew: false)
+                ContactsRouter.destination(
+                    ContactEditView(contact: contact.copy(), isNew: false)
+                )
             }
         }
         .onChange(of: showEdit) { _, isEditing in
             store.isSuppressingReload = isEditing
         }
         .sheet(isPresented: $showConflictSheet) {
-            ConflictResolutionSheet(contact: contact)
+            ContactsRouter.destination(ConflictResolutionSheet(contact: contact))
         }
         .confirmationDialog("Delete Contact", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
