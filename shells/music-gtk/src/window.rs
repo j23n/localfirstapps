@@ -288,7 +288,7 @@ impl Window {
         play_pause
             .connect_clicked(move |_| toggled.playback_command(|session| session.play_pause()));
         let next_window = this.clone();
-        next.connect_clicked(move |_| next_window.playback_command(|session| session.next()));
+        next.connect_clicked(move |_| next_window.playback_command(|session| session.next_track()));
         let stopped = this.clone();
         stop.connect_clicked(move |_| stopped.playback_command(|session| session.stop()));
 
@@ -335,7 +335,7 @@ impl Window {
         match command {
             RemoteCommand::Raise => self.inner.window.present(),
             RemoteCommand::Quit => self.inner.window.close(),
-            RemoteCommand::Next => self.playback_command(|session| session.next()),
+            RemoteCommand::Next => self.playback_command(|session| session.next_track()),
             RemoteCommand::Previous => self.playback_command(|session| session.previous()),
             RemoteCommand::Pause => self.playback_command(|session| session.pause()),
             RemoteCommand::PlayPause => self.playback_command(|session| session.play_pause()),

@@ -79,19 +79,10 @@ pub enum RemoteCommand {
     SetVolume(f64),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct MprisState {
     pub transport: TransportSnapshot,
     pub title: Option<String>,
-}
-
-impl Default for MprisState {
-    fn default() -> Self {
-        Self {
-            transport: TransportSnapshot::default(),
-            title: None,
-        }
-    }
 }
 
 /// Name ownership keeps the real D-Bus object alive until the window drops.

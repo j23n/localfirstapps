@@ -360,7 +360,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         Ok(())
     }
 
-    pub fn next(&mut self) -> Result<(), ShellError> {
+    pub fn next_track(&mut self) -> Result<(), ShellError> {
         let Some(index) = self.queue_index else {
             return Ok(());
         };
