@@ -5136,15 +5136,29 @@ public func FfiConverterTypeFaceStats_lower(_ value: FaceStats) -> RustBuffer {
 public struct GalleryMediaItem: Equatable, Hashable {
     public var id: String
     public var thumbnailRef: String
+    /**
+     * Pre-formatted UTC capture time, used by the visible-range chrome.
+     */
     public var label: String?
+    /**
+     * Spoken filename; separate from the visual/date label.
+     */
+    public var accessibilityLabel: String?
     public var badge: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, thumbnailRef: String, label: String?, badge: String?) {
+    public init(id: String, thumbnailRef: String, 
+        /**
+         * Pre-formatted UTC capture time, used by the visible-range chrome.
+         */label: String?, 
+        /**
+         * Spoken filename; separate from the visual/date label.
+         */accessibilityLabel: String?, badge: String?) {
         self.id = id
         self.thumbnailRef = thumbnailRef
         self.label = label
+        self.accessibilityLabel = accessibilityLabel
         self.badge = badge
     }
 
@@ -5167,6 +5181,7 @@ public struct FfiConverterTypeGalleryMediaItem: FfiConverterRustBuffer {
                 id: FfiConverterString.read(from: &buf), 
                 thumbnailRef: FfiConverterString.read(from: &buf), 
                 label: FfiConverterOptionString.read(from: &buf), 
+                accessibilityLabel: FfiConverterOptionString.read(from: &buf), 
                 badge: FfiConverterOptionString.read(from: &buf)
         )
     }
@@ -5175,6 +5190,7 @@ public struct FfiConverterTypeGalleryMediaItem: FfiConverterRustBuffer {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterString.write(value.thumbnailRef, into: &buf)
         FfiConverterOptionString.write(value.label, into: &buf)
+        FfiConverterOptionString.write(value.accessibilityLabel, into: &buf)
         FfiConverterOptionString.write(value.badge, into: &buf)
     }
 }
