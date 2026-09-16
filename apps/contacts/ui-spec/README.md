@@ -8,9 +8,8 @@ from it. It does not declare geometry or prove that a screen is implemented.
 python3 scripts/gen_r14.py   # emits ContactsScreen in Rust + Swift
 ```
 
-Milestone C implements: `folder-picker`, `contact-list`,
-`contact-detail`, `contact-edit`, `settings` (partial),
-`sync-conflict-group`. Outstanding debt: `tag-management`, `logs`.
-`apple-conflict` is the iOS CN merge sheet (ADR 0007 R15).
-`sync-conflict-group` is the Syncthing sheet (ADR 0005 R8–R11):
-iOS `SyncConflictGroupSheet`, GTK conflict sheet.
+The GTK shell routes `folder-picker`, `contact-list`, `contact-detail`,
+`contact-edit`, `settings`, `tag-management`, `logs`, and
+`sync-conflict-group`. `apple-conflict` is the iOS-only CN merge sheet
+(ADR 0007 R15). `sync-conflict-group` is the Syncthing sheet
+(ADR 0005 R8–R11): iOS `SyncConflictGroupSheet`, GTK conflict sheet.

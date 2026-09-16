@@ -177,7 +177,7 @@ produce the same result; removing the raw material does not.
 
 Milestone C put contact display records and typed conflict disposition in
 `contacts-core` so UniFFI and GTK control flow cannot drift. Contacts now also
-has a full typed edit command with deterministic stale detection; the iOS
-store adapter uses it. GTK still holds `Card` for detail/export and its
-compact form remains to migrate to the full draft. Windowed view models
-remain a Phase 5 gallery requirement.
+has a full typed edit command with deterministic stale detection. Both shells
+use the typed draft; GTK gets detail and export data from explicit core APIs
+and no longer holds `Card`. Windowed view models remain a Phase 5 gallery
+requirement.

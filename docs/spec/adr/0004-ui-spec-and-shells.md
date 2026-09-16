@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion)
 
 ## Scope
 
@@ -187,13 +187,24 @@ fails the build until a view exists.
 |---|---|
 | R4 kinds were enough for contacts | No amendment needed for this slice; gallery/media workloads remain untested. |
 | `shell-kit-gtk` exhaustively names kinds; iOS has no kit | Enum coverage is not reuse evidence. Both platforms wait for a second app before the kit boundary is considered stable. |
-| `ContactsScreen` is generated and unused by both view trees | R7/R14: kinds fail the build; unbound screens are a gap list. C-loop: `folder-picker`, `contact-list`, `contact-detail`, `contact-edit`, `settings` (partial), `sync-conflict-group`. Not built: `tag-management`, `logs`. `apple-conflict` is iOS-only (ADR 0007 R15). |
-| GTK 3.5 formatted rows in the shell | Moved `list_rows` / `field_rows` / typed `conflict_rows` / `choice_rows` / `ContactDraft` / logged save-delete-resolve into `contacts-core`. FFI copies those rows onto UniFFI. |
+| `ContactsScreen` was generated and unused by both view trees | R7/R14: kinds fail the build; unbound screens are a gap list. GTK now routes every hosted screen; `apple-conflict` is iOS-only (ADR 0007 R15). |
+| GTK 3.5 formatted rows in the shell | Moved list/detail/tag/conflict rows, the full `ContactEditDraft`, and logged typed actions into `contacts-core`. FFI copies the same rows and command DTOs onto UniFFI. |
 | `--comet` was a fixed size, not adaptive | R8 now requires chrome to follow width (550 px). |
 | iOS uses `Color.accentColor` (asset catalog) | R12. Generated `accentDark` is for GTK CSS and any Swift that does not go through the catalog. |
-| GTK edit form is six fields | Product gap, not a kind gap. Full vCard fields stay on iOS. |
-| List filter / selection / tags | Spec affordances; not in the C-loop. |
+| GTK edit form was six fields | Closed by binding every field in the core-owned draft. |
+| List filter / selection / tags | Implemented in GTK with core-owned rows and typed commands. |
 | ADR 0003 R4 windowed view models | Not built for contacts. Lists are small. Remains mandatory for gallery (Phase 5). |
+
+### GTK Contacts completion (2026-09-16)
+
+The GTK shell now routes every Contacts screen it hosts, including
+`tag-management` and `logs`; `apple-conflict` remains iOS-only. The contact
+list implements tag filtering, multi-selection, bulk tag assignment, and bulk
+delete. Its editor binds the full core-owned draft, including repeated labeled
+values, structured addresses, yearless birthdays, categories, and JPEG photo
+selection. These changes close the GTK product gaps recorded in the Milestone C
+table without adding an R4 kind or moving app-specific widgets into
+`shell-kit-gtk`.
 
 ## Rationale
 

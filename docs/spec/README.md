@@ -134,6 +134,12 @@ The amendments are the stronger claims that did not:
 | GTK and UniFFI surfaces "identical" | Same contact operations, typed conflict state, and core-owned full edit draft | GTK still holds `Card` for detail/export and uses its compact form |
 | `shell-kit` on every platform | `shell-kit-gtk` is provisional; extraction waits for demonstrated second-app reuse | iOS contacts views are hand-rolled |
 
+On 2026-09-16 the GTK Contacts shell completed that follow-up: detail and
+explicit export use core APIs, editing binds the full typed draft, and the
+tag filter, selection actions, tag management, and generated GTK routes are
+implemented. App-specific dynamic form widgets remain in `contacts-gtk`;
+the provisional `shell-kit-gtk` boundary did not grow.
+
 ## What changed in r2
 
 | Was | Now | Because |
