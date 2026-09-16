@@ -166,8 +166,7 @@ enum PersistedStateMigration {
                 return SidecarCandidate(
                     photoID: newID,
                     sidecarURL: row.sidecarURL,
-                    currentVersion: row.currentVersion,
-                    downloadStatus: row.downloadStatus
+                    currentVersion: row.currentVersion
                 )
             }
         }

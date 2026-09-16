@@ -6173,8 +6173,9 @@ public struct PersonProjectionRecord: Equatable, Hashable {
         self.tornTails = tornTails
     }
 
+    
 
-
+    
 }
 
 #if compiler(>=6)
@@ -6188,7 +6189,7 @@ public struct FfiConverterTypePersonProjectionRecord: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonProjectionRecord {
         return
             try PersonProjectionRecord(
-                state: FfiConverterTypePersonStateRecord.read(from: &buf),
+                state: FfiConverterTypePersonStateRecord.read(from: &buf), 
                 tornTails: FfiConverterSequenceTypePersonTornTailRecord.read(from: &buf)
         )
     }
@@ -6304,8 +6305,9 @@ public struct PersonTornTailRecord: Equatable, Hashable {
         self.detail = detail
     }
 
+    
 
-
+    
 }
 
 #if compiler(>=6)
@@ -6319,8 +6321,8 @@ public struct FfiConverterTypePersonTornTailRecord: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonTornTailRecord {
         return
             try PersonTornTailRecord(
-                path: FfiConverterString.read(from: &buf),
-                offset: FfiConverterUInt64.read(from: &buf),
+                path: FfiConverterString.read(from: &buf), 
+                offset: FfiConverterUInt64.read(from: &buf), 
                 detail: FfiConverterString.read(from: &buf)
         )
     }

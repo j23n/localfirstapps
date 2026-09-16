@@ -1297,7 +1297,7 @@ uint16_t uniffi_gallery_ffi_checksum_func_person_log_project(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_PROJECT_REPORT
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_PROJECT_REPORT
 uint16_t uniffi_gallery_ffi_checksum_func_person_log_project_report(void
-
+    
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_READ
