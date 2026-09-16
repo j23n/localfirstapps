@@ -30,7 +30,7 @@
 //! other I/O) is recorded in `failed_directory_paths`, its photos are absent
 //! from `flat_photos`, and — critically — they are **excluded from
 //! `removed_paths`**. The Store keeps its cached copies, so a transient
-//! provider error cannot wipe a subtree's tags and enrichment. The directory
+//! listing error cannot wipe a subtree's tags and enrichment. The directory
 //! still becomes a photo-less node: it is stat-able even when it is not
 //! listable.
 //!
@@ -43,8 +43,8 @@ use std::collections::{HashMap, HashSet};
 
 use gallery_model::date::AppleDate;
 use gallery_model::file_url::{join, stem};
-use gallery_model::photo::{PhotoFile, PhotoFolder, PhotoLocality, StableId};
-use gallery_model::snapshot::{ContentVersion, DownloadStatus, SidecarCandidate};
+use gallery_model::photo::{PhotoFile, PhotoFolder, StableId};
+use gallery_model::snapshot::{ContentVersion, SidecarCandidate};
 use gallery_vfs::{FileTime, Vfs};
 use localcore_walk::{
     decomposed, walk_with_hooks, ConflictGroup, WalkDirectory, WalkFile, WalkOutcome,
@@ -71,26 +71,16 @@ pub struct ScanInput {
 
 /// Where a pass spent its time, and how often the fast path engaged.
 ///
-/// Not decoration: `Scan totals: … probe=…ms hits=… slow=…` is the line
-/// docs/adr/0002 measures the acceptance gates from, and
-/// the numbers behind it now live on this side of the boundary. `hits + slow`
-/// must equal the photo count; a light scan with a high `slow` means the cache
-/// lookup is not engaging, which is the failure the counters exist to catch.
+/// `Scan totals: … hits=… slow=…` is the line docs/adr/0002 measures the
+/// acceptance gates from, and the numbers behind it live on this side of the
+/// boundary. `hits + slow` must equal the photo count; a light scan with a high
+/// `slow` means the cache lookup is not engaging.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ScanStats {
     /// Directories visited, listable or not.
     pub folders: u64,
     /// Wall time inside [`Vfs::list`].
     pub list_micros: u64,
-    /// Wall time that used to be spent inside a provider probe. Always zero:
-    /// the scanner is local-only; the field stays for FFI `ScanTimings`.
-    pub probe_micros: u64,
-    /// Paths that used to be handed to a provider probe. Always zero.
-    pub probed_paths: u64,
-    /// Batched probe calls. Always zero.
-    pub probe_batches: u64,
-    /// Mis-sized probe replies. Always zero.
-    pub probe_mismatches: u64,
     /// Photos reused verbatim from the cache.
     pub cache_hits: u64,
     /// Photos rebuilt.
@@ -427,15 +417,13 @@ impl<'a> Walk<'a> {
         // The scanner never opens a file, so there is no EXIF here. An
         // unchanged file keeps its cached date; anything else falls back to
         // the earlier of the filesystem's two dates — creation is when the
-        // file appeared on *this* volume (a download), modification is often
-        // preserved from the original (AirDrop, chat saves), so the earlier
-        // one is closer to when the photo was taken.
+        // Creation records when the file appeared on this volume, while
+        // modification is often preserved from the original (AirDrop, chat
+        // saves), so the earlier one is closer to when the photo was taken.
         let date_taken = unchanged
             .then(|| cached.and_then(|c| c.date_taken))
             .flatten()
             .or_else(|| AppleDate::earliest(file.creation_date, file.mod_date));
-
-        let locality = PhotoLocality::Local;
 
         let cached_enriched = cached.and_then(|c| c.enriched_file_date);
         let stale = !unchanged || cached_enriched.is_none() || file.mod_date != cached_enriched;
@@ -471,7 +459,6 @@ impl<'a> Walk<'a> {
                 .then(|| cached.map(|c| c.face_regions.clone()))
                 .flatten()
                 .unwrap_or_default(),
-            locality,
             sidecar_status: gallery_model::photo::SidecarStatus::Absent,
         }
     }
@@ -490,11 +477,9 @@ impl<'a> Walk<'a> {
             photo_id: photo.id,
             sidecar_url: gallery_model::photo::FileUrl::new(sidecar_path),
             current_version: ContentVersion {
-                content_identifier: None,
                 modification_date: sidecar.mtime.map(apple_date),
                 size: Some(sidecar.size as i64),
             },
-            download_status: DownloadStatus::Local,
         });
     }
 
@@ -777,7 +762,6 @@ mod tests {
         let row = &out.sidecar_manifest[0];
         assert_eq!(row.sidecar_url.path(), "/lib/B.JPG.xmp");
         assert_eq!(row.current_version.size, Some(5));
-        assert_eq!(row.download_status, DownloadStatus::Local);
     }
 
     #[test]
@@ -1062,23 +1046,9 @@ mod tests {
     }
 
     #[test]
-    fn a_cold_scan_is_always_local_and_records_listing_sidecar_size() {
+    fn a_cold_scan_records_listing_sidecar_identity() {
         let out = scan(&library(), "/lib", &ScanInput::default());
-        assert!(out
-            .flat_photos
-            .iter()
-            .all(|p| p.locality == PhotoLocality::Local));
-        assert_eq!(out.stats.probe_batches, 0);
-        assert_eq!(out.stats.probed_paths, 0);
         assert_eq!(out.sidecar_manifest[0].current_version.size, Some(5));
-        assert_eq!(
-            out.sidecar_manifest[0].current_version.content_identifier,
-            None
-        );
-        assert_eq!(
-            out.sidecar_manifest[0].download_status,
-            DownloadStatus::Local
-        );
     }
 
     #[test]
@@ -1087,7 +1057,6 @@ mod tests {
         let cold = scan(&vfs, "/lib", &ScanInput::default());
         let light = scan(&vfs, "/lib", &cache(&cold));
 
-        assert_eq!(light.stats.probe_batches, 0);
         assert_eq!(light.stats.cache_hits, 5);
         assert_eq!(light.stats.slow_path, 0);
         assert_eq!(light.sidecar_manifest.len(), 1);
@@ -1104,7 +1073,6 @@ mod tests {
 
         assert_eq!(light.stats.cache_hits, 5);
         assert_eq!(light.stats.slow_path, 1);
-        assert_eq!(light.stats.probe_batches, 0);
     }
 
     #[test]
@@ -1129,14 +1097,9 @@ mod tests {
         vfs.insert_at("/lib/B.JPG.xmp", vec![0u8; 50], FileTime::new(9999, 0));
         let light = scan(&vfs, "/lib", &cache(&cold));
 
-        assert_eq!(light.stats.probe_batches, 0);
         assert_eq!(light.stats.cache_hits, 5);
         assert_eq!(light.stats.slow_path, 0);
         assert_eq!(light.sidecar_manifest[0].current_version.size, Some(50));
-        assert_eq!(
-            light.sidecar_manifest[0].current_version.content_identifier,
-            None
-        );
         assert_ne!(light.sidecar_manifest, cold.sidecar_manifest);
     }
 
@@ -1157,7 +1120,6 @@ mod tests {
             "{:?}",
             light.sidecar_manifest
         );
-        assert_eq!(light.stats.probe_batches, 0);
         assert_eq!(light.stats.cache_hits, 1);
     }
 

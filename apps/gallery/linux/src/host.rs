@@ -1227,18 +1227,16 @@ mod tests {
 
     #[test]
     fn sidecar_listing_changed_includes_edits_and_deletions() {
-        use gallery_model::snapshot::{ContentVersion, DownloadStatus};
+        use gallery_model::snapshot::ContentVersion;
 
         let id = StableId::for_photo("/lib/a.jpg");
         let row = |size: i64| SidecarCandidate {
             photo_id: id,
             sidecar_url: FileUrl::new("/lib/a.jpg.xmp"),
             current_version: ContentVersion {
-                content_identifier: None,
                 modification_date: None,
                 size: Some(size),
             },
-            download_status: DownloadStatus::Local,
         };
         let cached = HashMap::from([(id, row(5))]);
         assert!(sidecar_listing_changed(&[row(5)], &cached).is_empty());

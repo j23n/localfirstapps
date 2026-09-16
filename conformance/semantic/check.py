@@ -416,9 +416,9 @@ def load_baseline(path: Path) -> list[Allow]:
         raise BaselineError(f"cannot read {path}: {exc}") from exc
     if doc.get("version") != 1:
         raise BaselineError(f"{path}: version must be 1")
-    rows = doc.get("allow")
+    rows = doc.get("allow", [])
     if not isinstance(rows, list):
-        raise BaselineError(f"{path}: [[allow]] entries are required")
+        raise BaselineError(f"{path}: allow must be an array of tables")
 
     allowed: list[Allow] = []
     for index, raw in enumerate(rows, start=1):
@@ -608,6 +608,10 @@ pub fn save_playlist() {}
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        empty_baseline = root / "empty.toml"
+        empty_baseline.write_text("version = 1\n", encoding="utf-8")
+        assert load_baseline(empty_baseline) == []
+
         gallery = root / "apps/gallery/LocalGallery"
         gallery.mkdir(parents=True)
         (gallery / "Real.swift").write_text("enum PhotoLocality {}\n", encoding="utf-8")

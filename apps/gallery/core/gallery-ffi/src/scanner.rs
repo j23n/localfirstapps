@@ -31,11 +31,10 @@ use std::sync::Arc;
 
 use gallery_model::date::AppleDate;
 use gallery_model::photo::{
-    FaceRegion, FileUrl, HierarchicalTag, PhotoFile, PhotoFolder, PhotoLocality, SidecarStatus,
-    StableId,
+    FaceRegion, FileUrl, HierarchicalTag, PhotoFile, PhotoFolder, SidecarStatus, StableId,
 };
 use gallery_model::snapshot::{
-    self, ContentVersion, DownloadStatus, LibrarySnapshot, SidecarCandidate, SnapshotError,
+    self, ContentVersion, LibrarySnapshot, SidecarCandidate, SnapshotError,
 };
 use gallery_scan::{scan_with_hooks, ScanInput};
 use gallery_vfs::{StdVfs, Vfs, VfsError};
@@ -48,7 +47,7 @@ use gallery_vfs::{StdVfs, Vfs, VfsError};
 ///
 /// A scan itself is close to infallible — an unreadable directory is *data*
 /// (`failed_directory_paths`), not an error, because treating it as one is how
-/// a transient provider hiccup wipes a subtree. What is left is the two things
+/// a transient listing failure wipes a subtree. What is left is the two things
 /// that genuinely cannot produce an answer.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
 pub enum ScanError {
@@ -173,18 +172,6 @@ pub struct ScanRegion {
     pub height: f64,
 }
 
-/// Where a photo's bytes live.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum ScanLocality {
-    /// Readable from disk right now.
-    Local,
-    /// Provider-backed; `downloaded: false` is the placeholder state.
-    Remote {
-        /// Whether the bytes have been materialised.
-        downloaded: bool,
-    },
-}
-
 /// One photo or video, crossing the boundary.
 ///
 /// Dates are **seconds since 2001-01-01T00:00:00Z**, i.e. Swift's
@@ -227,8 +214,6 @@ pub struct ScanPhoto {
     pub gps_longitude: Option<f64>,
     /// MWG regions.
     pub face_regions: Vec<ScanRegion>,
-    /// Where the bytes live.
-    pub locality: ScanLocality,
 }
 
 /// One folder, flattened. See the module docs for why the tree is not
@@ -262,8 +247,6 @@ pub struct ScanFolderNode {
 /// A file's identity without reading it.
 #[derive(Debug, Clone, Default, PartialEq, uniffi::Record)]
 pub struct ScanContentVersion {
-    /// `fileContentIdentifierKey`, stringified.
-    pub content_identifier: Option<String>,
     /// Modification date, reference-date seconds.
     pub modification_date: Option<f64>,
     /// Size in bytes.
@@ -279,8 +262,6 @@ pub struct ScanSidecarRow {
     pub sidecar_path: String,
     /// Its identity at scan time.
     pub current_version: ScanContentVersion,
-    /// Whether its own bytes are present — `local` or `placeholder`.
-    pub download_status: String,
 }
 
 /// Where a pass spent its time. Feeds the `Scan totals:` log line the
@@ -291,14 +272,6 @@ pub struct ScanTimings {
     pub total_millis: u64,
     /// Directory listings.
     pub list_millis: u64,
-    /// Provider probes — always 0; the scanner is local-only.
-    pub probe_millis: u64,
-    /// Paths probed — always 0.
-    pub probed_paths: u32,
-    /// Batched probe calls — always 0.
-    pub probe_batches: u32,
-    /// Probe batches discarded for a wrong-length reply — always 0.
-    pub probe_mismatches: u32,
     /// Photos reused verbatim from the cache.
     pub cache_hits: u32,
     /// Photos rebuilt.
@@ -337,7 +310,7 @@ pub struct ScanOutcomeRecord {
 pub struct ScanRequest {
     /// Reuse cached photos for unchanged paths — the light scan.
     pub reuse_cached: bool,
-    /// Last pass's photos. Carries EXIF, tags, GPS and locality forward.
+    /// Last pass's photos. Carries EXIF, tags and GPS forward.
     pub cached_photos: Vec<ScanPhoto>,
     /// Last pass's sidecar rows. A hit here is what lets a light scan skip
     /// rebuilding an `.xmp` row when the listing still matches.
@@ -786,8 +759,8 @@ fn sidecar_view_from_parse(path: &str, bytes: &[u8]) -> SidecarViewRecord {
     }
 }
 
-/// Parse XMP bytes the caller already holds — the sidecar-sync path, which
-/// fetches `.xmp` contents from a file provider and never touches disk.
+/// Parse XMP bytes the caller already holds — the coordinated sidecar-read
+/// path never asks Rust to open the file again.
 #[uniffi::export]
 pub fn parse_xmp_bytes(bytes: Vec<u8>) -> SidecarParseRecord {
     sidecar_parse_from(gallery_meta::media::parse_xmp_bytes(&bytes))
@@ -874,10 +847,6 @@ fn photo_to_record(photo: &PhotoFile) -> ScanPhoto {
         gps_latitude: photo.gps_latitude,
         gps_longitude: photo.gps_longitude,
         face_regions: photo.face_regions.iter().map(region_to_record).collect(),
-        locality: match photo.locality {
-            PhotoLocality::Local => ScanLocality::Local,
-            PhotoLocality::Remote { downloaded } => ScanLocality::Remote { downloaded },
-        },
     }
 }
 
@@ -919,10 +888,6 @@ pub(crate) fn photo_from_record(record: ScanPhoto) -> PhotoFile {
                 height: r.height,
             })
             .collect(),
-        locality: match record.locality {
-            ScanLocality::Local => PhotoLocality::Local,
-            ScanLocality::Remote { downloaded } => PhotoLocality::Remote { downloaded },
-        },
         sidecar_status: SidecarStatus::Absent,
     }
 }
@@ -932,11 +897,9 @@ fn sidecar_to_record(row: &SidecarCandidate) -> ScanSidecarRow {
         photo_id: row.photo_id.to_string(),
         sidecar_path: row.sidecar_url.path().to_string(),
         current_version: ScanContentVersion {
-            content_identifier: row.current_version.content_identifier.clone(),
             modification_date: row.current_version.modification_date.map(|d| d.0),
             size: row.current_version.size,
         },
-        download_status: row.download_status.describe().to_string(),
     }
 }
 
@@ -952,15 +915,8 @@ fn sidecar_from_record(row: ScanSidecarRow) -> SidecarCandidate {
             .unwrap_or_else(|_| StableId::for_photo(row.sidecar_path.trim_end_matches(".xmp"))),
         sidecar_url: FileUrl::new(row.sidecar_path),
         current_version: ContentVersion {
-            content_identifier: row.current_version.content_identifier,
             modification_date: row.current_version.modification_date.map(AppleDate),
             size: row.current_version.size,
-        },
-        download_status: match row.download_status.as_str() {
-            "placeholder" => DownloadStatus::Placeholder,
-            "downloading" => DownloadStatus::Downloading,
-            "stale" => DownloadStatus::Stale,
-            _ => DownloadStatus::Local,
         },
     }
 }
@@ -1074,12 +1030,6 @@ fn outcome_to_record(
         timings: ScanTimings {
             total_millis: elapsed.as_millis() as u64,
             list_millis: stats.list_micros / 1000,
-            // Probe fields stay on the wire so existing Swift / generated
-            // bindings keep compiling. The scanner is local-only; always zero.
-            probe_millis: 0,
-            probed_paths: 0,
-            probe_batches: 0,
-            probe_mismatches: 0,
             cache_hits: stats.cache_hits as u32,
             slow_path: stats.slow_path as u32,
             folders: stats.folders as u32,
@@ -1209,7 +1159,6 @@ mod tests {
 
         assert_eq!(light.timings.cache_hits, 3);
         assert_eq!(light.timings.slow_path, 0);
-        assert_eq!(light.timings.probe_batches, 0);
         assert!(light.added_paths.is_empty() && light.removed_paths.is_empty());
         assert_eq!(light.sidecar_manifest, cold.sidecar_manifest);
         assert_eq!(light.flat_photos, cold.flat_photos);
@@ -1333,12 +1282,6 @@ mod tests {
         let loaded = load_snapshot(path.to_str().unwrap().to_string()).unwrap();
         assert_eq!(loaded.all_photos.len(), 3);
         assert_eq!(loaded.sidecar_manifest, record.sidecar_manifest);
-        // Locality is runtime state and is not persisted — everything comes
-        // back local, which is the documented, legal loss.
-        assert!(loaded
-            .all_photos
-            .iter()
-            .all(|p| p.locality == ScanLocality::Local));
         assert_eq!(
             loaded
                 .folders

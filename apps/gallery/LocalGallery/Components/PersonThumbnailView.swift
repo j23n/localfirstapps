@@ -25,7 +25,6 @@ struct PersonThumbnailView: View {
     let region: FaceRegion?
     let size: CGFloat
     var cornerRadius: CGFloat = 0
-    var isRemote: Bool = false
 
     @Environment(GalleryStore.self) private var store
     @State private var image: UIImage?
@@ -33,7 +32,7 @@ struct PersonThumbnailView: View {
     var body: some View {
         Group {
             if region == nil {
-                ThumbnailView(url: url, size: size, cornerRadius: cornerRadius, isRemote: isRemote)
+                ThumbnailView(url: url, size: size, cornerRadius: cornerRadius)
                     .frame(width: size, height: size)
             } else if let image {
                 Image(uiImage: image)

@@ -608,16 +608,10 @@ final class TaggingService {
 
     /// The photos a run should consider.
     ///
-    /// Mirrors the enrichment rule on placeholders — a file-provider
-    /// placeholder has no bytes to hash, decode, or write a sidecar next to,
-    /// and asking the core to try would burn a retry per photo. It *diverges*
-    /// from enrichment on videos: enrichment reads a video's creation date
-    /// happily, but the core has no frame sampler on iOS, so videos are out of
-    /// scope for v1.
+    /// Enrichment reads a video's creation date, but the core has no frame
+    /// sampler on iOS, so videos are out of scope for v1.
     nonisolated static func isEligible(_ photo: PhotoFile) -> Bool {
-        guard !photo.isVideo else { return false }
-        if case .remote(downloaded: false) = photo.locality { return false }
-        return true
+        !photo.isVideo
     }
 
     // MARK: - Off-actor plumbing

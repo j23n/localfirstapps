@@ -101,11 +101,9 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
             photoID: PhotoFile.stableID(for: url.deletingPathExtension()),
             sidecarURL: url,
             currentVersion: ContentVersion(
-                contentIdentifier: "1234567",
                 modificationDate: Date(timeIntervalSinceReferenceDate: 649_500_000),
                 size: 128
-            ),
-            downloadStatus: .local
+            )
         )
     }
 
@@ -135,7 +133,6 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
             gpsLatitude: photo.gpsLatitude,
             gpsLongitude: photo.gpsLongitude,
             faceRegions: photo.faceRegions,
-            locality: photo.locality,
             sidecarStatus: photo.sidecarStatus
         )
         return p
@@ -205,12 +202,9 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
         default:
             break
         }
-        // Neither of these is in CodingKeys; set them to non-defaults so the
-        // test can prove they are dropped.
-        p.locality = .remote(downloaded: false)
-        p.sidecarStatus = .cached(ContentVersion(
-            contentIdentifier: "42", modificationDate: nil, size: 99
-        ))
+        // This runtime field is not in CodingKeys; set it to a non-default so
+        // the test can prove it is dropped.
+        p.sidecarStatus = .cached(ContentVersion(size: 99))
         return p
     }
 
@@ -269,12 +263,8 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
         let row = try XCTUnwrap(manifest.first)
         XCTAssertEqual(row.sidecarURL.lastPathComponent, "IMG_0001.jpg.xmp")
         XCTAssertEqual(row.photoID, PhotoFile.stableID(for: row.sidecarURL.deletingPathExtension()))
-        XCTAssertEqual(row.downloadStatus, .local)
-        XCTAssertNil(row.currentVersion.contentIdentifier)
 
-        // `.local` and the provider token are omitted on new writes (M4).
-        // The synthesised encoding for a payload-less enum case would be
-        // `{"local": {}}`; the wire form is a plain string when present.
+        // Retired v20 authority fields are never emitted.
         let value = try XCTUnwrap(fixtureObject()["value"] as? [String: Any])
         let rows = try XCTUnwrap(value["sidecarManifest"] as? [[String: Any]])
         XCTAssertNil(rows.first?["downloadStatus"])
@@ -306,16 +296,11 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
                       "adding an optional field must not evict older snapshots")
     }
 
-    /// …and a sidecar cache written while `contentIdentifier` was an `Int64`
-    /// still decodes, for the same reason: evicting it would re-download every
-    /// `.xmp` in the library to save nothing.
-    func testALegacyNumericContentIdentifierStillDecodes() throws {
+    /// A sidecar cache carrying a retired numeric identity still decodes.
+    func testALegacyNumericIdentityIsIgnoredOnDecode() throws {
         let legacy = Data(#"{"contentIdentifier": 8675309, "size": 12}"#.utf8)
         let decoded = try JSONDecoder().decode(ContentVersion.self, from: legacy)
-        XCTAssertEqual(decoded.contentIdentifier, "8675309")
         XCTAssertEqual(decoded.size, 12)
-        // New writes omit the provider token (M4). Decode still keeps it
-        // in memory so sameContent can compare old rows.
         let reencoded = try JSONSerialization.jsonObject(
             with: try JSONEncoder().encode(decoded)
         ) as? [String: Any]
@@ -382,9 +367,7 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
         XCTAssertNil(regions[1]["name"], "a nil region name is omitted")
     }
 
-    /// `locality`, `sidecarStatus`, `dimensions` and `exif` are not in
-    /// `CodingKeys`: they are dropped on save and come back at their defaults.
-    /// The fixture was built with non-default values on purpose.
+    /// Runtime-only fields are not in `CodingKeys`: they are dropped on save.
     func testRuntimeOnlyFieldsAreNotPersisted() throws {
         for photo in try fixturePhotos() {
             XCTAssertNil(photo["locality"])
@@ -393,8 +376,6 @@ final class LibrarySnapshotFixtureTests: XCTestCase {
             XCTAssertNil(photo["exif"])
         }
         let decoded = try decodeFixture()
-        XCTAssertTrue(decoded.allPhotos.allSatisfy { $0.locality == .local },
-                      "locality resets to .local on reload")
         XCTAssertTrue(decoded.allPhotos.allSatisfy { $0.sidecarStatus == .absent },
                       "sidecarStatus resets to .absent on reload")
     }

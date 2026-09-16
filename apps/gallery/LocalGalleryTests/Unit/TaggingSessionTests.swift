@@ -294,10 +294,7 @@ final class TaggingSessionTests: XCTestCase {
         XCTAssertEqual(stats.failed, 0)
     }
 
-    /// Tagging's eligibility rule is *not* the enrichment rule restated — the
-    /// two agree on placeholders and disagree on videos. Asserted against what
-    /// `EnrichmentService` actually does, so the day one of them changes this
-    /// fails rather than quietly drifting.
+    /// Tagging excludes videos while enrichment still extracts their dates.
     func testTaggingExcludesVideosThatEnrichmentStillProcesses() async throws {
         let fixtures = try resourceDirectory("fixtures")
         let photoURL = temp.appending("gradient.jpg")
@@ -309,15 +306,11 @@ final class TaggingSessionTests: XCTestCase {
         // observe that it went down the video path rather than being skipped.
         let videoURL = temp.appending("clip.mov")
         try Data("not really a movie".utf8).write(to: videoURL)
-        let placeholderURL = temp.appending("cloud.jpg")
-
         let photo = PhotoFile.fixture(url: photoURL)
         let video = PhotoFile.fixture(url: videoURL, isVideo: true)
-        var placeholder = PhotoFile.fixture(url: placeholderURL)
-        placeholder.locality = .remote(downloaded: false)
 
-        let enriched = await EnrichmentService.enrich(photos: [photo, video, placeholder])
-        XCTAssertEqual(enriched.count, 3)
+        let enriched = await EnrichmentService.enrich(photos: [photo, video])
+        XCTAssertEqual(enriched.count, 2)
 
         // Ordinary local photo: both take it.
         XCTAssertTrue(TaggingService.isEligible(photo))
@@ -330,18 +323,6 @@ final class TaggingSessionTests: XCTestCase {
             "enrichment no longer dates videos — the divergence this test documents has moved"
         )
         XCTAssertFalse(TaggingService.isEligible(video))
-
-        // Placeholder: neither reads its (non-existent) bytes. Enrichment
-        // marks it done-for-now without a date; tagging refuses it outright so
-        // it cannot burn a retry.
-        XCTAssertNil(enriched[2].dateTaken)
-        XCTAssertNotNil(enriched[2].enrichedFileDate, "the placeholder must still be marked")
-        XCTAssertFalse(TaggingService.isEligible(placeholder))
-
-        // And a placeholder whose bytes have landed rejoins both.
-        var downloaded = placeholder
-        downloaded.locality = .remote(downloaded: true)
-        XCTAssertTrue(TaggingService.isEligible(downloaded))
     }
 
     /// Pack directories are named for their version, and versions have

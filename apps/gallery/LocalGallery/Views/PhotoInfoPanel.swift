@@ -142,8 +142,7 @@ struct PhotoInfoPanel: View {
                 url: photo.url,
                 region: region,
                 size: 56,
-                cornerRadius: 8,
-                isRemote: photo.locality.isRemotePlaceholder
+                cornerRadius: 8
             )
             Text(label)
                 .font(.caption2.weight(.medium))
@@ -480,7 +479,7 @@ struct PhotoInfoPanel: View {
     }
 
     private var canRegeocode: Bool {
-        GeocodingService.isEligible(photo, force: true) && !store.analysis.isRunning
+        CorePlaces.isEligible(photo) && !store.analysis.isRunning
     }
 
     private func rerunButton(_ title: String, systemImage: String, enabled: Bool, action: @escaping () -> Void) -> some View {

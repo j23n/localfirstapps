@@ -68,7 +68,7 @@ final class LibraryAnalysis {
     struct Summary: Equatable, Sendable {
         var tagging: TaggingService.Summary?
         var faces: FaceService.Summary?
-        var places: GeocodingService.Summary?
+        var places: CorePlaces.Summary?
         var cancelled = false
     }
 
@@ -85,7 +85,7 @@ final class LibraryAnalysis {
 
     @ObservationIgnored private let tagging: TaggingService
     @ObservationIgnored private let faces: FaceService
-    @ObservationIgnored private let places: GeocodingService
+    @ObservationIgnored private let places: CorePlaces
     @ObservationIgnored private var cancelRequested = false
     @ObservationIgnored var photos: (@MainActor () -> [PhotoFile])?
     /// Light rescan after the run, so Places tags (and any tagging/face
@@ -104,7 +104,7 @@ final class LibraryAnalysis {
     /// itself did not change.
     @ObservationIgnored var onSidecarPaths: (@MainActor ([String]) -> Void)?
 
-    init(tagging: TaggingService, faces: FaceService, places: GeocodingService) {
+    init(tagging: TaggingService, faces: FaceService, places: CorePlaces) {
         self.tagging = tagging
         self.faces = faces
         self.places = places
@@ -137,7 +137,7 @@ final class LibraryAnalysis {
         await tagging.refreshAvailability()
         let tag = phases.contains(.tagging) && tagging.isAvailable && TaggingService.isEligible(photo)
         let face = phases.contains(.faces) && faces.isAvailable && FaceService.isEligible(photo)
-        let place = phases.contains(.places) && GeocodingService.isEligible(photo, force: true)
+        let place = phases.contains(.places) && CorePlaces.isEligible(photo)
         guard tag || face || place else { return }
 
         isRunning = true
@@ -230,10 +230,8 @@ final class LibraryAnalysis {
         let wantFace = phases.contains(.faces) && faces.isAvailable
         let wantPlace = phases.contains(.places)
 
-        // Cheap filters only (no sidecar I/O). Places uses the `Places/*`
-        // names already on the library row — a rescan reloads those from
-        // the sidecar — so already-placed photos are not the work queue.
-        // The geocode loop still reads the sidecar to skip/extend a city.
+        // Tagging and faces expose cheap shell filters. Places receives the
+        // library snapshot unchanged; Rust owns its queue and sidecar policy.
         isRunning = true
         activePhases = phases
         cancelRequested = false
@@ -250,11 +248,11 @@ final class LibraryAnalysis {
             (
                 wantTag ? all.filter(TaggingService.isEligible) : [],
                 wantFace ? all.filter(FaceService.isEligible) : [],
-                wantPlace ? all.filter { GeocodingService.needsLibraryPlaces($0, force: force) } : []
+                wantPlace ? all : []
             )
         }.value
         Log.ml.info(
-            "Scan queues tag=\(tagPhotos.count) face=\(facePhotos.count) place=\(placePhotos.count) in \(Int(Date().timeIntervalSince(startedAt) * 1000))ms"
+            "Scan queues tag=\(tagPhotos.count) face=\(facePhotos.count); Places input=\(placePhotos.count) in \(Int(Date().timeIntervalSince(startedAt) * 1000))ms"
         )
 
         if cancelRequested {
@@ -341,8 +339,8 @@ final class LibraryAnalysis {
         }
 
         if !placePhotos.isEmpty {
-            Log.ml.info("Scan places phase starting \(placePhotos.count) GPS stills")
-            publish(.places, done: 0, total: placePhotos.count, overallDone: overallDone, overallTotal: placePhotos.count, startedAt: startedAt)
+            Log.ml.info("Scan places phase starting with \(placePhotos.count) library rows")
+            publish(.places, done: 0, total: 0, overallDone: overallDone, overallTotal: 0, startedAt: startedAt)
             async let placeSummary = places.geocode(placePhotos, force: force)
             await waitForStart({ self.places.isRunning })
             while places.isRunning {
@@ -350,9 +348,9 @@ final class LibraryAnalysis {
                 publish(
                     .places,
                     done: p?.done ?? 0,
-                    total: p?.total ?? placePhotos.count,
+                    total: p?.total ?? 0,
                     overallDone: overallDone + (p?.done ?? 0),
-                    overallTotal: p?.total ?? placePhotos.count,
+                    overallTotal: p?.total ?? 0,
                     startedAt: startedAt
                 )
                 try? await Task.sleep(for: .milliseconds(200))

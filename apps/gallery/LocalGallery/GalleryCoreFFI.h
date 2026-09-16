@@ -278,6 +278,13 @@ typedef void (*UniffiCallbackInterfaceHeicDecoderMethod0)(uint64_t, RustBuffer, 
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_PLACES_PROGRESS_LISTENER_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_PLACES_PROGRESS_LISTENER_METHOD0
+typedef void (*UniffiCallbackInterfacePlacesProgressListenerMethod0)(uint64_t, uint32_t, uint32_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_SCAN_PROGRESS_LISTENER_METHOD0
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_SCAN_PROGRESS_LISTENER_METHOD0
 typedef void (*UniffiCallbackInterfaceScanProgressListenerMethod0)(uint64_t, uint32_t, void* _Nonnull, 
@@ -325,6 +332,15 @@ typedef struct UniffiVTableCallbackInterfaceHeicDecoder {
     UniffiCallbackInterfaceClone _Nonnull uniffiClone;
     UniffiCallbackInterfaceHeicDecoderMethod0 _Nonnull decode;
 } UniffiVTableCallbackInterfaceHeicDecoder;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_PLACES_PROGRESS_LISTENER
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_PLACES_PROGRESS_LISTENER
+typedef struct UniffiVTableCallbackInterfacePlacesProgressListener {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfacePlacesProgressListenerMethod0 _Nonnull onProgress;
+} UniffiVTableCallbackInterfacePlacesProgressListener;
 
 #endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_SCAN_PROGRESS_LISTENER
@@ -619,6 +635,57 @@ RustBuffer uniffi_gallery_ffi_fn_method_memorygenerator_generate(uint64_t ptr, R
 int8_t uniffi_gallery_ffi_fn_method_memorygenerator_is_cancelled(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_PLACESPROGRESSLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_PLACESPROGRESSLISTENER
+uint64_t uniffi_gallery_ffi_fn_clone_placesprogresslistener(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_PLACESPROGRESSLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_PLACESPROGRESSLISTENER
+void uniffi_gallery_ffi_fn_free_placesprogresslistener(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_INIT_CALLBACK_VTABLE_PLACESPROGRESSLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_INIT_CALLBACK_VTABLE_PLACESPROGRESSLISTENER
+void uniffi_gallery_ffi_fn_init_callback_vtable_placesprogresslistener(const UniffiVTableCallbackInterfacePlacesProgressListener* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PLACESPROGRESSLISTENER_ON_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PLACESPROGRESSLISTENER_ON_PROGRESS
+void uniffi_gallery_ffi_fn_method_placesprogresslistener_on_progress(uint64_t ptr, uint32_t done, uint32_t total, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_PLACESSESSION
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_PLACESSESSION
+uint64_t uniffi_gallery_ffi_fn_clone_placessession(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_PLACESSESSION
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_PLACESSESSION
+void uniffi_gallery_ffi_fn_free_placessession(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CONSTRUCTOR_PLACESSESSION_NEW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CONSTRUCTOR_PLACESSESSION_NEW
+uint64_t uniffi_gallery_ffi_fn_constructor_placessession_new(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PLACESSESSION_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PLACESSESSION_CANCEL
+void uniffi_gallery_ffi_fn_method_placessession_cancel(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PLACESSESSION_PREPARE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PLACESSESSION_PREPARE
+void uniffi_gallery_ffi_fn_method_placessession_prepare(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PLACESSESSION_RUN
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_PLACESSESSION_RUN
+RustBuffer uniffi_gallery_ffi_fn_method_placessession_run(uint64_t ptr, RustBuffer photos, RustBuffer cache_path, int8_t force, RustBuffer progress, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_SCANPROGRESSLISTENER
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_SCANPROGRESSLISTENER
 uint64_t uniffi_gallery_ffi_fn_clone_scanprogresslistener(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -822,50 +889,15 @@ RustBuffer uniffi_gallery_ffi_fn_func_person_log_project_report(RustBuffer root,
 RustBuffer uniffi_gallery_ffi_fn_func_person_log_read(RustBuffer root, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_GAZETTEER_LOOKUP
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_GAZETTEER_LOOKUP
-RustBuffer uniffi_gallery_ffi_fn_func_gazetteer_lookup(double latitude, double longitude, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_IS_STRICT_PLACES_PREFIX
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_IS_STRICT_PLACES_PREFIX
-int8_t uniffi_gallery_ffi_fn_func_is_strict_places_prefix(RustBuffer existing, RustBuffer newer, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_LIBRARY_WATCH_REFRESH_INTERVAL_MS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_LIBRARY_WATCH_REFRESH_INTERVAL_MS
 uint64_t uniffi_gallery_ffi_fn_func_library_watch_refresh_interval_ms(RustCallStatus *_Nonnull out_status
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_NOMINATIM_LOOKUP
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_NOMINATIM_LOOKUP
-RustBuffer uniffi_gallery_ffi_fn_func_nominatim_lookup(RustBuffer _endpoint, double latitude, double longitude, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACE_FROM_PARTS
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACE_FROM_PARTS
-RustBuffer uniffi_gallery_ffi_fn_func_place_from_parts(RustBuffer country, RustBuffer state, RustBuffer city, RustBuffer sublocation, RustBuffer country_code, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACES_NEEDED
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACES_NEEDED
-int8_t uniffi_gallery_ffi_fn_func_places_needed(RustBuffer tags, int8_t force, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACES_PATH
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACES_PATH
-RustBuffer uniffi_gallery_ffi_fn_func_places_path(RustBuffer country, RustBuffer state, RustBuffer city, RustBuffer sublocation, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACES_STILL_NEEDED
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACES_STILL_NEEDED
-int8_t uniffi_gallery_ffi_fn_func_places_still_needed(RustBuffer tags, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_WRITE_PLACES
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_WRITE_PLACES
-int8_t uniffi_gallery_ffi_fn_func_write_places(RustBuffer image_path, RustBuffer place, RustCallStatus *_Nonnull out_status
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACES_CANDIDATE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PLACES_CANDIDATE
+int8_t uniffi_gallery_ffi_fn_func_places_candidate(RustBuffer photo, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_LOAD_SNAPSHOT
@@ -1274,57 +1306,15 @@ uint16_t uniffi_gallery_ffi_checksum_func_person_log_read(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_GAZETTEER_LOOKUP
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_GAZETTEER_LOOKUP
-uint16_t uniffi_gallery_ffi_checksum_func_gazetteer_lookup(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_IS_STRICT_PLACES_PREFIX
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_IS_STRICT_PLACES_PREFIX
-uint16_t uniffi_gallery_ffi_checksum_func_is_strict_places_prefix(void
-    
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_LIBRARY_WATCH_REFRESH_INTERVAL_MS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_LIBRARY_WATCH_REFRESH_INTERVAL_MS
 uint16_t uniffi_gallery_ffi_checksum_func_library_watch_refresh_interval_ms(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_NOMINATIM_LOOKUP
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_NOMINATIM_LOOKUP
-uint16_t uniffi_gallery_ffi_checksum_func_nominatim_lookup(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACE_FROM_PARTS
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACE_FROM_PARTS
-uint16_t uniffi_gallery_ffi_checksum_func_place_from_parts(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACES_NEEDED
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACES_NEEDED
-uint16_t uniffi_gallery_ffi_checksum_func_places_needed(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACES_PATH
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACES_PATH
-uint16_t uniffi_gallery_ffi_checksum_func_places_path(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACES_STILL_NEEDED
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACES_STILL_NEEDED
-uint16_t uniffi_gallery_ffi_checksum_func_places_still_needed(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_WRITE_PLACES
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_WRITE_PLACES
-uint16_t uniffi_gallery_ffi_checksum_func_write_places(void
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACES_CANDIDATE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PLACES_CANDIDATE
+uint16_t uniffi_gallery_ffi_checksum_func_places_candidate(void
     
 );
 #endif
@@ -1634,6 +1624,30 @@ uint16_t uniffi_gallery_ffi_checksum_method_memorygenerator_is_cancelled(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PLACESPROGRESSLISTENER_ON_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PLACESPROGRESSLISTENER_ON_PROGRESS
+uint16_t uniffi_gallery_ffi_checksum_method_placesprogresslistener_on_progress(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PLACESSESSION_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PLACESSESSION_CANCEL
+uint16_t uniffi_gallery_ffi_checksum_method_placessession_cancel(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PLACESSESSION_PREPARE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PLACESSESSION_PREPARE
+uint16_t uniffi_gallery_ffi_checksum_method_placessession_prepare(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PLACESSESSION_RUN
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_PLACESSESSION_RUN
+uint16_t uniffi_gallery_ffi_checksum_method_placessession_run(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_SCANPROGRESSLISTENER_ON_PROGRESS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_SCANPROGRESSLISTENER_ON_PROGRESS
 uint16_t uniffi_gallery_ffi_checksum_method_scanprogresslistener_on_progress(void
@@ -1739,6 +1753,12 @@ uint16_t uniffi_gallery_ffi_checksum_constructor_libraryindex_new(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_CONSTRUCTOR_MEMORYGENERATOR_NEW
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_CONSTRUCTOR_MEMORYGENERATOR_NEW
 uint16_t uniffi_gallery_ffi_checksum_constructor_memorygenerator_new(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_CONSTRUCTOR_PLACESSESSION_NEW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_CONSTRUCTOR_PLACESSESSION_NEW
+uint16_t uniffi_gallery_ffi_checksum_constructor_placessession_new(void
     
 );
 #endif

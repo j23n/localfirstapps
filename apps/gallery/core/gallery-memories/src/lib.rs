@@ -160,18 +160,7 @@ pub struct LeafFolder {
 #[derive(Debug, Clone)]
 pub struct GenerationInputs {
     /// The photo table.
-    ///
-    /// The **first [`Self::ladder_photo_count`]** entries are the scored pool:
-    /// the coordinator's cloud-placeholder filter has already run over them,
-    /// and every ladder stage draws from them alone. Anything after that is a
-    /// placeholder appended for the **folder-event ladder only** — see
-    /// [`Self::ladder_photos`].
     pub photos: Vec<PhotoFile>,
-    /// How many leading entries of `photos` the score ladder may draw from.
-    ///
-    /// Equal to `photos.len()` for a caller with no placeholders, which is
-    /// every caller except `MemoryCoordinator`.
-    pub ladder_photo_count: usize,
     /// `Calendar.current.timeZone.secondsFromGMT(for: photo.dateTaken)`, one
     /// per entry of `photos`. **May be empty**, meaning "use the offset at
     /// `now` for every photo" — see [`crate::time`] for why per-photo offsets
@@ -209,7 +198,6 @@ impl GenerationInputs {
     pub fn empty(now: AppleDate, time_zone: UtcOffset, seed: impl Into<String>) -> Self {
         GenerationInputs {
             photos: Vec::new(),
-            ladder_photo_count: 0,
             photo_time_zone_offsets: Vec::new(),
             horizon_time_zone_offsets: Vec::new(),
             leaf_folders: Vec::new(),
@@ -226,20 +214,10 @@ impl GenerationInputs {
         }
     }
 
-    /// Replace the scored pool. Keeps `ladder_photo_count` and `photos` in step
-    /// so a caller with no placeholders cannot get the invariant wrong.
+    /// Replace the photo table.
     pub fn with_photos(mut self, photos: Vec<PhotoFile>) -> Self {
-        self.ladder_photo_count = photos.len();
         self.photos = photos;
         self
-    }
-
-    /// The scored pool: every stage but folder events sees only these.
-    ///
-    /// Clamped rather than indexed, so a caller that sets the count wrong gets
-    /// fewer memories instead of a panic in the middle of a background task.
-    pub fn ladder_photos(&self) -> &[PhotoFile] {
-        &self.photos[..self.ladder_photo_count.min(self.photos.len())]
     }
 
     /// The offsets this run works in.
@@ -475,15 +453,12 @@ pub fn generate_cancellable(
 ) -> Vec<Memory> {
     let zone = inputs.zone();
     let cal = zone.now();
-    // The **whole** table, placeholders included. Only the folder-event stage
-    // below indexes past `ladder_photo_count`; everything else works off
-    // `dated`, which is built from the scored pool alone.
     let photos = &inputs.photos;
     let today = inputs.now;
     let today_md = cal.month_day(today);
     let current_month_year = (cal.civil(today).month, cal.civil(today).year);
 
-    let dated = photos_with_dates(inputs.ladder_photos());
+    let dated = photos_with_dates(photos);
     let mut candidates: Vec<Memory> = Vec::new();
 
     // === 1. On This Day ===
@@ -511,19 +486,6 @@ pub fn generate_cancellable(
 
     // === 4. Folder-based event memories ===
     //
-    // The one stage that sees the placeholder tail. The deleted Swift read
-    // `folder.photos` — the folder's own array, which the coordinator's
-    // cloud-placeholder filter never touched, because that filter only ever
-    // applied to `allPhotos`:
-    //
-    //     for folder in leafFolders {
-    //         let withDatesRaw = folder.photos.compactMap { … }
-    //
-    // Resolving those ids through the *filtered* pool instead would silently
-    // drop every non-downloaded photo, pushing placeholder-heavy folders below
-    // `MIN_PHOTOS` (they vanish) and giving the survivors a different photo
-    // set, cover and subtitle under the same `folder-<id>` id. So the lookup
-    // spans the whole table.
     let mut by_id: HashMap<StableId, u32> = HashMap::with_capacity(photos.len());
     for (i, photo) in photos.iter().enumerate() {
         by_id.entry(photo.id).or_insert(i as u32);
@@ -634,7 +596,7 @@ pub fn generate_cancellable(
 
     // === 7. Birthdays ===
     if inputs.birthdays_enabled {
-        let people = birthdays::PeopleIndex::build(inputs.ladder_photos());
+        let people = birthdays::PeopleIndex::build(photos);
         candidates.extend(birthdays::generate_birthday_memories(
             inputs,
             &keys,
@@ -723,144 +685,10 @@ mod tests {
         assert_eq!(out[0].subtitle.as_deref(), Some("5 photos"));
     }
 
-    // -----------------------------------------------------------------------
-    // Folder events see the cloud placeholders
-    // -----------------------------------------------------------------------
-
-    /// 2019-11-05 10:00 UTC + `i` minutes.
-    fn november(i: usize) -> AppleDate {
-        AppleDate::from_unix_secs_f64(
-            CivilDateTime::new(2019, 11, 5, 10, 0, 0).as_naive_unix_secs() as f64
-                + (i as f64) * 120.0,
-        )
-    }
-
     fn dated_photo(path: &str, at: AppleDate) -> PhotoFile {
         let mut p = PhotoFile::new(path, "x".to_string(), 1);
         p.date_taken = Some(at);
         p
-    }
-
-    /// A folder of 20 photos of which 12 are non-downloaded cloud placeholders,
-    /// and the inputs the coordinator would build for it.
-    fn folder_with_placeholders() -> (Vec<PhotoFile>, Vec<PhotoFile>, LeafFolder) {
-        // Interleaved, not appended: the folder's listing order is the order
-        // `photo_ids` records, and a placeholder sitting in the middle is what
-        // moves the cover.
-        let all: Vec<PhotoFile> = (0..20)
-            .map(|i| dated_photo(&format!("/lib/November/{i:02}.jpg"), november(i)))
-            .collect();
-        let folder = LeafFolder {
-            id: StableId::for_folder("/lib/November"),
-            name: "November".to_string(),
-            photo_ids: all.iter().map(|p| p.id).collect(),
-        };
-        let (live, placeholders): (Vec<_>, Vec<_>) =
-            all.into_iter().enumerate().partition(|(i, _)| i % 5 < 2);
-        (
-            live.into_iter().map(|(_, p)| p).collect(),
-            placeholders.into_iter().map(|(_, p)| p).collect(),
-            folder,
-        )
-    }
-
-    fn folder_inputs(
-        live: Vec<PhotoFile>,
-        placeholders: Vec<PhotoFile>,
-        folder: LeafFolder,
-    ) -> GenerationInputs {
-        // 2020-03-01, so the folder's November days are outside the current
-        // month/year the folder ladder refuses.
-        let now = AppleDate::from_unix_secs_f64(
-            CivilDateTime::new(2020, 3, 1, 12, 0, 0).as_naive_unix_secs() as f64,
-        );
-        let ladder_photo_count = live.len();
-        let mut photos = live;
-        photos.extend(placeholders);
-        GenerationInputs {
-            photos,
-            ladder_photo_count,
-            leaf_folders: vec![folder],
-            ..GenerationInputs::empty(now, UtcOffset::UTC, "seed")
-        }
-    }
-
-    /// The parity this exists to hold. The deleted Swift read the folder's own
-    /// array, which the cloud-placeholder filter never touched:
-    ///
-    /// ```text
-    /// for folder in leafFolders {
-    ///     let withDatesRaw = folder.photos.compactMap { photo -> (PhotoFile, Date)? in
-    ///         guard let date = photo.dateTaken else { return nil }
-    ///         return (photo, date)
-    ///     }.sorted { $0.1 < $1.1 }
-    /// ```
-    ///
-    /// So a folder of 20 photos made a 20-photo memory whether or not 12 of
-    /// them were still in the cloud — same membership, same
-    /// `ids[ids.count / 3]` cover, same subtitle. Resolving the ids through the
-    /// filtered pool alone would have made it an 8-photo folder, which is below
-    /// `MIN_PHOTOS` and therefore no memory at all.
-    #[test]
-    fn a_folder_event_counts_its_cloud_placeholders_exactly_as_the_swift_did() {
-        let (live, placeholders, folder) = folder_with_placeholders();
-        let every_id: Vec<StableId> = folder.photo_ids.clone();
-        let inputs = folder_inputs(live, placeholders, folder);
-
-        let memories = generate(&inputs);
-        let event = memories
-            .iter()
-            .find(|m| m.kind == MemoryType::FolderEvent)
-            .expect("the folder event must survive its placeholders");
-        assert_eq!(event.photo_ids, every_id, "membership is the folder's own");
-        assert_eq!(
-            event.cover_photo_id,
-            every_id[every_id.len() / 3],
-            "the cover is ids[count / 3] of the FULL list"
-        );
-        assert_eq!(
-            event.subtitle.as_deref(),
-            Some("Nov 5, 2019 \u{00B7} 20 photos")
-        );
-    }
-
-    /// The bug, stated as a test: the same folder with the placeholders
-    /// withheld falls below `MIN_PHOTOS` and produces nothing at all.
-    #[test]
-    fn withholding_the_placeholders_deletes_the_folder_event_entirely() {
-        let (live, _placeholders, folder) = folder_with_placeholders();
-        let inputs = folder_inputs(live, Vec::new(), folder);
-        assert!(
-            !generate(&inputs)
-                .iter()
-                .any(|m| m.kind == MemoryType::FolderEvent),
-            "8 of 20 photos is under the 15-photo floor — this is what the \
-             filtered-pool resolution silently did"
-        );
-    }
-
-    /// A placeholder is folder-event fuel and *nothing else*: it must not reach
-    /// the density day it would otherwise push over the threshold, because the
-    /// coordinator excluded it for a reason (no tags, no GPS, no trustworthy
-    /// date).
-    #[test]
-    fn placeholders_stay_out_of_every_other_ladder() {
-        let (live, placeholders, folder) = folder_with_placeholders();
-        let placeholder_ids: Vec<StableId> = placeholders.iter().map(|p| p.id).collect();
-        let inputs = folder_inputs(live, placeholders, folder);
-        for memory in generate(&inputs) {
-            if memory.kind == MemoryType::FolderEvent {
-                continue;
-            }
-            for id in &placeholder_ids {
-                assert!(
-                    !memory.photo_ids.contains(id),
-                    "{} leaked a placeholder into a {:?}",
-                    memory.id,
-                    memory.kind
-                );
-            }
-        }
     }
 
     // -----------------------------------------------------------------------

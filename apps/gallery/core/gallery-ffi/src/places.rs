@@ -1,265 +1,166 @@
-//! Reverse-geocoded Places writes and the path/eligibility rules.
+//! Coarse-grained iOS entry point to the shared Places pass.
 //!
-//! A free function rather than a session: there is no ONNX, no queue, and no
-//! run lock — each photo is one read-modify-write of its sidecar.
+//! `PlacesSession` owns cancellation only. Eligibility, cache use, lookup, and
+//! sidecar policy all remain in `gallery_session::run_places`.
 
-use gallery_meta::{MetaError, PlaceWriteRequest};
-use gallery_vfs::{StdVfs, VfsError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-/// Why a Places write failed.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
-pub enum PlacesError {
-    /// The requested path is not a usable `Places/…` tag.
-    InvalidTag {
-        /// The offending tag.
-        tag: String,
-        /// Why it was rejected.
-        reason: String,
-    },
-    /// The sidecar changed between read and write. Retryable.
-    ConcurrentModification {
-        /// Sidecar path.
-        path: String,
-    },
-    /// Filesystem said no.
-    Io {
-        /// Path that failed.
-        path: String,
-        /// OS message; for logs only.
-        detail: String,
-    },
-    /// The sidecar could not be parsed or was not XMP.
-    Sidecar {
-        /// Parser message; for logs only.
-        detail: String,
-    },
+use crate::scanner::{photo_from_record, ScanPhoto};
+use gallery_vfs::StdVfs;
+
+/// Progress from the core-owned Places loop.
+#[uniffi::export(with_foreign)]
+pub trait PlacesProgressListener: Send + Sync {
+    /// One more queued photo reached a terminal result.
+    fn on_progress(&self, done: u32, total: u32);
 }
 
-impl std::fmt::Display for PlacesError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PlacesError::InvalidTag { tag, reason } => {
-                write!(f, "invalid place tag {tag:?}: {reason}")
-            }
-            PlacesError::ConcurrentModification { path } => {
-                write!(f, "sidecar changed while writing places: {path}")
-            }
-            PlacesError::Io { path, detail } => write!(f, "io {path}: {detail}"),
-            PlacesError::Sidecar { detail } => write!(f, "sidecar: {detail}"),
-        }
-    }
+/// Terminal result for one photo.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum PlacesRecordOutcome {
+    /// Sidecar bytes changed.
+    Written,
+    /// No lookup result or the sidecar already had an equal/better path.
+    Skipped,
+    /// Authority, lookup, or write failed.
+    Failed { detail: String },
 }
 
-impl std::error::Error for PlacesError {}
-
-impl From<VfsError> for PlacesError {
-    fn from(e: VfsError) -> Self {
-        let detail = e.to_string();
-        let path = match &e {
-            VfsError::NotFound { path }
-            | VfsError::PermissionDenied { path }
-            | VfsError::NotADirectory { path }
-            | VfsError::AlreadyExists { path }
-            | VfsError::InvalidPath { path, .. }
-            | VfsError::Io { path, .. } => path.clone(),
-        };
-        PlacesError::Io { path, detail }
-    }
-}
-
-impl From<MetaError> for PlacesError {
-    fn from(e: MetaError) -> Self {
-        match e {
-            MetaError::Vfs(v) => v.into(),
-            MetaError::InvalidTag { tag, reason } => PlacesError::InvalidTag { tag, reason },
-            MetaError::ConcurrentModification { path } => {
-                PlacesError::ConcurrentModification { path }
-            }
-            other => PlacesError::Sidecar {
-                detail: other.to_string(),
-            },
-        }
-    }
-}
-
-/// One reverse-geocoded place, matching photo-tools schema §1.3 / §2.2.
+/// One photo processed by a Places run.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct PlaceWrite {
-    /// `Places/<Country>[/<Region>[/<City>[/<Neighborhood>]]]`.
-    pub path: String,
-    /// `photoshop:Country`.
-    pub country: Option<String>,
-    /// `photoshop:State`.
-    pub state: Option<String>,
-    /// `photoshop:City`.
-    pub city: Option<String>,
-    /// `Iptc4xmpCore:Location`.
-    pub sublocation: Option<String>,
-    /// ISO 3166-1 alpha-2.
-    pub country_code: Option<String>,
+pub struct PlacesRunRecord {
+    /// Image path.
+    pub image_path: String,
+    /// Resolved path, when lookup succeeded.
+    pub place_path: Option<String>,
+    /// Terminal result.
+    pub outcome: PlacesRecordOutcome,
 }
 
-/// Write a Places tag and the IPTC location fields into `image_path`'s sidecar.
-///
-/// Returns whether bytes were actually written. A photo that already carries a
-/// finished `Places/…` tag is left alone (`false`). A *strict prefix*
-/// (`Places/France` → `Places/France/…/Paris`) is upgraded.
-///
-/// Concurrent sidecar writes retry a handful of times: tagging or a face
-/// naming can land on the same file during an analysis run.
+/// Display and refresh data from one Places run.
+#[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Record)]
+pub struct PlacesRunSummary {
+    /// Photos that reached a terminal result.
+    pub processed: u32,
+    /// Sidecars actually written.
+    pub written: u32,
+    /// Misses and already-placed photos.
+    pub skipped: u32,
+    /// Hard failures.
+    pub failed: u32,
+    /// Paths whose sidecar changed.
+    pub written_paths: Vec<String>,
+    /// Per-photo results, in queue order.
+    pub records: Vec<PlacesRunRecord>,
+    /// The run stopped early.
+    pub cancelled: bool,
+    /// First hard error.
+    pub error: Option<String>,
+}
+
+/// Cancellable coarse-grained entry point to `gallery_session::run_places`.
+#[derive(uniffi::Object)]
+pub struct PlacesSession {
+    cancel: AtomicBool,
+}
+
 #[uniffi::export]
-pub fn write_places(image_path: String, place: PlaceWrite) -> Result<bool, PlacesError> {
-    let request = PlaceWriteRequest {
-        path: place.path,
-        country: place.country,
-        state: place.state,
-        city: place.city,
-        sublocation: place.sublocation,
-        country_code: place.country_code,
-    };
-    let vfs = StdVfs::new();
-    // Three tries: the first collision is a tagging/face write landing in the
-    // same second, the second is unlucky, the third is something else.
-    let mut last = None;
-    for _ in 0..3 {
-        match gallery_meta::write_places(&vfs, &image_path, &request) {
-            Ok(outcome) => return Ok(outcome.written),
-            Err(MetaError::ConcurrentModification { path }) => {
-                last = Some(PlacesError::ConcurrentModification { path });
+impl PlacesSession {
+    /// Create an idle session.
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            cancel: AtomicBool::new(false),
+        })
+    }
+
+    /// Clear cancellation before the host launches a run.
+    ///
+    /// This is separate from [`Self::run`] so cancellation that races ahead
+    /// of the worker thread cannot be erased at the start of the run.
+    pub fn prepare(&self) {
+        self.cancel.store(false, Ordering::Release);
+    }
+
+    /// Run eligibility, cache lookup, gazetteer lookup, and sidecar writes.
+    pub fn run(
+        &self,
+        photos: Vec<ScanPhoto>,
+        cache_path: String,
+        force: bool,
+        progress: Option<Arc<dyn PlacesProgressListener>>,
+    ) -> PlacesRunSummary {
+        let photos = photos
+            .into_iter()
+            .map(photo_from_record)
+            .collect::<Vec<_>>();
+        let mut cache = gallery_session::GeoCache::load(&cache_path);
+        let on_progress = progress.map(|listener| {
+            move |done: usize, total: usize| {
+                listener.on_progress(
+                    done.min(u32::MAX as usize) as u32,
+                    total.min(u32::MAX as usize) as u32,
+                );
             }
-            Err(e) => return Err(e.into()),
+        });
+        let summary = gallery_session::run_places(
+            &StdVfs::new(),
+            &photos,
+            &gallery_session::Gazetteer,
+            &mut cache,
+            force,
+            &self.cancel,
+            on_progress
+                .as_ref()
+                .map(|callback| callback as &dyn Fn(usize, usize)),
+        );
+        let mut out = summary_to_record(summary);
+        if let Err(error) = cache.save(&cache_path) {
+            if out.error.is_none() {
+                out.error = Some(format!("geocode cache io: {error}"));
+            }
         }
+        out
     }
-    Err(last.unwrap_or(PlacesError::Sidecar {
-        detail: "exhausted concurrent-modification retries".into(),
-    }))
-}
 
-/// `Places/<Country>/…` from already-normalized fields. Duplicate levels
-/// collapse. `None` when every field is empty.
-#[uniffi::export]
-pub fn place_from_parts(
-    country: Option<String>,
-    state: Option<String>,
-    city: Option<String>,
-    sublocation: Option<String>,
-    country_code: Option<String>,
-) -> Option<PlaceWrite> {
-    gallery_meta::place_from_parts(
-        country.as_deref(),
-        state.as_deref(),
-        city.as_deref(),
-        sublocation.as_deref(),
-        country_code.as_deref(),
-    )
-    .map(|r| PlaceWrite {
-        path: r.path,
-        country: r.country,
-        state: r.state,
-        city: r.city,
-        sublocation: r.sublocation,
-        country_code: r.country_code,
-    })
-}
-
-/// Nested Places path, missing levels collapsed.
-#[uniffi::export]
-pub fn places_path(
-    country: Option<String>,
-    state: Option<String>,
-    city: Option<String>,
-    sublocation: Option<String>,
-) -> Option<String> {
-    gallery_meta::places_path(
-        country.as_deref(),
-        state.as_deref(),
-        city.as_deref(),
-        sublocation.as_deref(),
-    )
-}
-
-/// `Places/France` is a strict prefix of `Places/France/Île-de-France/Paris`.
-#[uniffi::export]
-pub fn is_strict_places_prefix(existing: String, newer: String) -> bool {
-    gallery_meta::is_strict_places_prefix(&existing, &newer)
-}
-
-/// No finished city-depth Places tag in `tags`.
-#[uniffi::export]
-pub fn places_still_needed(tags: Vec<String>) -> bool {
-    gallery_meta::places_still_needed(tags)
-}
-
-/// Queue + write skip. `force` always returns true.
-#[uniffi::export]
-pub fn places_needed(tags: Vec<String>, force: bool) -> bool {
-    gallery_session::places_needed(tags, force)
-}
-
-/// Why a place lookup failed. The offline gazetteer does not produce
-/// these; the variants stay so the UniFFI surface does not change.
-/// This is not a Nominatim error.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
-pub enum GeoError {
-    /// Transient — retry.
-    Retryable {
-        /// Log text.
-        detail: String,
-    },
-    /// Do not retry.
-    Fatal {
-        /// Log text.
-        detail: String,
-    },
-}
-
-impl std::fmt::Display for GeoError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GeoError::Retryable { detail } | GeoError::Fatal { detail } => write!(f, "{detail}"),
-        }
+    /// Ask the current run to stop.
+    pub fn cancel(&self) {
+        self.cancel.store(true, Ordering::Release);
     }
 }
 
-impl std::error::Error for GeoError {}
-
-fn place_from_geo(place: localcore_geo::Place) -> Option<PlaceWrite> {
-    gallery_meta::place_from_parts(
-        Some(place.country.as_str()),
-        place.admin.as_deref(),
-        Some(place.locality.as_str()),
-        None,
-        Some(place.country_code.as_str()),
-    )
-    .map(|r| PlaceWrite {
-        path: r.path,
-        country: r.country,
-        state: r.state,
-        city: r.city,
-        sublocation: r.sublocation,
-        country_code: r.country_code,
-    })
+/// Whether one photo belongs in the shared Places queue.
+#[uniffi::export]
+pub fn places_candidate(photo: ScanPhoto) -> bool {
+    gallery_session::is_places_candidate(&photo_from_record(photo))
 }
 
-/// Reverse-geocode from the bundled offline gazetteer.
-///
-/// English names. Country is admin-0 point-in-polygon. This is not
-/// Nominatim and does not contact public OSM (or any network).
-#[uniffi::export]
-pub fn gazetteer_lookup(latitude: f64, longitude: f64) -> Result<Option<PlaceWrite>, GeoError> {
-    Ok(localcore_geo::lookup(latitude, longitude).and_then(place_from_geo))
-}
-
-/// Compatibility wrapper around [`gazetteer_lookup`]. `endpoint` is
-/// ignored and is not a URL — this is not Nominatim and does not
-/// contact public OSM. Kept so existing UniFFI bindings stay valid.
-#[uniffi::export]
-pub fn nominatim_lookup(
-    _endpoint: String,
-    latitude: f64,
-    longitude: f64,
-) -> Result<Option<PlaceWrite>, GeoError> {
-    gazetteer_lookup(latitude, longitude)
+fn summary_to_record(summary: gallery_session::PlacesSummary) -> PlacesRunSummary {
+    PlacesRunSummary {
+        processed: summary.processed.min(u32::MAX as usize) as u32,
+        written: summary.written.min(u32::MAX as usize) as u32,
+        skipped: summary.skipped.min(u32::MAX as usize) as u32,
+        failed: summary.failed.min(u32::MAX as usize) as u32,
+        written_paths: summary.written_paths,
+        records: summary
+            .records
+            .into_iter()
+            .map(|record| PlacesRunRecord {
+                image_path: record.image_path,
+                place_path: record.place_path,
+                outcome: match record.outcome {
+                    gallery_session::PlaceOutcome::Written => PlacesRecordOutcome::Written,
+                    gallery_session::PlaceOutcome::Skipped => PlacesRecordOutcome::Skipped,
+                    gallery_session::PlaceOutcome::Failed(detail) => {
+                        PlacesRecordOutcome::Failed { detail }
+                    }
+                },
+            })
+            .collect(),
+        cancelled: summary.cancelled,
+        error: summary.error,
+    }
 }
 
 /// Watch debounce, milliseconds. Hosts implement the OS watcher.
@@ -271,43 +172,65 @@ pub fn library_watch_refresh_interval_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scanner::ScanRegion;
+    use gallery_model::photo::StableId;
 
-    #[test]
-    fn gazetteer_lookup_paris() {
-        let p = gazetteer_lookup(48.8566, 2.3522).unwrap().unwrap();
-        assert_eq!(p.city.as_deref(), Some("Paris"));
-        assert_eq!(p.country_code.as_deref(), Some("FR"));
-        assert!(p.path.starts_with("Places/France"), "{}", p.path);
+    fn photo(path: &str) -> ScanPhoto {
+        ScanPhoto {
+            id: StableId::for_photo(path).to_string(),
+            path: path.to_string(),
+            filename: "a".into(),
+            file_size: 1,
+            date_taken: None,
+            date_from_metadata: false,
+            is_video: false,
+            live_photo_video_path: None,
+            hierarchical_tags: Vec::new(),
+            country_code: None,
+            enriched_file_date: None,
+            file_modification_date: None,
+            gps_latitude: Some(48.8566),
+            gps_longitude: Some(2.3522),
+            face_regions: Vec::<ScanRegion>::new(),
+        }
     }
 
     #[test]
-    fn nominatim_lookup_ignores_endpoint_and_matches_gazetteer() {
-        let a = gazetteer_lookup(48.8566, 2.3522).unwrap();
-        let b =
-            nominatim_lookup("https://example.invalid/reverse".into(), 48.8566, 2.3522).unwrap();
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn gazetteer_lookup_writes_a_sidecar() {
+    fn session_runs_the_shared_places_policy() {
         let dir = tempfile::tempdir().unwrap();
-        let image = dir.path().join("eiffel.jpg");
+        let image = dir.path().join("a.jpg");
         std::fs::write(&image, b"not-a-jpeg").unwrap();
-        let image_s = image.to_str().unwrap().to_string();
-        let place = gazetteer_lookup(48.8566, 2.3522).unwrap().unwrap();
-        assert!(
-            write_places(image_s.clone(), place).unwrap(),
-            "Paris from the bundled gazetteer must be a valid Places write"
+        let cache = dir.path().join("geo-cache.json");
+        let summary = PlacesSession::new().run(
+            vec![photo(image.to_str().unwrap())],
+            cache.to_str().unwrap().to_string(),
+            false,
+            None,
         );
-        let bytes = std::fs::read(gallery_meta::sidecar_path(&image_s)).unwrap();
-        let view = gallery_meta::read_view(&bytes).unwrap();
-        assert!(
-            view.tags_list
-                .iter()
-                .any(|t| t.starts_with("Places/France") && t.contains("Paris")),
-            "{:?}",
-            view.tags_list
+        assert_eq!(summary.processed, 1, "{summary:?}");
+        assert_eq!(summary.written, 1, "{summary:?}");
+        assert_eq!(summary.records[0].outcome, PlacesRecordOutcome::Written);
+        assert!(cache.is_file());
+    }
+
+    #[test]
+    fn cancellation_before_worker_start_is_not_erased() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("a.jpg");
+        std::fs::write(&image, b"not-a-jpeg").unwrap();
+        let cache = dir.path().join("geo-cache.json");
+        let session = PlacesSession::new();
+        session.prepare();
+        session.cancel();
+
+        let summary = session.run(
+            vec![photo(image.to_str().unwrap())],
+            cache.to_str().unwrap().to_string(),
+            false,
+            None,
         );
-        assert_eq!(view.photo_tools.country_code.as_deref(), Some("FR"));
+
+        assert!(summary.cancelled, "{summary:?}");
+        assert_eq!(summary.processed, 0, "{summary:?}");
     }
 }

@@ -131,13 +131,9 @@ private struct ScanActivityRow: View {
     let entry: ScanActivityEntry
     @Environment(GalleryStore.self) private var store
 
-    private var isRemote: Bool {
-        store.photo(forActivity: entry.url, photoID: entry.photoID)?.locality.isRemotePlaceholder ?? false
-    }
-
     var body: some View {
         HStack(spacing: 12) {
-            ThumbnailView(url: entry.url, size: 44, cornerRadius: 6, isRemote: isRemote)
+            ThumbnailView(url: entry.url, size: 44, cornerRadius: 6)
                 .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -204,8 +200,7 @@ struct ScanActivityDetailView: View {
                     ThumbnailView(
                         url: entry.url,
                         size: 160,
-                        cornerRadius: 12,
-                        isRemote: photo.locality.isRemotePlaceholder
+                        cornerRadius: 12
                     )
                     .frame(width: 160, height: 160)
                     Spacer()

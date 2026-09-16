@@ -259,12 +259,10 @@ pub fn inputs_from(
     let contacts: Vec<Contact> = contacts.iter().map(ConfContact::to_contact).collect();
     let photos: Vec<_> = photos.iter().map(ConfPhoto::to_photo_file).collect();
     GenerationInputs {
-        // No fixture scenario has cloud placeholders, so the whole table is the
-        // scored pool — and none needs per-photo offsets: every scenario photo
-        // sits near midday, so the ±1 h a DST zone would contribute cannot move
-        // one onto another day. The horizon offsets are the caller's to fill;
-        // those a scenario can observe.
-        ladder_photo_count: photos.len(),
+        // No fixture needs per-photo offsets: every scenario photo sits near
+        // midday, so the ±1 h a DST zone would contribute cannot move one onto
+        // another day. The horizon offsets are the caller's to fill; those a
+        // scenario can observe.
         photo_time_zone_offsets: Vec::new(),
         horizon_time_zone_offsets: Vec::new(),
         photos,

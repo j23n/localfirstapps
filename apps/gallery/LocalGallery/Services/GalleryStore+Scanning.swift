@@ -50,9 +50,9 @@ extension GalleryStore {
     ///     `fullScanInterval` (48h) since the last full scan. This is the
     ///     deterministic backstop: every two days a full pass happens
     ///     transparently on the next foreground.
-    ///   - **`.full`** — Settings "Reload Library", "Re-download all
-    ///     sidecars", and the folder-picker's first scan. Explicit user
-    ///     intent, always runs the slow path.
+    ///   - **`.full`** — Settings "Reload Library", sidecar cache rebuilds,
+    ///     and the folder-picker's first scan. Explicit user intent, always
+    ///     runs the slow path.
     ///
     /// The default is `.auto` so a future caller that omits `kind` still
     /// gets the safe-by-default behaviour.
@@ -318,15 +318,9 @@ extension GalleryStore {
         let previousManifest = self.lastSidecarManifest
         let manifestChanged = previousManifest != result.sidecarManifest
         self.lastSidecarManifest = result.sidecarManifest
-        let remoteCount = result.flatPhotos.filter {
-            if case .remote = $0.locality { return true } else { return false }
-        }.count
-        if remoteCount > 0 {
-            Log.scan.info("Detected \(remoteCount) leftover remote-locality rows from an old snapshot, \(result.sidecarManifest.count) sidecar candidates")
-        }
 
         // Carry forward cached photos under directories whose listing failed
-        // (transient provider error, brief unmount) — the scanner couldn't
+        // (transient I/O error, brief unmount) — the scanner couldn't
         // see them this pass, and dropping them would wipe their tags and
         // enrichment over a one-off I/O error. They stay in the flat grid
         // (not the folder tree) until a scan can list their parent again.
@@ -392,7 +386,7 @@ extension GalleryStore {
             // explicit so a remount can still revive the on-disk snapshot.
             // Roll the sidecar manifest back too: the empty list is "could
             // not look", not "this library has no sidecars", and a remount
-            // in this session should still skip the provider probe.
+            // in this session should still reuse prior listing metadata.
             Log.scan.info("\(scanKindLabel) scan complete: library root is gone")
             self.lastSidecarManifest = previousManifest
             apply(.scanResult(photos: [], root: nil, persistCache: false))

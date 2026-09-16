@@ -559,9 +559,8 @@ impl TaggingEngine {
         }
 
         // The streamed hash is a *probe key* only. It describes the bytes as
-        // they were during the streaming read, and the file may be rewritten
-        // before the decode read below — a cloud provider finishing a
-        // materialization is the everyday case, not a contrived one.
+        // they were during the streaming read, and another process may rewrite
+        // the file before the decode read below.
         let Some(probe) = content_hash(self.vfs.as_ref(), path, &cancelled)? else {
             return Ok(None);
         };

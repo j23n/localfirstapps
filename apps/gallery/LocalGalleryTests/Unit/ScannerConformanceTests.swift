@@ -324,7 +324,7 @@ final class ScannerConformanceTests: XCTestCase {
             dateFromMetadata: p.dateFromMetadata,
             fileModificationDate: ConformanceDate.utc(p.fileModificationDate),
             enrichedFileDate: ConformanceDate.utc(p.enrichedFileDate),
-            locality: Self.describe(p.locality),
+            locality: "local",
             sidecarStatus: Self.describe(p.sidecarStatus),
             countryCode: p.countryCode,
             hierarchicalTagCount: p.hierarchicalTags.count,
@@ -341,21 +341,14 @@ final class ScannerConformanceTests: XCTestCase {
         return SidecarRow(
             photoPath: String(sidecarPath.dropLast(".xmp".count)),
             sidecarPath: sidecarPath,
-            downloadStatus: candidate.downloadStatus.rawValue,
-            versionHasContentIdentifier: candidate.currentVersion.contentIdentifier != nil,
+            downloadStatus: "local",
+            versionHasContentIdentifier: false,
             versionModificationDate: ConformanceDate.utc(candidate.currentVersion.modificationDate),
             versionSize: candidate.currentVersion.size
         )
     }
 
     // MARK: - Helpers
-
-    private static func describe(_ locality: PhotoLocality) -> String {
-        switch locality {
-        case .local: return "local"
-        case .remote(let downloaded): return "remote(downloaded: \(downloaded))"
-        }
-    }
 
     private static func describe(_ status: SidecarStatus) -> String {
         switch status {

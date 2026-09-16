@@ -316,7 +316,7 @@ fn write_atomic_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
-    if !parent.exists() {
+    if !parent.try_exists()? {
         #[cfg(unix)]
         {
             fs::DirBuilder::new()

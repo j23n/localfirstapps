@@ -23,7 +23,7 @@ use gallery_model::date::AppleDate;
 use gallery_model::photo::{
     FaceRegion, FileUrl, HierarchicalTag, PhotoFile, PhotoFolder, StableId,
 };
-use gallery_model::snapshot::{self, DownloadStatus, LibrarySnapshot, LIBRARY_SNAPSHOT_VERSION};
+use gallery_model::snapshot::{self, LibrarySnapshot, LIBRARY_SNAPSHOT_VERSION};
 
 fn fixture_bytes() -> Vec<u8> {
     let path: PathBuf = [
@@ -64,13 +64,6 @@ fn the_committed_snapshot_decodes() {
         manifest[0].photo_id,
         StableId::for_photo("/fixtures/PhotoLibrary/2021/IMG_0001.jpg")
     );
-    assert_eq!(
-        manifest[0].current_version.content_identifier.as_deref(),
-        None,
-        "new writes omit the provider token; old files still decode"
-    );
-    assert_eq!(manifest[0].download_status, DownloadStatus::Local);
-
     // …and the other half of the no-bump decision: a v20 file written *before*
     // the field existed still decodes, at the same version, with `None`. That
     // is what stops the upgrade costing every installed library a full rescan.
@@ -127,29 +120,34 @@ fn the_committed_snapshot_decodes() {
 }
 
 #[test]
-fn decoding_and_re_encoding_loses_nothing() {
+fn decoding_and_re_encoding_only_drops_retired_authority_fields() {
     let mut original = json(&fixture_bytes());
     let library = snapshot::load(&fixture_bytes()).unwrap();
     let mut re_encoded = json(&snapshot::save(&library).unwrap());
-    // M4 preferred: Local downloadStatus is omitted on write. The
-    // pre-change fixture still has the key; strip both sides so the
-    // rest of the envelope is what we compare.
-    strip_local_download_status(&mut original);
-    strip_local_download_status(&mut re_encoded);
+    // v20 may contain provider-era identity and download state. They remain
+    // decode-compatible unknown keys, but current writers never emit them.
+    strip_retired_authority_fields(&mut original);
+    strip_retired_authority_fields(&mut re_encoded);
     assert_eq!(
         re_encoded, original,
         "a round trip through the Rust types changed the wire format"
     );
 }
 
-fn strip_local_download_status(value: &mut serde_json::Value) {
+fn strip_retired_authority_fields(value: &mut serde_json::Value) {
     if let Some(rows) = value
         .pointer_mut("/value/sidecarManifest")
         .and_then(|v| v.as_array_mut())
     {
         for row in rows {
-            if row.get("downloadStatus") == Some(&serde_json::json!("local")) {
-                row.as_object_mut().unwrap().remove("downloadStatus");
+            if let Some(row) = row.as_object_mut() {
+                row.remove("downloadStatus");
+                if let Some(version) = row
+                    .get_mut("currentVersion")
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    version.remove("contentIdentifier");
+                }
             }
         }
     }

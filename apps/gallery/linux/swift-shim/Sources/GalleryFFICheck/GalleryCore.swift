@@ -2462,6 +2462,401 @@ public func FfiConverterTypeMemoryGenerator_lower(_ value: MemoryGenerator) -> U
 
 
 /**
+ * Progress from the core-owned Places loop.
+ */
+public protocol PlacesProgressListener: AnyObject, Sendable {
+    
+    /**
+     * One more queued photo reached a terminal result.
+     */
+    func onProgress(done: UInt32, total: UInt32) 
+    
+}
+/**
+ * Progress from the core-owned Places loop.
+ */
+open class PlacesProgressListenerImpl: PlacesProgressListener, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_gallery_ffi_fn_clone_placesprogresslistener(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_gallery_ffi_fn_free_placesprogresslistener(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * One more queued photo reached a terminal result.
+     */
+open func onProgress(done: UInt32, total: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_placesprogresslistener_on_progress(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(done),
+        FfiConverterUInt32.lower(total),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfacePlacesProgressListener {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfacePlacesProgressListener = UniffiVTableCallbackInterfacePlacesProgressListener(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypePlacesProgressListener.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface PlacesProgressListener: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypePlacesProgressListener.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface PlacesProgressListener: handle missing in uniffiClone")
+            }
+        },
+        onProgress: { (
+            uniffiHandle: UInt64,
+            done: UInt32,
+            total: UInt32,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypePlacesProgressListener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onProgress(
+                     done: try FfiConverterUInt32.lift(done),
+                     total: try FfiConverterUInt32.lift(total)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfacePlacesProgressListener> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfacePlacesProgressListener>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitPlacesProgressListener() {
+    uniffi_gallery_ffi_fn_init_callback_vtable_placesprogresslistener(UniffiCallbackInterfacePlacesProgressListener.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlacesProgressListener: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<PlacesProgressListener>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = PlacesProgressListener
+
+    public static func lift(_ handle: UInt64) throws -> PlacesProgressListener {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return PlacesProgressListenerImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: PlacesProgressListener) -> UInt64 {
+         if let rustImpl = value as? PlacesProgressListenerImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlacesProgressListener {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PlacesProgressListener, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlacesProgressListener_lift(_ handle: UInt64) throws -> PlacesProgressListener {
+    return try FfiConverterTypePlacesProgressListener.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlacesProgressListener_lower(_ value: PlacesProgressListener) -> UInt64 {
+    return FfiConverterTypePlacesProgressListener.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Cancellable coarse-grained entry point to `gallery_session::run_places`.
+ */
+public protocol PlacesSessionProtocol: AnyObject, Sendable {
+    
+    /**
+     * Ask the current run to stop.
+     */
+    func cancel() 
+    
+    /**
+     * Clear cancellation before the host launches a run.
+     *
+     * This is separate from [`Self::run`] so cancellation that races ahead
+     * of the worker thread cannot be erased at the start of the run.
+     */
+    func prepare() 
+    
+    /**
+     * Run eligibility, cache lookup, gazetteer lookup, and sidecar writes.
+     */
+    func run(photos: [ScanPhoto], cachePath: String, force: Bool, progress: PlacesProgressListener?)  -> PlacesRunSummary
+    
+}
+/**
+ * Cancellable coarse-grained entry point to `gallery_session::run_places`.
+ */
+open class PlacesSession: PlacesSessionProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_gallery_ffi_fn_clone_placessession(self.handle, $0) }
+    }
+    /**
+     * Create an idle session.
+     */
+public convenience init() {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_constructor_placessession_new(uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_gallery_ffi_fn_free_placessession(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Ask the current run to stop.
+     */
+open func cancel()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_placessession_cancel(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Clear cancellation before the host launches a run.
+     *
+     * This is separate from [`Self::run`] so cancellation that races ahead
+     * of the worker thread cannot be erased at the start of the run.
+     */
+open func prepare()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_placessession_prepare(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Run eligibility, cache lookup, gazetteer lookup, and sidecar writes.
+     */
+open func run(photos: [ScanPhoto], cachePath: String, force: Bool, progress: PlacesProgressListener?) -> PlacesRunSummary  {
+    return try!  FfiConverterTypePlacesRunSummary_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_placessession_run(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeScanPhoto.lower(photos),
+        FfiConverterString.lower(cachePath),
+        FfiConverterBool.lower(force),
+        FfiConverterOptionTypePlacesProgressListener.lower(progress),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlacesSession: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = PlacesSession
+
+    public static func lift(_ handle: UInt64) throws -> PlacesSession {
+        return PlacesSession(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: PlacesSession) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlacesSession {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PlacesSession, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlacesSession_lift(_ handle: UInt64) throws -> PlacesSession {
+    return try FfiConverterTypePlacesSession.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlacesSession_lower(_ value: PlacesSession) -> UInt64 {
+    return FfiConverterTypePlacesSession.lower(value)
+}
+
+
+
+
+
+
+/**
  * Progress during a walk.
  *
  * Fires on the scan thread during the walk (content files, including `.xmp`)
@@ -4975,10 +5370,7 @@ public func FfiConverterTypeMemoryDateEntry_lower(_ value: MemoryDateEntry) -> R
 /**
  * `MemoryCoordinator.GenerationInputs` plus the clock, zone, seed and the
  * seen/cool-down state — everything the engine reads.
- *
- * `photos` is already past the coordinator's cloud-placeholder filter; that
- * filter stays in Swift. The photos it *excluded* come back in
- * [`Self::folder_placeholder_photos`], because one ladder needs them.
+
  */
 public struct MemoryGenerationInputs: Equatable, Hashable {
     public var photos: [ScanPhoto]
@@ -4995,22 +5387,6 @@ public struct MemoryGenerationInputs: Equatable, Hashable {
      * history the user's own taps wrote.
      */
     public var photoTimeZoneOffsets: [Int32]
-    /**
-     * The cloud placeholders the coordinator filtered out of `photos`.
-     *
-     * Visible to the **folder-event ladder only**, because the deleted Swift
-     * read `folder.photos` — the folder's own unfiltered array — while every
-     * other generator drew from the filtered `allPhotos`. Resolving folder
-     * members through the filtered pool alone drops placeholder-heavy folders
-     * below the 15-photo floor entirely and silently re-cuts the ones that
-     * survive. Pass an empty list for the pre-filter behaviour.
-     */
-    public var folderPlaceholderPhotos: [ScanPhoto]
-    /**
-     * Per-photo offsets for `folder_placeholder_photos`, same rules as
-     * [`Self::photo_time_zone_offsets`].
-     */
-    public var folderPlaceholderTimeZoneOffsets: [Int32]
     public var leafFolders: [MemoryLeafFolder]
     public var contacts: [MemoryContact]
     public var personContactLinks: [MemoryPersonLink]
@@ -5082,21 +5458,7 @@ public struct MemoryGenerationInputs: Equatable, Hashable {
          * which moves `density-*` and `trip-*` ids — and therefore cluster keys —
          * twice a year, so the cool-down and seen penalties stop matching the
          * history the user's own taps wrote.
-         */photoTimeZoneOffsets: [Int32], 
-        /**
-         * The cloud placeholders the coordinator filtered out of `photos`.
-         *
-         * Visible to the **folder-event ladder only**, because the deleted Swift
-         * read `folder.photos` — the folder's own unfiltered array — while every
-         * other generator drew from the filtered `allPhotos`. Resolving folder
-         * members through the filtered pool alone drops placeholder-heavy folders
-         * below the 15-photo floor entirely and silently re-cuts the ones that
-         * survive. Pass an empty list for the pre-filter behaviour.
-         */folderPlaceholderPhotos: [ScanPhoto], 
-        /**
-         * Per-photo offsets for `folder_placeholder_photos`, same rules as
-         * [`Self::photo_time_zone_offsets`].
-         */folderPlaceholderTimeZoneOffsets: [Int32], leafFolders: [MemoryLeafFolder], contacts: [MemoryContact], personContactLinks: [MemoryPersonLink], birthdaysEnabled: Bool, 
+         */photoTimeZoneOffsets: [Int32], leafFolders: [MemoryLeafFolder], contacts: [MemoryContact], personContactLinks: [MemoryPersonLink], birthdaysEnabled: Bool, 
         /**
          * The user's own `People/…` tag, dropped from trip titles. Empty = unset.
          */mePersonPath: String, hiddenPeople: [String], 
@@ -5143,8 +5505,6 @@ public struct MemoryGenerationInputs: Equatable, Hashable {
          */surfacedClusters: [MemoryDateEntry]) {
         self.photos = photos
         self.photoTimeZoneOffsets = photoTimeZoneOffsets
-        self.folderPlaceholderPhotos = folderPlaceholderPhotos
-        self.folderPlaceholderTimeZoneOffsets = folderPlaceholderTimeZoneOffsets
         self.leafFolders = leafFolders
         self.contacts = contacts
         self.personContactLinks = personContactLinks
@@ -5177,8 +5537,6 @@ public struct FfiConverterTypeMemoryGenerationInputs: FfiConverterRustBuffer {
             try MemoryGenerationInputs(
                 photos: FfiConverterSequenceTypeScanPhoto.read(from: &buf), 
                 photoTimeZoneOffsets: FfiConverterSequenceInt32.read(from: &buf), 
-                folderPlaceholderPhotos: FfiConverterSequenceTypeScanPhoto.read(from: &buf), 
-                folderPlaceholderTimeZoneOffsets: FfiConverterSequenceInt32.read(from: &buf), 
                 leafFolders: FfiConverterSequenceTypeMemoryLeafFolder.read(from: &buf), 
                 contacts: FfiConverterSequenceTypeMemoryContact.read(from: &buf), 
                 personContactLinks: FfiConverterSequenceTypeMemoryPersonLink.read(from: &buf), 
@@ -5197,8 +5555,6 @@ public struct FfiConverterTypeMemoryGenerationInputs: FfiConverterRustBuffer {
     public static func write(_ value: MemoryGenerationInputs, into buf: inout [UInt8]) {
         FfiConverterSequenceTypeScanPhoto.write(value.photos, into: &buf)
         FfiConverterSequenceInt32.write(value.photoTimeZoneOffsets, into: &buf)
-        FfiConverterSequenceTypeScanPhoto.write(value.folderPlaceholderPhotos, into: &buf)
-        FfiConverterSequenceInt32.write(value.folderPlaceholderTimeZoneOffsets, into: &buf)
         FfiConverterSequenceTypeMemoryLeafFolder.write(value.leafFolders, into: &buf)
         FfiConverterSequenceTypeMemoryContact.write(value.contacts, into: &buf)
         FfiConverterSequenceTypeMemoryPersonLink.write(value.personContactLinks, into: &buf)
@@ -5993,61 +6349,37 @@ public func FfiConverterTypePersonTornTailRecord_lower(_ value: PersonTornTailRe
 
 
 /**
- * One reverse-geocoded place, matching photo-tools schema §1.3 / §2.2.
+ * One photo processed by a Places run.
  */
-public struct PlaceWrite: Equatable, Hashable {
+public struct PlacesRunRecord: Equatable, Hashable {
     /**
-     * `Places/<Country>[/<Region>[/<City>[/<Neighborhood>]]]`.
+     * Image path.
      */
-    public var path: String
+    public var imagePath: String
     /**
-     * `photoshop:Country`.
+     * Resolved path, when lookup succeeded.
      */
-    public var country: String?
+    public var placePath: String?
     /**
-     * `photoshop:State`.
+     * Terminal result.
      */
-    public var state: String?
-    /**
-     * `photoshop:City`.
-     */
-    public var city: String?
-    /**
-     * `Iptc4xmpCore:Location`.
-     */
-    public var sublocation: String?
-    /**
-     * ISO 3166-1 alpha-2.
-     */
-    public var countryCode: String?
+    public var outcome: PlacesRecordOutcome
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
-         * `Places/<Country>[/<Region>[/<City>[/<Neighborhood>]]]`.
-         */path: String, 
+         * Image path.
+         */imagePath: String, 
         /**
-         * `photoshop:Country`.
-         */country: String?, 
+         * Resolved path, when lookup succeeded.
+         */placePath: String?, 
         /**
-         * `photoshop:State`.
-         */state: String?, 
-        /**
-         * `photoshop:City`.
-         */city: String?, 
-        /**
-         * `Iptc4xmpCore:Location`.
-         */sublocation: String?, 
-        /**
-         * ISO 3166-1 alpha-2.
-         */countryCode: String?) {
-        self.path = path
-        self.country = country
-        self.state = state
-        self.city = city
-        self.sublocation = sublocation
-        self.countryCode = countryCode
+         * Terminal result.
+         */outcome: PlacesRecordOutcome) {
+        self.imagePath = imagePath
+        self.placePath = placePath
+        self.outcome = outcome
     }
 
     
@@ -6056,32 +6388,26 @@ public struct PlaceWrite: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension PlaceWrite: Sendable {}
+extension PlacesRunRecord: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypePlaceWrite: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaceWrite {
+public struct FfiConverterTypePlacesRunRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlacesRunRecord {
         return
-            try PlaceWrite(
-                path: FfiConverterString.read(from: &buf), 
-                country: FfiConverterOptionString.read(from: &buf), 
-                state: FfiConverterOptionString.read(from: &buf), 
-                city: FfiConverterOptionString.read(from: &buf), 
-                sublocation: FfiConverterOptionString.read(from: &buf), 
-                countryCode: FfiConverterOptionString.read(from: &buf)
+            try PlacesRunRecord(
+                imagePath: FfiConverterString.read(from: &buf), 
+                placePath: FfiConverterOptionString.read(from: &buf), 
+                outcome: FfiConverterTypePlacesRecordOutcome.read(from: &buf)
         )
     }
 
-    public static func write(_ value: PlaceWrite, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.path, into: &buf)
-        FfiConverterOptionString.write(value.country, into: &buf)
-        FfiConverterOptionString.write(value.state, into: &buf)
-        FfiConverterOptionString.write(value.city, into: &buf)
-        FfiConverterOptionString.write(value.sublocation, into: &buf)
-        FfiConverterOptionString.write(value.countryCode, into: &buf)
+    public static func write(_ value: PlacesRunRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.imagePath, into: &buf)
+        FfiConverterOptionString.write(value.placePath, into: &buf)
+        FfiConverterTypePlacesRecordOutcome.write(value.outcome, into: &buf)
     }
 }
 
@@ -6089,15 +6415,144 @@ public struct FfiConverterTypePlaceWrite: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePlaceWrite_lift(_ buf: RustBuffer) throws -> PlaceWrite {
-    return try FfiConverterTypePlaceWrite.lift(buf)
+public func FfiConverterTypePlacesRunRecord_lift(_ buf: RustBuffer) throws -> PlacesRunRecord {
+    return try FfiConverterTypePlacesRunRecord.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePlaceWrite_lower(_ value: PlaceWrite) -> RustBuffer {
-    return FfiConverterTypePlaceWrite.lower(value)
+public func FfiConverterTypePlacesRunRecord_lower(_ value: PlacesRunRecord) -> RustBuffer {
+    return FfiConverterTypePlacesRunRecord.lower(value)
+}
+
+
+/**
+ * Display and refresh data from one Places run.
+ */
+public struct PlacesRunSummary: Equatable, Hashable {
+    /**
+     * Photos that reached a terminal result.
+     */
+    public var processed: UInt32
+    /**
+     * Sidecars actually written.
+     */
+    public var written: UInt32
+    /**
+     * Misses and already-placed photos.
+     */
+    public var skipped: UInt32
+    /**
+     * Hard failures.
+     */
+    public var failed: UInt32
+    /**
+     * Paths whose sidecar changed.
+     */
+    public var writtenPaths: [String]
+    /**
+     * Per-photo results, in queue order.
+     */
+    public var records: [PlacesRunRecord]
+    /**
+     * The run stopped early.
+     */
+    public var cancelled: Bool
+    /**
+     * First hard error.
+     */
+    public var error: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Photos that reached a terminal result.
+         */processed: UInt32, 
+        /**
+         * Sidecars actually written.
+         */written: UInt32, 
+        /**
+         * Misses and already-placed photos.
+         */skipped: UInt32, 
+        /**
+         * Hard failures.
+         */failed: UInt32, 
+        /**
+         * Paths whose sidecar changed.
+         */writtenPaths: [String], 
+        /**
+         * Per-photo results, in queue order.
+         */records: [PlacesRunRecord], 
+        /**
+         * The run stopped early.
+         */cancelled: Bool, 
+        /**
+         * First hard error.
+         */error: String?) {
+        self.processed = processed
+        self.written = written
+        self.skipped = skipped
+        self.failed = failed
+        self.writtenPaths = writtenPaths
+        self.records = records
+        self.cancelled = cancelled
+        self.error = error
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlacesRunSummary: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlacesRunSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlacesRunSummary {
+        return
+            try PlacesRunSummary(
+                processed: FfiConverterUInt32.read(from: &buf), 
+                written: FfiConverterUInt32.read(from: &buf), 
+                skipped: FfiConverterUInt32.read(from: &buf), 
+                failed: FfiConverterUInt32.read(from: &buf), 
+                writtenPaths: FfiConverterSequenceString.read(from: &buf), 
+                records: FfiConverterSequenceTypePlacesRunRecord.read(from: &buf), 
+                cancelled: FfiConverterBool.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlacesRunSummary, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.processed, into: &buf)
+        FfiConverterUInt32.write(value.written, into: &buf)
+        FfiConverterUInt32.write(value.skipped, into: &buf)
+        FfiConverterUInt32.write(value.failed, into: &buf)
+        FfiConverterSequenceString.write(value.writtenPaths, into: &buf)
+        FfiConverterSequenceTypePlacesRunRecord.write(value.records, into: &buf)
+        FfiConverterBool.write(value.cancelled, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlacesRunSummary_lift(_ buf: RustBuffer) throws -> PlacesRunSummary {
+    return try FfiConverterTypePlacesRunSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlacesRunSummary_lower(_ value: PlacesRunSummary) -> RustBuffer {
+    return FfiConverterTypePlacesRunSummary.lower(value)
 }
 
 
@@ -6195,10 +6650,6 @@ public func FfiConverterTypeReclusterSummary_lower(_ value: ReclusterSummary) ->
  */
 public struct ScanContentVersion: Equatable, Hashable {
     /**
-     * `fileContentIdentifierKey`, stringified.
-     */
-    public var contentIdentifier: String?
-    /**
      * Modification date, reference-date seconds.
      */
     public var modificationDate: Double?
@@ -6211,15 +6662,11 @@ public struct ScanContentVersion: Equatable, Hashable {
     // declare one manually.
     public init(
         /**
-         * `fileContentIdentifierKey`, stringified.
-         */contentIdentifier: String?, 
-        /**
          * Modification date, reference-date seconds.
          */modificationDate: Double?, 
         /**
          * Size in bytes.
          */size: Int64?) {
-        self.contentIdentifier = contentIdentifier
         self.modificationDate = modificationDate
         self.size = size
     }
@@ -6240,14 +6687,12 @@ public struct FfiConverterTypeScanContentVersion: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanContentVersion {
         return
             try ScanContentVersion(
-                contentIdentifier: FfiConverterOptionString.read(from: &buf), 
                 modificationDate: FfiConverterOptionDouble.read(from: &buf), 
                 size: FfiConverterOptionInt64.read(from: &buf)
         )
     }
 
     public static func write(_ value: ScanContentVersion, into buf: inout [UInt8]) {
-        FfiConverterOptionString.write(value.contentIdentifier, into: &buf)
         FfiConverterOptionDouble.write(value.modificationDate, into: &buf)
         FfiConverterOptionInt64.write(value.size, into: &buf)
     }
@@ -6639,10 +7084,6 @@ public struct ScanPhoto: Equatable, Hashable {
      * MWG regions.
      */
     public var faceRegions: [ScanRegion]
-    /**
-     * Where the bytes live.
-     */
-    public var locality: ScanLocality
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6692,10 +7133,7 @@ public struct ScanPhoto: Equatable, Hashable {
          */gpsLongitude: Double?, 
         /**
          * MWG regions.
-         */faceRegions: [ScanRegion], 
-        /**
-         * Where the bytes live.
-         */locality: ScanLocality) {
+         */faceRegions: [ScanRegion]) {
         self.id = id
         self.path = path
         self.filename = filename
@@ -6711,7 +7149,6 @@ public struct ScanPhoto: Equatable, Hashable {
         self.gpsLatitude = gpsLatitude
         self.gpsLongitude = gpsLongitude
         self.faceRegions = faceRegions
-        self.locality = locality
     }
 
     
@@ -6744,8 +7181,7 @@ public struct FfiConverterTypeScanPhoto: FfiConverterRustBuffer {
                 fileModificationDate: FfiConverterOptionDouble.read(from: &buf), 
                 gpsLatitude: FfiConverterOptionDouble.read(from: &buf), 
                 gpsLongitude: FfiConverterOptionDouble.read(from: &buf), 
-                faceRegions: FfiConverterSequenceTypeScanRegion.read(from: &buf), 
-                locality: FfiConverterTypeScanLocality.read(from: &buf)
+                faceRegions: FfiConverterSequenceTypeScanRegion.read(from: &buf)
         )
     }
 
@@ -6765,7 +7201,6 @@ public struct FfiConverterTypeScanPhoto: FfiConverterRustBuffer {
         FfiConverterOptionDouble.write(value.gpsLatitude, into: &buf)
         FfiConverterOptionDouble.write(value.gpsLongitude, into: &buf)
         FfiConverterSequenceTypeScanRegion.write(value.faceRegions, into: &buf)
-        FfiConverterTypeScanLocality.write(value.locality, into: &buf)
     }
 }
 
@@ -6893,7 +7328,7 @@ public struct ScanRequest: Equatable, Hashable {
      */
     public var reuseCached: Bool
     /**
-     * Last pass's photos. Carries EXIF, tags, GPS and locality forward.
+     * Last pass's photos. Carries EXIF, tags and GPS forward.
      */
     public var cachedPhotos: [ScanPhoto]
     /**
@@ -6909,7 +7344,7 @@ public struct ScanRequest: Equatable, Hashable {
          * Reuse cached photos for unchanged paths — the light scan.
          */reuseCached: Bool, 
         /**
-         * Last pass's photos. Carries EXIF, tags, GPS and locality forward.
+         * Last pass's photos. Carries EXIF, tags and GPS forward.
          */cachedPhotos: [ScanPhoto], 
         /**
          * Last pass's sidecar rows. A hit here is what lets a light scan skip
@@ -6981,10 +7416,6 @@ public struct ScanSidecarRow: Equatable, Hashable {
      * Its identity at scan time.
      */
     public var currentVersion: ScanContentVersion
-    /**
-     * Whether its own bytes are present — `local` or `placeholder`.
-     */
-    public var downloadStatus: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6997,14 +7428,10 @@ public struct ScanSidecarRow: Equatable, Hashable {
          */sidecarPath: String, 
         /**
          * Its identity at scan time.
-         */currentVersion: ScanContentVersion, 
-        /**
-         * Whether its own bytes are present — `local` or `placeholder`.
-         */downloadStatus: String) {
+         */currentVersion: ScanContentVersion) {
         self.photoId = photoId
         self.sidecarPath = sidecarPath
         self.currentVersion = currentVersion
-        self.downloadStatus = downloadStatus
     }
 
     
@@ -7025,8 +7452,7 @@ public struct FfiConverterTypeScanSidecarRow: FfiConverterRustBuffer {
             try ScanSidecarRow(
                 photoId: FfiConverterString.read(from: &buf), 
                 sidecarPath: FfiConverterString.read(from: &buf), 
-                currentVersion: FfiConverterTypeScanContentVersion.read(from: &buf), 
-                downloadStatus: FfiConverterString.read(from: &buf)
+                currentVersion: FfiConverterTypeScanContentVersion.read(from: &buf)
         )
     }
 
@@ -7034,7 +7460,6 @@ public struct FfiConverterTypeScanSidecarRow: FfiConverterRustBuffer {
         FfiConverterString.write(value.photoId, into: &buf)
         FfiConverterString.write(value.sidecarPath, into: &buf)
         FfiConverterTypeScanContentVersion.write(value.currentVersion, into: &buf)
-        FfiConverterString.write(value.downloadStatus, into: &buf)
     }
 }
 
@@ -7147,22 +7572,6 @@ public struct ScanTimings: Equatable, Hashable {
      */
     public var listMillis: UInt64
     /**
-     * Provider probes — always 0; the scanner is local-only.
-     */
-    public var probeMillis: UInt64
-    /**
-     * Paths probed — always 0.
-     */
-    public var probedPaths: UInt32
-    /**
-     * Batched probe calls — always 0.
-     */
-    public var probeBatches: UInt32
-    /**
-     * Probe batches discarded for a wrong-length reply — always 0.
-     */
-    public var probeMismatches: UInt32
-    /**
      * Photos reused verbatim from the cache.
      */
     public var cacheHits: UInt32
@@ -7185,18 +7594,6 @@ public struct ScanTimings: Equatable, Hashable {
          * Directory listings.
          */listMillis: UInt64, 
         /**
-         * Provider probes — always 0; the scanner is local-only.
-         */probeMillis: UInt64, 
-        /**
-         * Paths probed — always 0.
-         */probedPaths: UInt32, 
-        /**
-         * Batched probe calls — always 0.
-         */probeBatches: UInt32, 
-        /**
-         * Probe batches discarded for a wrong-length reply — always 0.
-         */probeMismatches: UInt32, 
-        /**
          * Photos reused verbatim from the cache.
          */cacheHits: UInt32, 
         /**
@@ -7207,10 +7604,6 @@ public struct ScanTimings: Equatable, Hashable {
          */folders: UInt32) {
         self.totalMillis = totalMillis
         self.listMillis = listMillis
-        self.probeMillis = probeMillis
-        self.probedPaths = probedPaths
-        self.probeBatches = probeBatches
-        self.probeMismatches = probeMismatches
         self.cacheHits = cacheHits
         self.slowPath = slowPath
         self.folders = folders
@@ -7234,10 +7627,6 @@ public struct FfiConverterTypeScanTimings: FfiConverterRustBuffer {
             try ScanTimings(
                 totalMillis: FfiConverterUInt64.read(from: &buf), 
                 listMillis: FfiConverterUInt64.read(from: &buf), 
-                probeMillis: FfiConverterUInt64.read(from: &buf), 
-                probedPaths: FfiConverterUInt32.read(from: &buf), 
-                probeBatches: FfiConverterUInt32.read(from: &buf), 
-                probeMismatches: FfiConverterUInt32.read(from: &buf), 
                 cacheHits: FfiConverterUInt32.read(from: &buf), 
                 slowPath: FfiConverterUInt32.read(from: &buf), 
                 folders: FfiConverterUInt32.read(from: &buf)
@@ -7247,10 +7636,6 @@ public struct FfiConverterTypeScanTimings: FfiConverterRustBuffer {
     public static func write(_ value: ScanTimings, into buf: inout [UInt8]) {
         FfiConverterUInt64.write(value.totalMillis, into: &buf)
         FfiConverterUInt64.write(value.listMillis, into: &buf)
-        FfiConverterUInt64.write(value.probeMillis, into: &buf)
-        FfiConverterUInt32.write(value.probedPaths, into: &buf)
-        FfiConverterUInt32.write(value.probeBatches, into: &buf)
-        FfiConverterUInt32.write(value.probeMismatches, into: &buf)
         FfiConverterUInt32.write(value.cacheHits, into: &buf)
         FfiConverterUInt32.write(value.slowPath, into: &buf)
         FfiConverterUInt32.write(value.folders, into: &buf)
@@ -9001,108 +9386,6 @@ public func FfiConverterTypeFaceFailure_lower(_ value: FaceFailure) -> RustBuffe
 
 
 /**
- * Why a place lookup failed. The offline gazetteer does not produce
- * these; the variants stay so the UniFFI surface does not change.
- * This is not a Nominatim error.
- */
-public 
-enum GeoError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
-
-    
-    
-    /**
-     * Transient — retry.
-     */
-    case Retryable(
-        /**
-         * Log text.
-         */detail: String
-    )
-    /**
-     * Do not retry.
-     */
-    case Fatal(
-        /**
-         * Log text.
-         */detail: String
-    )
-
-    
-
-    
-
-    
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-    
-}
-
-#if compiler(>=6)
-extension GeoError: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeGeoError: FfiConverterRustBuffer {
-    typealias SwiftType = GeoError
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeoError {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-
-        
-
-        
-        case 1: return .Retryable(
-            detail: try FfiConverterString.read(from: &buf)
-            )
-        case 2: return .Fatal(
-            detail: try FfiConverterString.read(from: &buf)
-            )
-
-         default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: GeoError, into buf: inout [UInt8]) {
-        switch value {
-
-        
-
-        
-        
-        case let .Retryable(detail):
-            writeInt(&buf, Int32(1))
-            FfiConverterString.write(detail, into: &buf)
-            
-        
-        case let .Fatal(detail):
-            writeInt(&buf, Int32(2))
-            FfiConverterString.write(detail, into: &buf)
-            
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGeoError_lift(_ buf: RustBuffer) throws -> GeoError {
-    return try FfiConverterTypeGeoError.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeGeoError_lower(_ value: GeoError) -> RustBuffer {
-    return FfiConverterTypeGeoError.lower(value)
-}
-
-
-/**
  * Why the host could not decode a HEIC.
  */
 public 
@@ -9517,125 +9800,70 @@ public func FfiConverterTypePersonLogError_lower(_ value: PersonLogError) -> Rus
 
 
 /**
- * Why a Places write failed.
+ * Terminal result for one photo.
  */
-public 
-enum PlacesError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
-    
+public enum PlacesRecordOutcome: Equatable, Hashable {
     
     /**
-     * The requested path is not a usable `Places/…` tag.
+     * Sidecar bytes changed.
      */
-    case InvalidTag(
-        /**
-         * The offending tag.
-         */tag: String, 
-        /**
-         * Why it was rejected.
-         */reason: String
-    )
+    case written
     /**
-     * The sidecar changed between read and write. Retryable.
+     * No lookup result or the sidecar already had an equal/better path.
      */
-    case ConcurrentModification(
-        /**
-         * Sidecar path.
-         */path: String
-    )
+    case skipped
     /**
-     * Filesystem said no.
+     * Authority, lookup, or write failed.
      */
-    case Io(
-        /**
-         * Path that failed.
-         */path: String, 
-        /**
-         * OS message; for logs only.
-         */detail: String
-    )
-    /**
-     * The sidecar could not be parsed or was not XMP.
-     */
-    case Sidecar(
-        /**
-         * Parser message; for logs only.
-         */detail: String
+    case failed(detail: String
     )
 
-    
 
-    
 
-    
-    public var errorDescription: String? {
-        String(reflecting: self)
-    }
-    
+
+
 }
 
 #if compiler(>=6)
-extension PlacesError: Sendable {}
+extension PlacesRecordOutcome: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypePlacesError: FfiConverterRustBuffer {
-    typealias SwiftType = PlacesError
+public struct FfiConverterTypePlacesRecordOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = PlacesRecordOutcome
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlacesError {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlacesRecordOutcome {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         
-
+        case 1: return .written
         
-        case 1: return .InvalidTag(
-            tag: try FfiConverterString.read(from: &buf), 
-            reason: try FfiConverterString.read(from: &buf)
-            )
-        case 2: return .ConcurrentModification(
-            path: try FfiConverterString.read(from: &buf)
-            )
-        case 3: return .Io(
-            path: try FfiConverterString.read(from: &buf), 
-            detail: try FfiConverterString.read(from: &buf)
-            )
-        case 4: return .Sidecar(
-            detail: try FfiConverterString.read(from: &buf)
-            )
-
-         default: throw UniffiInternalError.unexpectedEnumCase
+        case 2: return .skipped
+        
+        case 3: return .failed(detail: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
-    public static func write(_ value: PlacesError, into buf: inout [UInt8]) {
+    public static func write(_ value: PlacesRecordOutcome, into buf: inout [UInt8]) {
         switch value {
-
-        
-
         
         
-        case let .InvalidTag(tag,reason):
+        case .written:
             writeInt(&buf, Int32(1))
-            FfiConverterString.write(tag, into: &buf)
-            FfiConverterString.write(reason, into: &buf)
-            
         
-        case let .ConcurrentModification(path):
+        
+        case .skipped:
             writeInt(&buf, Int32(2))
-            FfiConverterString.write(path, into: &buf)
-            
         
-        case let .Io(path,detail):
+        
+        case let .failed(detail):
             writeInt(&buf, Int32(3))
-            FfiConverterString.write(path, into: &buf)
-            FfiConverterString.write(detail, into: &buf)
-            
-        
-        case let .Sidecar(detail):
-            writeInt(&buf, Int32(4))
             FfiConverterString.write(detail, into: &buf)
             
         }
@@ -9646,16 +9874,17 @@ public struct FfiConverterTypePlacesError: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePlacesError_lift(_ buf: RustBuffer) throws -> PlacesError {
-    return try FfiConverterTypePlacesError.lift(buf)
+public func FfiConverterTypePlacesRecordOutcome_lift(_ buf: RustBuffer) throws -> PlacesRecordOutcome {
+    return try FfiConverterTypePlacesRecordOutcome.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePlacesError_lower(_ value: PlacesError) -> RustBuffer {
-    return FfiConverterTypePlacesError.lower(value)
+public func FfiConverterTypePlacesRecordOutcome_lower(_ value: PlacesRecordOutcome) -> RustBuffer {
+    return FfiConverterTypePlacesRecordOutcome.lower(value)
 }
+
 
 
 /**
@@ -9663,7 +9892,7 @@ public func FfiConverterTypePlacesError_lower(_ value: PlacesError) -> RustBuffe
  *
  * A scan itself is close to infallible — an unreadable directory is *data*
  * (`failed_directory_paths`), not an error, because treating it as one is how
- * a transient provider hiccup wipes a subtree. What is left is the two things
+ * a transient listing failure wipes a subtree. What is left is the two things
  * that genuinely cannot produce an answer.
  */
 public 
@@ -9815,87 +10044,6 @@ public func FfiConverterTypeScanError_lift(_ buf: RustBuffer) throws -> ScanErro
 public func FfiConverterTypeScanError_lower(_ value: ScanError) -> RustBuffer {
     return FfiConverterTypeScanError.lower(value)
 }
-
-
-/**
- * Where a photo's bytes live.
- */
-
-public enum ScanLocality: Equatable, Hashable {
-    
-    /**
-     * Readable from disk right now.
-     */
-    case local
-    /**
-     * Provider-backed; `downloaded: false` is the placeholder state.
-     */
-    case remote(
-        /**
-         * Whether the bytes have been materialised.
-         */downloaded: Bool
-    )
-
-
-
-
-
-}
-
-#if compiler(>=6)
-extension ScanLocality: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeScanLocality: FfiConverterRustBuffer {
-    typealias SwiftType = ScanLocality
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanLocality {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .local
-        
-        case 2: return .remote(downloaded: try FfiConverterBool.read(from: &buf)
-        )
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: ScanLocality, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .local:
-            writeInt(&buf, Int32(1))
-        
-        
-        case let .remote(downloaded):
-            writeInt(&buf, Int32(2))
-            FfiConverterBool.write(downloaded, into: &buf)
-            
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanLocality_lift(_ buf: RustBuffer) throws -> ScanLocality {
-    return try FfiConverterTypeScanLocality.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanLocality_lower(_ value: ScanLocality) -> RustBuffer {
-    return FfiConverterTypeScanLocality.lower(value)
-}
-
 
 
 /**
@@ -10357,6 +10505,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypePlacesProgressListener: FfiConverterRustBuffer {
+    typealias SwiftType = PlacesProgressListener?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePlacesProgressListener.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePlacesProgressListener.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeScanProgressListener: FfiConverterRustBuffer {
     typealias SwiftType = ScanProgressListener?
 
@@ -10421,30 +10593,6 @@ fileprivate struct FfiConverterOptionTypePackResolution: FfiConverterRustBuffer 
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypePackResolution.read(from: &buf)
-        default: throw UniffiInternalError.unexpectedOptionalTag
-        }
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterOptionTypePlaceWrite: FfiConverterRustBuffer {
-    typealias SwiftType = PlaceWrite?
-
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
-        guard let value = value else {
-            writeInt(&buf, Int8(0))
-            return
-        }
-        writeInt(&buf, Int8(1))
-        FfiConverterTypePlaceWrite.write(value, into: &buf)
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
-        switch try readInt(&buf) as Int8 {
-        case 0: return nil
-        case 1: return try FfiConverterTypePlaceWrite.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -10948,6 +11096,31 @@ fileprivate struct FfiConverterSequenceTypePersonTornTailRecord: FfiConverterRus
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePlacesRunRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [PlacesRunRecord]
+
+    public static func write(_ value: [PlacesRunRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePlacesRunRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PlacesRunRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PlacesRunRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePlacesRunRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeScanFolderNode: FfiConverterRustBuffer {
     typealias SwiftType = [ScanFolderNode]
 
@@ -11311,33 +11484,6 @@ public func personLogRead(root: String)throws  -> String  {
 })
 }
 /**
- * Reverse-geocode from the bundled offline gazetteer.
- *
- * English names. Country is admin-0 point-in-polygon. This is not
- * Nominatim and does not contact public OSM (or any network).
- */
-public func gazetteerLookup(latitude: Double, longitude: Double)throws  -> PlaceWrite?  {
-    return try  FfiConverterOptionTypePlaceWrite.lift(try rustCallWithError(FfiConverterTypeGeoError_lift) {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_gazetteer_lookup(
-        FfiConverterDouble.lower(latitude),
-        FfiConverterDouble.lower(longitude),uniffiCallStatus
-    )
-})
-}
-/**
- * `Places/France` is a strict prefix of `Places/France/Île-de-France/Paris`.
- */
-public func isStrictPlacesPrefix(existing: String, newer: String) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_is_strict_places_prefix(
-        FfiConverterString.lower(existing),
-        FfiConverterString.lower(newer),uniffiCallStatus
-    )
-})
-}
-/**
  * Watch debounce, milliseconds. Hosts implement the OS watcher.
  */
 public func libraryWatchRefreshIntervalMs() -> UInt64  {
@@ -11348,89 +11494,13 @@ public func libraryWatchRefreshIntervalMs() -> UInt64  {
 })
 }
 /**
- * Compatibility wrapper around [`gazetteer_lookup`]. `endpoint` is
- * ignored and is not a URL — this is not Nominatim and does not
- * contact public OSM. Kept so existing UniFFI bindings stay valid.
+ * Whether one photo belongs in the shared Places queue.
  */
-public func nominatimLookup(endpoint: String, latitude: Double, longitude: Double)throws  -> PlaceWrite?  {
-    return try  FfiConverterOptionTypePlaceWrite.lift(try rustCallWithError(FfiConverterTypeGeoError_lift) {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_nominatim_lookup(
-        FfiConverterString.lower(endpoint),
-        FfiConverterDouble.lower(latitude),
-        FfiConverterDouble.lower(longitude),uniffiCallStatus
-    )
-})
-}
-/**
- * `Places/<Country>/…` from already-normalized fields. Duplicate levels
- * collapse. `None` when every field is empty.
- */
-public func placeFromParts(country: String?, state: String?, city: String?, sublocation: String?, countryCode: String?) -> PlaceWrite?  {
-    return try!  FfiConverterOptionTypePlaceWrite.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_place_from_parts(
-        FfiConverterOptionString.lower(country),
-        FfiConverterOptionString.lower(state),
-        FfiConverterOptionString.lower(city),
-        FfiConverterOptionString.lower(sublocation),
-        FfiConverterOptionString.lower(countryCode),uniffiCallStatus
-    )
-})
-}
-/**
- * Queue + write skip. `force` always returns true.
- */
-public func placesNeeded(tags: [String], force: Bool) -> Bool  {
+public func placesCandidate(photo: ScanPhoto) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_places_needed(
-        FfiConverterSequenceString.lower(tags),
-        FfiConverterBool.lower(force),uniffiCallStatus
-    )
-})
-}
-/**
- * Nested Places path, missing levels collapsed.
- */
-public func placesPath(country: String?, state: String?, city: String?, sublocation: String?) -> String?  {
-    return try!  FfiConverterOptionString.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_places_path(
-        FfiConverterOptionString.lower(country),
-        FfiConverterOptionString.lower(state),
-        FfiConverterOptionString.lower(city),
-        FfiConverterOptionString.lower(sublocation),uniffiCallStatus
-    )
-})
-}
-/**
- * No finished city-depth Places tag in `tags`.
- */
-public func placesStillNeeded(tags: [String]) -> Bool  {
-    return try!  FfiConverterBool.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_places_still_needed(
-        FfiConverterSequenceString.lower(tags),uniffiCallStatus
-    )
-})
-}
-/**
- * Write a Places tag and the IPTC location fields into `image_path`'s sidecar.
- *
- * Returns whether bytes were actually written. A photo that already carries a
- * finished `Places/…` tag is left alone (`false`). A *strict prefix*
- * (`Places/France` → `Places/France/…/Paris`) is upgraded.
- *
- * Concurrent sidecar writes retry a handful of times: tagging or a face
- * naming can land on the same file during an analysis run.
- */
-public func writePlaces(imagePath: String, place: PlaceWrite)throws  -> Bool  {
-    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypePlacesError_lift) {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_write_places(
-        FfiConverterString.lower(imagePath),
-        FfiConverterTypePlaceWrite_lower(place),uniffiCallStatus
+    uniffi_gallery_ffi_fn_func_places_candidate(
+        FfiConverterTypeScanPhoto_lower(photo),uniffiCallStatus
     )
 })
 }
@@ -11473,8 +11543,8 @@ public func namedPeopleWithoutBox(regionNames: [String?], decisions: [String]) -
 })
 }
 /**
- * Parse XMP bytes the caller already holds — the sidecar-sync path, which
- * fetches `.xmp` contents from a file provider and never touches disk.
+ * Parse XMP bytes the caller already holds — the coordinated sidecar-read
+ * path never asks Rust to open the file again.
  */
 public func parseXmpBytes(bytes: Data) -> SidecarParseRecord  {
     return try!  FfiConverterTypeSidecarParseRecord_lift(try! rustCall() {
@@ -11676,31 +11746,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_person_log_read() != 7200) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_gazetteer_lookup() != 4506) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_gallery_ffi_checksum_func_is_strict_places_prefix() != 7811) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_gallery_ffi_checksum_func_library_watch_refresh_interval_ms() != 10678) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_nominatim_lookup() != 36779) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_gallery_ffi_checksum_func_place_from_parts() != 64575) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_gallery_ffi_checksum_func_places_needed() != 63299) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_gallery_ffi_checksum_func_places_path() != 60743) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_gallery_ffi_checksum_func_places_still_needed() != 26000) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_gallery_ffi_checksum_func_write_places() != 33519) {
+    if (uniffi_gallery_ffi_checksum_func_places_candidate() != 9645) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_load_snapshot() != 40842) {
@@ -11709,7 +11758,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_named_people_without_box() != 17912) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_parse_xmp_bytes() != 60284) {
+    if (uniffi_gallery_ffi_checksum_func_parse_xmp_bytes() != 30043) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_probe_snapshot_version() != 37625) {
@@ -11856,6 +11905,18 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_memorygenerator_is_cancelled() != 63354) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_method_placesprogresslistener_on_progress() != 60989) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_placessession_cancel() != 47580) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_placessession_prepare() != 22182) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_placessession_run() != 12481) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_method_scanprogresslistener_on_progress() != 2334) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -11910,6 +11971,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_constructor_memorygenerator_new() != 47432) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_constructor_placessession_new() != 58594) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_constructor_scannersession_new() != 1466) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -11922,6 +11986,7 @@ private let initializationResult: InitializationResult = {
 
     uniffiCallbackInitFaceProgressListener()
     uniffiCallbackInitHeicDecoder()
+    uniffiCallbackInitPlacesProgressListener()
     uniffiCallbackInitScanProgressListener()
     uniffiCallbackInitTaggingProgressListener()
     return InitializationResult.ok

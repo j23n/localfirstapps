@@ -27,8 +27,7 @@ final class SidecarSyncServiceTests: XCTestCase {
         SidecarCandidate(
             photoID: id,
             sidecarURL: url,
-            currentVersion: ContentVersion(size: size),
-            downloadStatus: .local
+            currentVersion: ContentVersion(size: size)
         )
     }
 

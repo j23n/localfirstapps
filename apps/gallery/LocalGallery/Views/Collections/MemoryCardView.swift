@@ -14,7 +14,7 @@ struct MemoryCardView: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             if let photo = coverPhoto {
-                ThumbnailView(url: photo.url, size: 328, isRemote: photo.locality.isRemotePlaceholder)
+                ThumbnailView(url: photo.url, size: 328)
                     .frame(width: 264, height: 328)
                     .clipped()
             } else {

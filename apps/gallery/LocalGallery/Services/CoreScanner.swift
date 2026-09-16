@@ -35,8 +35,8 @@ final class CoreScanner: Sendable {
         /// Standardized paths of directories whose listing threw a *transient*
         /// error (`PermissionDenied`, other I/O). Photos under them are absent
         /// from `flatPhotos`/`removedURLs` — the Store carries the cached
-        /// entries forward so a provider hiccup doesn't wipe a subtree's tags
-        /// and enrichment. `NotFound` is not listed here: those photos appear
+        /// entries forward so a listing failure does not wipe a subtree's
+        /// tags and enrichment. `NotFound` is not listed here: those photos appear
         /// in `removedURLs`, and a missing root arrives as `rootFolder == nil`.
         let failedDirectoryPaths: [String]
         /// The pass produced no outcome at all: the core threw instead of
@@ -64,7 +64,6 @@ final class CoreScanner: Sendable {
     private let session: ScannerSession
 
     init() {
-        // Local-only: no ProviderProbe on the FFI (ADR 0005 R2).
         session = ScannerSession()
     }
 
@@ -72,7 +71,7 @@ final class CoreScanner: Sendable {
     ///
     /// - Parameters:
     ///   - cachedPhotos: URL → previous-scan `PhotoFile`. Carries EXIF / tags /
-    ///     GPS / locality forward.
+    ///     GPS forward.
     ///   - cachedSidecarManifest: photoID → previous-scan `SidecarCandidate`.
     ///     A hit here is what lets a light scan skip rebuilding an `.xmp` row
     ///     when the listing size and mtime still match.
@@ -145,7 +144,7 @@ final class CoreScanner: Sendable {
             } catch {
                 // A missing root is data, not an error: empty `folders`, no
                 // failed-directory entry, `rootFolder == nil`. An unlistable
-                // root (permission/provider) still arrives as
+                // root (permission or other I/O) still arrives as
                 // `failedDirectoryPaths` with an empty tree. Reaching here
                 // means the core produced no answer at all — a cancelled walk
                 // today — and an empty answer is indistinguishable from "the
@@ -173,14 +172,6 @@ final class CoreScanner: Sendable {
                     \(result.failedDirectoryPaths.count > 5 ? ", …" : "")
                     """)
             }
-            if outcome.timings.probeMismatches > 0 {
-                Log.scan.error("""
-                    \(outcome.timings.probeMismatches) leftover probe-mismatch counts \
-                    (always 0 on the local-only scanner) — historically a discarded \
-                    provider-probe batch
-                    """)
-            }
-
             // Same shape as the line docs/adr/0002
             // measures the acceptance gates from, so the harness keeps working
             // across the port. `core` is time inside Rust; `in`/`out` are the
@@ -191,7 +182,6 @@ final class CoreScanner: Sendable {
             Log.scan.info("""
                 Scan totals: \(outcome.flatPhotos.count) files in \(t.folders) folders, \
                 total=\(ms(startedAt, builtAt))ms core=\(t.totalMillis)ms list=\(t.listMillis)ms \
-                probe=\(t.probeMillis)ms probed=\(t.probedPaths) batches=\(t.probeBatches) \
                 hits=\(t.cacheHits) slow=\(t.slowPath) \
                 in=\(ms(startedAt, marshalledAt))ms out=\(ms(scannedAt, builtAt))ms \
                 ffi=\(ms(marshalledAt, scannedAt))ms reuseCached=\(reuseCached)
@@ -274,13 +264,7 @@ final class CoreScanner: Sendable {
             faceRegions: record.faceRegions.map {
                 FaceRegion(name: $0.name, centerX: $0.centerX, centerY: $0.centerY,
                            width: $0.width, height: $0.height)
-            },
-            locality: {
-                switch record.locality {
-                case .local: return .local
-                case .remote(let downloaded): return .remote(downloaded: downloaded)
-                }
-            }()
+            }
         )
     }
 
@@ -325,12 +309,10 @@ final class CoreScanner: Sendable {
             ),
             sidecarURL: fileURL(row.sidecarPath),
             currentVersion: ContentVersion(
-                contentIdentifier: row.currentVersion.contentIdentifier,
                 modificationDate: row.currentVersion.modificationDate
                     .map(Date.init(timeIntervalSinceReferenceDate:)),
                 size: row.currentVersion.size
-            ),
-            downloadStatus: DownloadStatus(rawValue: row.downloadStatus) ?? .local
+            )
         )
     }
 
@@ -357,13 +339,7 @@ final class CoreScanner: Sendable {
             faceRegions: photo.faceRegions.map {
                 ScanRegion(name: $0.name, centerX: $0.centerX, centerY: $0.centerY,
                            width: $0.width, height: $0.height)
-            },
-            locality: {
-                switch photo.locality {
-                case .local: return .local
-                case .remote(let downloaded): return .remote(downloaded: downloaded)
-                }
-            }()
+            }
         )
     }
 
@@ -372,12 +348,10 @@ final class CoreScanner: Sendable {
             photoId: candidate.photoID.uuidString,
             sidecarPath: candidate.sidecarURL.path,
             currentVersion: ScanContentVersion(
-                contentIdentifier: candidate.currentVersion.contentIdentifier,
                 modificationDate: candidate.currentVersion.modificationDate?
                     .timeIntervalSinceReferenceDate,
                 size: candidate.currentVersion.size
-            ),
-            downloadStatus: candidate.downloadStatus.rawValue
+            )
         )
     }
 }

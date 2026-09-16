@@ -200,7 +200,9 @@ fn record_photo(photo: &PhotoFile, root: &str) -> Photo {
         date_from_metadata: photo.date_from_metadata,
         file_modification_date: ConformanceDate::utc(photo.file_modification_date),
         enriched_file_date: ConformanceDate::utc(photo.enriched_file_date),
-        locality: photo.locality.describe(),
+        // Legacy fixture field. The scanner is local-only and no longer has
+        // a runtime locality value to project.
+        locality: "local".into(),
         sidecar_status: match photo.sidecar_status {
             gallery_model::SidecarStatus::Absent => "absent".into(),
             gallery_model::SidecarStatus::Cached => "cached".into(),
@@ -263,8 +265,10 @@ fn record_row(row: &SidecarCandidate, root: &str) -> SidecarRow {
             .unwrap_or(&sidecar_path)
             .to_string(),
         sidecar_path,
-        download_status: row.download_status.describe().to_string(),
-        version_has_content_identifier: row.current_version.content_identifier.is_some(),
+        // Legacy fixture fields retained so this runner can still compare the
+        // historical observation shape.
+        download_status: "local".into(),
+        version_has_content_identifier: false,
         version_modification_date: ConformanceDate::utc(row.current_version.modification_date),
         version_size: row.current_version.size,
     }

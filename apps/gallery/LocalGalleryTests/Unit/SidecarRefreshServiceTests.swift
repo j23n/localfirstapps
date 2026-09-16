@@ -21,16 +21,15 @@ final class SidecarRefreshServiceTests: XCTestCase {
         SidecarCandidate(
             photoID: id,
             sidecarURL: url,
-            currentVersion: ContentVersion(size: size),
-            downloadStatus: .local
+            currentVersion: ContentVersion(size: size)
         )
     }
 
-    func testRefreshedManifestReplacesStaleVersions() {
+    func testRefreshedManifestReplacesStaleVersions() throws {
         let url = URL(fileURLWithPath: "/library/a.jpg.xmp")
         let id = UUID()
         let stale = candidate(id: id, url: url, size: 1)
-        let (fresh, gone) = SidecarRefreshService.refreshedManifest(
+        let (fresh, gone) = try SidecarRefreshService.refreshedManifest(
             [stale],
             versionOf: { _ in ContentVersion(modificationDate: Date(), size: 99) },
             fileExists: { _ in true }
@@ -41,10 +40,10 @@ final class SidecarRefreshServiceTests: XCTestCase {
         XCTAssertNotEqual(fresh.first?.currentVersion, stale.currentVersion)
     }
 
-    func testRefreshedManifestReportsGoneSidecars() {
+    func testRefreshedManifestReportsGoneSidecars() throws {
         let url = URL(fileURLWithPath: "/library/deleted.jpg.xmp")
         let id = UUID()
-        let (fresh, gone) = SidecarRefreshService.refreshedManifest(
+        let (fresh, gone) = try SidecarRefreshService.refreshedManifest(
             [candidate(id: id, url: url, size: 12)],
             versionOf: { _ in ContentVersion() },
             fileExists: { _ in false }
@@ -53,17 +52,29 @@ final class SidecarRefreshServiceTests: XCTestCase {
         XCTAssertEqual(gone, [id])
     }
 
-    func testRefreshedManifestKeepsThePriorVersionWhenTheProbeIsEmpty() {
+    func testRefreshedManifestKeepsThePriorVersionWhenTheProbeIsEmpty() throws {
         let url = URL(fileURLWithPath: "/library/a.jpg.xmp")
         let id = UUID()
         let prior = candidate(id: id, url: url, size: 44)
-        let (fresh, gone) = SidecarRefreshService.refreshedManifest(
+        let (fresh, gone) = try SidecarRefreshService.refreshedManifest(
             [prior],
             versionOf: { _ in ContentVersion() },
             fileExists: { _ in true }
         )
         XCTAssertTrue(gone.isEmpty)
         XCTAssertEqual(fresh.first?.currentVersion.size, 44)
+    }
+
+    func testRefreshedManifestPropagatesPermissionFailures() {
+        let url = URL(fileURLWithPath: "/library/denied.jpg.xmp")
+        let row = candidate(url: url, size: 44)
+
+        XCTAssertThrowsError(
+            try SidecarRefreshService.refreshedManifest(
+                [row],
+                fileExists: { _ in throw CocoaError(.fileReadNoPermission) }
+            )
+        )
     }
 
     func testRunRefreshNoOpsWithoutAStoreOrManifest() async {

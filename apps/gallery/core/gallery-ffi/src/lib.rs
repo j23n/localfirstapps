@@ -52,17 +52,15 @@ pub use person_log::{
     PersonKeyedString, PersonLogError, PersonStateRecord, GALLERY_STATE_DIR,
 };
 pub use places::{
-    gazetteer_lookup, is_strict_places_prefix, library_watch_refresh_interval_ms, nominatim_lookup,
-    place_from_parts, places_needed, places_path, places_still_needed, write_places, GeoError,
-    PlaceWrite, PlacesError,
+    library_watch_refresh_interval_ms, places_candidate, PlacesProgressListener,
+    PlacesRecordOutcome, PlacesRunRecord, PlacesRunSummary, PlacesSession,
 };
 pub use scanner::{
     load_snapshot, named_people_without_box, parse_xmp_bytes, probe_snapshot_version,
     read_image_metadata, read_sidecar, read_video_date, save_snapshot, snapshot_version,
-    ImageMetadataRecord, ScanContentVersion, ScanError, ScanFolderNode, ScanLocality,
-    ScanOutcomeRecord, ScanPhoto, ScanProgressListener, ScanRegion, ScanRequest, ScanSidecarRow,
-    ScanTag, ScanTimings, ScannerSession, SidecarParseRecord, SidecarViewRecord, SnapshotRecord,
-    WallClock,
+    ImageMetadataRecord, ScanContentVersion, ScanError, ScanFolderNode, ScanOutcomeRecord,
+    ScanPhoto, ScanProgressListener, ScanRegion, ScanRequest, ScanSidecarRow, ScanTag, ScanTimings,
+    ScannerSession, SidecarParseRecord, SidecarViewRecord, SnapshotRecord, WallClock,
 };
 pub use tagging::{
     inspect_model_pack, resolve_model_pack, ModelPackInfo, PackResolution, PackSource,

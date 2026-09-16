@@ -355,8 +355,6 @@ fn generated_library_regression() {
         cold.flat_photos.len(),
         "cold scan rebuilds every photo"
     );
-    assert_eq!(cold.stats.probe_micros, 0, "local StdVfs has no probe");
-
     let mut light = None;
     let light_ms = millis(|| light = Some(scan(&vfs, &root, &cache_of(&cold))));
     let light = light.unwrap();
@@ -470,7 +468,7 @@ fn generated_library_regression() {
 
     let s = cold.stats;
     println!(
-        "\nScan totals: {} files in {} folders, list={}ms hits={} slow={} probe={}\n\
+        "\nScan totals: {} files in {} folders, list={}ms hits={} slow={}\n\
          stills={stills} videos={videos} sidecars={}\n\
          tagged={tagged_photos} gps={gps_photos} dated={dated_from_metadata}\n\
          search anna={} rome={}\n\
@@ -483,7 +481,6 @@ fn generated_library_regression() {
         s.list_micros / 1000,
         s.cache_hits,
         s.slow_path,
-        s.probe_micros / 1000,
         cold.sidecar_manifest.len(),
         anna.len(),
         rome.len(),

@@ -23,8 +23,7 @@ struct PersonCard: View {
                 PersonThumbnailView(
                     url: photo.url,
                     region: store.people.faceRegion(for: photo, person: tag.displayName),
-                    size: 128,
-                    isRemote: photo.locality.isRemotePlaceholder
+                    size: 128
                 )
             } else {
                 Rectangle()

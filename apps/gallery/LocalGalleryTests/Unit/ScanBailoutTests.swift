@@ -106,8 +106,7 @@ final class ScanBailoutTests: XCTestCase {
             SidecarCandidate(
                 photoID: phantom.id,
                 sidecarURL: phantomURL.appendingPathExtension("xmp"),
-                currentVersion: ContentVersion(size: 12),
-                downloadStatus: .local
+                currentVersion: ContentVersion(size: 12)
             )
         ]
     }

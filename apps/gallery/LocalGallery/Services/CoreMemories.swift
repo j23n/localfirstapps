@@ -19,8 +19,8 @@ import os
 ///   side of the boundary.
 ///
 /// Nothing here decides anything. The once-per-day gate, the seen/cool-down
-/// bookkeeping, the hidden set and the cloud-placeholder input filter stay in
-/// `MemoryCoordinator`; the widget's use of the horizon stays in `GalleryStore`.
+/// bookkeeping and the hidden set stay in `MemoryCoordinator`; the widget's
+/// use of the horizon stays in `GalleryStore`.
 enum CoreMemories {
 
     /// Everything the engine reads, snapshotted on the main actor by the
@@ -28,15 +28,6 @@ enum CoreMemories {
     /// detached task without touching the Store.
     struct Inputs: Sendable {
         var photos: [PhotoFile]
-        /// The cloud placeholders `MemoryCoordinator` filtered out of `photos`.
-        ///
-        /// The engine shows them to the **folder-event ladder only**, because
-        /// the deleted Swift read `folder.photos` — the folder's own array,
-        /// which the placeholder filter never touched — while every other
-        /// generator drew from the filtered `allPhotos`. Leaving them out makes
-        /// placeholder-heavy folders fall below the 15-photo floor and vanish,
-        /// and silently re-cuts the ones that survive.
-        var folderPlaceholderPhotos: [PhotoFile]
         var leafFolders: [PhotoFolder]
         var contacts: [ContactInfo]
         var personContactLinks: [String: PersonLink]
@@ -50,7 +41,6 @@ enum CoreMemories {
 
         init(
             photos: [PhotoFile],
-            folderPlaceholderPhotos: [PhotoFile] = [],
             leafFolders: [PhotoFolder] = [],
             contacts: [ContactInfo] = [],
             personContactLinks: [String: PersonLink] = [:],
@@ -63,7 +53,6 @@ enum CoreMemories {
             surfacedClusters: [String: Date] = [:]
         ) {
             self.photos = photos
-            self.folderPlaceholderPhotos = folderPlaceholderPhotos
             self.leafFolders = leafFolders
             self.contacts = contacts
             self.personContactLinks = personContactLinks
@@ -223,10 +212,6 @@ enum CoreMemories {
         MemoryGenerationInputs(
             photos: inputs.photos.map(CoreScanner.record(of:)),
             photoTimeZoneOffsets: offsets(for: inputs.photos, fallback: inputs.now),
-            folderPlaceholderPhotos: inputs.folderPlaceholderPhotos.map(CoreScanner.record(of:)),
-            folderPlaceholderTimeZoneOffsets: offsets(
-                for: inputs.folderPlaceholderPhotos, fallback: inputs.now
-            ),
             leafFolders: inputs.leafFolders.map {
                 MemoryLeafFolder(
                     id: $0.id.uuidString,

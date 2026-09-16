@@ -3,7 +3,6 @@ import UIKit
 import ImageIO
 import UniformTypeIdentifiers
 import AVFoundation
-import QuickLookThumbnailing
 import os
 
 // MARK: - Decode concurrency limiter
@@ -30,7 +29,7 @@ final class ThumbnailService {
     private let faceCropCache = NSCache<NSString, UIImage>()
 
     /// Source identity recorded when an in-memory thumbnail was stored.
-    /// Lookups compare this to the live size/mtime (or content identifier)
+    /// Lookups compare this to the live size/mtime
     /// so a replaced file doesn't keep painting the old JPEG.
     private var thumbnailStamps: [NSURL: ContentVersion] = [:]
     private var fullImageStamps: [NSURL: ContentVersion] = [:]
@@ -43,12 +42,8 @@ final class ThumbnailService {
 
     private let thumbnailDiskCacheDir: URL
 
-    /// How long a `.nothumb` negative-cache sentinel suppresses QuickLook
-    /// retries before the provider gets asked again.
-    private static let sentinelTTL: TimeInterval = 24 * 60 * 60
-
-    /// Called when a local (non-QuickLook) load needed the source file and
-    /// it was gone. Not fired for placeholder misses or cancellation.
+    /// Called when a load needed the source file and it was gone. Not fired
+    /// for cancellation.
     /// The caller coalesces these; firing once per failed cell load is
     /// enough. The service is `@MainActor`, so the callback runs there.
     var onSourceMissing: (@MainActor (URL) -> Void)?
@@ -80,13 +75,9 @@ final class ThumbnailService {
     /// Async load: memory cache → disk cache → ImageIO/AVAsset generation.
     /// Caches the result back into the memory cache on hit.
     ///
-    /// `useQuickLook` switches the decode strategy: when true (i.e. the photo
-    /// is a non-downloaded file-provider placeholder), generation goes through
-    /// `QLThumbnailGenerator` which transparently uses provider-vended
-    /// thumbnails. Once a thumbnail has been written to the on-disk cache it
-    /// survives the source's eviction, so subsequent grid scrolls don't have
-    /// to re-fetch.
-    func thumbnail(for url: URL, size: CGSize, isVideo: Bool = false, useQuickLook: Bool = false) async -> UIImage? {
+    /// Once a thumbnail has been written to the on-disk cache it survives the
+    /// source's removal, so a last-known image can still render.
+    func thumbnail(for url: URL, size: CGSize, isVideo: Bool = false) async -> UIImage? {
         if let cached = cachedThumbnail(for: url) {
             return cached
         }
@@ -94,36 +85,14 @@ final class ThumbnailService {
         let maxPixelSize = max(size.width, size.height) * UIScreen.main.scale
         let stableID = PhotoFile.stableID(for: url).uuidString
         let diskPath = thumbnailDiskCacheDir.appendingPathComponent(stableID + ".jpg")
-        let sentinelPath = thumbnailDiskCacheDir.appendingPathComponent(stableID + ".nothumb")
-
-        // Sentinel: provider didn't vend a thumbnail on a previous attempt.
-        // Skip the generator so a 50k-photo cloud library doesn't burn battery
-        // re-asking on every scroll. Only honoured for placeholder decodes —
-        // once the file is downloaded the ImageIO path can succeed, so a
-        // stale negative result must not blank the cell. Sentinels also
-        // expire after `sentinelTTL`: the original failure may have been
-        // transient (provider timeout, rate limit).
-        if useQuickLook {
-            if let written = (try? sentinelPath.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
-                if Date().timeIntervalSince(written) < Self.sentinelTTL {
-                    return nil
-                }
-                try? FileManager.default.removeItem(at: sentinelPath)
-            }
-        } else {
-            // Locality flipped to local: drop any placeholder-era sentinel.
-            try? FileManager.default.removeItem(at: sentinelPath)
-        }
 
         do {
             let image = try await Self.loadThumbnail(
                 for: url, maxPixelSize: maxPixelSize, isVideo: isVideo,
-                useQuickLook: useQuickLook,
-                size: size,
-                diskPath: diskPath, sentinelPath: sentinelPath
+                diskPath: diskPath
             )
             guard let image else {
-                notifyIfSourceMissing(url, useQuickLook: useQuickLook)
+                notifyIfSourceMissing(url)
                 return nil
             }
             let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
@@ -135,16 +104,20 @@ final class ThumbnailService {
             Log.thumb.debug("Cancelled: \(Log.r.filename(url.lastPathComponent))")
             return nil
         } catch {
-            notifyIfSourceMissing(url, useQuickLook: useQuickLook)
+            notifyIfSourceMissing(url)
             return nil
         }
     }
 
-    /// Local cells that fail because the photo file is gone — not a
-    /// QuickLook miss, not a cancelled in-flight load.
-    private func notifyIfSourceMissing(_ url: URL, useQuickLook: Bool) {
-        guard !useQuickLook, !FileManager.default.fileExists(atPath: url.path) else { return }
-        onSourceMissing?(url)
+    /// Cells that fail because the photo file is gone.
+    private func notifyIfSourceMissing(_ url: URL) {
+        do {
+            if try Self.sourceFileIsMissing(url) {
+                onSourceMissing?(url)
+            }
+        } catch {
+            Log.thumb.error("Source existence check failed: \(Log.r.error(error))")
+        }
     }
 
     /// Drops the in-memory entry for `url` without touching the on-disk JPEG.
@@ -175,9 +148,6 @@ final class ThumbnailService {
             let diskPath = thumbnailDiskCacheDir.appendingPathComponent(stableID + ".jpg")
             try? FileManager.default.removeItem(at: diskPath)
             try? FileManager.default.removeItem(at: Self.stampURL(nextTo: diskPath))
-            try? FileManager.default.removeItem(
-                at: thumbnailDiskCacheDir.appendingPathComponent(stableID + ".nothumb")
-            )
         }
     }
 
@@ -185,8 +155,7 @@ final class ThumbnailService {
     /// execution with cancellation support.
     private nonisolated static func loadThumbnail(
         for url: URL, maxPixelSize: CGFloat, isVideo: Bool,
-        useQuickLook: Bool, size: CGSize,
-        diskPath: URL, sentinelPath: URL
+        diskPath: URL
     ) async throws -> UIImage? {
         try Task.checkCancellation()
 
@@ -200,24 +169,16 @@ final class ThumbnailService {
         // If the source file has disappeared, still serve the on-disk JPEG
         // as a last-known image rather than falling through to ImageIO on
         // a missing path (that returns nil and the cell shimmers forever).
-        if FileManager.default.fileExists(atPath: diskPath.path) {
-            // For placeholder files we trust the disk cache regardless of
-            // mod-date — reading the source's mtime might be a metadata-only
-            // call but the source itself has no bytes to compare against.
-            // Cache wins as long as it exists.
-            if useQuickLook {
-                if let image = loadDiskCachedJPEG(at: diskPath) {
+        if let image = loadDiskCachedJPEG(at: diskPath) {
+            do {
+                if try sourceFileIsMissing(url) {
                     return image
                 }
-            } else if sourceFileIsMissing(url) {
-                if let image = loadDiskCachedJPEG(at: diskPath) {
-                    return image
-                }
-            } else {
-                if diskStampMatchesSource(diskPath: diskPath, source: url),
-                   let image = loadDiskCachedJPEG(at: diskPath) {
-                    return image
-                }
+            } catch {
+                Log.thumb.error("Source existence check failed: \(Log.r.error(error))")
+            }
+            if diskStampMatchesSource(diskPath: diskPath, source: url) {
+                return image
             }
         }
 
@@ -231,11 +192,7 @@ final class ThumbnailService {
         do {
             try Task.checkCancellation()
             let result: UIImage?
-            if useQuickLook {
-                result = try await decodeQuickLook(
-                    url: url, size: size, diskPath: diskPath, sentinelPath: sentinelPath
-                )
-            } else if isVideo {
+            if isVideo {
                 result = try await decodeVideo(url: url, maxPixelSize: maxPixelSize, diskPath: diskPath)
             } else {
                 result = try await decodeImage(url: url, maxPixelSize: maxPixelSize, diskPath: diskPath)
@@ -263,10 +220,7 @@ final class ThumbnailService {
 
     /// True when the original photo is gone (or the filesystem reports it
     /// as not found). A last-known on-disk JPEG is then the best we can show.
-    private nonisolated static func sourceFileIsMissing(_ url: URL) -> Bool {
-        if !FileManager.default.fileExists(atPath: url.path) {
-            return true
-        }
+    private nonisolated static func sourceFileIsMissing(_ url: URL) throws -> Bool {
         do {
             _ = try url.resourceValues(forKeys: [
                 .contentModificationDateKey,
@@ -274,11 +228,14 @@ final class ThumbnailService {
             ])
             return false
         } catch {
-            return isNotFoundError(error)
+            if isNotFoundError(error) {
+                return true
+            }
+            throw error
         }
     }
 
-    /// Cheap size/mtime read. No content identifier, no ubiquitous keys.
+    /// Cheap size/mtime read from local resource values.
     nonisolated static func sourceStamp(for url: URL) -> ContentVersion {
         ContentVersion.ofFile(at: url)
     }
@@ -301,14 +258,13 @@ final class ThumbnailService {
         let size = stamp.size.map(String.init) ?? ""
         // Milliseconds avoid Date equality failing after a Double string round-trip.
         let mtime = stamp.modificationDate.map { String(Int64(($0.timeIntervalSince1970 * 1000).rounded())) } ?? ""
-        let id = stamp.contentIdentifier ?? ""
-        try? "\(size)|\(mtime)|\(id)".data(using: .utf8)?.write(
+        try? "\(size)|\(mtime)".data(using: .utf8)?.write(
             to: stampURL(nextTo: diskPath), options: .atomic
         )
     }
 
     /// Disk JPEG is reusable when its sibling stamp matches the live source
-    /// (size + mtime + content identifier). Legacy JPEGs without a stamp
+    /// (size + mtime). Legacy JPEGs without a stamp
     /// fall back to cache-mtime >= source-mtime.
     private nonisolated static func diskStampMatchesSource(diskPath: URL, source: URL) -> Bool {
         let stampPath = stampURL(nextTo: diskPath)
@@ -317,11 +273,7 @@ final class ThumbnailService {
             let parts = text.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
             let size = parts.first.flatMap { Int64($0) }
             let storedMs = parts.count > 1 ? Int64(parts[1]) : nil
-            let contentID = parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil
             let live = sourceStamp(for: source)
-            if let l = contentID, let r = live.contentIdentifier {
-                return l == r
-            }
             let liveMs = live.modificationDate.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) }
             return size == live.size && storedMs == liveMs
         }
@@ -340,38 +292,6 @@ final class ThumbnailService {
                 || nsError.code == CocoaError.fileReadNoSuchFile.rawValue
         }
         return false
-    }
-
-    /// Generate a thumbnail for a non-downloaded file-provider placeholder via
-    /// `QLThumbnailGenerator`. QL transparently uses provider-vended
-    /// thumbnails when the underlying bytes haven't been fetched. On failure
-    /// (no thumb vended), writes a sentinel so subsequent calls can short-circuit.
-    private nonisolated static func decodeQuickLook(
-        url: URL, size: CGSize, diskPath: URL, sentinelPath: URL
-    ) async throws -> UIImage? {
-        try Task.checkCancellation()
-        let scale = await MainActor.run { UIScreen.main.scale }
-        let request = QLThumbnailGenerator.Request(
-            fileAt: url, size: size, scale: scale,
-            representationTypes: .thumbnail
-        )
-        do {
-            let rep = try await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
-            try Task.checkCancellation()
-            let cgImage = rep.cgImage
-            if let jpegData = opaqueJPEGData(from: cgImage, quality: 0.7) {
-                try? jpegData.write(to: diskPath, options: .atomic)
-                writeDiskStamp(sourceStamp(for: url), nextTo: diskPath)
-            }
-            return rep.uiImage
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            // Provider didn't vend a thumbnail. Drop a sentinel so we don't
-            // ask again on every scroll.
-            try? Data().write(to: sentinelPath, options: .atomic)
-            return nil
-        }
     }
 
     // MARK: - Decode helpers (run inside the concurrency gate)
@@ -520,7 +440,7 @@ final class ThumbnailService {
         url: URL, region: FaceRegion, cellSize: CGFloat,
         stamp: ContentVersion
     ) -> NSString {
-        let stampPart = "\(stamp.contentIdentifier ?? "")|\(stamp.size ?? 0)|\(stamp.modificationDate?.timeIntervalSince1970 ?? 0)"
+        let stampPart = "\(stamp.size ?? 0)|\(stamp.modificationDate?.timeIntervalSince1970 ?? 0)"
         return "\(url.path)#\(region.centerX),\(region.centerY),\(region.width),\(region.height)#\(Int(cellSize.rounded()))#\(stampPart)" as NSString
     }
 

@@ -333,42 +333,7 @@ final class MemoryCoordinator {
     private func generate(inputs: GenerationInputs, seed: String, epoch: Int) async {
         let t = CFAbsoluteTimeGetCurrent()
 
-        // Drop file-provider placeholders that don't have a cached sidecar
-        // yet — their tags/GPS/date are unknown, so they'd inflate the pool
-        // with garbage candidates. Local photos and remote-with-cached-
-        // sidecar photos pass through.
-        //
-        // The excluded ones are not discarded: they are handed over separately
-        // so the **folder-event** ladder can still see them. The deleted Swift
-        // engine read `folder.photos` — the folder's own array, which this
-        // filter never touched, because it only ever applied to `allPhotos` —
-        // so a folder of 20 photos made a 20-photo memory whether or not 12 of
-        // them were still in the cloud. Resolving folder members through the
-        // filtered pool alone drops such folders below the 15-photo floor
-        // entirely, and re-cuts the survivors' photo list, cover and subtitle
-        // under an unchanged `folder-<id>` id.
-        var filtered: [PhotoFile] = []
-        var placeholders: [PhotoFile] = []
-        for photo in inputs.photos {
-            let isInPool: Bool
-            switch photo.locality {
-            case .local: isInPool = true
-            case .remote(let downloaded):
-                if downloaded {
-                    isInPool = true
-                } else if case .cached = photo.sidecarStatus {
-                    isInPool = true
-                } else {
-                    isInPool = false
-                }
-            }
-            if isInPool { filtered.append(photo) } else { placeholders.append(photo) }
-        }
-        if !placeholders.isEmpty {
-            Log.memory.info("Memory pool: \(filtered.count) of \(inputs.photos.count) photos (\(placeholders.count) cloud placeholders without sidecars, folder events only)")
-        }
-
-        CoreMemories.logInputSummary(allPhotos: filtered)
+        CoreMemories.logInputSummary(allPhotos: inputs.photos)
 
         // The whole snapshot crosses to a detached task inside `generate`, so
         // nothing below this line reads the Store or the coordinator until the
@@ -377,8 +342,7 @@ final class MemoryCoordinator {
         // full name, first write wins), and shipping both would let the two
         // disagree across the boundary.
         let results = await CoreMemories.generate(CoreMemories.Inputs(
-            photos: filtered,
-            folderPlaceholderPhotos: placeholders,
+            photos: inputs.photos,
             leafFolders: inputs.leafFolders,
             contacts: inputs.contacts,
             personContactLinks: inputs.personContactLinks,

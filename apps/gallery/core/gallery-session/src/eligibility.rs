@@ -1,17 +1,14 @@
 //! Who is up for tagging / faces / places.
 
 use gallery_meta::places::places_still_needed;
-use gallery_model::photo::{PhotoFile, PhotoLocality};
+use gallery_model::photo::PhotoFile;
 
-/// Still, bytes on disk. Remote placeholders are not tagged or geocoded.
+/// Still image.
 pub fn is_ml_eligible(photo: &PhotoFile) -> bool {
-    if photo.is_video {
-        return false;
-    }
-    !matches!(photo.locality, PhotoLocality::Remote { downloaded: false })
+    !photo.is_video
 }
 
-/// Downloaded still with GPS.
+/// Still with GPS.
 pub fn is_places_candidate(photo: &PhotoFile) -> bool {
     is_ml_eligible(photo) && photo.gps_latitude.is_some() && photo.gps_longitude.is_some()
 }
@@ -40,17 +37,13 @@ mod tests {
     use gallery_model::photo::HierarchicalTag;
 
     #[test]
-    fn videos_and_placeholders_are_out() {
+    fn videos_are_out() {
         let mut p = PhotoFile::new("/a.jpg", "a", 1);
         p.gps_latitude = Some(1.0);
         p.gps_longitude = Some(2.0);
         assert!(is_ml_eligible(&p));
         p.is_video = true;
         assert!(!is_ml_eligible(&p));
-        p.is_video = false;
-        p.locality = PhotoLocality::Remote { downloaded: false };
-        assert!(!is_ml_eligible(&p));
-        assert!(!is_places_candidate(&p));
     }
 
     #[test]

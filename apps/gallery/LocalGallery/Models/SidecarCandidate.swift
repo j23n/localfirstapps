@@ -19,7 +19,6 @@ struct SidecarCandidate: Codable, Equatable, Sendable {
     let photoID: UUID
     let sidecarURL: URL
     let currentVersion: ContentVersion
-    let downloadStatus: DownloadStatus
 
     /// Named so a custom `init`/`encode` still keys the same as the Rust
     /// `SidecarCandidate` snapshot (`photoID`, `sidecarURL`, …).
@@ -27,19 +26,16 @@ struct SidecarCandidate: Codable, Equatable, Sendable {
         case photoID
         case sidecarURL
         case currentVersion
-        case downloadStatus
     }
 
     init(
         photoID: UUID,
         sidecarURL: URL,
-        currentVersion: ContentVersion,
-        downloadStatus: DownloadStatus = .local
+        currentVersion: ContentVersion
     ) {
         self.photoID = photoID
         self.sidecarURL = sidecarURL
         self.currentVersion = currentVersion
-        self.downloadStatus = downloadStatus
     }
 
     init(from decoder: Decoder) throws {
@@ -47,7 +43,6 @@ struct SidecarCandidate: Codable, Equatable, Sendable {
         photoID = try c.decode(UUID.self, forKey: .photoID)
         sidecarURL = try c.decode(URL.self, forKey: .sidecarURL)
         currentVersion = try c.decode(ContentVersion.self, forKey: .currentVersion)
-        downloadStatus = try c.decodeIfPresent(DownloadStatus.self, forKey: .downloadStatus) ?? .local
     }
 
     func encode(to encoder: Encoder) throws {
@@ -55,8 +50,5 @@ struct SidecarCandidate: Codable, Equatable, Sendable {
         try c.encode(photoID, forKey: .photoID)
         try c.encode(sidecarURL, forKey: .sidecarURL)
         try c.encode(currentVersion, forKey: .currentVersion)
-        if downloadStatus != .local {
-            try c.encode(downloadStatus, forKey: .downloadStatus)
-        }
     }
 }

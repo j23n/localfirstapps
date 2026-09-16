@@ -444,7 +444,6 @@ dependencies = [
  "gallery-scan",
  "gallery-session",
  "gallery-vfs",
- "localcore-geo",
  "localcore-log",
  "tempfile",
  "uniffi",

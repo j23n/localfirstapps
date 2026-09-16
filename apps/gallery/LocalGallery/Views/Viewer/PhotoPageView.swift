@@ -19,8 +19,6 @@ struct PhotoPageView: View {
     @State private var isPlayingLive = false
     @State private var livePlayer: AVPlayer?
     @State private var isZoomed = false
-    @State private var isMaterializing = false
-    @State private var materializeError: String?
 
     var body: some View {
         GeometryReader { geo in
@@ -81,37 +79,6 @@ struct PhotoPageView: View {
                     }
                 }
 
-                // File-provider materialisation overlay. Centered over
-                // whatever the page is showing (thumbnail or empty), so
-                // users see "Downloading…" while bytes arrive.
-                if isMaterializing {
-                    VStack(spacing: 12) {
-                        ProgressView().tint(.white)
-                        Text("Downloading…")
-                            .font(.subheadline)
-                            .foregroundStyle(.white)
-                    }
-                    .padding(20)
-                    .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
-                } else if let err = materializeError {
-                    VStack(spacing: 12) {
-                        Image(systemName: "exclamationmark.icloud")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.white)
-                        Text(err)
-                            .font(.footnote)
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                        Button("Retry") {
-                            Task { await loadPhoto() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding(20)
-                    .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
-                    .frame(maxWidth: 280)
-                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             // Live-photo press-and-hold. The `pressing` callback fires
@@ -160,14 +127,12 @@ struct PhotoPageView: View {
         livePlayer?.pause()
         livePlayer = nil
         isZoomed = false
-        materializeError = nil
 
         if thumbnail == nil {
             thumbnail = await store.thumbnail(
                 for: photo.url,
                 size: CGSize(width: 400, height: 400),
-                isVideo: photo.isVideo,
-                useQuickLook: false
+                isVideo: photo.isVideo
             )
         }
 

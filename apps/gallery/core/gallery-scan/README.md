@@ -22,7 +22,7 @@ cargo run --release --example scan_tree -- /path/to/photos
 It prints the CoreScanner totals line:
 
 ```
-Scan totals: N files in F folders, list=Xms hits=H slow=S probe=0
+Scan totals: N files in F folders, list=Xms hits=H slow=S
 ```
 
 The ignored `e2e_generated_library` test is a local performance-regression

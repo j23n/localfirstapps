@@ -2,21 +2,6 @@ import Foundation
 import CoreGraphics
 import CryptoKit
 
-/// Where the photo's bytes live. New scans always write `.local`.
-/// `.remote` remains so a v20 snapshot written before Phase 1 still
-/// decodes.
-enum PhotoLocality: Codable, Hashable, Sendable {
-    case local
-    case remote(downloaded: Bool)
-
-    /// True for `.remote(downloaded: false)`. New scans never produce
-    /// this; it only appears when an old snapshot is still on disk.
-    var isRemotePlaceholder: Bool {
-        if case .remote(downloaded: false) = self { return true }
-        return false
-    }
-}
-
 /// Whether we have a parsed copy of the photo's `.xmp` sidecar in
 /// `SidecarCacheStore`. Search/tag features only consider `.cached(_)` photos.
 enum SidecarStatus: Codable, Hashable, Sendable {
@@ -44,9 +29,8 @@ struct PhotoFile: Identifiable, Hashable, Codable, Sendable {
     var enrichedFileDate: Date? = nil
     /// File modDate as of the most recent scan. Light scan compares this +
     /// `fileSize` against the live filesystem listing to decide whether a
-    /// cached entry can be reused without re-probing the file provider or
-    /// re-reading EXIF. Distinct from `enrichedFileDate`, which only changes
-    /// when the enrichment pass succeeds.
+    /// cached entry can be reused without re-reading EXIF. Distinct from
+    /// `enrichedFileDate`, which only changes when enrichment succeeds.
     var fileModificationDate: Date? = nil
     var gpsLatitude: Double? = nil
     var gpsLongitude: Double? = nil
@@ -59,12 +43,8 @@ struct PhotoFile: Identifiable, Hashable, Codable, Sendable {
     /// `CoreFaceDecisions` strings from the sidecar (named-below-floor, etc.).
     var faceDecisions: [String] = []
     /// A `.xmp` exists next to the image (appended or Lightroom alt).
-    /// Distinct from `sidecarStatus`, which is the provider fetch cache.
+    /// Distinct from `sidecarStatus`, which is the parsed sidecar cache.
     var sidecarOnDisk: Bool = false
-    /// Where the photo bytes live. Default `.local`; populated by the scanner
-    /// for file-provider URLs. Runtime/cache state — not part of the stable
-    /// UUID derivation.
-    var locality: PhotoLocality = .local
     /// Sidecar cache state. Default `.absent`; populated by `SidecarSyncService`
     /// once a `.xmp` for this photo has been parsed and persisted.
     var sidecarStatus: SidecarStatus = .absent
@@ -99,7 +79,7 @@ struct PhotoFile: Identifiable, Hashable, Codable, Sendable {
         case id, url, filename, fileSize, dateTaken, dateFromMetadata, isVideo, livePhotoVideoURL, hierarchicalTags, countryCode, enrichedFileDate, fileModificationDate, gpsLatitude, gpsLongitude, faceRegions, photoTools, faceDecisions, sidecarOnDisk
     }
 
-    init(id: UUID, url: URL, filename: String, fileSize: Int64, dateTaken: Date?, dateFromMetadata: Bool = false, isVideo: Bool = false, livePhotoVideoURL: URL? = nil, hierarchicalTags: [HierarchicalTag] = [], countryCode: String? = nil, enrichedFileDate: Date? = nil, fileModificationDate: Date? = nil, gpsLatitude: Double? = nil, gpsLongitude: Double? = nil, faceRegions: [FaceRegion] = [], photoTools: PhotoToolsMetadata = PhotoToolsMetadata(), faceDecisions: [String] = [], sidecarOnDisk: Bool = false, locality: PhotoLocality = .local, sidecarStatus: SidecarStatus = .absent, dimensions: CGSize? = nil, exif: EXIFData? = nil) {
+    init(id: UUID, url: URL, filename: String, fileSize: Int64, dateTaken: Date?, dateFromMetadata: Bool = false, isVideo: Bool = false, livePhotoVideoURL: URL? = nil, hierarchicalTags: [HierarchicalTag] = [], countryCode: String? = nil, enrichedFileDate: Date? = nil, fileModificationDate: Date? = nil, gpsLatitude: Double? = nil, gpsLongitude: Double? = nil, faceRegions: [FaceRegion] = [], photoTools: PhotoToolsMetadata = PhotoToolsMetadata(), faceDecisions: [String] = [], sidecarOnDisk: Bool = false, sidecarStatus: SidecarStatus = .absent, dimensions: CGSize? = nil, exif: EXIFData? = nil) {
         self.id = id
         self.url = url
         self.filename = filename
@@ -118,7 +98,6 @@ struct PhotoFile: Identifiable, Hashable, Codable, Sendable {
         self.photoTools = photoTools
         self.faceDecisions = faceDecisions
         self.sidecarOnDisk = sidecarOnDisk
-        self.locality = locality
         self.sidecarStatus = sidecarStatus
         self.dimensions = dimensions
         self.exif = exif
@@ -219,7 +198,7 @@ struct PhotoFile: Identifiable, Hashable, Codable, Sendable {
     /// Same photo after an on-disk move. Identity follows the new URL
     /// (`stableID`), which is what a later scan would derive. Every
     /// non-path field — persisted metadata and runtime-only state — is
-    /// copied so a move cannot drop tags, tools, locality, or a lazy EXIF
+    /// copied so a move cannot drop tags, tools, or a lazy EXIF
     /// load the viewer already paid for.
     func relocated(to url: URL, livePhotoVideoURL: URL? = nil) -> PhotoFile {
         PhotoFile(
@@ -241,7 +220,6 @@ struct PhotoFile: Identifiable, Hashable, Codable, Sendable {
             photoTools: photoTools,
             faceDecisions: faceDecisions,
             sidecarOnDisk: sidecarOnDisk,
-            locality: locality,
             sidecarStatus: sidecarStatus,
             dimensions: dimensions,
             exif: exif

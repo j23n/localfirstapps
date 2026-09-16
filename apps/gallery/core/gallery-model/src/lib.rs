@@ -18,11 +18,9 @@ pub mod text;
 
 pub use date::{AppleDate, CivilDateTime};
 pub use photo::{
-    FaceRegion, FileUrl, HierarchicalTag, PhotoFile, PhotoFolder, PhotoLocality, SidecarStatus,
-    StableId,
+    FaceRegion, FileUrl, HierarchicalTag, PhotoFile, PhotoFolder, SidecarStatus, StableId,
 };
 pub use rng::SeededRng;
 pub use snapshot::{
-    ContentVersion, DownloadStatus, LibrarySnapshot, SidecarCandidate, SnapshotError,
-    LIBRARY_SNAPSHOT_VERSION,
+    ContentVersion, LibrarySnapshot, SidecarCandidate, SnapshotError, LIBRARY_SNAPSHOT_VERSION,
 };

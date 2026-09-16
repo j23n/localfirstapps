@@ -81,7 +81,7 @@ pub fn compute_scheduled(
     // by each photo's OWN offset, which is what `generate_on_this_day` then
     // re-filters by — the two must agree or the bucket hides its own members.
     let mut by_month_day: HashMap<MonthDay, Vec<DatedPhoto>> = HashMap::new();
-    for entry in photos_with_dates(inputs.ladder_photos()) {
+    for entry in photos_with_dates(&inputs.photos) {
         by_month_day
             .entry(zone.at(entry.0).month_day(entry.1))
             .or_default()
@@ -91,7 +91,7 @@ pub fn compute_scheduled(
     // both day-independent, so they are built once here rather than seven times
     // inside the loop.
     let people = if inputs.birthdays_enabled {
-        PeopleIndex::build(inputs.ladder_photos())
+        PeopleIndex::build(&inputs.photos)
     } else {
         PeopleIndex::default()
     };

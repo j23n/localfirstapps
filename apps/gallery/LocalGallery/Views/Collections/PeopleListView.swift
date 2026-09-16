@@ -108,8 +108,7 @@ struct PeopleListRow: View {
                     url: photo.url,
                     region: store.people.faceRegion(for: photo, person: tag.displayName),
                     size: 52,
-                    cornerRadius: 9,
-                    isRemote: photo.locality.isRemotePlaceholder
+                    cornerRadius: 9
                 )
                 .frame(width: 52, height: 52)
             } else {

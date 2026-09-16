@@ -530,8 +530,7 @@ struct PhotoGridScreen: View {
                 url: photo.url,
                 size: cellSize,
                 isVideo: photo.isVideo,
-                isLivePhoto: photo.livePhotoVideoURL != nil,
-                isRemote: photo.locality.isRemotePlaceholder
+                isLivePhoto: photo.livePhotoVideoURL != nil
             )
                 .frame(width: cellSize, height: cellSize)
                 .scaleEffect(selectMode && isSelected ? 0.9 : 1.0)

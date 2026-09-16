@@ -126,12 +126,8 @@ final class FaceServiceTests: XCTestCase {
         let temp = makeTemp()
         let photo = PhotoFile.fixture(url: temp.appending("a.jpg"))
         let video = PhotoFile.fixture(url: temp.appending("clip.mov"), isVideo: true)
-        var placeholder = PhotoFile.fixture(url: temp.appending("cloud.jpg"))
-        placeholder.locality = .remote(downloaded: false)
-        var downloaded = placeholder
-        downloaded.locality = .remote(downloaded: true)
 
-        for candidate in [photo, video, placeholder, downloaded] {
+        for candidate in [photo, video] {
             XCTAssertEqual(
                 FaceService.isEligible(candidate),
                 TaggingService.isEligible(candidate),
@@ -140,8 +136,6 @@ final class FaceServiceTests: XCTestCase {
         }
         XCTAssertTrue(FaceService.isEligible(photo))
         XCTAssertFalse(FaceService.isEligible(video))
-        XCTAssertFalse(FaceService.isEligible(placeholder))
-        XCTAssertTrue(FaceService.isEligible(downloaded))
     }
 
     /// A library of nothing eligible is not a failure — it is a run with

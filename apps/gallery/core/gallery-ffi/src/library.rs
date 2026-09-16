@@ -405,9 +405,6 @@ pub struct MemoryDateEntry {
 /// `MemoryCoordinator.GenerationInputs` plus the clock, zone, seed and the
 /// seen/cool-down state — everything the engine reads.
 ///
-/// `photos` is already past the coordinator's cloud-placeholder filter; that
-/// filter stays in Swift. The photos it *excluded* come back in
-/// [`Self::folder_placeholder_photos`], because one ladder needs them.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct MemoryGenerationInputs {
     pub photos: Vec<ScanPhoto>,
@@ -422,18 +419,6 @@ pub struct MemoryGenerationInputs {
     /// twice a year, so the cool-down and seen penalties stop matching the
     /// history the user's own taps wrote.
     pub photo_time_zone_offsets: Vec<i32>,
-    /// The cloud placeholders the coordinator filtered out of `photos`.
-    ///
-    /// Visible to the **folder-event ladder only**, because the deleted Swift
-    /// read `folder.photos` — the folder's own unfiltered array — while every
-    /// other generator drew from the filtered `allPhotos`. Resolving folder
-    /// members through the filtered pool alone drops placeholder-heavy folders
-    /// below the 15-photo floor entirely and silently re-cuts the ones that
-    /// survive. Pass an empty list for the pre-filter behaviour.
-    pub folder_placeholder_photos: Vec<ScanPhoto>,
-    /// Per-photo offsets for `folder_placeholder_photos`, same rules as
-    /// [`Self::photo_time_zone_offsets`].
-    pub folder_placeholder_time_zone_offsets: Vec<i32>,
     pub leaf_folders: Vec<MemoryLeafFolder>,
     pub contacts: Vec<MemoryContact>,
     pub person_contact_links: Vec<MemoryPersonLink>,
@@ -491,30 +476,10 @@ impl MemoryGenerationInputs {
                 birthday_day: c.birthday_day,
             })
             .collect();
-        // One table: the scored pool first, then the folder-event-only
-        // placeholders. Keeping them in one `Vec` is what lets every stage —
-        // and the per-photo offset table — stay index-addressed; the ladder
-        // simply never looks past `ladder_photo_count`.
-        let ladder_photo_count = self.photos.len();
-        let mut photos: Vec<PhotoFile> =
-            Vec::with_capacity(ladder_photo_count + self.folder_placeholder_photos.len());
-        photos.extend(self.photos.into_iter().map(photo_from_record));
-        photos.extend(
-            self.folder_placeholder_photos
-                .into_iter()
-                .map(photo_from_record),
-        );
-        let photo_time_zone_offsets = concat_offsets(
-            self.photo_time_zone_offsets,
-            self.folder_placeholder_time_zone_offsets,
-            ladder_photo_count,
-            photos.len(),
-            self.time_zone_offset_seconds,
-        );
+        let photos: Vec<PhotoFile> = self.photos.into_iter().map(photo_from_record).collect();
         GenerationInputs {
             photos,
-            ladder_photo_count,
-            photo_time_zone_offsets,
+            photo_time_zone_offsets: self.photo_time_zone_offsets,
             leaf_folders: self
                 .leaf_folders
                 .into_iter()
@@ -553,34 +518,6 @@ impl MemoryGenerationInputs {
             surfaced_clusters: date_map(self.surfaced_clusters),
         }
     }
-}
-
-/// Splice the two per-photo offset tables into one parallel to the combined
-/// photo table.
-///
-/// Either side may be empty — that is the documented "no calendar available"
-/// input, and both empty means no table at all (the pre-per-photo-offset
-/// behaviour). A short or over-long table is padded/truncated with the `now`
-/// offset rather than trusted, because the alternative is either a panic inside
-/// a background task or a silent slide of every later photo onto the wrong
-/// offset. Padding with `now` degrades exactly to what a caller that sent no
-/// table would have got.
-fn concat_offsets(
-    ladder: Vec<i32>,
-    placeholders: Vec<i32>,
-    ladder_count: usize,
-    total: usize,
-    now_offset: i32,
-) -> Vec<i32> {
-    if ladder.is_empty() && placeholders.is_empty() {
-        return Vec::new();
-    }
-    let mut out = Vec::with_capacity(total);
-    out.extend(ladder.into_iter().take(ladder_count));
-    out.resize(ladder_count, now_offset);
-    out.extend(placeholders);
-    out.resize(total, now_offset);
-    out
 }
 
 fn date_map(entries: Vec<MemoryDateEntry>) -> HashMap<String, AppleDate> {
@@ -718,7 +655,7 @@ pub fn memory_country_name(code: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scanner::{ScanLocality, ScanTag};
+    use crate::scanner::ScanTag;
 
     fn photo(path: &str, date: Option<f64>, tags: &[&str]) -> ScanPhoto {
         ScanPhoto {
@@ -753,7 +690,6 @@ mod tests {
             gps_latitude: None,
             gps_longitude: None,
             face_regions: Vec::new(),
-            locality: ScanLocality::Local,
         }
     }
 
@@ -761,8 +697,6 @@ mod tests {
         MemoryGenerationInputs {
             photos: Vec::new(),
             photo_time_zone_offsets: Vec::new(),
-            folder_placeholder_photos: Vec::new(),
-            folder_placeholder_time_zone_offsets: Vec::new(),
             leaf_folders: Vec::new(),
             contacts: Vec::new(),
             person_contact_links: Vec::new(),

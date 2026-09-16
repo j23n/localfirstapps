@@ -3,8 +3,8 @@
 //! Wire compatibility with `JSONDiskCache<LibrarySnapshot>` is the whole point
 //! of this module. The failure mode of getting it wrong is quiet: the app
 //! starts, finds a snapshot it cannot decode, evicts it, and does a full
-//! rescan — minutes of provider round-trips, on every launch, with no error
-//! anywhere. `core/fixtures/scan-conformance/library_snapshot_v20.json` is a
+//! rescan on every launch, with no error anywhere.
+//! `core/fixtures/scan-conformance/library_snapshot_v20.json` is a
 //! real file off the real save path, and the round-trip test over it is the
 //! only thing standing between a refactor and that outcome.
 
@@ -61,12 +61,6 @@ pub struct LibrarySnapshot {
 /// One row of the sidecar manifest: which `.xmp` belongs to which photo, and
 /// what version of it the scan saw.
 ///
-/// # Coordination note for the Swift side
-///
-/// `FolderScanner.SidecarCandidate` is not `Codable` today. When it becomes
-/// one, `DownloadStatus` must gain `String` raw values — a Swift enum without
-/// them synthesises `{"local": {}}`, not `"local"`, and this encoder emits the
-/// string.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SidecarCandidate {
     /// The photo the sidecar belongs to.
@@ -78,28 +72,15 @@ pub struct SidecarCandidate {
     /// The sidecar's identity at scan time.
     #[serde(rename = "currentVersion")]
     pub current_version: ContentVersion,
-    /// Whether the sidecar's own bytes are present. Omitted when `local`
-    /// (M4 preferred). Old snapshots still decode via `default`.
-    #[serde(
-        rename = "downloadStatus",
-        default,
-        skip_serializing_if = "DownloadStatus::is_local"
-    )]
-    pub download_status: DownloadStatus,
 }
 
 /// How a file's content is identified without reading it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContentVersion {
-    /// Provider-vended identifier (`fileContentIdentifierKey`). A `String`
-    /// here where Swift has an `Int64`, because SAF and every non-Apple
-    /// provider vend opaque tokens; the bridge stringifies.
-    #[serde(rename = "contentIdentifier", skip_serializing_if = "Option::is_none")]
-    pub content_identifier: Option<String>,
-    /// Modification date, the fallback identity.
+    /// Modification date.
     #[serde(rename = "modificationDate", skip_serializing_if = "Option::is_none")]
     pub modification_date: Option<AppleDate>,
-    /// Size in bytes, the other half of the fallback.
+    /// Size in bytes, the other half of the identity.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<i64>,
 }
@@ -107,49 +88,12 @@ pub struct ContentVersion {
 impl ContentVersion {
     /// Nothing known about this file's identity.
     pub fn is_empty(&self) -> bool {
-        self.content_identifier.is_none() && self.modification_date.is_none() && self.size.is_none()
+        self.modification_date.is_none() && self.size.is_none()
     }
 
-    /// Identifiers win when **both** sides have one; `(mtime, size)` decides
-    /// when neither does; mixed presence is "different", because one side
-    /// knows something the other cannot confirm.
+    /// Size and modification date are the complete identity.
     pub fn same_content(lhs: &ContentVersion, rhs: &ContentVersion) -> bool {
-        match (&lhs.content_identifier, &rhs.content_identifier) {
-            (Some(l), Some(r)) => l == r,
-            (None, None) => lhs.modification_date == rhs.modification_date && lhs.size == rhs.size,
-            _ => false,
-        }
-    }
-}
-
-/// Whether a provider-backed file's bytes are here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DownloadStatus {
-    /// Bytes present.
-    #[default]
-    Local,
-    /// Listing entry only.
-    Placeholder,
-    /// Fetch in flight.
-    Downloading,
-    /// Present but known out of date.
-    Stale,
-}
-
-impl DownloadStatus {
-    fn is_local(&self) -> bool {
-        matches!(self, DownloadStatus::Local)
-    }
-
-    /// The spelling the scanner fixture records.
-    pub fn describe(self) -> &'static str {
-        match self {
-            DownloadStatus::Local => "local",
-            DownloadStatus::Placeholder => "placeholder",
-            DownloadStatus::Downloading => "downloading",
-            DownloadStatus::Stale => "stale",
-        }
+        lhs.modification_date == rhs.modification_date && lhs.size == rhs.size
     }
 }
 
@@ -351,11 +295,9 @@ mod tests {
             photo_id: StableId::for_photo("/lib/a.jpg"),
             sidecar_url: FileUrl::new("/lib/a.jpg.xmp"),
             current_version: ContentVersion {
-                content_identifier: Some("42".into()),
                 modification_date: Some(AppleDate(1.0)),
                 size: Some(200),
             },
-            download_status: DownloadStatus::Local,
         }]);
         let bytes = save(&with).unwrap();
         let text = String::from_utf8(bytes.clone()).unwrap();
@@ -367,19 +309,50 @@ mod tests {
     }
 
     #[test]
-    fn same_content_treats_mixed_identifier_presence_as_different() {
-        let with_id = ContentVersion {
-            content_identifier: Some("7".into()),
+    fn legacy_authority_fields_decode_but_are_never_emitted() {
+        let legacy = br#"{
+            "version":20,
+            "value":{
+                "rootFolder":{
+                    "id":"B0C9352C-1C77-5A21-A12F-CEAD3364C4B4",
+                    "url":"file:///lib",
+                    "name":"lib",
+                    "subfolders":[],
+                    "photos":[],
+                    "totalPhotoCount":0
+                },
+                "allPhotos":[],
+                "sidecarManifest":[{
+                    "photoID":"A64FC6A2-0D0D-558E-ABCC-39606C8BDB04",
+                    "sidecarURL":"file:///lib/a.jpg.xmp",
+                    "currentVersion":{
+                        "contentIdentifier":"legacy-token",
+                        "modificationDate":1,
+                        "size":10
+                    },
+                    "downloadStatus":"placeholder"
+                }]
+            }
+        }"#;
+        let snapshot = load(legacy).unwrap();
+        let bytes = save(&snapshot).unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(!text.contains("contentIdentifier"), "{text}");
+        assert!(!text.contains("downloadStatus"), "{text}");
+    }
+
+    #[test]
+    fn same_content_uses_size_and_modification_date() {
+        let version = ContentVersion {
             modification_date: Some(AppleDate(1.0)),
             size: Some(10),
         };
-        let without = ContentVersion {
-            content_identifier: None,
-            ..with_id.clone()
+        let changed = ContentVersion {
+            modification_date: Some(AppleDate(2.0)),
+            ..version.clone()
         };
-        assert!(ContentVersion::same_content(&with_id, &with_id));
-        assert!(ContentVersion::same_content(&without, &without));
-        assert!(!ContentVersion::same_content(&with_id, &without));
+        assert!(ContentVersion::same_content(&version, &version));
+        assert!(!ContentVersion::same_content(&version, &changed));
         assert!(ContentVersion::default().is_empty());
     }
 }

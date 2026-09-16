@@ -128,8 +128,8 @@ enum LibraryAvailability: Equatable, Sendable {
 @MainActor
 final class GalleryStore {
     /// Interval since the last full scan after which an `.auto` scan
-    /// promotes itself to a full one. The light-scan path skips file-provider
-    /// probes and EXIF re-reads for unchanged files, so we still want a full
+    /// promotes itself to a full one. The light-scan path skips metadata and
+    /// EXIF re-reads for unchanged files, so we still want a full
     /// pass occasionally to catch in-place EXIF edits and missed sidecars.
     /// 48h is the deterministic guarantee — every two days a full scan
     /// happens on the next foreground / pull-to-refresh, transparently.
@@ -196,7 +196,7 @@ final class GalleryStore {
     /// (docs/adr/0002).
     @ObservationIgnored var lastSidecarManifest: [SidecarCandidate] = []
     @ObservationIgnored let bookmarks: BookmarkManager
-    /// The Rust core's folder scanner (local-only; no provider probe).
+    /// The Rust core's folder scanner.
     /// Replaced `FolderScanner`; scan *policy* stays in
     /// `GalleryStore+Scanning.swift`.
     @ObservationIgnored let coreScanner = CoreScanner()
@@ -234,7 +234,7 @@ final class GalleryStore {
     let faces: FaceService
     /// Reverse-geocode GPS into `Places/*` tags. Driven by `analysis`, not a
     /// Settings button of its own.
-    let geocoding: GeocodingService
+    let geocoding: CorePlaces
     /// The single "Scan Photos" run: tagging, then faces, then places.
     let analysis: LibraryAnalysis
     /// Watches the library folder while the app is foregrounded. Directory
@@ -329,7 +329,7 @@ final class GalleryStore {
             cacheDatabaseURL: paths.mlCacheDatabaseURL,
             refresh: sidecarRefresh
         )
-        self.geocoding = GeocodingService(cacheURL: paths.geocodeCacheURL)
+        self.geocoding = CorePlaces(cacheURL: paths.geocodeCacheURL)
         self.analysis = LibraryAnalysis(
             tagging: self.tagging,
             faces: self.faces,
@@ -622,8 +622,8 @@ final class GalleryStore {
         libraryCache.save(LibrarySnapshot(
             rootFolder: root,
             allPhotos: allPhotos,
-            // Rides along so the next launch's light scan can skip the `.xmp`
-            // provider probe for every unchanged photo.
+            // Rides along so the next launch's light scan can reuse `.xmp`
+            // listing metadata for every unchanged photo.
             //
             // `[]` is persisted as `[]`, not folded into `nil`. The two mean
             // different things and only one of them is true here: `nil` is
@@ -1065,15 +1065,7 @@ final class GalleryStore {
     /// foreground catch-up regenerates a memory with the same id so the
     /// widget deep link resolves.
     func exportWidgetSnapshot() {
-        // Widgets read from the App Group container in a separate process —
-        // file-provider placeholders are not guaranteed readable there. Drop
-        // them so the widget never tries to render bytes that aren't local.
-        let widgetPhotos = allPhotos.filter { photo in
-            switch photo.locality {
-            case .local: return true
-            case .remote(let downloaded): return downloaded
-            }
-        }
+        let widgetPhotos = allPhotos
         // Everything the export needs, snapshotted here so the rest of this
         // runs without touching the Store. the horizon grouping: the horizon
         // pass used to run on the main actor and cost ~9 s on a 20k library.
@@ -1174,8 +1166,8 @@ final class GalleryStore {
         thumbnailService.cachedThumbnail(for: url)
     }
 
-    func thumbnail(for url: URL, size: CGSize, isVideo: Bool = false, useQuickLook: Bool = false) async -> UIImage? {
-        await thumbnailService.thumbnail(for: url, size: size, isVideo: isVideo, useQuickLook: useQuickLook)
+    func thumbnail(for url: URL, size: CGSize, isVideo: Bool = false) async -> UIImage? {
+        await thumbnailService.thumbnail(for: url, size: size, isVideo: isVideo)
     }
 
     func faceCrop(for url: URL, region: FaceRegion, cellSize: CGFloat) async -> UIImage? {

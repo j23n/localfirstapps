@@ -16,6 +16,8 @@ use crate::eligibility::{is_places_candidate, places_needed};
 pub struct PlacesSummary {
     /// Photos considered (eligible at the start of the pass).
     pub considered: usize,
+    /// Photos that reached a terminal result before cancellation.
+    pub processed: usize,
     /// Sidecars actually written.
     pub written: usize,
     /// Lookups that returned nothing or already-placed writes.
@@ -24,10 +26,34 @@ pub struct PlacesSummary {
     pub failed: usize,
     /// Paths whose sidecar changed.
     pub written_paths: Vec<String>,
+    /// Per-photo results, in queue order.
+    pub records: Vec<PlaceRecord>,
     /// The run stopped early.
     pub cancelled: bool,
     /// First hard error, if any.
     pub error: Option<String>,
+}
+
+/// One photo's terminal Places result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaceRecord {
+    /// Image path.
+    pub image_path: String,
+    /// Resolved path, when lookup succeeded.
+    pub place_path: Option<String>,
+    /// What happened.
+    pub outcome: PlaceOutcome,
+}
+
+/// Terminal result for one queued photo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlaceOutcome {
+    /// Sidecar bytes changed.
+    Written,
+    /// No lookup result or the sidecar already had an equal/better path.
+    Skipped,
+    /// Authority, lookup, or write failed.
+    Failed(String),
 }
 
 /// Walk `photos`, look up each eligible still, write sidecars.
@@ -65,26 +91,45 @@ pub fn run_places(
             match sidecar_places_needed(vfs, photo.path()) {
                 Ok(true) => {}
                 Ok(false) => {
-                    summary.skipped += 1;
-                    if let Some(cb) = on_progress {
-                        cb(i + 1, total);
-                    }
+                    finish_photo(
+                        &mut summary,
+                        photo.path(),
+                        None,
+                        PlaceOutcome::Skipped,
+                        i,
+                        total,
+                        on_progress,
+                    );
                     continue;
                 }
                 Err(error) => {
-                    summary.failed += 1;
+                    let detail = error.to_string();
                     if summary.error.is_none() {
-                        summary.error = Some(error.to_string());
+                        summary.error = Some(detail.clone());
                     }
-                    if let Some(cb) = on_progress {
-                        cb(i + 1, total);
-                    }
+                    finish_photo(
+                        &mut summary,
+                        photo.path(),
+                        None,
+                        PlaceOutcome::Failed(detail),
+                        i,
+                        total,
+                        on_progress,
+                    );
                     continue;
                 }
             }
         }
         let (Some(lat), Some(lon)) = (photo.gps_latitude, photo.gps_longitude) else {
-            summary.skipped += 1;
+            finish_photo(
+                &mut summary,
+                photo.path(),
+                None,
+                PlaceOutcome::Skipped,
+                i,
+                total,
+                on_progress,
+            );
             continue;
         };
         if cache.nearest(lat, lon).is_none()
@@ -96,35 +141,99 @@ pub fn run_places(
         let request = match resolve(cache, geo, lat, lon) {
             Ok(Some(req)) => req,
             Ok(None) => {
-                summary.skipped += 1;
+                finish_photo(
+                    &mut summary,
+                    photo.path(),
+                    None,
+                    PlaceOutcome::Skipped,
+                    i,
+                    total,
+                    on_progress,
+                );
                 continue;
             }
             Err(GeoError::Retryable(e)) | Err(GeoError::Fatal(e)) => {
-                summary.failed += 1;
                 if summary.error.is_none() {
-                    summary.error = Some(e);
+                    summary.error = Some(e.clone());
                 }
+                finish_photo(
+                    &mut summary,
+                    photo.path(),
+                    None,
+                    PlaceOutcome::Failed(e),
+                    i,
+                    total,
+                    on_progress,
+                );
                 continue;
             }
         };
+        let place_path = Some(request.path.clone());
         match write_places(vfs, photo.path(), &request) {
-            Ok(outcome) if outcome.written => {
-                summary.written += 1;
-                summary.written_paths.push(photo.path().to_string());
-            }
-            Ok(_) => summary.skipped += 1,
+            Ok(outcome) if outcome.written => finish_photo(
+                &mut summary,
+                photo.path(),
+                place_path,
+                PlaceOutcome::Written,
+                i,
+                total,
+                on_progress,
+            ),
+            Ok(_) => finish_photo(
+                &mut summary,
+                photo.path(),
+                place_path,
+                PlaceOutcome::Skipped,
+                i,
+                total,
+                on_progress,
+            ),
             Err(e) => {
-                summary.failed += 1;
+                let detail = e.to_string();
                 if summary.error.is_none() {
-                    summary.error = Some(e.to_string());
+                    summary.error = Some(detail.clone());
                 }
+                finish_photo(
+                    &mut summary,
+                    photo.path(),
+                    place_path,
+                    PlaceOutcome::Failed(detail),
+                    i,
+                    total,
+                    on_progress,
+                );
             }
-        }
-        if let Some(cb) = on_progress {
-            cb(i + 1, total);
         }
     }
     summary
+}
+
+fn finish_photo(
+    summary: &mut PlacesSummary,
+    image_path: &str,
+    place_path: Option<String>,
+    outcome: PlaceOutcome,
+    index: usize,
+    total: usize,
+    on_progress: Option<&dyn Fn(usize, usize)>,
+) {
+    summary.processed += 1;
+    match &outcome {
+        PlaceOutcome::Written => {
+            summary.written += 1;
+            summary.written_paths.push(image_path.to_string());
+        }
+        PlaceOutcome::Skipped => summary.skipped += 1,
+        PlaceOutcome::Failed(_) => summary.failed += 1,
+    }
+    summary.records.push(PlaceRecord {
+        image_path: image_path.to_string(),
+        place_path,
+        outcome,
+    });
+    if let Some(cb) = on_progress {
+        cb(index + 1, total);
+    }
 }
 
 fn row_tags(photo: &PhotoFile) -> impl Iterator<Item = &str> {

@@ -380,57 +380,27 @@ final class CoreLibraryBridgeTests: XCTestCase {
         XCTAssertEqual(liveSame.coverPhotoID, item.memory.coverPhotoID)
     }
 
-    // MARK: - Folder events and cloud placeholders
+    // MARK: - Folder events
 
-    /// A leaf folder whose photos are mostly non-downloaded cloud placeholders.
-    ///
-    /// The engine's scored pool excludes them (no bytes, no sidecar, so no
-    /// tags/GPS/date worth trusting), but the folder-event ladder must still
-    /// see them — the deleted Swift read `folder.photos`, the folder's own
-    /// array, which that filter never touched:
-    ///
-    /// ```swift
-    /// for folder in leafFolders {
-    ///     let withDatesRaw = folder.photos.compactMap { photo -> (PhotoFile, Date)? in
-    ///         guard let date = photo.dateTaken else { return nil }
-    ///         return (photo, date)
-    ///     }.sorted { $0.1 < $1.1 }
-    /// ```
-    ///
-    /// Resolving the members through the filtered pool alone drops this folder
-    /// below the 15-photo floor entirely, so the memory disappears — and a
-    /// folder that stayed above it would come back with a different photo list,
-    /// a different `ids[count / 3]` cover and a different subtitle under an
-    /// unchanged `folder-<id>` id.
-    private func novemberFolder() -> (all: [PhotoFile], live: [PhotoFile], placeholders: [PhotoFile], folder: PhotoFolder) {
+    private func novemberFolder() -> (photos: [PhotoFile], folder: PhotoFolder) {
         let all = (0..<20).map { i -> PhotoFile in
-            var photo = PhotoFile.fixture(
+            PhotoFile.fixture(
                 url: URL(fileURLWithPath: "/fixtures/lib/November/\(String(format: "%02d", i)).jpg"),
                 dateTaken: MemoriesConformance.utc(2019, 11, 5, 10, i * 2)
             )
-            // Interleaved rather than appended: the folder's listing order is
-            // what `photoIDs` records, so a placeholder in the middle is what
-            // moves the `count / 3` cover.
-            photo.locality = i % 5 < 2 ? .local : .remote(downloaded: false)
-            return photo
         }
         let folder = PhotoFolder.fixture(
             url: URL(fileURLWithPath: "/fixtures/lib/November"),
             name: "November",
             photos: all
         )
-        return (all,
-                all.filter { $0.locality == .local },
-                all.filter { $0.locality != .local },
-                folder)
+        return (all, folder)
     }
 
-    func testAFolderEventKeepsItsCloudPlaceholders() async {
+    func testAFolderEventUsesItsPhotoTable() async {
         let f = novemberFolder()
-        XCTAssertEqual(f.live.count, 8, "under the 15-photo floor on its own")
         let memories = await CoreMemories.generate(CoreMemories.Inputs(
-            photos: f.live,
-            folderPlaceholderPhotos: f.placeholders,
+            photos: f.photos,
             leafFolders: [f.folder],
             now: MemoriesConformance.utc(2020, 3, 1, 12, 0),
             seed: "2020-03-01"
@@ -438,27 +408,12 @@ final class CoreLibraryBridgeTests: XCTestCase {
         guard let event = memories.first(where: { $0.type == .folderEvent }) else {
             return XCTFail("the folder event was dropped: \(memories.map(\.id))")
         }
-        XCTAssertEqual(event.photoIDs, f.all.map(\.id), "membership is the folder's own")
-        XCTAssertEqual(event.coverPhotoID, f.all[f.all.count / 3].id)
+        XCTAssertEqual(event.photoIDs, f.photos.map(\.id), "membership is the folder's own")
+        XCTAssertEqual(event.coverPhotoID, f.photos[f.photos.count / 3].id)
         XCTAssertEqual(event.subtitle, "Nov 5, 2019 · 20 photos")
     }
 
-    /// The same call without the placeholders — the shape the bridge had before
-    /// this fix — produces no folder event at all.
-    func testWithholdingThePlaceholdersDeletesTheFolderEvent() async {
-        let f = novemberFolder()
-        let memories = await CoreMemories.generate(CoreMemories.Inputs(
-            photos: f.live,
-            leafFolders: [f.folder],
-            now: MemoriesConformance.utc(2020, 3, 1, 12, 0),
-            seed: "2020-03-01"
-        ))
-        XCTAssertFalse(memories.contains { $0.type == .folderEvent })
-    }
-
-    /// And the coordinator is the thing that has to supply them, so the split
-    /// is asserted where it is actually made rather than only at the FFI.
-    func testTheCoordinatorRoutesPlaceholdersToTheFolderLadder() async {
+    func testTheCoordinatorRoutesPhotosToTheFolderLadder() async {
         let f = novemberFolder()
         let harness = TestGalleryStore.make(
             clock: FixedClock(date: MemoriesConformance.utc(2020, 3, 1, 12, 0))
@@ -467,7 +422,7 @@ final class CoreLibraryBridgeTests: XCTestCase {
         let coordinator = harness.store.memories
         coordinator.makeInputs = {
             MemoryCoordinator.GenerationInputs(
-                photos: f.all,
+                photos: f.photos,
                 leafFolders: [f.folder],
                 contacts: [],
                 personContactLinks: [:],

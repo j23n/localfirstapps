@@ -8,14 +8,14 @@ import os
 ///
 /// The reads themselves are the Rust core's (`gallery-meta`), reached through
 /// `readImageMetadata` / `readVideoDate`. This file owns the
-/// scheduling — the task group, the semaphore, the progress throttle, the
-/// placeholder skip — and nothing about parsing.
+/// scheduling — the task group, semaphore, and progress throttle — and
+/// nothing about parsing.
 enum EnrichmentService {
 
     /// Pick the earlier of creation/modification dates.
     ///
     /// Handles AirDrop and chat-saved files where the original modDate is
-    /// preserved but `creationDate` reflects the download time on this volume.
+    /// preserved but `creationDate` reflects the arrival time on this volume.
     /// Lived on `MetadataReader` until that type moved into the core; it stays
     /// in Swift because the two dates it compares are read here, from
     /// `URLResourceValues`, and shipping a `min()` across the FFI would be
@@ -99,7 +99,7 @@ enum EnrichmentService {
 
         if photo.isVideo {
             // Videos: prefer the embedded capture date over filesystem dates,
-            // which often reflect the download/AirDrop time rather than when
+            // which often reflect the transfer/AirDrop time rather than when
             // the video was actually recorded.
             //
             // The core reads `moov/udta/©day` itself rather than opening an
@@ -246,9 +246,8 @@ enum EnrichmentService {
             onProgress?(0, staleTotal)
 
             // Bound the concurrent CGImageSource / sidecar reads — executor
-            // width caps CPU parallelism anyway, but on provider-backed
-            // volumes a free-for-all saturates I/O. Same gate the sidecar
-            // sync (8) and thumbnail decodes (4) use.
+            // width caps CPU parallelism anyway, but a free-for-all saturates
+            // I/O. Same gate the sidecar sync (8) and thumbnail decodes (4) use.
             let limiter = AsyncSemaphore(limit: 8)
 
             // Enrich stale photos in parallel via TaskGroup. Pre-extract
@@ -261,24 +260,6 @@ enum EnrichmentService {
                     let photo = result[idx]
                     group.addTask {
                         guard !Task.isCancelled else { return nil }
-
-                        // A leftover `.remote` row from an old snapshot has
-                        // no guaranteed bytes. Skip the read and keep the
-                        // cached dates; tags/GPS come from the sidecar
-                        // cache. New scans do not produce this case.
-                        if case .remote(downloaded: false) = photo.locality {
-                            return EnrichedResult(
-                                index: idx,
-                                dateTaken: photo.dateTaken,
-                                dateFromMetadata: photo.dateFromMetadata,
-                                hierarchicalTags: photo.hierarchicalTags,
-                                countryCode: photo.countryCode,
-                                gpsLatitude: photo.gpsLatitude,
-                                gpsLongitude: photo.gpsLongitude,
-                                enrichedFileDate: photo.fileModificationDate ?? Date(),
-                                faceRegions: photo.faceRegions
-                            )
-                        }
 
                         await limiter.acquire()
                         defer { Task { await limiter.release() } }

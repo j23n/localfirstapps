@@ -31,41 +31,50 @@ final class SidecarRefreshService {
         // Re-probe every known sidecar URL. The persisted manifest can be
         // hours old; trusting its versions would skip a changed `.xmp` or
         // try to fetch one that is already gone.
-        let (fresh, gone) = Self.refreshedManifest(store.lastSidecarManifest)
-        store.lastSidecarManifest = fresh
-        if !gone.isEmpty {
-            Log.bg.info("Sidecar re-probe: \(gone.count) sidecar(s) gone from disk")
+        let refreshed: (manifest: [SidecarCandidate], gone: Set<UUID>)
+        do {
+            refreshed = try Self.refreshedManifest(store.lastSidecarManifest)
+        } catch {
+            Log.bg.error("Sidecar re-probe failed: \(Log.r.error(error))")
+            return
+        }
+        store.lastSidecarManifest = refreshed.manifest
+        if !refreshed.gone.isEmpty {
+            Log.bg.info("Sidecar re-probe: \(refreshed.gone.count) sidecar(s) gone from disk")
         }
 
         // Auto-approve in BG — we can't surface a UI prompt from here.
         // Background hard limits still apply.
         let allIDs = Set(store.allPhotos.map(\.id))
         await store.sidecarSync.planAndRun(
-            manifest: fresh,
+            manifest: refreshed.manifest,
             allPhotoIDs: allIDs,
             autoApprove: true,
             policy: .background,
-            listing: SidecarSyncService.Listing(isComplete: false, confirmedGone: gone)
+            listing: SidecarSyncService.Listing(
+                isComplete: false,
+                confirmedGone: refreshed.gone
+            )
         )
     }
 
     /// Re-stat each candidate. Missing files become `gone`; surviving ones
     /// carry a fresh `ContentVersion` so the diff cannot trust a stale
-    /// prior manifest. Injectable filesystem so tests do not need a provider.
+    /// prior manifest. Filesystem probes are injectable for deterministic tests.
     nonisolated static func refreshedManifest(
         _ manifest: [SidecarCandidate],
         versionOf: @Sendable (URL) -> ContentVersion = {
             ContentVersion.ofFile(at: $0)
         },
-        fileExists: @Sendable (URL) -> Bool = {
-            FileManager.default.fileExists(atPath: $0.path)
+        fileExists: @Sendable (URL) throws -> Bool = {
+            try authoritativeExists($0)
         }
-    ) -> (manifest: [SidecarCandidate], gone: Set<UUID>) {
+    ) throws -> (manifest: [SidecarCandidate], gone: Set<UUID>) {
         var fresh: [SidecarCandidate] = []
         var gone: Set<UUID> = []
         fresh.reserveCapacity(manifest.count)
         for candidate in manifest {
-            guard fileExists(candidate.sidecarURL) else {
+            guard try fileExists(candidate.sidecarURL) else {
                 gone.insert(candidate.photoID)
                 continue
             }
@@ -75,11 +84,28 @@ final class SidecarRefreshService {
                 SidecarCandidate(
                     photoID: candidate.photoID,
                     sidecarURL: candidate.sidecarURL,
-                    currentVersion: version,
-                    downloadStatus: candidate.downloadStatus
+                    currentVersion: version
                 )
             )
         }
         return (fresh, gone)
+    }
+
+    /// `false` means the path is missing. Permission and other I/O failures
+    /// remain errors so background refresh cannot erase an authoritative row.
+    private nonisolated static func authoritativeExists(_ url: URL) throws -> Bool {
+        do {
+            _ = try FileManager.default.attributesOfItem(atPath: url.path)
+            return true
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain,
+               nsError.code == CocoaError.fileNoSuchFile.rawValue
+                || nsError.code == CocoaError.fileReadNoSuchFile.rawValue
+            {
+                return false
+            }
+            throw error
+        }
     }
 }

@@ -7,8 +7,8 @@
 //! ```
 //!
 //! Prints the same counters CoreScanner logs (`files`, `folders`, `list`,
-//! `hits`, `slow`, `probe`). The walk is `localcore-walk` via `gallery-scan`
-//! over `StdVfs`. `probe` is always 0 (local-only). Not CI-gated.
+//! `hits`, `slow`). The walk is `localcore-walk` via `gallery-scan` over
+//! `StdVfs`. Not CI-gated.
 
 use std::env;
 use std::path::Path;
@@ -30,15 +30,13 @@ fn main() -> ExitCode {
     let outcome = scan(&StdVfs::new(), &root, &ScanInput::default());
     let s = outcome.stats;
     let list_ms = s.list_micros / 1000;
-    let probe_ms = s.probe_micros / 1000;
     println!(
-        "Scan totals: {} files in {} folders, list={}ms hits={} slow={} probe={}",
+        "Scan totals: {} files in {} folders, list={}ms hits={} slow={}",
         outcome.flat_photos.len(),
         s.folders,
         list_ms,
         s.cache_hits,
         s.slow_path,
-        probe_ms,
     );
     ExitCode::SUCCESS
 }

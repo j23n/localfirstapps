@@ -15,9 +15,7 @@ final class GalleryStoreRuntimeStateTests: XCTestCase {
     func testClearingSidecarCacheResetsIndexAndTree() {
         let h = makeHarness()
         var photo = PhotoFile.fixture(url: h.tempDir.appending("photo.jpg"))
-        photo.sidecarStatus = .cached(ContentVersion(
-            contentIdentifier: "v1", modificationDate: nil, size: 8
-        ))
+        photo.sidecarStatus = .cached(ContentVersion(size: 8))
         let folder = PhotoFolder.fixture(url: h.tempDir.url, photos: [photo])
         h.store.apply(.scanResult(photos: [photo], root: folder, persistCache: false))
         XCTAssertEqual(h.store.photo(byID: photo.id)?.sidecarStatus, photo.sidecarStatus)

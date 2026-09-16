@@ -226,7 +226,7 @@ pub enum ErrorCode {
     None = 0,
     /// The file disappeared between enqueue and run.
     NotFound = 1,
-    /// Read failed (permissions, cloud placeholder, IO error).
+    /// Read failed (permissions or another I/O error).
     Io = 2,
     /// The extension or magic bytes are not a format v1 decodes.
     UnsupportedFormat = 3,

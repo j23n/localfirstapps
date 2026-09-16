@@ -21,7 +21,7 @@ final class LibraryAnalysisTests: XCTestCase {
             cacheDatabaseURL: temp.appending("gallery-cache.sqlite"),
             refresh: SidecarRefreshCoalescer(interval: FaceService.refreshInterval)
         )
-        let places = GeocodingService(cacheURL: temp.appending("geocode-cache.json"))
+        let places = CorePlaces(cacheURL: temp.appending("geocode-cache.json"))
         return LibraryAnalysis(tagging: tagging, faces: faces, places: places)
     }
 
@@ -70,7 +70,7 @@ final class LibraryAnalysisTests: XCTestCase {
         )
         var checks = 0
         faces.ensurePackChecked = { checks += 1 }
-        let places = GeocodingService(cacheURL: temp.appending("geocode-cache.json"))
+        let places = CorePlaces(cacheURL: temp.appending("geocode-cache.json"))
         let analysis = LibraryAnalysis(tagging: tagging, faces: faces, places: places)
         analysis.photos = { [] }
 
@@ -92,20 +92,7 @@ final class LibraryAnalysisTests: XCTestCase {
             cacheDatabaseURL: temp.appending("gallery-cache.sqlite"),
             refresh: SidecarRefreshCoalescer(interval: FaceService.refreshInterval)
         )
-        let places = GeocodingService(cacheURL: temp.appending("geocode-cache.json"))
-        places.wait = { _ in }
-        places.lookup = { lat, lon in
-            GeocodingService.CacheEntry(
-                latitude: lat,
-                longitude: lon,
-                path: "Places/France/Paris",
-                country: "France",
-                state: nil,
-                city: "Paris",
-                sublocation: nil,
-                countryCode: "FR"
-            )
-        }
+        let places = CorePlaces(cacheURL: temp.appending("geocode-cache.json"))
         let photoURL = temp.appending("eiffel.jpg")
         XCTAssertTrue(FileManager.default.createFile(atPath: photoURL.path, contents: Data("jpeg".utf8)))
         let photo = PhotoFile.fixture(url: photoURL, gps: (lat: 48.8584, lon: 2.2945))
@@ -130,26 +117,16 @@ final class LibraryAnalysisTests: XCTestCase {
         XCTAssertEqual(run.activity.entries.count, 1)
         XCTAssertEqual(run.activity.entries.first?.filename, "eiffel.jpg")
         XCTAssertEqual(run.activity.entries.first?.phase, .places)
-        XCTAssertEqual(run.activity.entries.first?.tags, ["Places/France/Paris"])
+        XCTAssertTrue(
+            run.activity.entries.first?.tags.contains(where: {
+                $0.hasPrefix("Places/France") && $0.hasSuffix("/Paris")
+            }) == true
+        )
     }
 
     func testForcePlacesReconsidersAnAlreadyPlacedPhoto() async throws {
         let temp = makeTemp()
-        let analysis = makeAnalysis(temp)
-        let places = GeocodingService(cacheURL: temp.appending("geocode-cache.json"))
-        places.wait = { _ in }
-        places.lookup = { lat, lon in
-            GeocodingService.CacheEntry(
-                latitude: lat,
-                longitude: lon,
-                path: "Places/France/Paris",
-                country: "France",
-                state: nil,
-                city: "Paris",
-                sublocation: nil,
-                countryCode: "FR"
-            )
-        }
+        let places = CorePlaces(cacheURL: temp.appending("geocode-cache.json"))
         let tagging = TaggingService(
             cacheDatabaseURL: temp.appending("gallery-cache.sqlite"),
             modelPacksDirectory: temp.appending("ModelPacks", isDirectory: true),
@@ -172,11 +149,8 @@ final class LibraryAnalysisTests: XCTestCase {
         }
 
         await run.start()
-        XCTAssertEqual(
-            run.lastSummary,
-            LibraryAnalysis.Summary(),
-            "a Places name already on the library row is not the Scan work queue"
-        )
+        XCTAssertEqual(run.lastSummary?.places?.processed, 0)
+        XCTAssertEqual(run.lastSummary?.places?.written, 0)
 
         await run.start(phases: [.places], force: true)
         XCTAssertEqual(run.lastSummary?.places?.written, 1)
@@ -197,11 +171,8 @@ final class LibraryAnalysisTests: XCTestCase {
         }
 
         await run.start()
-        XCTAssertEqual(
-            run.lastSummary,
-            LibraryAnalysis.Summary(),
-            "a rescan-loaded city-depth Places name must not put the photo back up for places"
-        )
+        XCTAssertEqual(run.lastSummary?.places?.processed, 0)
+        XCTAssertEqual(run.lastSummary?.places?.written, 0)
     }
 
     func testProgressCountTextIsTheCurrentPhaseWorkQueue() {

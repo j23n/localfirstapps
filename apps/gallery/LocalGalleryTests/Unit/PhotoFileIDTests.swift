@@ -72,9 +72,8 @@ final class PhotoFileIDTests: XCTestCase {
         photo.photoTools = PhotoToolsMetadata(facePack: "buffalo_sc-2026.1", faceTaggedAt: "2026-01-01T00:00:00Z")
         photo.faceDecisions = ["named-below-floor"]
         photo.sidecarOnDisk = true
-        photo.locality = .remote(downloaded: true)
         photo.sidecarStatus = .cached(ContentVersion(
-            contentIdentifier: "cid", modificationDate: date(2024, 2, 1), size: 12
+            modificationDate: date(2024, 2, 1), size: 12
         ))
         photo.dimensions = CGSize(width: 4032, height: 3024)
         photo.exif = EXIFData(cameraMake: "Leica", cameraModel: "Q2", lens: nil, aperture: 1.7, shutterSpeed: 0.01, iso: 200, gpsLatitude: 41.9, gpsLongitude: 12.5, dateTimeOriginal: date(2019, 6, 11), pixelWidth: 4032, pixelHeight: 3024)
@@ -99,7 +98,6 @@ final class PhotoFileIDTests: XCTestCase {
         XCTAssertEqual(moved.photoTools, photo.photoTools)
         XCTAssertEqual(moved.faceDecisions, photo.faceDecisions)
         XCTAssertEqual(moved.sidecarOnDisk, photo.sidecarOnDisk)
-        XCTAssertEqual(moved.locality, photo.locality)
         XCTAssertEqual(moved.sidecarStatus, photo.sidecarStatus)
         XCTAssertEqual(moved.dimensions, photo.dimensions)
         XCTAssertEqual(moved.exif, photo.exif)

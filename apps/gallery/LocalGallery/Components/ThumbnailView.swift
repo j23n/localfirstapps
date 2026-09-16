@@ -6,13 +6,6 @@ struct ThumbnailView: View {
     var isVideo: Bool = false
     var isLivePhoto: Bool = false
     var cornerRadius: CGFloat = 0
-    /// True when the URL is a file-provider placeholder (bytes not yet on
-    /// disk). Drives the remote badge + the QuickLook thumbnail fallback.
-    /// Callers pass `photo.locality.isRemotePlaceholder`; pure-URL call sites
-    /// (folder covers etc.) accept the default. Pre-resolving this here
-    /// avoids a per-cell `URLResourceValues` syscall on the main thread —
-    /// that was stuttering scroll on the 20k All Photos grid.
-    var isRemote: Bool = false
     @Environment(GalleryStore.self) private var store
     @State private var thumbnail: UIImage?
     @State private var thumbnailMissing: Bool = false
@@ -27,9 +20,8 @@ struct ThumbnailView: View {
                     .clipped()
                     .transition(.opacity)
             } else if thumbnailMissing {
-                // Load finished with nothing to show — provider didn't vend
-                // a thumb, or the local source file is gone. Same glyph tile
-                // either way so the cell doesn't shimmer forever.
+                // Load finished with nothing to show. Use a stable glyph tile
+                // so the cell does not shimmer forever.
                 Rectangle()
                     .fill(Color(.systemGray6))
                     .frame(width: size, height: size)
@@ -75,8 +67,7 @@ struct ThumbnailView: View {
             let result = await store.thumbnail(
                 for: url,
                 size: CGSize(width: size, height: size),
-                isVideo: isVideo,
-                useQuickLook: isRemote
+                isVideo: isVideo
             )
             self.thumbnail = result
             self.thumbnailMissing = (result == nil)

@@ -6,9 +6,9 @@
 //! cannot decode identically turns a warm relaunch into a full rescan.
 //!
 //! Everything Swift's hand-written `Codable` drops is dropped here too, and for
-//! the same reason: [`PhotoFile::locality`] and [`PhotoFile::sidecar_status`]
-//! are runtime state, not library content. They come back as
-//! `local` / `absent` after a round trip, which the fixture proves on purpose.
+//! the same reason: [`PhotoFile::sidecar_status`] is runtime state, not library
+//! content. It comes back as `absent` after a round trip, which the fixture
+//! proves on purpose.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -167,30 +167,6 @@ pub struct FaceRegion {
     pub height: f64,
 }
 
-/// Where a photo's bytes live. Runtime state — **never persisted**.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PhotoLocality {
-    /// Readable from disk right now.
-    #[default]
-    Local,
-    /// Provider-backed. `downloaded: false` is the placeholder state.
-    Remote {
-        /// Whether the bytes have been materialised.
-        downloaded: bool,
-    },
-}
-
-impl PhotoLocality {
-    /// The spelling the scanner fixture records (`local` /
-    /// `remote(downloaded: false)`).
-    pub fn describe(self) -> String {
-        match self {
-            PhotoLocality::Local => "local".to_string(),
-            PhotoLocality::Remote { downloaded } => format!("remote(downloaded: {downloaded})"),
-        }
-    }
-}
-
 /// Whether a parsed copy of the photo's sidecar is cached. Runtime state —
 /// **never persisted**. The scanner only ever emits `Absent`; the sidecar sync
 /// pass is what promotes it.
@@ -271,9 +247,6 @@ pub struct PhotoFile {
     #[serde(rename = "faceRegions", default)]
     pub face_regions: Vec<FaceRegion>,
 
-    /// Not in `CodingKeys`: dropped on save, `Local` after a load.
-    #[serde(skip, default)]
-    pub locality: PhotoLocality,
     /// Not in `CodingKeys`: dropped on save, `Absent` after a load.
     #[serde(skip, default)]
     pub sidecar_status: SidecarStatus,
@@ -299,7 +272,6 @@ impl PhotoFile {
             gps_latitude: None,
             gps_longitude: None,
             face_regions: Vec::new(),
-            locality: PhotoLocality::Local,
             sidecar_status: SidecarStatus::Absent,
         }
     }
@@ -403,14 +375,11 @@ mod tests {
     #[test]
     fn runtime_only_state_never_reaches_the_wire() {
         let mut photo = PhotoFile::new("/a/b.jpg", "b", 1);
-        photo.locality = PhotoLocality::Remote { downloaded: false };
         photo.sidecar_status = SidecarStatus::Cached;
         let json = serde_json::to_string(&photo).unwrap();
-        assert!(!json.contains("locality"));
         assert!(!json.contains("sidecar"));
 
         let back: PhotoFile = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.locality, PhotoLocality::Local);
         assert_eq!(back.sidecar_status, SidecarStatus::Absent);
     }
 

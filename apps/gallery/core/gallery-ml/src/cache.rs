@@ -682,7 +682,9 @@ fn quarantine_derived_cache(path: &Path, cause: &MlError) -> MlResult<()> {
 
     let mut moved = Vec::new();
     for src in sources {
-        if !src.exists() {
+        if !src.try_exists().map_err(|error| MlError::Cache {
+            detail: format!("inspect quarantine source {}: {error}", src.display()),
+        })? {
             continue;
         }
         let name = src.file_name().unwrap_or_default().to_string_lossy();
