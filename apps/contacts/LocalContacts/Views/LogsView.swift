@@ -1,12 +1,13 @@
 import SwiftUI
 import UIKit
+import ShellKitSwift
 
 /// In-app log viewer. Reads from `LogStore.shared`, which the `TeeLogger`
 /// wrapper in `Logging.swift` populates from every `Log.<category>.<level>`
 /// call. Supports level filter, text search, follow-tail toggle, copy, and
 /// share-as-file. Reachable from Settings → Diagnostics.
 struct LogsView: View {
-    @State private var filterLevel: LogStore.Entry.Level? = nil
+    @State private var filterLevels: Set<String> = []
     @State private var searchText = ""
     @State private var isFollowing = true
     @State private var showCopyAlert = false
@@ -22,7 +23,9 @@ struct LogsView: View {
     private var filteredEntries: [LogStore.Entry] {
         let needle = searchText.lowercased()
         return logStore.entries.filter { entry in
-            if let level = filterLevel, entry.level != level { return false }
+            if !filterLevels.isEmpty && !filterLevels.contains(entry.level.rawValue) {
+                return false
+            }
             if !needle.isEmpty {
                 return entry.message.lowercased().contains(needle)
                     || entry.category.lowercased().contains(needle)
@@ -31,18 +34,24 @@ struct LogsView: View {
         }
     }
 
-    private var levelColors: [LogStore.Entry.Level: Color] {
-        [.debug: .blue, .info: .green, .warning: .orange, .error: .red]
-    }
-
     var body: some View {
         contentBody
             .navigationTitle("Logs")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always),
-                        prompt: "Filter by message or category")
+            .shellSearch(text: $searchText, data: .init(prompt: "Filter by message or category"))
             .onAppear { isFollowing = true }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShellFilterMenu(
+                        .init(
+                            label: "Filter level",
+                            options: LogStore.Entry.Level.allCases.map { level in
+                                ShellFilterOption(id: level.rawValue, label: level.displayName)
+                            }
+                        ),
+                        selection: $filterLevels
+                    )
+                }
                 ToolbarItem(placement: .topBarTrailing) { actionsMenu }
             }
             .alert("Copied", isPresented: $showCopyAlert) {
@@ -57,29 +66,6 @@ struct LogsView: View {
             } label: {
                 Label(isFollowing ? "Stop auto-scrolling" : "Auto-scroll to latest",
                       systemImage: isFollowing ? "arrow.down.circle.fill" : "arrow.down.circle")
-            }
-            Menu {
-                Button {
-                    filterLevel = nil
-                } label: {
-                    HStack {
-                        if filterLevel == nil { Image(systemName: "checkmark") }
-                        Text("All")
-                    }
-                }
-                Divider()
-                ForEach(LogStore.Entry.Level.allCases, id: \.self) { level in
-                    Button {
-                        filterLevel = level
-                    } label: {
-                        HStack {
-                            if filterLevel == level { Image(systemName: "checkmark") }
-                            Text(level.displayName)
-                        }
-                    }
-                }
-            } label: {
-                Label("Filter level", systemImage: "line.3.horizontal.decrease.circle")
             }
             Divider()
             Button {
@@ -116,9 +102,10 @@ struct LogsView: View {
 
     @ViewBuilder
     private var logsList: some View {
-        List(filteredEntries, id: \.id) { entry in
-            logListRow(for: entry)
-                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+        ShellList {
+            ForEach(filteredEntries) { entry in
+                logListRow(for: entry)
+            }
         }
         .listStyle(.plain)
         .scrollPosition($scrollPosition)
@@ -135,44 +122,17 @@ struct LogsView: View {
     }
 
     private func logListRow(for entry: LogStore.Entry) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle()
-                .fill(levelColors[entry.level] ?? .gray)
-                .frame(width: 7, height: 7)
-                .padding(.top, 6)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(Self.timeFormatter.string(from: entry.timestamp))
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.secondary)
-
-                    Text(entry.category)
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
-
-                    if entry.repeatCount > 1 {
-                        Text("×\(entry.repeatCount)")
-                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.orange)
-                    }
-
-                    Spacer()
-
-                    Text(entry.level.displayName)
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(levelColors[entry.level] ?? .gray)
-                }
-
-                Text(entry.message)
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        let time = Self.timeFormatter.string(from: entry.timestamp)
+        let trailing = entry.repeatCount > 1
+            ? "\(entry.level.displayName) ×\(entry.repeatCount)"
+            : entry.level.displayName
+        return ShellTextRow(
+            .init(
+                title: entry.message,
+                subtitle: "\(time)  \(entry.category)",
+                trailingValue: trailing
+            )
+        )
     }
 
     private func presentShareSheet() {

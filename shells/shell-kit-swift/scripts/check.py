@@ -26,6 +26,58 @@ VOCABULARY_TABLES = {
     "status_severities": "StatusSeverity",
 }
 
+CONTACTS_VIEWS = REPO / "apps/contacts/LocalContacts/Views"
+MUSIC_VIEWS = REPO / "apps/music/LocalMusic/Views"
+
+# Two-app production intersection. Losing either consumer is a defect.
+TWO_APP_BINDINGS = (
+    "ShellSettings",
+    "ShellList",
+    "ShellTextRow",
+    "ShellActionRow",
+    "ShellNavRow",
+    "ShellFilterMenu",
+    ".shellSearch(",
+    ".shellConfirmation(",
+)
+
+# Production on Contacts only. Music has no matching form/status screen.
+CONTACTS_ONLY_BINDINGS = (
+    "ShellForm",
+    "ShellFieldRow",
+    "ShellStatusRow",
+)
+
+# Hand-written public types. Generated kinds are checked separately.
+# A new public struct/enum here without an allowlist entry is a defect.
+KNOWN_PUBLIC_TYPES = {
+    "ShellActionDispatch",
+    "ShellActionRow",
+    "ShellActionRowData",
+    "ShellBindingDisposition",
+    "ShellChartRow",
+    "ShellChartRowData",
+    "ShellConfirmData",
+    "ShellFieldRow",
+    "ShellFieldRowData",
+    "ShellFilterData",
+    "ShellFilterMenu",
+    "ShellFilterOption",
+    "ShellFilterSelection",
+    "ShellForm",
+    "ShellKitCoverage",
+    "ShellList",
+    "ShellNavRow",
+    "ShellNavRowData",
+    "ShellSearchData",
+    "ShellSettings",
+    "ShellStatusRow",
+    "ShellStatusRowData",
+    "ShellTextRow",
+    "ShellTextRowData",
+    "ShellTokens",
+}
+
 
 def camel(raw: str) -> str:
     parts = raw.replace("_", "-").split("-")
@@ -68,6 +120,57 @@ def vocabulary_errors(
                     f"KindCoverage.swift: {enum_name}.{identifier} "
                     "must have exactly one exhaustive switch arm"
                 )
+    return errors
+
+
+def view_corpus(root: Path) -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(root.glob("*.swift"))
+    )
+
+
+def public_type_names(sources: dict[str, str]) -> set[str]:
+    names: set[str] = set()
+    for path, body in sources.items():
+        if path.startswith("Sources/ShellKitSwift/Generated/"):
+            continue
+        names.update(re.findall(r"(?m)^public (?:struct|enum) (\w+)", body))
+    return names
+
+
+def reuse_errors(contacts_views: str, music_views: str) -> list[str]:
+    errors: list[str] = []
+    for needle in TWO_APP_BINDINGS:
+        if needle not in contacts_views:
+            errors.append(
+                f"Contacts views lost two-app binding {needle}"
+            )
+        if needle not in music_views:
+            errors.append(
+                f"Music views lost two-app binding {needle}"
+            )
+    for needle in CONTACTS_ONLY_BINDINGS:
+        if needle not in contacts_views:
+            errors.append(
+                f"Contacts views lost production binding {needle}"
+            )
+    return errors
+
+
+def public_binding_errors(sources: dict[str, str]) -> list[str]:
+    found = public_type_names(sources)
+    errors: list[str] = []
+    extra = found - KNOWN_PUBLIC_TYPES
+    missing = KNOWN_PUBLIC_TYPES - found
+    for name in sorted(extra):
+        errors.append(
+            f"new public binding {name} has no check.py inventory entry"
+        )
+    for name in sorted(missing):
+        errors.append(
+            f"inventoried public binding {name} is missing from sources"
+        )
     return errors
 
 
@@ -139,6 +242,14 @@ def check() -> list[str]:
             "shared confirmation binding missing"
         )
 
+    errors.extend(public_binding_errors(source_bodies))
+    errors.extend(
+        reuse_errors(
+            view_corpus(CONTACTS_VIEWS),
+            view_corpus(MUSIC_VIEWS),
+        )
+    )
+
     return errors
 
 
@@ -170,6 +281,27 @@ def self_test() -> None:
     assert vocabulary_errors(
         vocabulary, generated, "switch kind {\ncase .list:\n.shared\n}\n"
     ) == []
+
+    lost = reuse_errors("ShellSettings", "ShellList")
+    assert any("Contacts views lost two-app binding" in item for item in lost)
+    assert any("Music views lost two-app binding" in item for item in lost)
+    assert reuse_errors(
+        "\n".join(TWO_APP_BINDINGS + CONTACTS_ONLY_BINDINGS),
+        "\n".join(TWO_APP_BINDINGS),
+    ) == []
+
+    extras = public_binding_errors(
+        {"Sources/ShellKitSwift/Rows.swift": "public struct ShellMystery: View {}\n"}
+    )
+    assert (
+        "new public binding ShellMystery has no check.py inventory entry"
+        in extras
+    )
+    missing = public_binding_errors({"Sources/ShellKitSwift/Rows.swift": ""})
+    assert any(
+        "inventoried public binding ShellTextRow is missing" in item
+        for item in missing
+    )
 
 
 def main() -> int:

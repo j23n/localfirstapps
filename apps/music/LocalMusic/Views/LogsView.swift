@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
+import ShellKitSwift
 
 struct LogsView: View {
-    @State private var filterLevel: LogStore.Entry.Level? = nil
+    @State private var filterLevels: Set<String> = []
     @State private var searchText = ""
     @State private var isFollowing = true
     @State private var showCopyAlert = false
@@ -17,7 +18,9 @@ struct LogsView: View {
     private var filteredEntries: [LogStore.Entry] {
         let needle = searchText.lowercased()
         return logStore.entries.filter { entry in
-            if let level = filterLevel, entry.level != level { return false }
+            if !filterLevels.isEmpty && !filterLevels.contains(entry.level.rawValue) {
+                return false
+            }
             if !needle.isEmpty {
                 return entry.messageLowercased.contains(needle)
                     || entry.categoryLowercased.contains(needle)
@@ -26,21 +29,25 @@ struct LogsView: View {
         }
     }
 
-    private var levelColors: [LogStore.Entry.Level: Color] {
-        [.debug: .blue, .info: .green, .warning: .orange, .error: .red]
-    }
-
     var body: some View {
         contentBody
             .navigationTitle("Logs")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier(MusicScreen.logs.rawValue)
-            .searchable(text: $searchText,
-                        placement: .navigationBarDrawer(displayMode: .always),
-                        prompt: "Filter by message or category")
+            .shellSearch(text: $searchText, data: .init(prompt: "Filter by message or category"))
             .onAppear { isFollowing = true }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { filterMenu }
+                ToolbarItem(placement: .topBarLeading) {
+                    ShellFilterMenu(
+                        .init(
+                            label: "Filter level",
+                            options: LogStore.Entry.Level.allCases.map { level in
+                                ShellFilterOption(id: level.rawValue, label: level.displayName)
+                            }
+                        ),
+                        selection: $filterLevels
+                    )
+                }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
@@ -90,9 +97,11 @@ struct LogsView: View {
     @ViewBuilder
     private var logsList: some View {
         ScrollViewReader { proxy in
-            List(filteredEntries, id: \.id) { entry in
-                logListRow(for: entry)
-                    .id(entry.id)
+            ShellList {
+                ForEach(filteredEntries) { entry in
+                    logListRow(for: entry)
+                        .id(entry.id)
+                }
             }
             .listStyle(.plain)
             .task(id: filteredEntries.last?.id) {
@@ -125,67 +134,14 @@ struct LogsView: View {
     }
 
     private func logListRow(for entry: LogStore.Entry) -> some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(levelColors[entry.level] ?? .gray)
-                .frame(width: 8, height: 8)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(Self.timeFormatter.string(from: entry.timestamp))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Text(entry.category)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(4)
-
-                    Spacer()
-
-                    Text(entry.level.displayName)
-                        .font(.caption2)
-                        .foregroundStyle(levelColors[entry.level] ?? .gray)
-                }
-
-                Text(entry.message)
-                    .font(.caption)
-                    .lineLimit(3)
-                    .foregroundStyle(.primary)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private var filterMenu: some View {
-        Menu {
-            Button {
-                filterLevel = nil
-            } label: {
-                HStack {
-                    if filterLevel == nil { Image(systemName: "checkmark") }
-                    Text("All")
-                }
-            }
-
-            Divider()
-
-            ForEach(LogStore.Entry.Level.allCases, id: \.self) { level in
-                Button {
-                    filterLevel = level
-                } label: {
-                    HStack {
-                        if filterLevel == level { Image(systemName: "checkmark") }
-                        Text(level.displayName)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
-        }
+        let time = Self.timeFormatter.string(from: entry.timestamp)
+        return ShellTextRow(
+            .init(
+                title: entry.message,
+                subtitle: "\(time)  \(entry.category)",
+                trailingValue: entry.level.displayName
+            )
+        )
     }
 
     private func presentShareSheet() {

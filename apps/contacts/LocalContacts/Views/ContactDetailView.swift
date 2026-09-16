@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import ShellKitSwift
 
 struct ContactDetailView: View {
     @Environment(ContactsStore.self) private var store
@@ -80,19 +81,23 @@ struct ContactDetailView: View {
         .sheet(isPresented: $showConflictSheet) {
             ContactsRouter.destination(ConflictResolutionSheet(contact: displayed))
         }
-        .confirmationDialog("Delete Contact", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                Task {
-                    do {
-                        try await store.delete(displayed)
-                        dismiss()
-                    } catch {
-                        store.errorMessage = error.localizedDescription
-                    }
+        .shellConfirmation(
+            data: .init(
+                actionID: "delete-contact",
+                question: "Delete Contact",
+                destructiveLabel: "Delete",
+                message: "This will permanently delete \(displayed.displayName) and remove the .vcf file."
+            ),
+            isPresented: $showDeleteConfirmation
+        ) { _ in
+            Task {
+                do {
+                    try await store.delete(displayed)
+                    dismiss()
+                } catch {
+                    store.errorMessage = error.localizedDescription
                 }
             }
-        } message: {
-            Text("This will permanently delete \(displayed.displayName) and remove the .vcf file.")
         }
         .onAppear { reloadFields() }
         .onChange(of: displayed.contentToken) { _, _ in
@@ -184,22 +189,15 @@ struct ContactDetailView: View {
         Group {
             if let id = row.id, id.hasPrefix("tel:"), let url = Self.dialURL(row.value) {
                 Link(destination: url) {
-                    valueRow(label: row.label, value: row.value)
+                    ShellFieldRow(.init(label: row.label, value: row.value, isEditable: false))
                 }
             } else if let id = row.id, id.hasPrefix("email:"), let url = Self.mailURL(row.value) {
                 Link(destination: url) {
-                    valueRow(label: row.label, value: row.value)
+                    ShellFieldRow(.init(label: row.label, value: row.value, isEditable: false))
                 }
             } else if let id = row.id, id.hasPrefix("url:"), let url = Self.websiteURL(row.value) {
                 Link(destination: url) {
-                    LabeledContent {
-                        Text(row.value)
-                            .foregroundStyle(Color.accentColor)
-                            .lineLimit(1)
-                    } label: {
-                        Text(row.label)
-                            .foregroundStyle(.secondary)
-                    }
+                    ShellFieldRow(.init(label: row.label, value: row.value, isEditable: false))
                 }
             } else if row.id == "bday" {
                 HStack {
@@ -211,26 +209,10 @@ struct ContactDetailView: View {
                     }
                 }
             } else {
-                LabeledContent {
-                    Text(row.value)
-                } label: {
-                    Text(row.label)
-                        .foregroundStyle(.secondary)
-                }
+                ShellFieldRow(.init(label: row.label, value: row.value, isEditable: false))
             }
         }
         .contextMenu { copyButton(row.value) }
-    }
-
-    @ViewBuilder
-    private func valueRow(label: String, value: String) -> some View {
-        LabeledContent {
-            Text(value)
-                .foregroundStyle(Color.accentColor)
-        } label: {
-            Text(label)
-                .foregroundStyle(.secondary)
-        }
     }
 
     private func reloadFields() {

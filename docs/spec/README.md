@@ -142,6 +142,12 @@ tag filter, selection actions, tag management, and generated GTK routes are
 implemented. App-specific dynamic form widgets remain in `contacts-gtk`;
 the provisional `shell-kit-gtk` boundary did not grow.
 
+The same day, `shell-kit-swift` landed a first Settings/search slice on
+Contacts and Music iOS. 4.s1–4.s4 then bound field/form (Contacts),
+filter+confirm (both apps), and both Logs screens, and pinned the
+Settings/list/filter/confirm intersection. Form/field/status stay
+Contacts-only; grid/viewer/media stay app-owned.
+
 ## What changed in r2
 
 | Was | Now | Because |

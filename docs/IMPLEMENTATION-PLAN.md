@@ -216,7 +216,7 @@ mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
 conformance/        graph check (ADR 0002 R13) is green; R6 is expected-red
 core/               localcore-{vfs,walk,id,conflict,queue,log,blob,geo,ui}
                     + contacts-core / contacts-ffi
-shells/             shell-kit-gtk + contacts-gtk + music-gtk (`--comet`)
+shells/             shell-kit-gtk + shell-kit-swift + contacts-gtk + music-gtk (`--comet`)
 design/tokens/      per-app tables; sourced dark accents (3.5)
 docs/spec/ui/       R4 vocabulary.toml
 apps/contacts/ui-spec/  real contacts screens
@@ -492,10 +492,10 @@ block C.
 | `shell-kit-gtk` (one binding per R4 kind) | **measured reuse (4)** | Contacts + Music: 23 shared of 25 / 27 bindings (`measure_reuse`). HIG chrome (`PrimaryMenu`, `PreferencesDialog`, `AboutDialog`, `SearchBar`) is shared. Contacts dropped `AdaptiveShell`. Music dropped `SplitListDetail` (browse is not a list\|detail split). |
 | Dark token palettes ×4 | **done (3.5 + D4)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery dark *surfaces* are the authored D4 exception (`gallery.toml`). Health has no catalog; not invented. |
 | Milestone C review (ADR 0004) | **done (3.6)** | Contacts needed no new kind. That validates the inventory for this slice, not the family-wide UI architecture. Shared contact display/action state continues moving into `contacts-core`. |
-| `shell-kit-swift` | **4** | iOS contacts views are hand-rolled. Music is the next SwiftUI vertical. |
+| `shell-kit-swift` | **measured reuse (Settings/list/filter/confirm)** | 4.s1–4.s4 landed 2026-09-16. Two-app pin in `check.py` (8 shared bindings). Form/field/status are Contacts production only. Grid/viewer/media stay app-owned. |
 | Contacts tags / logs / full GTK fields | **done** | Routed on `contacts-gtk`. iOS tags, logs, and display-row binding landed in the contacts wrap-up. |
 | GTK 4.22 list viewport | **done (4)** | GTK 4.22 wraps `ScrolledWindow` children in `Viewport`. `list_box_page()` keeps the `ListBox` handle; `.child().and_downcast::<ListBox>()` panics. |
-| GTK design pass | **in progress (Music stage)** | 2a–2c + HIG chrome + search + artwork; Music is Songs · Artists · Albums · Playlists with a persistent Now Playing column (mini-player when compact). Playback still needs `--features gstreamer-playback`. Reuse 23 shared of 25 Contacts / 27 Music. See [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). |
+| GTK design pass | **done (Music stage)** | 2a–2c + HIG chrome + search + artwork; Music is Songs · Artists · Albums · Playlists with a persistent Now Playing column (mini-player when compact). Host rebuild of `localmusic` still needs `--features gstreamer-playback`. Reuse 23 shared of 25 Contacts / 27 Music. See [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). |
 | Music UI spec | **done (4)** | `apps/music/ui-spec/screens.toml`. |
 | Music GTK shell | **done (4)** | `music-gtk` over `music-core`. Playback is the `gstreamer-playback` feature. MPRIS and `--comet` are present. Density/polish is the design pass, not a second music rewrite. |
 | iOS contacts views parse vCard text | **done** | List/search/detail/edit/export/Syncthing preview bind `TextRow` / `SearchHit` / `FieldRow` / `ContactEditDraft` / `ConflictPreview`. Swift `VCardParser` / `VCardWriter` deleted. Apple CN remains a host port. |
@@ -596,8 +596,9 @@ workload before drawing shells).
 > `contacts-ffi` is syntax-green for the record checker. iOS no longer
 > reparses vCard text for views; Apple CN remains the host port.
 > Gallery FFI windowing later emptied `conformance/r6/expected.txt`.
-> Gaps that do not reopen C: Swift `shell-kit` (Phase 4). GTK tags /
-> logs / full edit fields landed after C.
+> Gaps that do not reopen C: Swift `shell-kit` remainder (Phase 4
+> 4.s1–4.s4). The first Settings/search slice landed after C. GTK
+> tags / logs / full edit fields also landed after C.
 
 Size: L. 3.1 was Linux-container. 3.4 needs `macos-26`.
 
@@ -610,26 +611,112 @@ gstreamer), MPRIS on Linux (ADR 0007 R15), playlist writing through
 `localcore-vfs`'s atomic write, and **R8–R11** on Syncthing `.m3u`
 pairs (same grammar as contacts `.vcf`).
 
-**Landed.** `music-core`, `music-ffi`, `apps/music/ui-spec/screens.toml`,
+**Landed (Music).** `music-core`, `music-ffi`, `apps/music/ui-spec/screens.toml`,
 and `shells/music-gtk` (kit consumer; `--comet`; MPRIS). R8–R11 on
 `.m3u` is fixture-backed. Playback is the optional `gstreamer-playback`
-feature. The kit reuse measurement after 2c is 21 shared of 22 / 23
-bindings.
+feature. GTK reuse after the Music design stage is 23 shared of 25
+Contacts / 27 Music bindings.
 
-**Remaining in this phase.** `shell-kit-swift`. Hosts without
-`gstreamer-1.0` stay on the mock transport. Design/density is not a
-second music rewrite — it is the GTK design pass
-([`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md)), which also owns the
-clamp / sheet / page-chrome kit bugs found while running Contacts and
-Music on Fedora 44 (GTK 4.22).
+**Landed (4.s0 — Swift kit first slice, 2026-09-16).**
+`shells/shell-kit-swift` exists. R14 emits `Generated/Kinds.swift`.
+Linux `scripts/check.py` keeps the generated copy in sync, requires an
+exhaustive disposition for every kind, and rejects non-SwiftUI imports
+and `Color(red:)`. The package imports no app or local core. Apps pass
+`ShellTokens` (card radius only); SwiftUI tint stays each app's
+asset-catalog accent.
 
-Least portable logic (~750 lines) and the most views, so shell work dominates
-— which is exactly what `shell-kit` should now be absorbing. Music GTK
-was cheaper than Contacts as a *behaviour* shell; it was not cheaper as
-a *designed* shell. That is the signal the design pass is answering
-before a new Gallery kit app.
+Four app-owned screens consume it: Contacts/Music Settings and the
+Contacts/Music list search modifiers. 22 direct invocations replace
+local settings chrome, rows, confirmation, and search. Shared today:
 
-Size: M.
+| Binding | Contacts | Music |
+|---|---|---|
+| `ShellSettings` / `ShellList` | yes | yes |
+| `ShellTextRow` / `ShellActionRow` / `ShellNavRow` | yes | yes |
+| `shellSearch` | yes | yes |
+| `ShellStatusRow` | yes | no |
+| `shellConfirmation` / `ShellFilterMenu` / `ShellList` | yes | yes |
+| `ShellForm` / `ShellFieldRow` | yes (detail + edit) | no |
+| `ShellChartRow` | kit + tests only (Health is Phase 6) | kit + tests only |
+
+`KindCoverage` marks list/form/settings, the text/field/action/nav/status/chart
+rows, and search/filter/confirm as `shared`; grid/detail/viewer,
+media/toggle/progress, and sort/selection/primary/overflow/banner stay
+`appOwned`. Navigation intents are `nativeComposition`. ADR 0004
+promotes the Settings/list/filter/confirm seam; the package stays
+provisional for media/grid/viewer.
+
+Least portable Music logic (~750 lines) and the most views, so shell
+work dominates — which is exactly what `shell-kit` should now be
+absorbing. Music GTK was cheaper than Contacts as a *behaviour* shell;
+it was not cheaper as a *designed* shell. That signal is answered.
+4.s1–4.s4 closed the Swift kit remainder. Further Swift extraction
+waits on Gallery (media/grid/viewer), not a second music rewrite.
+
+Hosts without `gstreamer-1.0` stay on the mock transport. Rebuild
+`localmusic` on the host with `--features gstreamer-playback` for
+actual play; that is host verification, not remaining kit work.
+
+#### Landed — `shell-kit-swift` (4.s1–4.s4, 2026-09-16)
+
+Same lesson as GTK: do not extract a widget before a second production
+consumer, and do not grow R4 to paper over app-owned chrome.
+
+**4.s1 Field / form production (Contacts).** `ContactDetailView`
+read-only `FieldRow`s (except birthday + age) go through
+`ShellFieldRow`; tel/email/url stay `Link` wrappers. Delete uses
+`.shellConfirmation`. `ContactEditView` is `ShellForm`; simple name
+and organization strings are editable `ShellFieldRow`s. Repeaters,
+birthday, notes, tags, and photo stay app-owned. `ContactEditDraft`
+stays in the app.
+
+**4.s2 Filter + confirm, second consumer.** Music playlist delete uses
+`.shellConfirmation`. Both `LogsView`s use `ShellFilterMenu` (empty
+selection = all levels). Contacts tag chips stay chips. Music
+Settings scanning stays `ProgressView` (progress is `appOwned`); no
+`ShellStatusRow` there.
+
+**4.s3 Shared diagnostics list chrome.** Both Logs screens assemble
+through `ShellList` + `ShellTextRow` + `.shellSearch`. Follow-tail,
+copy, share, and Contacts repeat-count trailing stay app-owned.
+`LogStore` did not move.
+
+**4.s4 Measured intersection.** `scripts/check.py` fails if a claimed
+two-app binding loses a consumer, or if a new public kit type appears
+without an inventory entry. Shared today (both apps):
+
+`ShellSettings`, `ShellList`, `ShellTextRow`, `ShellActionRow`,
+`ShellNavRow`, `ShellFilterMenu`, `.shellSearch`, `.shellConfirmation`.
+
+Contacts-only production: `ShellForm`, `ShellFieldRow`,
+`ShellStatusRow`. `ShellChartRow` stays kit-only until Health.
+Grid / viewer / media / progress / selection / sort / primary /
+overflow / banner stay **app-owned**. Provisional drops for the
+Settings/list/filter/confirm seam; it does not drop for the package.
+
+**Explicitly not in Phase 4.**
+
+| Leave | Why |
+|---|---|
+| `media-item`, `grid`, `viewer` | Music library / Now Playing / artwork are host composition. Gallery is the second consumer (Phase 5). |
+| `progress-row`, `selection`, `sort`, `primary-action`, `overflow`, `banner` | One-app or toolbar chrome. Extract when a second screen uses the same shape. |
+| `toggle-row` | No current production screen needs it. |
+| Contacts `ContactCard` avatars, section letters, search highlight | App-owned list density. `ShellTextRow` is the Settings/search seam, not the contact roster. |
+| Apple `ConflictResolutionSheet` | Host port (ADR 0007 R15). Syncthing preview already binds `ConflictPreview`. |
+| Music Settings "Last Synced" / About copy | ADR 0007 Settings polish, not kit work. |
+| Host `gstreamer-playback` rebuild | GTK design leftover; verify on Fedora, do not reopen a music rewrite. |
+| New R4 kinds | Contacts and Music needed none. Gallery proposes none until its spec is written. |
+| Generated screen assembly | R14 still emits ids/kinds/tokens only. |
+
+> **Gate (Phase 4 close):** Music core loop stays green (GTK headless
+> flow + iOS `macos-26`). Swift kit: 4.s1–4.s4 landed; Linux
+> `check.py` green; claimed shared bindings have two production
+> consumers; ADR 0004 records the intersection; grid/viewer/media
+> remain unclaimed. C does not reopen.
+
+Size: M. 4.s1–4.s3 were Mac Swift slices; 4.s4 is the Linux
+`check.py` pin plus the ADR paragraph. Host `xcodebuild` was not
+run here.
 
 ---
 
@@ -758,7 +845,9 @@ review question (ADR 0007 R16) and you read the diff.
    enforcement of ADR 0001 R4.
 3. **The slot vocabulary not surviving a second toolkit.** Phase 3 held for
    Contacts GTK. Music GTK reused the same kinds without a new one.
-   SwiftUI `shell-kit` is still unproven. The GTK design pass is a
+   SwiftUI `shell-kit` now has a measured Settings/list/filter/confirm
+   seam on both iOS apps; form/field/status are Contacts-only;
+   grid/viewer/media stay unclaimed. The GTK design pass is a
    density/chrome problem, not a missing-kind problem — do not grow R4
    to paper over clamp and header-bar bugs.
 4. **Review capacity.** The honest one. See below.
@@ -798,16 +887,18 @@ in Phase 3, which is the cheapest app.
 ## 9. What I would do first
 
 **A, B, Phase 3 (through 3.6 / Milestone C), the contacts iOS wrap-up,
-and the Music GTK core loop are done.** `health-core` / `health-ffi` /
-`chart-row` started Phase 6 without a Health shell. Next engineering
-moves, in parallel:
+the Music GTK core loop, and the Swift kit remainder (4.s0–4.s4) are
+done.** `health-core` / `health-ffi` / `chart-row` started Phase 6
+without a Health shell. Next engineering moves, in parallel:
 
 - **GTK design pass** — **Music stage landed.** Primary menu,
   preferences/about, Contacts split+detail+conflict, global search,
   Music browse switcher + Now Playing column + cover art. Host rebuild
   of `localmusic` still needs `--features gstreamer-playback`. See
   [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md).
-- **Phase 4 remainder** — `shell-kit-swift`.
+- **Phase 4 remainder** — **done (4.s1–4.s4).** Swift kit seam is
+  measured for Settings/list/filter/confirm. Do not extract
+  media/grid/viewer here; that is Gallery.
 - **Phase 5 remainder** — leftover Gallery GTK stays frozen; windowed
   FFI is in; Places / 20k CI / `.xmp` R8–R11 / M1–M3 still land here.
 - **Phase 6 remainder** — HealthKit, FIT, native shells, retire Go.

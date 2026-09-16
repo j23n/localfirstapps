@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer); 2026-09-16 (chart-row); 2026-09-16 (GTK design pass 2a/2b reuse)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer); 2026-09-16 (chart-row); 2026-09-16 (GTK design pass 2a/2b reuse); 2026-09-16 (Swift kit measured seam)
 
 ## Scope
 
@@ -94,7 +94,11 @@ As of the GTK Music slice, `shell-kit-gtk` has two product consumers.
 Their checked inventories intersect on 17 public, domain-neutral behaviors.
 That promotes those behaviors from provisional extraction to measured reuse;
 it does not promote Music's media-item behavior, which Contacts does not use.
-`shell-kit-swift` remains provisional and is evaluated separately.
+`shell-kit-swift` is measured for the Settings/list/filter/confirm
+seam (Contacts + Music, pinned by `scripts/check.py`). Form/field/status
+have Contacts production only. The package as a whole stays provisional
+for grid, viewer, media, progress, selection, and sort until a second
+consumer exists (Gallery).
 
 **R7.** An R4 **kind** omitted from a vocabulary consumer MUST fail the build
 through a non-exhaustive match. Tests and review still verify that the
@@ -227,6 +231,26 @@ The second consumer exposed three useful boundary facts:
 | The provisional media item dropped `thumbnail_ref` | The binding now carries semantic/file references and renders a native action row. Only Music currently consumes it, so cross-product reuse is not claimed. |
 | Measured common surface | `measure_reuse(contacts_gtk::KIT_BINDINGS, music_gtk::KIT_BINDINGS)` reports 21 shared of 22 Contacts and 23 Music bindings after the GTK design-pass 2a–2c chrome, builders, and row polish; the assertion fails on inventory drift. |
 | Native/runtime confidence | CI compiles and links GTK plus GStreamer and runs headless workflow tests. Audio output, MPRIS media-key interoperability, Flatpak folder portals, and physical Comet layout remain manual and unmeasured. |
+
+### Swift kit measured seam (2026-09-16)
+
+`shell-kit-swift` has two iOS product consumers. `scripts/check.py`
+pins the two-app intersection and fails if a claimed shared binding
+loses a consumer or a new public kit type appears without an inventory
+entry.
+
+| Finding | Evidence / disposition |
+|---|---|
+| Settings / list / search | Both apps: `ShellSettings`, `ShellList`, `ShellTextRow` / `ShellActionRow` / `ShellNavRow`, `.shellSearch`. |
+| Filter / confirm | Both apps: `ShellFilterMenu` on Logs; `.shellConfirmation` on Contacts Settings+detail and Music playlist delete. |
+| Form / field | Contacts detail+edit production only. Music has no matching form. Not two-app reuse. |
+| Status / chart | `ShellStatusRow` is Contacts Settings only. `ShellChartRow` has no production consumer (Health is Phase 6). |
+| Unclaimed | grid / viewer / media / progress / selection / sort / primary / overflow / banner stay `appOwned`. |
+| Native/runtime confidence | Linux `check.py` is the gate. `swift test` and the iOS apps need `macos-26` / local Xcode. |
+
+This promotes the Settings/list/filter/confirm seam. It does not
+promote the package, and it says nothing about media, grids, or
+large collections.
 
 ## Rationale
 

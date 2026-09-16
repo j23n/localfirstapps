@@ -30,27 +30,22 @@ python3 scripts/gen_r14.py --check
 
 The static check keeps the generated vocabulary copy synchronized, requires
 an exhaustive disposition for every generated kind, rejects non-SwiftUI
-imports and `Color(red:)`, and verifies the two current consumers pass their
-generated token metric.
+imports and `Color(red:)`, verifies the two current consumers pass their
+generated token metric, and fails if a claimed two-app binding loses a
+consumer or a new public kit type appears without an inventory entry.
 
-## Provisional promotion measurements
+## Measured seam (2026-09-16)
 
-Measured for the first Contacts/Music slice on 2026-09-16:
+Two-app production intersection, pinned by `scripts/check.py`:
 
-- four app-owned screens consume the package (Contacts/Music Settings and
-  list search); no screen body or domain model moved into the kit;
-- 22 direct component invocations replace local settings chrome, rows,
-  confirmation, and search modifiers;
-- `ShellSettings`, `ShellTextRow`, `ShellActionRow`, `ShellNavRow`, and
-  `shellSearch` each have both Contacts and Music call sites;
-  `ShellStatusRow` and `shellConfirmation` currently have Contacts call sites
-  only;
-- the Settings wrapper also exercises `ShellList` in both apps;
-- field/form/filter are present with data/behavior coverage, but production
-  call-site migration is deferred to later narrow slices;
-- all 6 screen kinds, 8 item kinds, 8 affordances, 3 navigation intents,
-  2 action roles, and 3 status severities have explicit dispositions.
+- `ShellSettings`, `ShellList`, `ShellTextRow`, `ShellActionRow`,
+  `ShellNavRow`, `ShellFilterMenu`, `.shellSearch`, `.shellConfirmation`
+- Contacts and Music Settings, both list searches, both Logs screens,
+  Contacts delete confirm, Music playlist delete
 
-This is evidence for the small Settings/list-row seam only. It is not a claim
-of full SwiftUI shell reuse, and it says nothing yet about media, grid,
-viewer, progress, selection, or large-collection behavior.
+Contacts-only production: `ShellForm` / `ShellFieldRow` (detail + edit),
+`ShellStatusRow` (Settings). `ShellChartRow` has no production consumer.
+
+No screen body or domain model moved into the kit. Grid, viewer, media,
+progress, selection, sort, primary, overflow, and banner stay app-owned.
+This promotes the Settings/list/filter/confirm seam only.

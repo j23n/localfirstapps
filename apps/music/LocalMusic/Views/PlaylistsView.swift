@@ -1,4 +1,5 @@
 import SwiftUI
+import ShellKitSwift
 
 struct PlaylistsView: View {
     // Doesn't observe `AudioPlayerManager` for the same reason as `LibraryView`:
@@ -74,24 +75,21 @@ struct PlaylistsView: View {
             .sheet(isPresented: $showSyncConflicts) {
                 MusicSyncConflictSheet()
             }
-            .confirmationDialog(
-                "Delete Playlist?",
+            .shellConfirmation(
+                data: .init(
+                    actionID: "delete-playlist",
+                    question: "Delete Playlist?",
+                    destructiveLabel: "Delete",
+                    message: "This removes the playlist file from the selected folder."
+                ),
                 isPresented: Binding(
                     get: { pendingDeleteOffsets != nil },
                     set: { if !$0 { pendingDeleteOffsets = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("Delete", role: .destructive) {
-                    guard let offsets = pendingDeleteOffsets else { return }
-                    pendingDeleteOffsets = nil
-                    Task { await library.deletePlaylists(at: offsets) }
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingDeleteOffsets = nil
-                }
-            } message: {
-                Text("This removes the playlist file from the selected folder.")
+                )
+            ) { _ in
+                guard let offsets = pendingDeleteOffsets else { return }
+                pendingDeleteOffsets = nil
+                Task { await library.deletePlaylists(at: offsets) }
             }
             .alert("Playlist Error", isPresented: Binding(
                 get: { library.errorMessage != nil },

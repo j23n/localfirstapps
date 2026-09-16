@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import ShellKitSwift
 
 struct ContactEditView: View {
     @Environment(ContactsStore.self) private var store
@@ -45,7 +46,7 @@ struct ContactEditView: View {
     }
 
     var body: some View {
-        Form {
+        ShellForm {
             Section {
                 HStack {
                     Spacer()
@@ -73,21 +74,48 @@ struct ContactEditView: View {
             }
 
             Section("Name") {
-                TextField("Display Name", text: $draft.fullName)
-                TextField("First Name", text: $draft.givenName)
-                    .onChange(of: draft.givenName) { _, _ in syncDerivedFullName() }
-                TextField("Middle Name", text: $draft.middleName)
-                    .onChange(of: draft.middleName) { _, _ in syncDerivedFullName() }
-                TextField("Last Name", text: $draft.familyName)
-                    .onChange(of: draft.familyName) { _, _ in syncDerivedFullName() }
-                TextField("Name Prefix", text: $draft.namePrefix)
-                TextField("Name Suffix", text: $draft.nameSuffix)
+                ShellFieldRow(
+                    .init(label: "Display Name", value: draft.fullName, isEditable: true),
+                    value: $draft.fullName
+                )
+                ShellFieldRow(
+                    .init(label: "First Name", value: draft.givenName, isEditable: true),
+                    value: $draft.givenName
+                )
+                .onChange(of: draft.givenName) { _, _ in syncDerivedFullName() }
+                ShellFieldRow(
+                    .init(label: "Middle Name", value: draft.middleName, isEditable: true),
+                    value: $draft.middleName
+                )
+                .onChange(of: draft.middleName) { _, _ in syncDerivedFullName() }
+                ShellFieldRow(
+                    .init(label: "Last Name", value: draft.familyName, isEditable: true),
+                    value: $draft.familyName
+                )
+                .onChange(of: draft.familyName) { _, _ in syncDerivedFullName() }
+                ShellFieldRow(
+                    .init(label: "Name Prefix", value: draft.namePrefix, isEditable: true),
+                    value: $draft.namePrefix
+                )
+                ShellFieldRow(
+                    .init(label: "Name Suffix", value: draft.nameSuffix, isEditable: true),
+                    value: $draft.nameSuffix
+                )
             }
 
             Section("Organization") {
-                TextField("Company", text: $draft.organization)
-                TextField("Job Title", text: $draft.jobTitle)
-                TextField("Nickname", text: $draft.nickname)
+                ShellFieldRow(
+                    .init(label: "Company", value: draft.organization, isEditable: true),
+                    value: $draft.organization
+                )
+                ShellFieldRow(
+                    .init(label: "Job Title", value: draft.jobTitle, isEditable: true),
+                    value: $draft.jobTitle
+                )
+                ShellFieldRow(
+                    .init(label: "Nickname", value: draft.nickname, isEditable: true),
+                    value: $draft.nickname
+                )
             }
 
             Section("Websites") {
