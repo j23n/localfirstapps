@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "value": {
+    "30D974E4-3610-5519-AC6E-C053AE920638": {
+      "version": {
+        "size": 512
+      },
+      "hierarchicalTags": [
+        {
+          "fullPath": "People/Ada",
+          "namespace": "People",
+          "displayName": "Ada"
+        }
+      ],
+      "countryCode": "FR",
+      "faceRegions": []
+    },
+    "49B2A4AE-2C81-5F0D-8050-1DDEC048CC9D": {
+      "version": {
+        "size": 512
+      },
+      "hierarchicalTags": [
+        {
+          "fullPath": "People/Ada",
+          "namespace": "People",
+          "displayName": "Ada"
+        }
+      ],
+      "countryCode": "FR",
+      "faceRegions": []
+    },
+    "AAAAAAAA-BBBB-5CCC-8DDD-EEEEEEEEEEEE": {
+      "version": {
+        "size": 1
+      },
+      "hierarchicalTags": [],
+      "faceRegions": []
+    }
+  }
+}

@@ -21,8 +21,8 @@ struct Entry {
 }
 
 fn fixture() -> Fixture {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/m1-pre/pre_m1_ids.json");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/m1-pre/pre_m1_ids.json");
     let json = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
     serde_json::from_str(&json).expect("m1-pre fixture is not valid JSON")

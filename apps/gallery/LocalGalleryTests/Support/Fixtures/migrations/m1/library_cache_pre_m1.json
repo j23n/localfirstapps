@@ -1,0 +1,77 @@
+{
+  "version": 20,
+  "value": {
+    "rootFolder": {
+      "id": "43BF3EF3-5CFF-562F-9261-CA8EC6DF4F7F",
+      "url": "file:///Users/j/Pictures/Cafe%CC%81",
+      "name": "Café",
+      "subfolders": [],
+      "photos": [
+        {
+          "id": "30D974E4-3610-5519-AC6E-C053AE920638",
+          "url": "file:///Users/j/Pictures/Cafe%CC%81/IMG_0001.jpg",
+          "filename": "IMG_0001",
+          "fileSize": 1024,
+          "hierarchicalTags": [
+            {
+              "fullPath": "People/Ada",
+              "namespace": "People",
+              "displayName": "Ada"
+            }
+          ],
+          "faceRegions": []
+        },
+        {
+          "id": "49B2A4AE-2C81-5F0D-8050-1DDEC048CC9D",
+          "url": "file:///Users/j/Pictures/Caf%C3%A9/IMG_0001.jpg",
+          "filename": "IMG_0001",
+          "fileSize": 1024,
+          "hierarchicalTags": [],
+          "faceRegions": []
+        }
+      ],
+      "coverPhotoURL": "file:///Users/j/Pictures/Cafe%CC%81/IMG_0001.jpg",
+      "totalPhotoCount": 2
+    },
+    "allPhotos": [
+      {
+        "id": "30D974E4-3610-5519-AC6E-C053AE920638",
+        "url": "file:///Users/j/Pictures/Cafe%CC%81/IMG_0001.jpg",
+        "filename": "IMG_0001",
+        "fileSize": 1024,
+        "hierarchicalTags": [
+          {
+            "fullPath": "People/Ada",
+            "namespace": "People",
+            "displayName": "Ada"
+          }
+        ],
+        "faceRegions": []
+      },
+      {
+        "id": "49B2A4AE-2C81-5F0D-8050-1DDEC048CC9D",
+        "url": "file:///Users/j/Pictures/Caf%C3%A9/IMG_0001.jpg",
+        "filename": "IMG_0001",
+        "fileSize": 1024,
+        "hierarchicalTags": [],
+        "faceRegions": []
+      }
+    ],
+    "sidecarManifest": [
+      {
+        "photoID": "30D974E4-3610-5519-AC6E-C053AE920638",
+        "sidecarURL": "file:///Users/j/Pictures/Cafe%CC%81/IMG_0001.jpg.xmp",
+        "currentVersion": {
+          "size": 512
+        }
+      },
+      {
+        "photoID": "49B2A4AE-2C81-5F0D-8050-1DDEC048CC9D",
+        "sidecarURL": "file:///Users/j/Pictures/Caf%C3%A9/IMG_0001.jpg.xmp",
+        "currentVersion": {
+          "size": 512
+        }
+      }
+    ]
+  }
+}

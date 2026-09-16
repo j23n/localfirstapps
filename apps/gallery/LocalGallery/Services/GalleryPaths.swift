@@ -37,7 +37,35 @@ struct GalleryPaths: Sendable {
     /// because it is derived but slow to rebuild (network), and Caches may
     /// evict it mid-library.
     let geocodeCacheURL: URL
+    /// App Group snapshot root. Everything below it is derived and may be
+    /// invalidated during a stable-id migration. `nil` in hosts/tests that do
+    /// not have a widget container.
+    let widgetDataDir: URL?
     let bookmarkKey: String
+
+    init(
+        libraryCacheURL: URL,
+        memoriesCacheURL: URL,
+        sidecarCacheURL: URL,
+        thumbnailDir: URL,
+        mlCacheDatabaseURL: URL,
+        modelPacksDirectoryURL: URL,
+        bundledModelPackURL: URL?,
+        geocodeCacheURL: URL,
+        widgetDataDir: URL? = nil,
+        bookmarkKey: String
+    ) {
+        self.libraryCacheURL = libraryCacheURL
+        self.memoriesCacheURL = memoriesCacheURL
+        self.sidecarCacheURL = sidecarCacheURL
+        self.thumbnailDir = thumbnailDir
+        self.mlCacheDatabaseURL = mlCacheDatabaseURL
+        self.modelPacksDirectoryURL = modelPacksDirectoryURL
+        self.bundledModelPackURL = bundledModelPackURL
+        self.geocodeCacheURL = geocodeCacheURL
+        self.widgetDataDir = widgetDataDir
+        self.bookmarkKey = bookmarkKey
+    }
 
     static var production: GalleryPaths {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -52,6 +80,7 @@ struct GalleryPaths: Sendable {
             modelPacksDirectoryURL: support.appendingPathComponent("ModelPacks", isDirectory: true),
             bundledModelPackURL: Bundle.main.url(forResource: "pack", withExtension: nil),
             geocodeCacheURL: support.appendingPathComponent("geocode-cache.json"),
+            widgetDataDir: SharedContainer.widgetDataDir,
             bookmarkKey: "rootFolderBookmark"
         )
     }

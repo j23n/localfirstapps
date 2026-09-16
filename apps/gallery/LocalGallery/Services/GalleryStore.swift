@@ -273,6 +273,13 @@ final class GalleryStore {
         clock: any Clock = SystemClock(),
         contactsService: any ContactsServicing = LiveContactsService()
     ) {
+        do {
+            try PersistedStateMigration.run(paths: paths, defaults: defaults)
+        } catch {
+            // The marker remains unset. Every step is idempotent and the
+            // library snapshot lands last, so the next launch safely retries.
+            Log.cache.error("Persisted-state migration deferred: \(Log.r.error(error))")
+        }
         self.defaults = defaults
         self.clock = clock
         self.contactsService = contactsService

@@ -80,7 +80,11 @@ pub struct SidecarCandidate {
     pub current_version: ContentVersion,
     /// Whether the sidecar's own bytes are present. Omitted when `local`
     /// (M4 preferred). Old snapshots still decode via `default`.
-    #[serde(rename = "downloadStatus", default, skip_serializing_if = "DownloadStatus::is_local")]
+    #[serde(
+        rename = "downloadStatus",
+        default,
+        skip_serializing_if = "DownloadStatus::is_local"
+    )]
     pub download_status: DownloadStatus,
 }
 

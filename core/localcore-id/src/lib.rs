@@ -84,7 +84,10 @@ mod tests {
 
     #[test]
     fn nfc_and_nfd_cafe_share_one_id() {
-        assert_eq!(derive("/lib/caf\u{00E9}.jpg"), derive("/lib/cafe\u{0301}.jpg"));
+        assert_eq!(
+            derive("/lib/caf\u{00E9}.jpg"),
+            derive("/lib/cafe\u{0301}.jpg")
+        );
     }
 
     #[test]
