@@ -566,8 +566,7 @@ struct PhotoGridScreen: View {
                     url: URL(fileURLWithPath: item.thumbnailRef),
                     size: cellSize,
                     isVideo: item.badge == "Video",
-                    isLivePhoto: item.badge == "Live Photo",
-                    isRemote: item.badge == "In cloud"
+                    isLivePhoto: item.badge == "Live Photo"
                 )
                 .accessibilityLabel(item.accessibilityLabel ?? "Photo")
             } else {
