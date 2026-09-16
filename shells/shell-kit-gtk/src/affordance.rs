@@ -3,7 +3,7 @@
 use adw::prelude::*;
 use localcore_ui::Affordance;
 
-use crate::data::ConfirmData;
+use crate::data::{ChoiceData, ConfirmData};
 
 /// Proves every affordance has a binding.
 pub fn bind_affordance(kind: Affordance) -> Affordance {
@@ -33,6 +33,20 @@ pub fn sort_button() -> gtk::MenuButton {
     gtk::MenuButton::builder()
         .icon_name("view-sort-descending-symbolic")
         .build()
+}
+
+/// Native single-choice control used by sort and named-predicate pickers.
+pub fn choice_dropdown(data: &ChoiceData) -> gtk::DropDown {
+    let refs = data.labels.iter().map(String::as_str).collect::<Vec<_>>();
+    let dropdown = gtk::DropDown::from_strings(&refs);
+    let selected = if data.labels.is_empty() {
+        gtk::INVALID_LIST_POSITION
+    } else {
+        data.selected
+            .min(data.labels.len().saturating_sub(1) as u32)
+    };
+    dropdown.set_selected(selected);
+    dropdown
 }
 
 pub fn primary_action(label: &str) -> gtk::Button {

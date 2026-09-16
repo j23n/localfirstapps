@@ -13,14 +13,18 @@ pub use localcore_ui::{
 
 mod affordance;
 mod data;
+mod diagnostics;
 mod item;
 mod nav;
+mod reuse;
 mod screen;
 
 pub use affordance::*;
 pub use data::*;
+pub use diagnostics::*;
 pub use item::*;
 pub use nav::*;
+pub use reuse::*;
 pub use screen::*;
 
 /// Load generated token CSS onto the default display.

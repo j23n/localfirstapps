@@ -11,8 +11,15 @@ pub struct TextRowData {
 
 #[derive(Debug, Clone)]
 pub struct MediaItemData {
+    pub thumbnail_ref: String,
     pub label: Option<String>,
     pub badge: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChoiceData {
+    pub labels: Vec<String>,
+    pub selected: u32,
 }
 
 #[derive(Debug, Clone)]

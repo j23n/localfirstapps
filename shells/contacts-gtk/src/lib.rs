@@ -7,13 +7,13 @@
 use std::path::{Path, PathBuf};
 
 use contacts_core::valid_device;
+use shell_kit_gtk::BindingId;
 
-mod diagnostics;
 mod routing;
 mod window;
 
-pub use diagnostics::{LogEntry, LogLevel, LogStore};
 pub use routing::{gtk_route, ROUTED_SCREENS};
+pub use shell_kit_gtk::{LogEntry, LogLevel, LogStore};
 pub use window::Window;
 
 /// Desktop file / libadwaita application id.
@@ -25,6 +25,29 @@ pub const CONFIG_DIR_NAME: &str = "localcontacts";
 
 /// Width at or below which the GTK shell uses Comet chrome (bottom nav).
 pub const COMPACT_WIDTH: i32 = 550;
+
+/// Public kit behavior exercised by the Contacts shell.
+///
+/// Music's second-consumer test intersects this inventory with its own.
+pub const KIT_BINDINGS: &[BindingId] = &[
+    BindingId::ActionRow,
+    BindingId::Banner,
+    BindingId::ChoiceDropdown,
+    BindingId::ConfirmDialog,
+    BindingId::Diagnostics,
+    BindingId::FieldRow,
+    BindingId::ListPage,
+    BindingId::NavRow,
+    BindingId::NavigationView,
+    BindingId::PrimaryAction,
+    BindingId::PushPage,
+    BindingId::SearchEntry,
+    BindingId::SettingsPage,
+    BindingId::Sheet,
+    BindingId::StatusRow,
+    BindingId::TextRow,
+    BindingId::TokenCss,
+];
 
 /// True when `--comet` is among the process arguments.
 #[must_use]

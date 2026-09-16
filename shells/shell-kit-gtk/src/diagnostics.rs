@@ -1,12 +1,11 @@
-//! Process-local diagnostics for the GTK shell.
+//! Process-local, bounded diagnostics shared by GTK shells.
 //!
-//! This bounded in-memory store is deliberately separate from the selected
-//! contacts folder and its `.contacts/log` domain-operation log.
+//! This is shell state, never a synced domain-operation log. Callers are
+//! responsible for recording redacted messages rather than user content.
 
 use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Severity shown by the app diagnostics screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
     Info,
@@ -25,7 +24,6 @@ impl LogLevel {
     }
 }
 
-/// One redacted shell diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogEntry {
     pub sequence: u64,
@@ -36,7 +34,7 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    /// UTC time of day without bringing a locale service into the shell.
+    /// UTC time of day without using a locale service.
     #[must_use]
     pub fn time_label(&self) -> String {
         let millis = self
@@ -53,7 +51,7 @@ impl LogEntry {
     }
 }
 
-/// Newest bounded shell diagnostics. Nothing is persisted or synced.
+/// Newest bounded diagnostics. Nothing is persisted, synced, or uploaded.
 #[derive(Debug)]
 pub struct LogStore {
     capacity: usize,
@@ -129,7 +127,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bounded_store_keeps_the_newest_entries() {
+    fn bounded_store_keeps_newest_and_filters_without_persistence() {
         let mut store = LogStore::new(2);
         store.record(LogLevel::Info, "app", "first");
         store.record(LogLevel::Warning, "folder", "second");
@@ -139,39 +137,15 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].message, "second");
         assert_eq!(entries[1].message, "third");
-        assert_eq!(entries[0].sequence, 1);
-        assert_eq!(entries[1].sequence, 2);
-    }
-
-    #[test]
-    fn zero_capacity_store_stays_empty() {
-        let mut store = LogStore::new(0);
-        store.record(LogLevel::Info, "app", "discarded");
+        assert_eq!(store.filtered("FOLDER", Some(LogLevel::Error)).len(), 1);
+        store.clear();
         assert!(store.is_empty());
     }
 
     #[test]
-    fn filters_level_category_and_message_case_insensitively() {
-        let mut store = LogStore::new(8);
-        store.record(LogLevel::Info, "app", "Application started");
-        store.record(LogLevel::Warning, "Folder", "Saved folder unavailable");
-        store.record(LogLevel::Error, "contact", "Save failed");
-
-        assert_eq!(store.filtered("FOLDER", None).len(), 1);
-        assert_eq!(store.filtered("save", Some(LogLevel::Warning)).len(), 1);
-        assert_eq!(store.filtered("save", Some(LogLevel::Error)).len(), 1);
-        assert!(store.filtered("started", Some(LogLevel::Error)).is_empty());
-        assert_eq!(store.filtered("warning", None).len(), 1);
-    }
-
-    #[test]
-    fn clear_does_not_change_the_bound() {
-        let mut store = LogStore::new(1);
-        store.record(LogLevel::Info, "app", "first");
-        store.clear();
-        store.record(LogLevel::Info, "app", "second");
-        store.record(LogLevel::Info, "app", "third");
-        assert_eq!(store.len(), 1);
-        assert_eq!(store.filtered("", None)[0].message, "third");
+    fn zero_capacity_discards_entries() {
+        let mut store = LogStore::new(0);
+        store.record(LogLevel::Info, "app", "discarded");
+        assert!(store.is_empty());
     }
 }

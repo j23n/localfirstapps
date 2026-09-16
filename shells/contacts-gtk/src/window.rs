@@ -15,10 +15,10 @@ use contacts_core::{
     StdVfs, Store, Vfs, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
-    action_row, apply_token_css, banner, confirm_dialog, field_row, field_row_widget, list_page,
-    nav_row, primary_action, push_page, search_entry, settings_page, sheet, status_row, text_row,
-    ActionRole, ActionRowData, ConfirmData, ContactsScreen, FieldRowData, NavRowData,
-    StatusRowData, StatusSeverity, TextRowData,
+    action_row, apply_token_css, banner, choice_dropdown, confirm_dialog, field_row,
+    field_row_widget, list_page, nav_row, primary_action, push_page, search_entry, settings_page,
+    sheet, status_row, text_row, ActionRole, ActionRowData, ChoiceData, ConfirmData,
+    ContactsScreen, FieldRowData, NavRowData, StatusRowData, StatusSeverity, TextRowData,
 };
 
 use crate::routing::route_id;
@@ -113,7 +113,10 @@ impl Window {
         let search = search_entry();
         search.set_placeholder_text(Some("Name, company, phone, or email"));
         search.set_hexpand(true);
-        let tag_filter = gtk::DropDown::from_strings(&["All tags"]);
+        let tag_filter = choice_dropdown(&ChoiceData {
+            labels: vec!["All tags".into()],
+            selected: 0,
+        });
         tag_filter.set_tooltip_text(Some("Filter by tag"));
         let selection_toggle = gtk::ToggleButton::with_label("Select");
         let list_controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
