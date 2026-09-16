@@ -110,7 +110,8 @@ pub fn write(card: &Card) -> String {
     }
     if let Some(photo) = &card.photo {
         let b64 = STANDARD.encode(photo);
-        lines.push(format!("PHOTO;ENCODING=b;TYPE=JPEG:{b64}"));
+        let media_type = sanitize_type(card.photo_media_type.as_deref().unwrap_or("JPEG"), "JPEG");
+        lines.push(format!("PHOTO;ENCODING=b;TYPE={media_type}:{b64}"));
     }
     if !card.note.is_empty() {
         lines.push(format!("NOTE:{}", escape(&card.note)));
@@ -184,7 +185,7 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
         match field.to_ascii_uppercase().as_str() {
             "FN" => card.full_name = unescape(&value),
             "N" => {
-                let parts: Vec<&str> = value.split(';').collect();
+                let parts = split_escaped(&value, ';');
                 card.family_name = unescape(parts.first().copied().unwrap_or(""));
                 card.given_name = unescape(parts.get(1).copied().unwrap_or(""));
                 card.middle_name = unescape(parts.get(2).copied().unwrap_or(""));
@@ -200,7 +201,7 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
                 value: unescape(&value),
             }),
             "ADR" => {
-                let parts: Vec<&str> = value.split(';').collect();
+                let parts = split_escaped(&value, ';');
                 card.addresses.push(LabeledAddress {
                     label: extract_type_label(&params, "home"),
                     value: PostalAddress {
@@ -213,7 +214,8 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
                 });
             }
             "ORG" => {
-                card.organization = unescape(value.split(';').next().unwrap_or(""));
+                card.organization =
+                    unescape(split_escaped(&value, ';').first().copied().unwrap_or(""));
             }
             "TITLE" => card.job_title = unescape(&value),
             "NICKNAME" => card.nickname = unescape(&value),
@@ -223,13 +225,16 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
             }),
             "BDAY" => card.birthday = parse_birthday(&value),
             "PHOTO" => match parse_photo(&value, &params) {
-                Some(bytes) => card.photo = Some(bytes),
+                Some(bytes) => {
+                    card.photo = Some(bytes);
+                    card.photo_media_type = Some(extract_photo_media_type(&params));
+                }
                 None => card.unknown_fields.push(trimmed.to_owned()),
             },
             "NOTE" => card.note = unescape(&value),
             "CATEGORIES" => {
-                card.categories = value
-                    .split(',')
+                card.categories = split_escaped(&value, ',')
+                    .into_iter()
                     .map(|s| unescape(s.trim()))
                     .filter(|s| !s.is_empty())
                     .collect();
@@ -282,6 +287,24 @@ fn unescape(text: &str) -> String {
         }
     }
     result
+}
+
+fn split_escaped(text: &str, delimiter: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut escaped = false;
+    for (index, character) in text.char_indices() {
+        if escaped {
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else if character == delimiter {
+            parts.push(&text[start..index]);
+            start = index + character.len_utf8();
+        }
+    }
+    parts.push(&text[start..]);
+    parts
 }
 
 fn escape(text: &str) -> String {
@@ -348,6 +371,19 @@ fn parse_photo(value: &str, params: &[String]) -> Option<Vec<u8>> {
     }
     let cleaned: String = value.chars().filter(|c| !c.is_whitespace()).collect();
     STANDARD.decode(cleaned).ok()
+}
+
+fn extract_photo_media_type(params: &[String]) -> String {
+    for param in params {
+        if let Some((name, value)) = param.split_once('=') {
+            if name.eq_ignore_ascii_case("TYPE") {
+                if let Some(media_type) = value.split(',').find(|part| !part.trim().is_empty()) {
+                    return media_type.trim().to_owned();
+                }
+            }
+        }
+    }
+    "JPEG".to_owned()
 }
 
 fn sanitize_type(label: &str, default: &str) -> String {

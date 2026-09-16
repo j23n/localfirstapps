@@ -117,6 +117,8 @@ pub struct Card {
     pub categories: Vec<String>,
     /// Decoded PHOTO bytes.
     pub photo: Option<Vec<u8>>,
+    /// PHOTO TYPE parameter retained while the photo bytes are untouched.
+    pub photo_media_type: Option<String>,
     /// Unrecognized lines, preserved for round-trip.
     pub unknown_fields: Vec<String>,
 }
@@ -145,6 +147,7 @@ impl Card {
             note: String::new(),
             categories: Vec::new(),
             photo: None,
+            photo_media_type: None,
             unknown_fields: Vec::new(),
         }
     }
@@ -179,7 +182,6 @@ impl Card {
         self.categories.sort();
         self.categories.dedup();
         self.unknown_fields.sort();
-        self.unknown_fields.dedup();
     }
 }
 

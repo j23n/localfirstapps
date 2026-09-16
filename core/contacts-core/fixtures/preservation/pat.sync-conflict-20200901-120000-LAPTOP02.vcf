@@ -1,0 +1,30 @@
+BEGIN:VCARD
+VERSION:3.0
+X-LOCALCONTACTS-ID:pat-1
+N:Preserver;Pat;Quinn;Dr.;III
+FN:Dr. Pat Quinn Preserver III
+ORG:Archive House
+TITLE:Curator
+NICKNAME:PQ
+URL;TYPE=homepage:https://example.test/pat
+TEL;TYPE=home:111
+TEL;TYPE=home:999
+TEL;TYPE=work:333
+TEL;TYPE=other:444
+EMAIL;TYPE=home:pat@example.test
+EMAIL;TYPE=home:pat+other@example.test
+EMAIL;TYPE=work:pat@work.example
+EMAIL;TYPE=other:pat@other.example
+ADR;TYPE=home:;;12\; Main St;Springfield;IL;62701;US
+ADR;TYPE=home:;;44 Lake Rd;Shelbyville;IL;62565;US
+ADR;TYPE=work:;;9 Office Plaza;Springfield;IL;62702;US
+BDAY:1985-03-14
+PHOTO;ENCODING=b;TYPE=PNG:iVBORw0KGgo=
+NOTE:Original note
+CATEGORIES:friends,keepers
+X-LOCAL-UNKNOWN;VALUE=text:preserve-me
+item1.X-ABLabel:Custom Apple label
+X-DUPLICATE:keep-two
+X-DUPLICATE:keep-two
+X-COPY-ONLY:merge-me
+END:VCARD

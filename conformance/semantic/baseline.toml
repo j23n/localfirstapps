@@ -27,22 +27,6 @@ rationale = "Place-tag projection currently treats sidecar stat errors as an abs
 target_wave = "Phase 5 gallery vertical"
 
 [[allow]]
-kind = "contacts-serialized-domain-ffi"
-path = "core/contacts-ffi/src/lib.rs"
-symbol = "save_vcard"
-occurrences = 1
-rationale = "Known whole-vCard command escape hatch; contacts is syntax-green but not semantically R6-complete."
-target_wave = "Contacts R6 boundary cleanup"
-
-[[allow]]
-kind = "contacts-serialized-domain-ffi"
-path = "core/contacts-ffi/src/lib.rs"
-symbol = "vcard_text"
-occurrences = 1
-rationale = "Known whole-vCard read escape hatch reparsed by the iOS shell."
-target_wave = "Contacts R6 boundary cleanup"
-
-[[allow]]
 kind = "gallery-provider-semantics"
 path = "apps/gallery/LocalGallery/Components/ThumbnailView.swift"
 symbol = "useQuickLook"

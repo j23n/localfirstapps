@@ -131,7 +131,7 @@ The amendments are the stronger claims that did not:
 | A spec screen with no view fails the build | An R4 *kind* with no binding fails the build; an unbound *screen* is a gap | C built the core loop, not tags/logs; `ContactsScreen` is unused by both view trees |
 | Copy is authored once in the spec | Titles in the spec; semantic facts and typed actions in the core; prose in localization resources | Shells must not branch on visible copy |
 | Comet is an adaptive layout | Same GTK binary; `--comet` plus chrome that follows width | 3.5 shipped a flag and a fixed size |
-| GTK and UniFFI surfaces "identical" | Same contact operations and typed conflict state; boundary debt remains explicit | iOS reparses `vcard_text`; GTK still holds `Card` for editing |
+| GTK and UniFFI surfaces "identical" | Same contact operations, typed conflict state, and core-owned full edit draft | GTK still holds `Card` for detail/export and uses its compact form |
 | `shell-kit` on every platform | `shell-kit-gtk` is provisional; extraction waits for demonstrated second-app reuse | iOS contacts views are hand-rolled |
 
 ## What changed in r2

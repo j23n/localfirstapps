@@ -143,7 +143,11 @@ pub fn apply_merge(
     }
     let mut card = plan.merged.clone();
     for (field, source) in choices {
-        if plan.conflicts.iter().any(|conflict| &conflict.field == field) {
+        if plan
+            .conflicts
+            .iter()
+            .any(|conflict| &conflict.field == field)
+        {
             let source_card = plan
                 .sources
                 .get(source)
@@ -185,6 +189,27 @@ fn merge_versions(versions: &[(String, Card)]) -> (Card, Vec<FieldConflict>) {
         versions,
         "given",
         |c| c.given_name.clone(),
+        &mut conflicts,
+    );
+    merge_scalar(
+        &mut merged.middle_name,
+        versions,
+        "middle",
+        |c| c.middle_name.clone(),
+        &mut conflicts,
+    );
+    merge_scalar(
+        &mut merged.name_prefix,
+        versions,
+        "prefix",
+        |c| c.name_prefix.clone(),
+        &mut conflicts,
+    );
+    merge_scalar(
+        &mut merged.name_suffix,
+        versions,
+        "suffix",
+        |c| c.name_suffix.clone(),
         &mut conflicts,
     );
     merge_scalar(
@@ -249,13 +274,8 @@ fn merge_versions(versions: &[(String, Card)]) -> (Card, Vec<FieldConflict>) {
     cats.dedup();
     merged.categories = cats;
 
-    let mut unknown: Vec<String> = versions
-        .iter()
-        .flat_map(|(_, c)| c.unknown_fields.clone())
-        .collect();
-    unknown.sort();
-    unknown.dedup();
-    merged.unknown_fields = unknown;
+    merged.unknown_fields =
+        multiset_union_strings(versions.iter().map(|(_, card)| &card.unknown_fields));
 
     merged.canonicalize();
     conflicts.sort_by(|a, b| a.field.cmp(&b.field));
@@ -333,27 +353,46 @@ fn format_bday(b: &crate::card::Birthday) -> String {
 }
 
 fn merge_photo(merged: &mut Card, versions: &[(String, Card)], conflicts: &mut Vec<FieldConflict>) {
-    let filled: Vec<(String, &Vec<u8>)> = versions
+    let filled: Vec<(String, &Vec<u8>, Option<&str>)> = versions
         .iter()
-        .filter_map(|(s, c)| c.photo.as_ref().map(|p| (s.clone(), p)))
+        .filter_map(|(source, card)| {
+            card.photo
+                .as_ref()
+                .map(|photo| (source.clone(), photo, card.photo_media_type.as_deref()))
+        })
         .collect();
     if filled.len() <= 1 {
-        if let Some((_, p)) = filled.first() {
+        if let Some((_, p, media_type)) = filled.first() {
             merged.photo = Some((*p).clone());
+            merged.photo_media_type = media_type.map(str::to_owned);
         }
         return;
     }
-    let first = filled[0].1;
-    if filled.iter().all(|(_, p)| *p == first) {
-        merged.photo = Some(first.clone());
+    let first = (filled[0].1, filled[0].2);
+    if filled
+        .iter()
+        .all(|(_, photo, media_type)| (*photo, *media_type) == first)
+    {
+        merged.photo = Some(first.0.clone());
+        merged.photo_media_type = filled[0].2.map(str::to_owned);
         return;
     }
-    merged.photo = Some(first.clone());
+    merged.photo = Some(first.0.clone());
+    merged.photo_media_type = first.1.map(str::to_owned);
     conflicts.push(FieldConflict {
         field: "photo".into(),
         sides: filled
             .into_iter()
-            .map(|(s, p)| (s, format!("{} bytes", p.len())))
+            .map(|(source, photo, media_type)| {
+                (
+                    source,
+                    format!(
+                        "{} bytes ({})",
+                        photo.len(),
+                        media_type.unwrap_or("unknown type")
+                    ),
+                )
+            })
             .collect(),
     });
 }
@@ -426,33 +465,54 @@ fn merge_addresses(
     versions: &[(String, Card)],
     conflicts: &mut Vec<FieldConflict>,
 ) {
-    let mut by_label: std::collections::BTreeMap<String, Vec<(String, LabeledAddress)>> =
-        std::collections::BTreeMap::new();
-    for (source, card) in versions {
-        for row in &card.addresses {
-            by_label
-                .entry(row.label.clone())
-                .or_default()
-                .push((source.clone(), row.clone()));
-        }
-    }
+    let labels: std::collections::BTreeSet<String> = versions
+        .iter()
+        .flat_map(|(_, card)| card.addresses.iter().map(|row| row.label.clone()))
+        .collect();
     let mut out = Vec::new();
-    for (label, sides) in by_label {
-        let unique: std::collections::BTreeSet<String> =
-            sides.iter().map(|(_, a)| a.value.formatted()).collect();
-        if unique.len() > 1 {
-            if let Some((_, first)) = sides.first() {
-                out.push(first.clone());
+    for label in labels {
+        let occurrences = versions
+            .iter()
+            .map(|(_, card)| {
+                card.addresses
+                    .iter()
+                    .filter(|row| row.label == label)
+                    .count()
+            })
+            .max()
+            .unwrap_or(0);
+        for occurrence in 0..occurrences {
+            let sides: Vec<(String, LabeledAddress)> = versions
+                .iter()
+                .filter_map(|(source, card)| {
+                    card.addresses
+                        .iter()
+                        .filter(|row| row.label == label)
+                        .nth(occurrence)
+                        .map(|row| (source.clone(), row.clone()))
+                })
+                .collect();
+            let unique: std::collections::BTreeSet<String> =
+                sides.iter().map(|(_, a)| a.value.formatted()).collect();
+            if unique.len() > 1 {
+                if let Some((_, first)) = sides.first() {
+                    out.push(first.clone());
+                }
+                let suffix = if occurrence == 0 {
+                    String::new()
+                } else {
+                    format!(":{occurrence}")
+                };
+                conflicts.push(FieldConflict {
+                    field: format!("adr:{label}{suffix}"),
+                    sides: sides
+                        .into_iter()
+                        .map(|(s, a)| (s, a.value.formatted()))
+                        .collect(),
+                });
+            } else if let Some((_, addr)) = sides.into_iter().next() {
+                out.push(addr);
             }
-            conflicts.push(FieldConflict {
-                field: format!("adr:{label}"),
-                sides: sides
-                    .into_iter()
-                    .map(|(s, a)| (s, a.value.formatted()))
-                    .collect(),
-            });
-        } else if let Some((_, addr)) = sides.into_iter().next() {
-            out.push(addr);
         }
     }
     out.sort();
@@ -464,13 +524,19 @@ fn apply_choice(card: &mut Card, field: &str, source: &Card) {
         "fn" => card.full_name = source.full_name.clone(),
         "family" => card.family_name = source.family_name.clone(),
         "given" => card.given_name = source.given_name.clone(),
+        "middle" => card.middle_name = source.middle_name.clone(),
+        "prefix" => card.name_prefix = source.name_prefix.clone(),
+        "suffix" => card.name_suffix = source.name_suffix.clone(),
         "org" => card.organization = source.organization.clone(),
         "title" => card.job_title = source.job_title.clone(),
         "nickname" => card.nickname = source.nickname.clone(),
         "note" => card.note = source.note.clone(),
         "id" => card.local_id = source.local_id.clone(),
         "bday" => card.birthday = source.birthday.clone(),
-        "photo" => card.photo = source.photo.clone(),
+        "photo" => {
+            card.photo = source.photo.clone();
+            card.photo_media_type = source.photo_media_type.clone();
+        }
         other if other.starts_with("tel:") => {
             apply_labeled_choice(&mut card.phones, &source.phones, &other[4..]);
         }
@@ -481,10 +547,17 @@ fn apply_choice(card: &mut Card, field: &str, source: &Card) {
             apply_labeled_choice(&mut card.urls, &source.urls, &other[4..]);
         }
         other if other.starts_with("adr:") => {
-            let label = &other[4..];
+            let (label, occurrence) = occurrence_key(&other[4..]);
             if let (Some(dest), Some(selected)) = (
-                card.addresses.iter_mut().find(|row| row.label == label),
-                source.addresses.iter().find(|row| row.label == label),
+                card.addresses
+                    .iter_mut()
+                    .filter(|row| row.label == label)
+                    .nth(occurrence),
+                source
+                    .addresses
+                    .iter()
+                    .filter(|row| row.label == label)
+                    .nth(occurrence),
             ) {
                 *dest = selected.clone();
             }
@@ -494,23 +567,43 @@ fn apply_choice(card: &mut Card, field: &str, source: &Card) {
 }
 
 fn apply_labeled_choice(rows: &mut [Labeled], source: &[Labeled], key: &str) {
-    let (label, occurrence) = key
-        .rsplit_once(':')
-        .and_then(|(label, suffix)| suffix.parse::<usize>().ok().map(|index| (label, index)))
-        .unwrap_or((key, 0));
+    let (label, occurrence) = occurrence_key(key);
     let selected = source
         .iter()
         .filter(|row| row.label == label)
         .nth(occurrence);
     if let (Some(row), Some(selected)) = (
-        rows
-        .iter_mut()
-        .filter(|row| row.label == label)
-        .nth(occurrence),
+        rows.iter_mut()
+            .filter(|row| row.label == label)
+            .nth(occurrence),
         selected,
     ) {
         *row = selected.clone();
     }
+}
+
+fn occurrence_key(key: &str) -> (&str, usize) {
+    key.rsplit_once(':')
+        .and_then(|(label, suffix)| suffix.parse::<usize>().ok().map(|index| (label, index)))
+        .unwrap_or((key, 0))
+}
+
+fn multiset_union_strings<'a>(values: impl Iterator<Item = &'a Vec<String>>) -> Vec<String> {
+    let mut maxima = std::collections::BTreeMap::<String, usize>::new();
+    for value_set in values {
+        let mut counts = std::collections::BTreeMap::<&str, usize>::new();
+        for value in value_set {
+            *counts.entry(value).or_default() += 1;
+        }
+        for (value, count) in counts {
+            let maximum = maxima.entry(value.to_owned()).or_default();
+            *maximum = (*maximum).max(count);
+        }
+    }
+    maxima
+        .into_iter()
+        .flat_map(|(value, count)| std::iter::repeat_n(value, count))
+        .collect()
 }
 
 fn is_absolute_path(path: &str) -> bool {

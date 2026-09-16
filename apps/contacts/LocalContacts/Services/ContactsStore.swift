@@ -17,8 +17,6 @@ final class ContactsStore {
     /// Syncthing `.vcf` groups (ADR 0005 R8). Not Apple CN conflicts.
     var syncConflictGroups: [ConflictRow] = []
 
-    private let parser = VCardParser()
-    private let writer = VCardWriter()
     private var session: ContactsSession?
     /// Per-device log partition (ADR 0005 R5). Not synced.
     let deviceId: String
@@ -201,21 +199,8 @@ final class ContactsStore {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed != oldName else { return }
 
-        var touchedFiles = Set<String>()
-        for contact in contacts {
-            if let index = contact.categories.firstIndex(of: oldName) {
-                contact.categories[index] = trimmed
-                // Deduplicate if new name already existed on this contact
-                var seen = Set<String>()
-                contact.categories = contact.categories.filter { seen.insert($0).inserted }
-                touchedFiles.insert(contact.fileName)
-            }
-        }
-
         let session = try openSession()
-        for contact in contacts where touchedFiles.contains(contact.fileName) {
-            _ = try persist(contact)
-        }
+        _ = try session.renameTag(oldName: oldName, newName: trimmed)
         try refreshFromSession(session)
 
         if selectedTag == oldName {
@@ -224,18 +209,8 @@ final class ContactsStore {
     }
 
     func deleteTag(_ tagName: String) async throws {
-        var touchedFiles = Set<String>()
-        for contact in contacts {
-            if contact.categories.contains(tagName) {
-                contact.categories.removeAll { $0 == tagName }
-                touchedFiles.insert(contact.fileName)
-            }
-        }
-
         let session = try openSession()
-        for contact in contacts where touchedFiles.contains(contact.fileName) {
-            _ = try persist(contact)
-        }
+        _ = try session.removeTag(tag: tagName)
         try refreshFromSession(session)
 
         if selectedTag == tagName {
@@ -250,10 +225,8 @@ final class ContactsStore {
         guard !toDelete.isEmpty else { return }
 
         let session = try openSession()
-        for contact in toDelete {
-            try session.delete(id: contact.localContactsID)
-        }
-        contacts.removeAll { contactIDs.contains($0.localContactsID) }
+        _ = try session.deleteMany(ids: Array(contactIDs))
+        try refreshFromSession(session)
 
         for contact in toDelete {
             try? await syncService.deleteContact(localContactsID: contact.localContactsID)
@@ -262,19 +235,8 @@ final class ContactsStore {
     }
 
     func assignTag(_ tag: String, to contactIDs: Set<String>) async throws {
-        var touchedFiles = Set<String>()
-        for id in contactIDs {
-            if let contact = contacts.first(where: { $0.localContactsID == id }),
-               !contact.categories.contains(tag) {
-                contact.categories.append(tag)
-                touchedFiles.insert(contact.fileName)
-            }
-        }
-
         let session = try openSession()
-        for contact in contacts where touchedFiles.contains(contact.fileName) {
-            _ = try persist(contact)
-        }
+        _ = try session.assignTag(tag: tag, ids: Array(contactIDs))
         try refreshFromSession(session)
     }
 
@@ -393,8 +355,10 @@ final class ContactsStore {
     @discardableResult
     private func persist(_ contact: Contact) throws -> ContactsSession {
         let session = try openSession()
-        let id = try session.saveVcard(text: writer.write(contact), fileName: contact.fileName)
+        let saved = try session.saveContact(command: SaveContactCommand(draft: editDraft(from: contact)))
+        guard let id = saved.id else { throw ContactsStoreError.encodingFailed }
         contact.localContactsID = id
+        contact.contentToken = saved.contentToken
         contact.fileName = try session.fileName(id: id)
         return session
     }
@@ -410,29 +374,101 @@ final class ContactsStore {
     private func refreshFromSession(_ session: ContactsSession) throws {
         let rows = try session.listRows()
         var loaded: [Contact] = []
-        // Architectural debt: iOS still reconstructs its domain model from
-        // serialized vCards. Replace this escape hatch with explicit read
-        // models and command DTOs when the R6 boundary is revised.
         for row in rows {
-            let text = try session.vcardText(id: row.id)
+            let draft = try session.contactEditDraft(id: row.id)
             let fileName = try session.fileName(id: row.id)
-            guard let data = text.data(using: .utf8) else { continue }
-            let parsed = parser.parseMultiple(
-                data: data,
-                fileName: fileName,
-                assignDefaultID: false
-            )
-            for contact in parsed {
-                if let existing = contacts.first(where: {
-                    $0.localContactsID == contact.localContactsID
-                }) {
-                    contact.conflictState = existing.conflictState
-                }
-                loaded.append(contact)
+            let contact = contact(from: draft, fileName: fileName)
+            if let existing = contacts.first(where: {
+                $0.localContactsID == contact.localContactsID
+            }) {
+                contact.conflictState = existing.conflictState
             }
+            loaded.append(contact)
         }
         contacts = loaded
         syncConflictGroups = try session.conflictRows()
+    }
+
+    private func editDraft(from contact: Contact) -> ContactEditDraft {
+        ContactEditDraft(
+            id: contact.contentToken == nil ? nil : contact.localContactsID,
+            contentToken: contact.contentToken,
+            fullName: contact.fullName,
+            familyName: contact.familyName,
+            givenName: contact.givenName,
+            middleName: contact.middleName,
+            namePrefix: contact.namePrefix,
+            nameSuffix: contact.nameSuffix,
+            organization: contact.organization,
+            jobTitle: contact.jobTitle,
+            nickname: contact.nickname,
+            urls: contact.urls.map { LabeledValueDraft(label: $0.label, value: $0.value) },
+            phones: contact.phoneNumbers.map { LabeledValueDraft(label: $0.label, value: $0.value) },
+            emails: contact.emailAddresses.map { LabeledValueDraft(label: $0.label, value: $0.value) },
+            addresses: contact.postalAddresses.map {
+                LabeledAddressDraft(
+                    label: $0.label,
+                    street: $0.value.street,
+                    city: $0.value.city,
+                    state: $0.value.state,
+                    postalCode: $0.value.postalCode,
+                    country: $0.value.country
+                )
+            },
+            birthday: contact.birthday.flatMap {
+                guard let month = $0.month, let day = $0.day else { return nil }
+                return BirthdayDraft(
+                    year: $0.year.map(Int32.init),
+                    month: UInt8(clamping: month),
+                    day: UInt8(clamping: day)
+                )
+            },
+            note: contact.note,
+            categories: contact.categories,
+            photo: contact.photoData
+        )
+    }
+
+    private func contact(from draft: ContactEditDraft, fileName: String) -> Contact {
+        Contact(
+            localContactsID: draft.id ?? UUID().uuidString,
+            fileName: fileName,
+            contentToken: draft.contentToken,
+            fullName: draft.fullName,
+            familyName: draft.familyName,
+            givenName: draft.givenName,
+            middleName: draft.middleName,
+            namePrefix: draft.namePrefix,
+            nameSuffix: draft.nameSuffix,
+            organization: draft.organization,
+            jobTitle: draft.jobTitle,
+            nickname: draft.nickname,
+            urls: draft.urls.map { LabeledValue(label: $0.label, value: $0.value) },
+            phoneNumbers: draft.phones.map { LabeledValue(label: $0.label, value: $0.value) },
+            emailAddresses: draft.emails.map { LabeledValue(label: $0.label, value: $0.value) },
+            postalAddresses: draft.addresses.map {
+                LabeledValue(
+                    label: $0.label,
+                    value: PostalAddress(
+                        street: $0.street,
+                        city: $0.city,
+                        state: $0.state,
+                        postalCode: $0.postalCode,
+                        country: $0.country
+                    )
+                )
+            },
+            birthday: draft.birthday.map {
+                DateComponents(
+                    year: $0.year.map(Int.init),
+                    month: Int($0.month),
+                    day: Int($0.day)
+                )
+            },
+            note: draft.note,
+            categories: draft.categories,
+            photoData: draft.photo
+        )
     }
 }
 

@@ -61,9 +61,12 @@ patched, n = re.subn(
     text,
     count=1,
 )
-if n:
-    p.write_text(patched)
-' "$STAGING/$MODULE.swift"
+for output, contents in [
+    (p, patched),
+    (pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[2]).read_text()),
+]:
+    output.write_text("\n".join(line.rstrip() for line in contents.splitlines()) + "\n")
+' "$STAGING/$MODULE.swift" "$STAGING/${MODULE}FFI.h"
 
 copy_if_changed() {
     local src="$1" dst="$2"

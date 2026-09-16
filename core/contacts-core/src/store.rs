@@ -41,6 +41,15 @@ pub enum StoreError {
     NeedsChoice,
     /// Apply was called without a pick for every conflicted field.
     IncompleteChoices,
+    /// An edit was based on an older authoritative card.
+    StaleEdit {
+        /// Token supplied by the editor.
+        expected: String,
+        /// Token for the card currently on disk.
+        actual: String,
+    },
+    /// A typed command contains invalid or inconsistent values.
+    InvalidCommand(String),
 }
 
 impl std::fmt::Display for StoreError {
@@ -50,6 +59,10 @@ impl std::fmt::Display for StoreError {
             Self::NotFound => write!(f, "Not found"),
             Self::NeedsChoice => write!(f, "This group needs a field choice"),
             Self::IncompleteChoices => write!(f, "Choose a value for every field"),
+            Self::StaleEdit { .. } => {
+                write!(f, "This contact changed on disk. Reopen it before saving")
+            }
+            Self::InvalidCommand(message) => write!(f, "{message}"),
         }
     }
 }

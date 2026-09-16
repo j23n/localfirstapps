@@ -2,7 +2,7 @@
 
 - Status: Accepted (design; gallery FFI is not rewritten here)
 - Date: 2026-09-12
-- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`; architecture review names serialized vCard debt)
+- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`); 2026-09-16 (typed Contacts drafts replace serialized vCard reads and writes)
 - Parent: [0003-app-core.md](0003-app-core.md) R6, [0004-ui-spec-and-shells.md](0004-ui-spec-and-shells.md) R4
 
 ## Scope
@@ -13,14 +13,13 @@ now so every later vertical designs against it.
 
 It is **not** a gallery FFI rewrite. `gallery-ffi` stays as it is. The
 conformance check starts red and pins that red so a new Record cannot
-hide behind the known ones. `contacts-ffi` (Phase 3.1, mutations in 3.4) is
-syntax-green for its Record inventory: `TextRow`, `FieldRow`, and typed
-`ConflictRow`. Save/delete take and return strings.
-Those rows are produced in `contacts-core` (Milestone C); the FFI
-crate copies them onto the wire. CI runs the same checker over
-`core/contacts-ffi/src` without `--expect-violations`. The checker cannot see
-that `vcard_text` serializes a whole domain entity, so contacts is not
-semantically R6-complete.
+hide behind the known ones. `contacts-ffi` is green for display records and
+explicit command DTOs. `TextRow`, `FieldRow`, and typed `ConflictRow` are
+produced in `contacts-core`; full `ContactEditDraft` and
+`SaveContactCommand` values carry only editable intent. Normal reads and
+writes no longer cross as serialized vCards. `export_vcard_text` remains an
+explicit export operation. CI runs the same checker over
+`core/contacts-ffi/src` without `--expect-violations`.
 
 ## What may cross
 
@@ -84,6 +83,13 @@ slot. `MemoryRecord` having a `title` does not make it a `text-row`.
 Enums may cross. Objects (`LibraryIndex`, `ScannerSession`) are
 handles, not records. Errors are ADR 0003 R8, not this taxonomy.
 
+Command and host-port records carry an explicit `R6 role: command DTO` or
+`R6 role: host-port DTO` documentation marker. The checker permits primitive,
+enum, list, and nested exported DTO fields for those roles while continuing
+to reject an unmarked record that is not one display slot. The marker states
+purpose; semantic review still verifies that the DTO is not a renamed domain
+entity.
+
 ## Known-red inventory — `gallery-ffi`
 
 Every current `#[derive(uniffi::Record)]` in
@@ -128,9 +134,9 @@ exported types. The default gallery-ffi run is red while any listed
 Record remains. `--expect-violations` succeeds only when the
 violation set equals `expected.txt`, so a new domain Record cannot
 hide. `--self-test` exercises the parser and the slot taxonomy.
-`contacts-ffi` is a second `--src` and its Record inventory must stay green.
-Semantic review additionally checks exported string payloads and command/host
-DTO purpose; the parser cannot establish those properties.
+`contacts-ffi` is a second `--src` and its display/command inventory must stay
+green. Semantic review additionally checks exported string payloads and
+command/host DTO purpose; the parser cannot establish those properties.
 
 The check going green is the gallery (and then each later app) FFI
 rewrite, not this document.

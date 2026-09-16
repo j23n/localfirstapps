@@ -25,13 +25,20 @@ pub mod merge;
 pub mod store;
 pub mod vcard;
 
-pub use actions::{delete_logged, resolve_logged, save_logged};
+pub use actions::{
+    assign_tag_logged, bulk_delete_logged, delete_logged, export_vcard_text, load_edit_draft,
+    remove_tag_logged, rename_tag_logged, resolve_logged, save_contact_logged, save_logged,
+};
 pub use card::{Birthday, Card, Labeled, LabeledAddress, Layout, PostalAddress};
 pub use display::{
-    choice_rows, conflict_rows, field_rows, list_rows, merge_trailing, ConflictRow, FieldRow,
-    TextRow,
+    choice_rows, conflict_rows, detail_rows, field_rows, list_rows, list_rows_filtered,
+    merge_trailing, tag_rows, ConflictRow, FieldRow, TextRow,
 };
-pub use draft::{apply_draft, draft_from_card, ContactDraft};
+pub use draft::{
+    apply_draft, apply_edit_draft, content_token, draft_from_card, edit_draft_from_card,
+    new_edit_draft, BirthdayDraft, ContactDraft, ContactEditDraft, LabeledAddressDraft,
+    LabeledValueDraft, SaveContactCommand,
+};
 pub use folder_log::{
     append_deleted, append_group_resolved, append_saved, log_root, read_ops, STATE_DIR,
     TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED, TYPE_GROUP_RESOLVED,

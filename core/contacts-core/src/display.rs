@@ -53,9 +53,16 @@ pub struct ConflictRow {
 /// Sorted contact-list rows for `query` (core search).
 #[must_use]
 pub fn list_rows(store: &Store, query: &str) -> Vec<TextRow> {
+    list_rows_filtered(store, query, None)
+}
+
+/// Sorted contact-list rows for `query`, optionally restricted to one tag.
+#[must_use]
+pub fn list_rows_filtered(store: &Store, query: &str, tag: Option<&str>) -> Vec<TextRow> {
     store
         .search(query)
         .into_iter()
+        .filter(|card| tag.is_none_or(|tag| card.categories.iter().any(|value| value == tag)))
         .map(|card| TextRow {
             id: card.local_id.clone(),
             title: card.display_name(),
@@ -63,6 +70,36 @@ pub fn list_rows(store: &Store, query: &str) -> Vec<TextRow> {
             trailing: None,
         })
         .collect()
+}
+
+/// Sorted tag filter rows with display-ready counts.
+#[must_use]
+pub fn tag_rows(store: &Store) -> Vec<TextRow> {
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for card in store.cards() {
+        for tag in &card.categories {
+            *counts.entry(tag.clone()).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(tag, count)| TextRow {
+            id: tag.clone(),
+            title: tag,
+            subtitle: None,
+            trailing: Some(if count == 1 {
+                "1 contact".into()
+            } else {
+                format!("{count} contacts")
+            }),
+        })
+        .collect()
+}
+
+/// Display-ready detail rows for one id without exposing [`Card`] to a shell.
+pub fn detail_rows(store: &Store, id: &str) -> Result<Vec<FieldRow>, StoreError> {
+    let card = store.get(id).ok_or(StoreError::NotFound)?;
+    Ok(field_rows(card))
 }
 
 /// Detail `field-row`s for one card. Same copy on both shells.
@@ -82,10 +119,26 @@ pub fn field_rows(card: &Card) -> Vec<FieldRow> {
             editable: true,
         });
     }
+    if !card.job_title.is_empty() {
+        rows.push(FieldRow {
+            id: Some("title".into()),
+            label: "Job title".into(),
+            value: card.job_title.clone(),
+            editable: true,
+        });
+    }
+    if !card.nickname.is_empty() {
+        rows.push(FieldRow {
+            id: Some("nickname".into()),
+            label: "Nickname".into(),
+            value: card.nickname.clone(),
+            editable: true,
+        });
+    }
     for (i, phone) in card.phones.iter().enumerate() {
         rows.push(FieldRow {
             id: Some(format!("tel:{i}")),
-            label: phone.label.clone(),
+            label: display_label(&phone.label),
             value: phone.value.clone(),
             editable: true,
         });
@@ -93,8 +146,36 @@ pub fn field_rows(card: &Card) -> Vec<FieldRow> {
     for (i, email) in card.emails.iter().enumerate() {
         rows.push(FieldRow {
             id: Some(format!("email:{i}")),
-            label: email.label.clone(),
+            label: display_label(&email.label),
             value: email.value.clone(),
+            editable: true,
+        });
+    }
+    for (i, url) in card.urls.iter().enumerate() {
+        rows.push(FieldRow {
+            id: Some(format!("url:{i}")),
+            label: display_label(&url.label),
+            value: url.value.clone(),
+            editable: true,
+        });
+    }
+    for (i, address) in card.addresses.iter().enumerate() {
+        rows.push(FieldRow {
+            id: Some(format!("adr:{i}")),
+            label: display_label(&address.label),
+            value: address.value.formatted(),
+            editable: true,
+        });
+    }
+    if let Some(birthday) = &card.birthday {
+        let value = match birthday.year {
+            Some(year) => format!("{year:04}-{:02}-{:02}", birthday.month, birthday.day),
+            None => format!("--{:02}-{:02}", birthday.month, birthday.day),
+        };
+        rows.push(FieldRow {
+            id: Some("bday".into()),
+            label: "Birthday".into(),
+            value,
             editable: true,
         });
     }
@@ -103,6 +184,22 @@ pub fn field_rows(card: &Card) -> Vec<FieldRow> {
             id: Some("note".into()),
             label: "Note".into(),
             value: card.note.clone(),
+            editable: true,
+        });
+    }
+    for (i, category) in card.categories.iter().enumerate() {
+        rows.push(FieldRow {
+            id: Some(format!("category:{i}")),
+            label: "Tag".into(),
+            value: category.clone(),
+            editable: true,
+        });
+    }
+    if let Some(photo) = &card.photo {
+        rows.push(FieldRow {
+            id: Some("photo".into()),
+            label: "Photo".into(),
+            value: format!("{} bytes", photo.len()),
             editable: true,
         });
     }
@@ -174,5 +271,13 @@ fn subtitle(card: &Card) -> Option<String> {
         Some(card.organization.clone())
     } else {
         card.emails.first().map(|e| e.value.clone())
+    }
+}
+
+fn display_label(label: &str) -> String {
+    let mut chars = label.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => "Other".into(),
     }
 }

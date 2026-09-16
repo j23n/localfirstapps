@@ -79,6 +79,7 @@ dependencies = [
  "localcore-vfs",
  "localcore-walk",
  "serde_json",
+ "sha2",
  "uuid",
 ]
 

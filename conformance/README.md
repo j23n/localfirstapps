@@ -154,6 +154,10 @@ benches, vendor/build output, Rust `cfg(test)` items, generated
 `GalleryCore.swift`, and the generated Linux Swift shim are excluded.
 Comments and string literals are masked rather than treated as semantics.
 
+Contacts currently has no semantic-baseline exception: normal loads and
+saves use typed drafts, while `export_vcard_text` is named and scoped as an
+explicit export operation.
+
 ## Workflow
 
 `.github/workflows/conformance.yml` runs both new checkers as checkout-local

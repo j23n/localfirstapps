@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (`contacts-core` headless, Phase 3.1); 2026-09-13 (3.4 iOS writes through FFI); 2026-09-14 (Milestone C: shared display surface)
+- Revised: 2026-09-11 (r2); 2026-09-13 (`contacts-core` headless, Phase 3.1); 2026-09-13 (3.4 iOS writes through FFI); 2026-09-14 (Milestone C: shared display surface); 2026-09-16 (typed Contacts edit boundary)
 
 ## Scope
 
@@ -17,13 +17,12 @@ shells.
 rules, and each serves both shells unchanged. `contacts-core` landed
 headless in Phase 3.1 (`core/contacts-core`, syntax-green
 `contacts-ffi`).
-The iOS shell writes through `contacts-ffi` (Phase 3.4) and still
-parses vCard *text* for views and the CN port. The GTK shell links
-`contacts-core` (Phase 3.5). List, detail, conflict, draft, and logged
-save/delete/resolve are functions on `contacts-core` (Milestone C);
-FFI copies the display rows onto UniFFI. `vcard_text` is documented
-boundary debt, not evidence that R6 is complete. Save, delete, and group
-resolve best-effort append to `.contacts/log/<dev>/` after the
+The iOS shell reads and writes typed drafts through `contacts-ffi`; normal
+loads no longer parse vCard text. The GTK shell links `contacts-core`
+(Phase 3.5). List, detail, conflict, draft, tag, and logged
+save/delete/resolve actions are functions on `contacts-core`; FFI copies
+display rows and explicit command DTOs onto UniFFI. Save, delete, tag, and
+group-resolve actions best-effort append to `.contacts/log/<dev>/` after the
 authoritative file mutation. `gallery-core` remains
 at `apps/gallery/core`. The other two cores are later phases.
 
@@ -177,7 +176,8 @@ comparator sites and 42 formatting sites today. Forbidding it again would
 produce the same result; removing the raw material does not.
 
 Milestone C put contact display records and typed conflict disposition in
-`contacts-core` so UniFFI and GTK control flow cannot drift. GTK still holds
-`Card` for editing and iOS reparses `vcard_text`; both are boundary debt to
-replace with command and host-port DTOs. Windowed view models remain a Phase
-5 gallery requirement.
+`contacts-core` so UniFFI and GTK control flow cannot drift. Contacts now also
+has a full typed edit command with deterministic stale detection; the iOS
+store adapter uses it. GTK still holds `Card` for detail/export and its
+compact form remains to migrate to the full draft. Windowed view models
+remain a Phase 5 gallery requirement.

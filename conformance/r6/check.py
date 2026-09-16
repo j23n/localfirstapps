@@ -129,6 +129,7 @@ ITEM_RE = re.compile(
 )
 IMPL_RE = re.compile(r"^impl(?:\s*<[^>]+>)?\s+(?P<name>\w+)\s*[{]")
 FIELD_RE = re.compile(r"^pub(?:\([^)]*\))?\s+(?P<name>\w+)\s*:\s*(?P<typ>.+?)\s*,?\s*$")
+DTO_ROLE_RE = re.compile(r"\bR6\s+role:\s*(command|host-port)\s+DTO\b")
 
 
 @dataclass(frozen=True)
@@ -143,6 +144,7 @@ class Record:
     path: str
     line: int
     fields: tuple[Field, ...]
+    dto_role: str | None = None
 
 
 @dataclass(frozen=True)
@@ -298,6 +300,7 @@ def parse_ffi_source(rel: str, text: str) -> tuple[list[Record], list[Export]]:
     records: list[Record] = []
     exports: list[Export] = []
     pending: list[str] = []
+    pending_role: str | None = None
     buf: str | None = None
     i = 0
     while i < len(lines):
@@ -323,6 +326,9 @@ def parse_ffi_source(rel: str, text: str) -> tuple[list[Record], list[Export]]:
             or stripped.startswith("///")
             or stripped.startswith("//!")
         ):
+            role = DTO_ROLE_RE.search(stripped)
+            if role:
+                pending_role = role.group(1)
             i += 1
             continue
 
@@ -335,8 +341,9 @@ def parse_ffi_source(rel: str, text: str) -> tuple[list[Record], list[Export]]:
             line_no = i + 1
             if kind == "struct" and "record" in kinds:
                 fields, end = _parse_struct_fields(lines, i)
-                records.append(Record(name, rel, line_no, fields))
+                records.append(Record(name, rel, line_no, fields, pending_role))
                 exports.append(Export("record", name, rel, line_no))
+                pending_role = None
                 i = end + 1
                 continue
             export_kind: str | None = None
@@ -352,12 +359,14 @@ def parse_ffi_source(rel: str, text: str) -> tuple[list[Record], list[Export]]:
                 export_kind = "fn"
             if export_kind:
                 exports.append(Export(export_kind, name, rel, line_no))
+            pending_role = None
             i += 1
             continue
 
         impl = IMPL_RE.match(stripped)
         if impl and "export" in kinds:
             exports.append(Export("impl", impl.group("name"), rel, i + 1))
+        pending_role = None
         i += 1
     return records, exports
 
@@ -388,6 +397,25 @@ def classify(
     clean: dict[str, str] = {}
     violations: list[Violation] = []
     for rec in records:
+        if rec.dto_role:
+            unknown = {
+                innermost_named(field.typ)
+                for field in rec.fields
+                if innermost_named(field.typ)
+                not in (PRIMITIVES | enums | record_names)
+            }
+            if not unknown:
+                clean[rec.name] = f"{rec.dto_role}-dto"
+                continue
+            violations.append(
+                Violation(
+                    rec.name,
+                    rec.path,
+                    rec.line,
+                    "DTO carries " + ", ".join(sorted(unknown)),
+                )
+            )
+            continue
         nested: set[str] = set()
         lists = False
         unknown: set[str] = set()
@@ -519,6 +547,20 @@ pub struct MediaCard {
     pub label: Option<String>,
 }
 
+/// R6 role: command DTO.
+#[derive(uniffi::Record)]
+pub struct EditValue {
+    pub label: String,
+    pub value: String,
+}
+
+/// R6 role: command DTO.
+#[derive(uniffi::Record)]
+pub struct EditCommand {
+    pub id: Option<String>,
+    pub values: Vec<EditValue>,
+}
+
 #[derive(uniffi::Object)]
 pub struct LibraryIndex {}
 
@@ -537,7 +579,14 @@ pub enum ScanError {
 """
     records, exports = parse_ffi_source("fake.rs", sample)
     names = [r.name for r in records]
-    assert names == ["TextRow", "ScanPhoto", "ScanTag", "MediaCard"], names
+    assert names == [
+        "TextRow",
+        "ScanPhoto",
+        "ScanTag",
+        "MediaCard",
+        "EditValue",
+        "EditCommand",
+    ], names
     by_kind = {}
     for e in exports:
         by_kind.setdefault(e.kind, []).append(e.name)
@@ -557,7 +606,12 @@ pub enum ScanError {
     ]
 
     violations, clean = classify(records, exports)
-    assert clean == {"TextRow": "text-row", "MediaCard": "media-item"}, clean
+    assert clean == {
+        "TextRow": "text-row",
+        "MediaCard": "media-item",
+        "EditValue": "command-dto",
+        "EditCommand": "command-dto",
+    }, clean
     vnames = [v.name for v in violations]
     assert vnames == ["ScanPhoto", "ScanTag"], vnames
     reasons = {v.name: v.reason for v in violations}

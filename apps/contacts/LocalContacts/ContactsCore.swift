@@ -395,7 +395,7 @@ private func uniffiTraitInterfaceCallWithError<T, E>(
         callStatus.pointee.errorBuf = FfiConverterString.lower(String(describing: error))
     }
 }
-// Initial value and increment amount for handles. 
+// Initial value and increment amount for handles.
 // These ensure that SWIFT handles always have the lowest bit set
 fileprivate let UNIFFI_HANDLEMAP_INITIAL: UInt64 = 1
 fileprivate let UNIFFI_HANDLEMAP_DELTA: UInt64 = 2
@@ -458,6 +458,54 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 
 // Public interface members begin here.
 
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
+    typealias FfiType = Int32
+    typealias SwiftType = Int32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int32, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
+    typealias FfiType = UInt64
+    typealias SwiftType = UInt64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -529,6 +577,24 @@ fileprivate struct FfiConverterString: FfiConverter {
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterData: FfiConverterRustBuffer {
+    typealias SwiftType = Data
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+        let len: Int32 = try readInt(&buf)
+        return Data(try readBytes(&buf, count: Int(len)))
+    }
+
+    public static func write(_ value: Data, into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        writeBytes(&buf, value)
+    }
+}
+
 
 
 
@@ -536,61 +602,98 @@ fileprivate struct FfiConverterString: FfiConverter {
  * Open a contacts folder on the real filesystem.
  */
 public protocol ContactsSessionProtocol: AnyObject, Sendable {
-    
+
+    /**
+     * Assign a tag to several contacts through typed draft saves.
+     */
+    func assignTag(tag: String, ids: [String]) throws  -> UInt64
+
     /**
      * `text-row`s for one group's field choices. `id` is `field|source`.
      */
     func conflictChoiceRows(canonicalName: String) throws  -> [TextRow]
-    
+
     /**
      * Conflict groups with display copy and a typed merge disposition.
      */
     func conflictRows() throws  -> [ConflictRow]
-    
+
+    /**
+     * Reload the authoritative Card by id and return its typed edit draft.
+     */
+    func contactEditDraft(id: String) throws  -> ContactEditDraft
+
     /**
      * Delete one card (and its file when it was the last sibling).
      */
-    func delete(id: String) throws 
-    
+    func delete(id: String) throws
+
+    /**
+     * Delete several contacts with one logged delete action per id.
+     */
+    func deleteMany(ids: [String]) throws  -> UInt64
+
+    /**
+     * Canonical vCard text for an explicit export operation only.
+     */
+    func exportVcardText(id: String) throws  -> String
+
     /**
      * `field-row`s for one card.
      */
     func fieldRows(id: String) throws  -> [FieldRow]
-    
+
     /**
      * Basename of the `.vcf` this id lives in.
      */
     func fileName(id: String) throws  -> String
-    
+
+    /**
+     * Display-ready contact rows for a search query and optional tag filter.
+     */
+    func filteredListRows(query: String, tag: String?) throws  -> [TextRow]
+
     /**
      * `text-row` list, sorted by title.
      */
     func listRows() throws  -> [TextRow]
-    
+
+    /**
+     * Empty typed draft for creating a contact.
+     */
+    func newContactDraft()  -> ContactEditDraft
+
     /**
      * Re-walk the folder.
      */
-    func reload() throws 
-    
+    func reload() throws
+
+    /**
+     * Remove a tag from every contact through typed draft saves.
+     */
+    func removeTag(tag: String) throws  -> UInt64
+
+    /**
+     * Rename a tag on every contact through typed draft saves.
+     */
+    func renameTag(oldName: String, newName: String) throws  -> UInt64
+
     /**
      * Apply a merge. `choice_ids` are `field|source` from [`Self::conflict_choice_rows`].
      * Empty is enough for Auto / DeletedVersusModified. Choice without a pick fails.
      */
-    func resolveGroup(canonicalName: String, choiceIds: [String]) throws 
-    
+    func resolveGroup(canonicalName: String, choiceIds: [String]) throws
+
     /**
-     * Parse `text` and write through [`Store::save`]. Returns the last id.
-     *
-     * `file_name` is the basename to update. Empty means assign (or
-     * reuse the name already indexed for this id).
+     * Validate and save a typed contact edit.
      */
-    func saveVcard(text: String, fileName: String) throws  -> String
-    
+    func saveContact(command: SaveContactCommand) throws  -> ContactEditDraft
+
     /**
-     * Canonical vCard text for one card. The shell may parse it; `Card` does not cross.
+     * Display-ready tag filters with contact counts.
      */
-    func vcardText(id: String) throws  -> String
-    
+    func tagRows() throws  -> [TextRow]
+
 }
 /**
  * Open a contacts folder on the real filesystem.
@@ -645,7 +748,7 @@ open class ContactsSession: ContactsSessionProtocol, @unchecked Sendable {
         try! rustCall { uniffi_contacts_ffi_fn_free_contactssession(handle, $0) }
     }
 
-    
+
     /**
      * Walk `root` and load surviving `.vcf` files.
      *
@@ -661,9 +764,23 @@ public static func `open`(root: String, device: String)throws  -> ContactsSessio
     )
 })
 }
-    
 
-    
+
+
+    /**
+     * Assign a tag to several contacts through typed draft saves.
+     */
+open func assignTag(tag: String, ids: [String])throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_assign_tag(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(tag),
+        FfiConverterSequenceString.lower(ids),uniffiCallStatus
+    )
+})
+}
+
     /**
      * `text-row`s for one group's field choices. `id` is `field|source`.
      */
@@ -676,7 +793,7 @@ open func conflictChoiceRows(canonicalName: String)throws  -> [TextRow]  {
     )
 })
 }
-    
+
     /**
      * Conflict groups with display copy and a typed merge disposition.
      */
@@ -688,7 +805,20 @@ open func conflictRows()throws  -> [ConflictRow]  {
     )
 })
 }
-    
+
+    /**
+     * Reload the authoritative Card by id and return its typed edit draft.
+     */
+open func contactEditDraft(id: String)throws  -> ContactEditDraft  {
+    return try  FfiConverterTypeContactEditDraft_lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_contact_edit_draft(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+
     /**
      * Delete one card (and its file when it was the last sibling).
      */
@@ -700,7 +830,33 @@ open func delete(id: String)throws   {try rustCallWithError(FfiConverterTypeCont
     )
 }
 }
-    
+
+    /**
+     * Delete several contacts with one logged delete action per id.
+     */
+open func deleteMany(ids: [String])throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_delete_many(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(ids),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Canonical vCard text for an explicit export operation only.
+     */
+open func exportVcardText(id: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_export_vcard_text(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+
     /**
      * `field-row`s for one card.
      */
@@ -713,7 +869,7 @@ open func fieldRows(id: String)throws  -> [FieldRow]  {
     )
 })
 }
-    
+
     /**
      * Basename of the `.vcf` this id lives in.
      */
@@ -726,7 +882,21 @@ open func fileName(id: String)throws  -> String  {
     )
 })
 }
-    
+
+    /**
+     * Display-ready contact rows for a search query and optional tag filter.
+     */
+open func filteredListRows(query: String, tag: String?)throws  -> [TextRow]  {
+    return try  FfiConverterSequenceTypeTextRow.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_filtered_list_rows(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(query),
+        FfiConverterOptionString.lower(tag),uniffiCallStatus
+    )
+})
+}
+
     /**
      * `text-row` list, sorted by title.
      */
@@ -738,7 +908,19 @@ open func listRows()throws  -> [TextRow]  {
     )
 })
 }
-    
+
+    /**
+     * Empty typed draft for creating a contact.
+     */
+open func newContactDraft() -> ContactEditDraft  {
+    return try!  FfiConverterTypeContactEditDraft_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_new_contact_draft(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
     /**
      * Re-walk the folder.
      */
@@ -749,7 +931,34 @@ open func reload()throws   {try rustCallWithError(FfiConverterTypeContactsError_
     )
 }
 }
-    
+
+    /**
+     * Remove a tag from every contact through typed draft saves.
+     */
+open func removeTag(tag: String)throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_remove_tag(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(tag),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Rename a tag on every contact through typed draft saves.
+     */
+open func renameTag(oldName: String, newName: String)throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_rename_tag(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(oldName),
+        FfiConverterString.lower(newName),uniffiCallStatus
+    )
+})
+}
+
     /**
      * Apply a merge. `choice_ids` are `field|source` from [`Self::conflict_choice_rows`].
      * Empty is enough for Auto / DeletedVersusModified. Choice without a pick fails.
@@ -763,39 +972,34 @@ open func resolveGroup(canonicalName: String, choiceIds: [String])throws   {try 
     )
 }
 }
-    
-    /**
-     * Parse `text` and write through [`Store::save`]. Returns the last id.
-     *
-     * `file_name` is the basename to update. Empty means assign (or
-     * reuse the name already indexed for this id).
-     */
-open func saveVcard(text: String, fileName: String)throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
-        uniffiCallStatus in
-    uniffi_contacts_ffi_fn_method_contactssession_save_vcard(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(text),
-        FfiConverterString.lower(fileName),uniffiCallStatus
-    )
-})
-}
-    
-    /**
-     * Canonical vCard text for one card. The shell may parse it; `Card` does not cross.
-     */
-open func vcardText(id: String)throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
-        uniffiCallStatus in
-    uniffi_contacts_ffi_fn_method_contactssession_vcard_text(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(id),uniffiCallStatus
-    )
-})
-}
-    
 
-    
+    /**
+     * Validate and save a typed contact edit.
+     */
+open func saveContact(command: SaveContactCommand)throws  -> ContactEditDraft  {
+    return try  FfiConverterTypeContactEditDraft_lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_save_contact(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeSaveContactCommand_lower(command),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Display-ready tag filters with contact counts.
+     */
+open func tagRows()throws  -> [TextRow]  {
+    return try  FfiConverterSequenceTypeTextRow.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_tag_rows(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+
+
 }
 
 
@@ -843,6 +1047,87 @@ public func FfiConverterTypeContactsSession_lower(_ value: ContactsSession) -> U
 
 
 /**
+ * R6 role: command DTO.
+ *
+ * Editable birthday; `year` is absent for `--MM-DD`.
+ */
+public struct BirthdayDraft: Equatable, Hashable {
+    /**
+     * Four-digit year, when known.
+     */
+    public var year: Int32?
+    /**
+     * Month 1–12.
+     */
+    public var month: UInt8
+    /**
+     * Day 1–31.
+     */
+    public var day: UInt8
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Four-digit year, when known.
+         */year: Int32?,
+        /**
+         * Month 1–12.
+         */month: UInt8,
+        /**
+         * Day 1–31.
+         */day: UInt8) {
+        self.year = year
+        self.month = month
+        self.day = day
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BirthdayDraft: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBirthdayDraft: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BirthdayDraft {
+        return
+            try BirthdayDraft(
+                year: FfiConverterOptionInt32.read(from: &buf),
+                month: FfiConverterUInt8.read(from: &buf),
+                day: FfiConverterUInt8.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BirthdayDraft, into buf: inout [UInt8]) {
+        FfiConverterOptionInt32.write(value.year, into: &buf)
+        FfiConverterUInt8.write(value.month, into: &buf)
+        FfiConverterUInt8.write(value.day, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBirthdayDraft_lift(_ buf: RustBuffer) throws -> BirthdayDraft {
+    return try FfiConverterTypeBirthdayDraft.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBirthdayDraft_lower(_ value: BirthdayDraft) -> RustBuffer {
+    return FfiConverterTypeBirthdayDraft.lower(value)
+}
+
+
+/**
  * Display-ready conflict group plus typed disposition.
  */
 public struct ConflictRow: Equatable, Hashable {
@@ -872,16 +1157,16 @@ public struct ConflictRow: Equatable, Hashable {
     public init(
         /**
          * Opaque folder-relative key handed back to merge calls.
-         */id: String, 
+         */id: String,
         /**
          * Surviving file path relative to the contacts folder.
-         */title: String, 
+         */title: String,
         /**
          * Human-readable number of copies.
-         */subtitle: String, 
+         */subtitle: String,
         /**
          * Human-readable disposition.
-         */trailing: String, 
+         */trailing: String,
         /**
          * Typed disposition for shell control flow.
          */disposition: MergeKind) {
@@ -892,9 +1177,9 @@ public struct ConflictRow: Equatable, Hashable {
         self.disposition = disposition
     }
 
-    
 
-    
+
+
 }
 
 #if compiler(>=6)
@@ -908,10 +1193,10 @@ public struct FfiConverterTypeConflictRow: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictRow {
         return
             try ConflictRow(
-                id: FfiConverterString.read(from: &buf), 
-                title: FfiConverterString.read(from: &buf), 
-                subtitle: FfiConverterString.read(from: &buf), 
-                trailing: FfiConverterString.read(from: &buf), 
+                id: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                subtitle: FfiConverterString.read(from: &buf),
+                trailing: FfiConverterString.read(from: &buf),
                 disposition: FfiConverterTypeMergeKind.read(from: &buf)
         )
     }
@@ -942,6 +1227,247 @@ public func FfiConverterTypeConflictRow_lower(_ value: ConflictRow) -> RustBuffe
 
 
 /**
+ * R6 role: command DTO.
+ *
+ * Full core-owned contact edit form. Storage-only Card fields do not cross.
+ */
+public struct ContactEditDraft: Equatable, Hashable {
+    /**
+     * Existing id; absent for a new contact.
+     */
+    public var id: String?
+    /**
+     * Deterministic token of the authoritative Card used to open this draft.
+     */
+    public var contentToken: String?
+    /**
+     * FN.
+     */
+    public var fullName: String
+    /**
+     * N family.
+     */
+    public var familyName: String
+    /**
+     * N given.
+     */
+    public var givenName: String
+    /**
+     * N middle.
+     */
+    public var middleName: String
+    /**
+     * N prefix.
+     */
+    public var namePrefix: String
+    /**
+     * N suffix.
+     */
+    public var nameSuffix: String
+    /**
+     * ORG.
+     */
+    public var organization: String
+    /**
+     * TITLE.
+     */
+    public var jobTitle: String
+    /**
+     * NICKNAME.
+     */
+    public var nickname: String
+    /**
+     * URL rows.
+     */
+    public var urls: [LabeledValueDraft]
+    /**
+     * TEL rows.
+     */
+    public var phones: [LabeledValueDraft]
+    /**
+     * EMAIL rows.
+     */
+    public var emails: [LabeledValueDraft]
+    /**
+     * ADR rows.
+     */
+    public var addresses: [LabeledAddressDraft]
+    /**
+     * BDAY.
+     */
+    public var birthday: BirthdayDraft?
+    /**
+     * NOTE.
+     */
+    public var note: String
+    /**
+     * CATEGORIES.
+     */
+    public var categories: [String]
+    /**
+     * Decoded PHOTO bytes.
+     */
+    public var photo: Data?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Existing id; absent for a new contact.
+         */id: String?,
+        /**
+         * Deterministic token of the authoritative Card used to open this draft.
+         */contentToken: String?,
+        /**
+         * FN.
+         */fullName: String,
+        /**
+         * N family.
+         */familyName: String,
+        /**
+         * N given.
+         */givenName: String,
+        /**
+         * N middle.
+         */middleName: String,
+        /**
+         * N prefix.
+         */namePrefix: String,
+        /**
+         * N suffix.
+         */nameSuffix: String,
+        /**
+         * ORG.
+         */organization: String,
+        /**
+         * TITLE.
+         */jobTitle: String,
+        /**
+         * NICKNAME.
+         */nickname: String,
+        /**
+         * URL rows.
+         */urls: [LabeledValueDraft],
+        /**
+         * TEL rows.
+         */phones: [LabeledValueDraft],
+        /**
+         * EMAIL rows.
+         */emails: [LabeledValueDraft],
+        /**
+         * ADR rows.
+         */addresses: [LabeledAddressDraft],
+        /**
+         * BDAY.
+         */birthday: BirthdayDraft?,
+        /**
+         * NOTE.
+         */note: String,
+        /**
+         * CATEGORIES.
+         */categories: [String],
+        /**
+         * Decoded PHOTO bytes.
+         */photo: Data?) {
+        self.id = id
+        self.contentToken = contentToken
+        self.fullName = fullName
+        self.familyName = familyName
+        self.givenName = givenName
+        self.middleName = middleName
+        self.namePrefix = namePrefix
+        self.nameSuffix = nameSuffix
+        self.organization = organization
+        self.jobTitle = jobTitle
+        self.nickname = nickname
+        self.urls = urls
+        self.phones = phones
+        self.emails = emails
+        self.addresses = addresses
+        self.birthday = birthday
+        self.note = note
+        self.categories = categories
+        self.photo = photo
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ContactEditDraft: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeContactEditDraft: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ContactEditDraft {
+        return
+            try ContactEditDraft(
+                id: FfiConverterOptionString.read(from: &buf),
+                contentToken: FfiConverterOptionString.read(from: &buf),
+                fullName: FfiConverterString.read(from: &buf),
+                familyName: FfiConverterString.read(from: &buf),
+                givenName: FfiConverterString.read(from: &buf),
+                middleName: FfiConverterString.read(from: &buf),
+                namePrefix: FfiConverterString.read(from: &buf),
+                nameSuffix: FfiConverterString.read(from: &buf),
+                organization: FfiConverterString.read(from: &buf),
+                jobTitle: FfiConverterString.read(from: &buf),
+                nickname: FfiConverterString.read(from: &buf),
+                urls: FfiConverterSequenceTypeLabeledValueDraft.read(from: &buf),
+                phones: FfiConverterSequenceTypeLabeledValueDraft.read(from: &buf),
+                emails: FfiConverterSequenceTypeLabeledValueDraft.read(from: &buf),
+                addresses: FfiConverterSequenceTypeLabeledAddressDraft.read(from: &buf),
+                birthday: FfiConverterOptionTypeBirthdayDraft.read(from: &buf),
+                note: FfiConverterString.read(from: &buf),
+                categories: FfiConverterSequenceString.read(from: &buf),
+                photo: FfiConverterOptionData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ContactEditDraft, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.contentToken, into: &buf)
+        FfiConverterString.write(value.fullName, into: &buf)
+        FfiConverterString.write(value.familyName, into: &buf)
+        FfiConverterString.write(value.givenName, into: &buf)
+        FfiConverterString.write(value.middleName, into: &buf)
+        FfiConverterString.write(value.namePrefix, into: &buf)
+        FfiConverterString.write(value.nameSuffix, into: &buf)
+        FfiConverterString.write(value.organization, into: &buf)
+        FfiConverterString.write(value.jobTitle, into: &buf)
+        FfiConverterString.write(value.nickname, into: &buf)
+        FfiConverterSequenceTypeLabeledValueDraft.write(value.urls, into: &buf)
+        FfiConverterSequenceTypeLabeledValueDraft.write(value.phones, into: &buf)
+        FfiConverterSequenceTypeLabeledValueDraft.write(value.emails, into: &buf)
+        FfiConverterSequenceTypeLabeledAddressDraft.write(value.addresses, into: &buf)
+        FfiConverterOptionTypeBirthdayDraft.write(value.birthday, into: &buf)
+        FfiConverterString.write(value.note, into: &buf)
+        FfiConverterSequenceString.write(value.categories, into: &buf)
+        FfiConverterOptionData.write(value.photo, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeContactEditDraft_lift(_ buf: RustBuffer) throws -> ContactEditDraft {
+    return try FfiConverterTypeContactEditDraft.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeContactEditDraft_lower(_ value: ContactEditDraft) -> RustBuffer {
+    return FfiConverterTypeContactEditDraft.lower(value)
+}
+
+
+/**
  * `field-row` (ADR 0004 R4).
  */
 public struct FieldRow: Equatable, Hashable {
@@ -967,13 +1493,13 @@ public struct FieldRow: Equatable, Hashable {
     public init(
         /**
          * Optional row key.
-         */id: String?, 
+         */id: String?,
         /**
          * Field name, already chosen.
-         */label: String, 
+         */label: String,
         /**
          * Field value, already formatted.
-         */value: String, 
+         */value: String,
         /**
          * Whether the shell may edit this row.
          */editable: Bool) {
@@ -983,9 +1509,9 @@ public struct FieldRow: Equatable, Hashable {
         self.editable = editable
     }
 
-    
 
-    
+
+
 }
 
 #if compiler(>=6)
@@ -999,9 +1525,9 @@ public struct FfiConverterTypeFieldRow: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FieldRow {
         return
             try FieldRow(
-                id: FfiConverterOptionString.read(from: &buf), 
-                label: FfiConverterString.read(from: &buf), 
-                value: FfiConverterString.read(from: &buf), 
+                id: FfiConverterOptionString.read(from: &buf),
+                label: FfiConverterString.read(from: &buf),
+                value: FfiConverterString.read(from: &buf),
                 editable: FfiConverterBool.read(from: &buf)
         )
     }
@@ -1031,6 +1557,249 @@ public func FfiConverterTypeFieldRow_lower(_ value: FieldRow) -> RustBuffer {
 
 
 /**
+ * R6 role: command DTO.
+ *
+ * One editable structured postal address.
+ */
+public struct LabeledAddressDraft: Equatable, Hashable {
+    /**
+     * TYPE label.
+     */
+    public var label: String
+    /**
+     * Street.
+     */
+    public var street: String
+    /**
+     * City.
+     */
+    public var city: String
+    /**
+     * Region/state.
+     */
+    public var state: String
+    /**
+     * Postal code.
+     */
+    public var postalCode: String
+    /**
+     * Country.
+     */
+    public var country: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * TYPE label.
+         */label: String,
+        /**
+         * Street.
+         */street: String,
+        /**
+         * City.
+         */city: String,
+        /**
+         * Region/state.
+         */state: String,
+        /**
+         * Postal code.
+         */postalCode: String,
+        /**
+         * Country.
+         */country: String) {
+        self.label = label
+        self.street = street
+        self.city = city
+        self.state = state
+        self.postalCode = postalCode
+        self.country = country
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension LabeledAddressDraft: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLabeledAddressDraft: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LabeledAddressDraft {
+        return
+            try LabeledAddressDraft(
+                label: FfiConverterString.read(from: &buf),
+                street: FfiConverterString.read(from: &buf),
+                city: FfiConverterString.read(from: &buf),
+                state: FfiConverterString.read(from: &buf),
+                postalCode: FfiConverterString.read(from: &buf),
+                country: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LabeledAddressDraft, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterString.write(value.street, into: &buf)
+        FfiConverterString.write(value.city, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterString.write(value.postalCode, into: &buf)
+        FfiConverterString.write(value.country, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLabeledAddressDraft_lift(_ buf: RustBuffer) throws -> LabeledAddressDraft {
+    return try FfiConverterTypeLabeledAddressDraft.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLabeledAddressDraft_lower(_ value: LabeledAddressDraft) -> RustBuffer {
+    return FfiConverterTypeLabeledAddressDraft.lower(value)
+}
+
+
+/**
+ * R6 role: command DTO.
+ *
+ * One editable labeled URL, phone, or email.
+ */
+public struct LabeledValueDraft: Equatable, Hashable {
+    /**
+     * TYPE label.
+     */
+    public var label: String
+    /**
+     * Unescaped value.
+     */
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * TYPE label.
+         */label: String,
+        /**
+         * Unescaped value.
+         */value: String) {
+        self.label = label
+        self.value = value
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension LabeledValueDraft: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLabeledValueDraft: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LabeledValueDraft {
+        return
+            try LabeledValueDraft(
+                label: FfiConverterString.read(from: &buf),
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LabeledValueDraft, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLabeledValueDraft_lift(_ buf: RustBuffer) throws -> LabeledValueDraft {
+    return try FfiConverterTypeLabeledValueDraft.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLabeledValueDraft_lower(_ value: LabeledValueDraft) -> RustBuffer {
+    return FfiConverterTypeLabeledValueDraft.lower(value)
+}
+
+
+/**
+ * R6 role: command DTO.
+ *
+ * Typed save intent carrying editable fields and their base token.
+ */
+public struct SaveContactCommand: Equatable, Hashable {
+    /**
+     * Draft to validate and save.
+     */
+    public var draft: ContactEditDraft
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Draft to validate and save.
+         */draft: ContactEditDraft) {
+        self.draft = draft
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SaveContactCommand: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSaveContactCommand: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SaveContactCommand {
+        return
+            try SaveContactCommand(
+                draft: FfiConverterTypeContactEditDraft.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SaveContactCommand, into buf: inout [UInt8]) {
+        FfiConverterTypeContactEditDraft.write(value.draft, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSaveContactCommand_lift(_ buf: RustBuffer) throws -> SaveContactCommand {
+    return try FfiConverterTypeSaveContactCommand.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSaveContactCommand_lower(_ value: SaveContactCommand) -> RustBuffer {
+    return FfiConverterTypeSaveContactCommand.lower(value)
+}
+
+
+/**
  * `text-row` (ADR 0004 R4).
  */
 public struct TextRow: Equatable, Hashable {
@@ -1056,13 +1825,13 @@ public struct TextRow: Equatable, Hashable {
     public init(
         /**
          * Opaque key the shell hands back.
-         */id: String, 
+         */id: String,
         /**
          * Primary label.
-         */title: String, 
+         */title: String,
         /**
          * Secondary label.
-         */subtitle: String?, 
+         */subtitle: String?,
         /**
          * Trailing status.
          */trailing: String?) {
@@ -1072,9 +1841,9 @@ public struct TextRow: Equatable, Hashable {
         self.trailing = trailing
     }
 
-    
 
-    
+
+
 }
 
 #if compiler(>=6)
@@ -1088,9 +1857,9 @@ public struct FfiConverterTypeTextRow: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TextRow {
         return
             try TextRow(
-                id: FfiConverterString.read(from: &buf), 
-                title: FfiConverterString.read(from: &buf), 
-                subtitle: FfiConverterOptionString.read(from: &buf), 
+                id: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                subtitle: FfiConverterOptionString.read(from: &buf),
                 trailing: FfiConverterOptionString.read(from: &buf)
         )
     }
@@ -1122,11 +1891,11 @@ public func FfiConverterTypeTextRow_lower(_ value: TextRow) -> RustBuffer {
 /**
  * Typed failures (ADR 0003 R8).
  */
-public 
+public
 enum ContactsError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
-    
-    
+
+
     /**
      * Folder cannot be read or written.
      */
@@ -1143,16 +1912,38 @@ enum ContactsError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError 
      * Merge needs a field choice; do not apply silently.
      */
     case NeedsChoice
+    /**
+     * Draft is older than the authoritative Card.
+     */
+    case StaleEdit(
+        /**
+         * Display-ready recovery message.
+         */message: String,
+        /**
+         * The shell can recover by reopening the editor.
+         */userActionable: Bool
+    )
+    /**
+     * Typed command is inconsistent or invalid.
+     */
+    case InvalidCommand(
+        /**
+         * Display-ready validation message.
+         */message: String,
+        /**
+         * The user can change the submitted values.
+         */userActionable: Bool
+    )
 
-    
 
-    
 
-    
+
+
+
     public var errorDescription: String? {
         String(reflecting: self)
     }
-    
+
 }
 
 #if compiler(>=6)
@@ -1169,14 +1960,22 @@ public struct FfiConverterTypeContactsError: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
 
-        
 
-        
+
+
         case 1: return .Io(
             message: try FfiConverterString.read(from: &buf)
             )
         case 2: return .NotFound
         case 3: return .NeedsChoice
+        case 4: return .StaleEdit(
+            message: try FfiConverterString.read(from: &buf),
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
+        case 5: return .InvalidCommand(
+            message: try FfiConverterString.read(from: &buf),
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -1185,22 +1984,34 @@ public struct FfiConverterTypeContactsError: FfiConverterRustBuffer {
     public static func write(_ value: ContactsError, into buf: inout [UInt8]) {
         switch value {
 
-        
 
-        
-        
+
+
+
         case let .Io(message):
             writeInt(&buf, Int32(1))
             FfiConverterString.write(message, into: &buf)
-            
-        
+
+
         case .NotFound:
             writeInt(&buf, Int32(2))
-        
-        
+
+
         case .NeedsChoice:
             writeInt(&buf, Int32(3))
-        
+
+
+        case let .StaleEdit(message,userActionable):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+
+
+        case let .InvalidCommand(message,userActionable):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+
         }
     }
 }
@@ -1226,7 +2037,7 @@ public func FfiConverterTypeContactsError_lower(_ value: ContactsError) -> RustB
  */
 
 public enum MergeKind: Equatable, Hashable {
-    
+
     /**
      * All fields merge deterministically.
      */
@@ -1259,32 +2070,32 @@ public struct FfiConverterTypeMergeKind: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MergeKind {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-        
+
         case 1: return .auto
-        
+
         case 2: return .choice
-        
+
         case 3: return .deletedVersusModified
-        
+
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: MergeKind, into buf: inout [UInt8]) {
         switch value {
-        
-        
+
+
         case .auto:
             writeInt(&buf, Int32(1))
-        
-        
+
+
         case .choice:
             writeInt(&buf, Int32(2))
-        
-        
+
+
         case .deletedVersusModified:
             writeInt(&buf, Int32(3))
-        
+
         }
     }
 }
@@ -1308,6 +2119,30 @@ public func FfiConverterTypeMergeKind_lower(_ value: MergeKind) -> RustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionInt32: FfiConverterRustBuffer {
+    typealias SwiftType = Int32?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt32.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -1324,6 +2159,54 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
+    typealias SwiftType = Data?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterData.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterData.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeBirthdayDraft: FfiConverterRustBuffer {
+    typealias SwiftType = BirthdayDraft?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeBirthdayDraft.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeBirthdayDraft.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -1407,6 +2290,56 @@ fileprivate struct FfiConverterSequenceTypeFieldRow: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeLabeledAddressDraft: FfiConverterRustBuffer {
+    typealias SwiftType = [LabeledAddressDraft]
+
+    public static func write(_ value: [LabeledAddressDraft], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLabeledAddressDraft.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LabeledAddressDraft] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LabeledAddressDraft]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLabeledAddressDraft.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLabeledValueDraft: FfiConverterRustBuffer {
+    typealias SwiftType = [LabeledValueDraft]
+
+    public static func write(_ value: [LabeledValueDraft], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLabeledValueDraft.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LabeledValueDraft] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LabeledValueDraft]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLabeledValueDraft.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTextRow: FfiConverterRustBuffer {
     typealias SwiftType = [TextRow]
 
@@ -1458,13 +2391,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_contacts_ffi_checksum_func_is_conflict_name() != 19151) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_assign_tag() != 3784) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_contacts_ffi_checksum_method_contactssession_conflict_choice_rows() != 60559) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_contacts_ffi_checksum_method_contactssession_conflict_rows() != 55083) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_contact_edit_draft() != 36107) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_contacts_ffi_checksum_method_contactssession_delete() != 58868) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_delete_many() != 62849) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_export_vcard_text() != 42388) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_contacts_ffi_checksum_method_contactssession_field_rows() != 37331) {
@@ -1473,19 +2418,31 @@ private let initializationResult: InitializationResult = {
     if (uniffi_contacts_ffi_checksum_method_contactssession_file_name() != 13400) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_filtered_list_rows() != 43996) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_contacts_ffi_checksum_method_contactssession_list_rows() != 25949) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_new_contact_draft() != 61206) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_contacts_ffi_checksum_method_contactssession_reload() != 45278) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_remove_tag() != 6284) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_rename_tag() != 49562) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_contacts_ffi_checksum_method_contactssession_resolve_group() != 6772) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_contacts_ffi_checksum_method_contactssession_save_vcard() != 64206) {
+    if (uniffi_contacts_ffi_checksum_method_contactssession_save_contact() != 10322) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_contacts_ffi_checksum_method_contactssession_vcard_text() != 2677) {
+    if (uniffi_contacts_ffi_checksum_method_contactssession_tag_rows() != 33675) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_contacts_ffi_checksum_constructor_contactssession_open() != 60812) {

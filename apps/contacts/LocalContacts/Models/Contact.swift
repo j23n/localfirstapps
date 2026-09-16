@@ -6,6 +6,8 @@ final class Contact: Identifiable, @unchecked Sendable {
     let id: UUID
     var localContactsID: String
     var fileName: String
+    /// Core content token captured when this editable projection was loaded.
+    var contentToken: String?
 
     // Name
     var fullName: String
@@ -42,6 +44,7 @@ final class Contact: Identifiable, @unchecked Sendable {
         id: UUID = UUID(),
         localContactsID: String = UUID().uuidString,
         fileName: String = "",
+        contentToken: String? = nil,
         fullName: String = "",
         familyName: String = "",
         givenName: String = "",
@@ -65,6 +68,7 @@ final class Contact: Identifiable, @unchecked Sendable {
         self.id = id
         self.localContactsID = localContactsID
         self.fileName = fileName
+        self.contentToken = contentToken
         self.fullName = fullName
         self.familyName = familyName
         self.givenName = givenName
@@ -119,6 +123,7 @@ final class Contact: Identifiable, @unchecked Sendable {
             id: self.id,
             localContactsID: self.localContactsID,
             fileName: self.fileName,
+            contentToken: self.contentToken,
             fullName: self.fullName,
             familyName: self.familyName,
             givenName: self.givenName,
