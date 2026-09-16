@@ -4,8 +4,8 @@ use adw::prelude::*;
 use localcore_ui::{ActionRole, ItemKind};
 
 use crate::data::{
-    ActionRowData, FieldRowData, MediaItemData, NavRowData, ProgressRowData, StatusRowData,
-    TextRowData, ToggleRowData,
+    ActionRowData, ChartRowData, FieldRowData, MediaItemData, NavRowData, ProgressRowData,
+    StatusRowData, TextRowData, ToggleRowData,
 };
 
 /// Proves every item kind has a binding. A new kind without an arm
@@ -19,7 +19,8 @@ pub fn bind_item(kind: ItemKind) -> ItemKind {
         | ItemKind::ActionRow
         | ItemKind::NavRow
         | ItemKind::ProgressRow
-        | ItemKind::StatusRow => kind,
+        | ItemKind::StatusRow
+        | ItemKind::ChartRow => kind,
     }
 }
 
@@ -133,6 +134,73 @@ pub fn status_row(data: &StatusRowData) -> adw::ActionRow {
         .build()
 }
 
+pub fn chart_row(data: &ChartRowData) -> gtk::Box {
+    let column = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let header = adw::ActionRow::builder().title(&data.title).build();
+    if let Some(sub) = &data.subtitle {
+        header.set_subtitle(sub);
+    }
+    if let Some(latest) = &data.latest {
+        let trailing = match &data.unit {
+            Some(unit) => format!("{latest} {unit}"),
+            None => latest.clone(),
+        };
+        header.add_suffix(&gtk::Label::new(Some(&trailing)));
+    }
+    column.append(&header);
+
+    let values = data.values.clone();
+    let spark = gtk::DrawingArea::new();
+    spark.set_content_height(48);
+    spark.set_hexpand(true);
+    spark.set_draw_func(move |area, cr, width, height| {
+        let fg = area.color();
+        cr.set_source_rgba(
+            f64::from(fg.red()),
+            f64::from(fg.green()),
+            f64::from(fg.blue()),
+            f64::from(fg.alpha()),
+        );
+        draw_sparkline(cr, width, height, &values);
+    });
+    column.append(&spark);
+    column
+}
+
+fn draw_sparkline(cr: &gtk::cairo::Context, width: i32, height: i32, values: &[f64]) {
+    if width <= 0 || height <= 0 {
+        return;
+    }
+    if values.is_empty() {
+        return;
+    }
+    let min = values.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let span = if (max - min).abs() < f64::EPSILON {
+        1.0
+    } else {
+        max - min
+    };
+    let w = f64::from(width);
+    let h = f64::from(height);
+    let step = if values.len() == 1 {
+        0.0
+    } else {
+        w / (values.len() - 1) as f64
+    };
+    cr.set_line_width(2.0);
+    for (i, value) in values.iter().enumerate() {
+        let x = step * i as f64;
+        let y = h - ((value - min) / span) * (h - 4.0) - 2.0;
+        if i == 0 {
+            cr.move_to(x, y);
+        } else {
+            cr.line_to(x, y);
+        }
+    }
+    let _ = cr.stroke();
+}
+
 pub fn item_widget(kind: ItemKind) -> gtk::Widget {
     match kind {
         ItemKind::TextRow => text_row(&TextRowData {
@@ -176,6 +244,14 @@ pub fn item_widget(kind: ItemKind) -> gtk::Widget {
         ItemKind::StatusRow => status_row(&StatusRowData {
             message: String::new(),
             severity: localcore_ui::StatusSeverity::Info,
+        })
+        .upcast(),
+        ItemKind::ChartRow => chart_row(&ChartRowData {
+            title: String::new(),
+            subtitle: None,
+            unit: None,
+            latest: None,
+            values: Vec::new(),
         })
         .upcast(),
     }

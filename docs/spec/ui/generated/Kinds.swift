@@ -19,6 +19,7 @@ public enum ItemKind: String, Sendable, CaseIterable, Hashable {
     case navRow = "nav-row"
     case progressRow = "progress-row"
     case statusRow = "status-row"
+    case chartRow = "chart-row"
 }
 
 public enum Affordance: String, Sendable, CaseIterable, Hashable {

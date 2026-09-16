@@ -47,6 +47,8 @@ public enum ShellKitCoverage {
             .appOwned
         case .statusRow:
             .shared
+        case .chartRow:
+            .shared
         }
     }
 

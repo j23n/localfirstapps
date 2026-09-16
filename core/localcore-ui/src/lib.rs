@@ -8,7 +8,7 @@ mod screens;
 mod tokens;
 
 pub use kinds::{ActionRole, Affordance, ItemKind, NavIntent, ScreenKind, StatusSeverity};
-pub use screens::{ContactsScreen, MusicScreen};
+pub use screens::{ContactsScreen, HealthScreen, MusicScreen};
 
 pub mod gallery {
     pub use crate::tokens::gallery::*;
@@ -35,6 +35,7 @@ mod tests {
         assert_eq!(ScreenKind::ALL.len(), 6);
         assert_eq!(ScreenKind::List.as_str(), "list");
         assert_eq!(ItemKind::TextRow.as_str(), "text-row");
+        assert_eq!(ItemKind::ChartRow.as_str(), "chart-row");
         assert_eq!(Affordance::PrimaryAction.as_str(), "primary-action");
         assert_eq!(NavIntent::Push.as_str(), "push");
     }
@@ -65,5 +66,14 @@ mod tests {
         assert_eq!(MusicScreen::Library.kind(), ScreenKind::List);
         assert_eq!(MusicScreen::NowPlaying.kind(), ScreenKind::Viewer);
         assert_eq!(MusicScreen::SyncConflictGroup.kind(), ScreenKind::Detail);
+    }
+
+    #[test]
+    fn health_screens_match_the_spec() {
+        assert_eq!(HealthScreen::ALL.len(), 9);
+        assert_eq!(HealthScreen::KindDetail.as_str(), "kind-detail");
+        assert_eq!(HealthScreen::KindDetail.kind(), ScreenKind::Detail);
+        assert_eq!(HealthScreen::Gaps.kind(), ScreenKind::List);
+        assert!(health::CARD_RADIUS > 0.0);
     }
 }

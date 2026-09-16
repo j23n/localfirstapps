@@ -126,6 +126,28 @@ public struct ShellFilterData: Equatable, Sendable {
     }
 }
 
+public struct ShellChartRowData: Equatable, Sendable {
+    public let title: String
+    public let subtitle: String?
+    public let unit: String?
+    public let latest: String?
+    public let values: [Double]
+
+    public init(
+        title: String,
+        subtitle: String? = nil,
+        unit: String? = nil,
+        latest: String? = nil,
+        values: [Double]
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.unit = unit
+        self.latest = latest
+        self.values = values
+    }
+}
+
 public struct ShellConfirmData: Equatable, Sendable {
     public let actionID: String
     public let question: String

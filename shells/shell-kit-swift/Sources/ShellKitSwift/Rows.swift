@@ -188,3 +188,68 @@ public struct ShellStatusRow: View {
     }
 
 }
+
+@MainActor
+public struct ShellChartRow: View {
+    public let data: ShellChartRowData
+
+    public init(_ data: ShellChartRowData) {
+        self.data = data
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ShellTextRow(
+                .init(
+                    title: data.title,
+                    subtitle: data.subtitle,
+                    trailingValue: trailing
+                )
+            )
+            Canvas { context, size in
+                guard let path = sparkline(in: size) else { return }
+                context.stroke(
+                    path,
+                    with: .foreground,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                )
+            }
+            .frame(height: 48)
+            .accessibilityHidden(true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(data.title)
+        .accessibilityValue(trailing ?? data.subtitle ?? "")
+    }
+
+    private var trailing: String? {
+        guard let latest = data.latest else { return nil }
+        if let unit = data.unit {
+            return "\(latest) \(unit)"
+        }
+        return latest
+    }
+
+    private func sparkline(in size: CGSize) -> Path? {
+        guard size.width > 0, size.height > 0, !data.values.isEmpty else {
+            return nil
+        }
+        let minValue = data.values.min() ?? 0
+        let maxValue = data.values.max() ?? 0
+        let span = max(maxValue - minValue, .ulpOfOne)
+        let step = data.values.count == 1 ? 0 : size.width / Double(data.values.count - 1)
+        var path = Path()
+        for (index, value) in data.values.enumerated() {
+            let x = step * Double(index)
+            let y = size.height - ((value - minValue) / span) * (size.height - 4) - 2
+            let point = CGPoint(x: x, y: y)
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        return path
+    }
+
+}

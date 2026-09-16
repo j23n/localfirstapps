@@ -65,3 +65,14 @@ pub struct ConfirmData {
     pub question: String,
     pub destructive_label: String,
 }
+
+/// Display-ready series. Values are already in the unit the title names;
+/// the shell only sparks them.
+#[derive(Debug, Clone)]
+pub struct ChartRowData {
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub unit: Option<String>,
+    pub latest: Option<String>,
+    pub values: Vec<f64>,
+}

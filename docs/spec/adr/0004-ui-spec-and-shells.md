@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer); 2026-09-16 (chart-row)
 
 ## Scope
 
@@ -55,6 +55,7 @@ for every kind. Adding a kind is an amendment to this document.
 | `nav-row` | label, optional trailing value, destination |
 | `progress-row` | label, determinate fraction or indeterminate, optional cancel |
 | `status-row` | message, severity (`info`, `warning`, `error`) |
+| `chart-row` | title, optional subtitle/unit, preformatted latest value, and a display-unit series the shell sparks natively |
 
 *Screen affordances*
 

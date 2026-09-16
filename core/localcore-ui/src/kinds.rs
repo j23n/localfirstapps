@@ -43,6 +43,7 @@ pub enum ItemKind {
     NavRow,
     ProgressRow,
     StatusRow,
+    ChartRow,
 }
 
 impl ItemKind {
@@ -55,6 +56,7 @@ impl ItemKind {
         Self::NavRow,
         Self::ProgressRow,
         Self::StatusRow,
+        Self::ChartRow,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -67,6 +69,7 @@ impl ItemKind {
             Self::NavRow => "nav-row",
             Self::ProgressRow => "progress-row",
             Self::StatusRow => "status-row",
+            Self::ChartRow => "chart-row",
         }
     }
 }

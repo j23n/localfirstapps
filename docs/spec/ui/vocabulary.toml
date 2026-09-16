@@ -12,6 +12,7 @@ item_kinds = [
     "nav-row",
     "progress-row",
     "status-row",
+    "chart-row",
 ]
 
 affordances = [

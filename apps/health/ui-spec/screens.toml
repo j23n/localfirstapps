@@ -1,7 +1,7 @@
 # localhealth screens curated from the retired loopback web UI.
 # Semantic only (ADR 0004 R2): legacy_routes record the old information
 # architecture, not routes that a native shell must reproduce.
-# r4_gaps name content the closed vocabulary cannot express yet. They are
+# r4_gaps name content the closed vocabulary still cannot express. They are
 # documentation, not additions to docs/spec/ui/vocabulary.toml.
 
 app = "health"
@@ -83,10 +83,11 @@ affordances = ["filter"]
 item_nav = { intent = "push", destination = "workout-session" }
 sections = [
     { id = "summary", item = "status-row" },
+    { id = "series", item = "chart-row" },
     { id = "recent-values", item = "text-row" },
     { id = "sessions", item = "nav-row" },
 ]
-r4_gaps = ["chart", "metric-card"]
+r4_gaps = ["metric-card"]
 
 [[screens]]
 id = "workout-session"
@@ -95,10 +96,11 @@ title = "Workout"
 legacy_routes = ["/sports/{slug}/{id}", "/all/{slug}/{id}"]
 sections = [
     { id = "summary", item = "field-row" },
+    { id = "series", item = "chart-row" },
     { id = "splits", item = "field-row" },
     { id = "source", item = "text-row" },
 ]
-r4_gaps = ["chart", "route-map", "pause-strip"]
+r4_gaps = ["route-map", "pause-strip"]
 
 [[screens]]
 id = "gaps"
