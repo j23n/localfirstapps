@@ -23,9 +23,7 @@ struct FolderGridView: View {
             PhotoGridScreen(
                 title: liveFolder.name,
                 subtitle: "\(photos.count) photos",
-                photos: photos,
                 showSearch: true,
-                usesWindowedLibrary: true,
                 fixedPhotoIDs: photos.map(\.id)
             )
         } else {

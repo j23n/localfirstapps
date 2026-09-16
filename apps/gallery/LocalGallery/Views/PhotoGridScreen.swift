@@ -20,15 +20,10 @@ struct PhotoGridScreen: View {
     /// when `showVisibleDateRange` is true, the subtitle becomes a live
     /// date-range derived from the on-screen sections.
     var subtitle: String?
-    let photos: [PhotoFile]
     /// When true, render the gear button (settings) in the toolbar.
     var isRoot: Bool = false
     /// Enable search field + tag suggestions in the header.
     var showSearch: Bool = false
-    /// Use the generation-checked `gallery-ffi` structure/window projection
-    /// for grid content. The `photos` array remains available for viewer and
-    /// edit commands, but is not the rendered payload.
-    var usesWindowedLibrary: Bool = false
     /// When true, show a live "<first> – <last>" date range derived from the
     /// sections currently scrolled into view, pinned below the nav bar so it
     /// stays visible as the user scrolls. Used by the Photos tab.
@@ -94,13 +89,8 @@ struct PhotoGridScreen: View {
     // Slideshow navigation
     @State private var goToSlideshow = false
 
-    // Cached filter results — recomputed off-main when inputs change.
-    // Keeping these in @State (instead of computed properties) means body
-    // evaluations don't re-sort/re-filter 20k photos on every keystroke
-    // or focus change.
+    // Materialized only when the viewer is explicitly opened.
     @State private var filtered: [PhotoFile] = []
-    @State private var sectionsCache: [PhotoSection] = []
-    @State private var yearsCache: [(year: String, sectionID: String)] = []
     @State private var windowStructure: ViewStructure?
     @State private var windowItems: [String: GalleryMediaItem] = [:]
 
@@ -109,9 +99,7 @@ struct PhotoGridScreen: View {
     // critical for the 20k All Photos grid. The date-range @State string is
     // synced on a debounce (~300ms).
     @State private var visibleTargets = VisibleTargetBox()
-    /// `photo.id` → `dateTaken` for the current `filtered` set, rebuilt by
-    /// `recomputeFilter`. Lets the visible-date-range subtitle resolve dates
-    /// straight from the visible target ids.
+    /// `photo.id` → display date for content windows that have arrived.
     @State private var dateByID: [UUID: Date] = [:]
     @State private var liveDateRange: String = ""
     @State private var dateRangeUpdateTask: Task<Void, Never>?
@@ -124,12 +112,9 @@ struct PhotoGridScreen: View {
         GridLayoutConfig(sizeTier: sizeTier, isLandscape: isLandscape)
     }
 
-    // Cheap identity for the photos input: count + first/last date catches
-    // both re-scans (count changes) and enrichment (dates change). `epoch`
-    // catches an on-disk move, which keeps count and dates the same but
-    // changes paths / ids. Exposed as internal so unit tests can build a
-    // FilterKey without going through the SwiftUI view — `private` would
-    // make it unreachable from the test bundle even with `@testable import`.
+    // View intent identity. `epoch` catches each rebuilt library; the legacy
+    // count/date fields stay in the value type to keep its conformance fixture
+    // source-compatible while windowed routes use ids and generations.
     struct FilterKey: Equatable {
         let count: Int
         let firstDate: Date?
@@ -141,9 +126,9 @@ struct PhotoGridScreen: View {
 
     private var filterKey: FilterKey {
         FilterKey(
-            count: photos.count,
-            firstDate: photos.first?.dateTaken,
-            lastDate: photos.last?.dateTaken,
+            count: fixedPhotoIDs?.count ?? 0,
+            firstDate: nil,
+            lastDate: nil,
             query: query.trimmingCharacters(in: .whitespaces),
             activeTagIDs: (fixedTags + activeTags).map(\.id),
             epoch: store.libraryEpoch
@@ -161,14 +146,21 @@ struct PhotoGridScreen: View {
     }
 
     private var displayedCount: Int {
-        usesWindowedLibrary ? windowItemIDs.count : filtered.count
+        windowItemIDs.count
     }
 
     private var displayedPhotoIDs: [UUID] {
-        if usesWindowedLibrary {
-            return windowItemIDs.compactMap(UUID.init(uuidString:))
+        windowItemIDs.compactMap(UUID.init(uuidString:))
+    }
+
+    private var windowYears: [(year: String, sectionID: String)] {
+        var seen = Set<String>()
+        return (windowStructure?.sections ?? []).compactMap { section in
+            guard let year = section.title.split(separator: " ").last.map(String.init),
+                  year.count == 4,
+                  seen.insert(year).inserted else { return nil }
+            return (year, section.id)
         }
-        return filtered.map(\.id)
     }
 
     /// The title shown in the navigation bar — collapses to the select-mode
@@ -245,6 +237,12 @@ struct PhotoGridScreen: View {
         return fmt
     }()
 
+    private static let windowDateFormatter: ISO8601DateFormatter = {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fmt
+    }()
+
     private var suggestions: [TagSuggestion] {
         let q = query.lowercased()
         guard !q.isEmpty else { return [] }
@@ -284,7 +282,7 @@ struct PhotoGridScreen: View {
                         }
                     }
 
-                    if usesWindowedLibrary && windowStructure == nil {
+                    if windowStructure == nil {
                         ProgressView()
                             .padding(.top, 48)
                     } else if displayedCount == 0 {
@@ -293,7 +291,7 @@ struct PhotoGridScreen: View {
                             systemImage: "photo.stack"
                         )
                         .padding(.top, 48)
-                    } else if usesWindowedLibrary, let structure = windowStructure {
+                    } else if let structure = windowStructure {
                         LazyVGrid(columns: grid.columns(for: width), spacing: 2) {
                             ForEach(structure.sections, id: \.id) { section in
                                 Section {
@@ -322,31 +320,6 @@ struct PhotoGridScreen: View {
                             }
                         }
                         .scrollTargetLayout()
-                    } else {
-                        LazyVGrid(columns: grid.columns(for: width), spacing: 2) {
-                            ForEach(sectionsCache) { section in
-                                Section {
-                                    ForEach(section.photos) { photo in
-                                        gridCell(photo: photo, cellSize: cell)
-                                    }
-                                } header: {
-                                    Text(section.title.uppercased())
-                                        .font(.system(size: 12.5, weight: .semibold))
-                                        .tracking(0.2)
-                                        .foregroundStyle(Design.ink2)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, 20)
-                                        .padding(.top, 14)
-                                        .padding(.bottom, 6)
-                                        .id(section.id)
-                                }
-                            }
-                        }
-                        // Marks the grid's cells as scroll targets so
-                        // `onScrollTargetVisibilityChange` below can report
-                        // which photos are in the viewport. Default scroll
-                        // physics are unchanged (no scrollTargetBehavior).
-                        .scrollTargetLayout()
                     }
                 }
                 .scrollDismissesKeyboard(.interactively)
@@ -369,8 +342,8 @@ struct PhotoGridScreen: View {
                 }
                 .refreshable { await store.rescan(kind: .light) }
                 .overlay(alignment: .trailing) {
-                    if yearsCache.count > 1 && !selectMode {
-                        YearScrubber(years: yearsCache) { sectionID in
+                    if windowYears.count > 1 && !selectMode {
+                        YearScrubber(years: windowYears) { sectionID in
                             withAnimation { proxy.scrollTo(sectionID, anchor: .top) }
                         }
                     }
@@ -419,15 +392,7 @@ struct PhotoGridScreen: View {
                 activeTags = initialTags
                 return
             }
-            if usesWindowedLibrary {
-                refreshWindowedView()
-                return
-            }
-            await recomputeFilter()
-            // Re-derive the subtitle against the new photo set: ids that
-            // dropped out of `filtered` no longer resolve in `dateByID`, and
-            // the visibility callback may not re-fire if the viewport ends up
-            // showing the same cells.
+            refreshWindowedView()
             if showVisibleDateRange { scheduleDateRangeUpdate() }
         }
         .onDisappear {
@@ -604,7 +569,7 @@ struct PhotoGridScreen: View {
                     isLivePhoto: item.badge == "Live Photo",
                     isRemote: item.badge == "In cloud"
                 )
-                .accessibilityLabel(item.label ?? "Photo")
+                .accessibilityLabel(item.accessibilityLabel ?? "Photo")
             } else {
                 Rectangle()
                     .fill(Design.bgCard)
@@ -700,108 +665,29 @@ struct PhotoGridScreen: View {
                 limit: 64,
                 generation: generation
             )
-            for row in rows { windowItems[row.id] = row }
+            for row in rows {
+                windowItems[row.id] = row
+                if let id = UUID(uuidString: row.id),
+                   let label = row.label,
+                   let date = Self.windowDateFormatter.date(from: label) {
+                    dateByID[id] = date
+                }
+            }
+            if showVisibleDateRange { scheduleDateRangeUpdate() }
         } catch {
             refreshWindowedView()
         }
     }
 
-    @ViewBuilder
-    private func gridCell(photo: PhotoFile, cellSize: CGFloat) -> some View {
-        let isSelected = selected.contains(photo.id)
-        ZStack {
-            ThumbnailView(
-                url: photo.url,
-                size: cellSize,
-                isVideo: photo.isVideo,
-                isLivePhoto: photo.livePhotoVideoURL != nil
-            )
-                .frame(width: cellSize, height: cellSize)
-                .scaleEffect(selectMode && isSelected ? 0.9 : 1.0)
-                .animation(.easeInOut(duration: 0.15), value: isSelected)
-
-            if selectMode {
-                Rectangle()
-                    .fill(isSelected ? Design.accentColor.opacity(0.18) : .clear)
-                    .animation(.easeInOut(duration: 0.15), value: isSelected)
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        ZStack {
-                            if isSelected {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundStyle(Design.accentColor, .white)
-                            } else {
-                                Circle()
-                                    .fill(Color.black.opacity(0.25))
-                                    .frame(width: 22, height: 22)
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
-                            }
-                        }
-                        .padding(6)
-                    }
-                }
-            }
-        }
-        .frame(width: cellSize, height: cellSize)
-        .contentShape(Rectangle())
-        .matchedTransitionSource(id: photo.id, in: zoomNamespace)
-        .onTapGesture {
-            if selectMode {
-                if selected.contains(photo.id) { selected.remove(photo.id) }
-                else { selected.insert(photo.id) }
-            } else {
-                openViewer(at: photo)
-            }
-        }
-        .contextMenu {
-            if !selectMode {
-                Button {
-                    openViewer(at: photo)
-                } label: {
-                    Label("Open", systemImage: "eye")
-                }
-                PhotoShareMenu(
-                    canResize: !photo.isVideo,
-                    onSelect: { quality in
-                        shareRequest = PhotoShareRequest(photos: [photo], quality: quality)
-                    }
-                ) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        selectMode = true
-                        selected.insert(photo.id)
-                    }
-                } label: {
-                    Label("Select", systemImage: "checkmark.circle")
-                }
-                if let person = featureContextPerson {
-                    Button {
-                        store.people.setFeaturedPhoto(personPath: person.fullPath, photoID: photo.id)
-                    } label: {
-                        Label("Set as featured image", systemImage: "star")
-                    }
-                }
-            }
-        }
-    }
-
     private func openViewer(at photo: PhotoFile) {
-        if usesWindowedLibrary {
-            // Domain payload is materialized only for the explicit viewer
-            // action; the grid itself remains IDs + bounded display DTOs.
-            if fixedPhotoIDs != nil {
-                filtered = store.index.photos(withIDs: displayedPhotoIDs)
-            } else {
-                filtered = store.index.search(
-                    query: query,
-                    requiredTags: fixedTags + activeTags
-                )
-            }
+        // Domain payload is materialized only for the explicit viewer action.
+        if fixedPhotoIDs != nil {
+            filtered = store.index.photos(withIDs: displayedPhotoIDs)
+        } else {
+            filtered = store.index.search(
+                query: query,
+                requiredTags: fixedTags + activeTags
+            )
         }
         viewerCurrentPhotoID = photo.id
         viewerID = UUID()
@@ -899,11 +785,9 @@ struct PhotoGridScreen: View {
     // MARK: - Select bottom bar
 
     private var selectBottomBar: some View {
-        let selectedPhotos = usesWindowedLibrary
-            ? displayedPhotoIDs
-                .filter(selected.contains)
-                .compactMap { store.index.photo(byID: $0) }
-            : filtered.filter { selected.contains($0.id) }
+        let selectedPhotos = displayedPhotoIDs
+            .filter(selected.contains)
+            .compactMap { store.index.photo(byID: $0) }
         let canResize = !selectedPhotos.isEmpty && selectedPhotos.allSatisfy { !$0.isVideo }
 
         return HStack {
@@ -990,80 +874,10 @@ struct PhotoGridScreen: View {
         }
         guard structure.generation != windowStructure?.generation else { return }
         windowItems.removeAll(keepingCapacity: true)
+        dateByID.removeAll(keepingCapacity: true)
         windowStructure = structure
-
-        // Visible-date range is metadata, not the rendered photo payload.
-        // Keep only the primitive date map needed by the toolbar.
-        var dates: [UUID: Date] = [:]
-        dates.reserveCapacity(photos.count)
-        for photo in photos {
-            if let date = photo.dateTaken { dates[photo.id] = date }
-        }
-        dateByID = dates
     }
 
-    /// Sort + filter + group the photos input off the main thread, then publish
-    /// to @State. Called by `.task(id: filterKey)` — SwiftUI will cancel the
-    /// previous task when inputs change, so only the latest result is applied.
-    @MainActor
-    private func recomputeFilter() async {
-        let snapshotPhotos = photos
-        let snapshotQuery = query.trimmingCharacters(in: .whitespaces).lowercased()
-        // Hierarchical namespaces (Places, Objects, Scenes) use prefix matching —
-        // selecting a parent tag matches all its nested leaves.
-        let snapshotRequiredTags: [(path: String, isPrefixMatch: Bool)] = activeTags.map {
-            ($0.fullPath.lowercased(), TagNamespace.matchesByPrefix($0.namespace))
-        }
-
-        let result: (filtered: [PhotoFile], sections: [PhotoSection], years: [(String, String)], dates: [UUID: Date]) =
-        await Task.detached(priority: .userInitiated) {
-            // Filter first (cheap), then sort (expensive — once per input change).
-            var list = snapshotPhotos
-            if !snapshotRequiredTags.isEmpty {
-                list = list.filter { photo in
-                    let photoPaths = photo.hierarchicalTags.map { $0.fullPath.lowercased() }
-                    return snapshotRequiredTags.allSatisfy { required in
-                        photoPaths.contains { hp in
-                            if hp == required.path { return true }
-                            if required.isPrefixMatch, hp.hasPrefix(required.path + "/") { return true }
-                            return false
-                        }
-                    }
-                }
-            }
-            if !snapshotQuery.isEmpty {
-                list = list.filter { photo in
-                    if photo.filename.lowercased().contains(snapshotQuery) { return true }
-                    for tag in photo.hierarchicalTags {
-                        if tag.fullPath.lowercased().contains(snapshotQuery) { return true }
-                        if tag.displayName.lowercased().contains(snapshotQuery) { return true }
-                    }
-                    return false
-                }
-            }
-            let sorted = list.sorted { ($0.dateTaken ?? .distantPast) > ($1.dateTaken ?? .distantPast) }
-            let secs = PhotoSection.group(presorted: sorted)
-            var years: [(String, String)] = []
-            var seen = Set<String>()
-            for s in secs where s.id != "unknown" {
-                let y = String(s.id.prefix(4))
-                if !seen.contains(y) { seen.insert(y); years.append((y, s.id)) }
-            }
-            var dates: [UUID: Date] = [:]
-            dates.reserveCapacity(sorted.count)
-            for p in sorted {
-                if let d = p.dateTaken { dates[p.id] = d }
-            }
-            return (sorted, secs, years, dates)
-        }.value
-
-        // Drop the result if inputs have moved on since we started.
-        guard !Task.isCancelled else { return }
-        self.filtered = result.filtered
-        self.sectionsCache = result.sections
-        self.yearsCache = result.years
-        self.dateByID = result.dates
-    }
 }
 
 // MARK: - Principal toolbar content
@@ -1116,63 +930,6 @@ private struct PrincipalToolbarContent: View {
             .opacity(isRoot && !largeTitleCollapsed ? 0 : 1)
             .animation(.easeInOut(duration: 0.15), value: largeTitleCollapsed)
         }
-    }
-}
-
-// MARK: - Section model
-
-struct PhotoSection: Identifiable {
-    let id: String
-    let title: String
-    let photos: [PhotoFile]
-    /// Pre-computed min/max of `dateTaken` across this section's photos,
-    /// cached at grouping time.
-    let dateRange: ClosedRange<Date>?
-
-    init(id: String, title: String, photos: [PhotoFile]) {
-        self.id = id
-        self.title = title
-        self.photos = photos
-        let dates = photos.compactMap(\.dateTaken)
-        if let first = dates.min(), let last = dates.max() {
-            self.dateRange = first...last
-        } else {
-            self.dateRange = nil
-        }
-    }
-
-    static func group(_ photos: [PhotoFile]) -> [PhotoSection] {
-        group(presorted: photos.sorted { ($0.dateTaken ?? .distantPast) > ($1.dateTaken ?? .distantPast) })
-    }
-
-    /// Group an array that is already sorted newest-first by dateTaken — skips
-    /// the sort pass so the caller can reuse a pre-sorted array.
-    static func group(presorted sorted: [PhotoFile]) -> [PhotoSection] {
-        let cal = Calendar.current
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MMMM yyyy"
-        var out: [PhotoSection] = []
-        var curKey = ""
-        var curTitle = ""
-        var bucket: [PhotoFile] = []
-        for p in sorted {
-            let key: String, title: String
-            if let d = p.dateTaken {
-                let c = cal.dateComponents([.year, .month], from: d)
-                key = String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0)
-                title = fmt.string(from: d)
-            } else {
-                key = "unknown"; title = "Unknown Date"
-            }
-            if key != curKey {
-                if !bucket.isEmpty { out.append(PhotoSection(id: curKey, title: curTitle, photos: bucket)) }
-                curKey = key; curTitle = title; bucket = [p]
-            } else {
-                bucket.append(p)
-            }
-        }
-        if !bucket.isEmpty { out.append(PhotoSection(id: curKey, title: curTitle, photos: bucket)) }
-        return out
     }
 }
 

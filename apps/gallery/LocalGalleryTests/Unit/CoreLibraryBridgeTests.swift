@@ -61,10 +61,11 @@ final class CoreLibraryBridgeTests: XCTestCase {
     func testWindowedViewRefusesAStaleGeneration() async throws {
         let index = await built(library(300))
         let all = index.photoView(query: "")
-        XCTAssertEqual(all.sections.first?.itemIds.count, 300)
+        XCTAssertEqual(all.sections.reduce(0) { $0 + $1.itemIds.count }, 300)
+        let sectionID = try XCTUnwrap(all.sections.first?.id)
         XCTAssertEqual(
             try index.photoWindow(
-                sectionID: "photos",
+                sectionID: sectionID,
                 offset: 0,
                 limit: 64,
                 generation: all.generation
@@ -76,7 +77,7 @@ final class CoreLibraryBridgeTests: XCTestCase {
         XCTAssertGreaterThan(filtered.generation, all.generation)
         XCTAssertThrowsError(
             try index.photoWindow(
-                sectionID: "photos",
+                sectionID: sectionID,
                 offset: 0,
                 limit: 64,
                 generation: all.generation
@@ -91,9 +92,12 @@ final class CoreLibraryBridgeTests: XCTestCase {
     func testWindowAllocationIsBoundedBeforeContentCrossesFFI() async {
         let index = await built(library(1_000))
         let structure = index.photoView(query: "")
+        guard let sectionID = structure.sections.first?.id else {
+            return XCTFail("missing photo section")
+        }
         XCTAssertThrowsError(
             try index.photoWindow(
-                sectionID: "photos",
+                sectionID: sectionID,
                 offset: 0,
                 limit: 257,
                 generation: structure.generation

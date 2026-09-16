@@ -55,10 +55,8 @@ struct AllPhotosView: View {
         } else {
             PhotoGridScreen(
                 title: "Photos",
-                photos: store.sortedPhotos,
                 isRoot: true,
                 showSearch: true,
-                usesWindowedLibrary: true,
                 showVisibleDateRange: true,
                 initialTags: seedTags
             )
