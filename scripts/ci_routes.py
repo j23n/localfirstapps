@@ -56,7 +56,14 @@ def _is_documentation(path: str) -> bool:
 def _is_bindings_path(path: str) -> bool:
     if path.startswith("apps/gallery/core/"):
         return True
-    if path.startswith(("core/contacts-core/", "core/contacts-ffi/")):
+    if path.startswith(
+        (
+            "core/contacts-core/",
+            "core/contacts-ffi/",
+            "core/music-core/",
+            "core/music-ffi/",
+        )
+    ):
         return True
     return path.startswith(
         (
@@ -66,6 +73,9 @@ def _is_bindings_path(path: str) -> bool:
             "apps/contacts/scripts/build_ffi.sh",
             "apps/contacts/scripts/generate_bindings.sh",
             "apps/contacts/LocalContacts/ContactsCore",
+            "apps/music/scripts/build_ffi.sh",
+            "apps/music/scripts/generate_bindings.sh",
+            "apps/music/LocalMusic/MusicCore",
         )
     )
 

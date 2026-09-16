@@ -48,6 +48,17 @@
     }
   },
   {
+    "name": "music-binding",
+    "paths": ["apps/music/scripts/generate_bindings.sh"],
+    "expected": {
+      "rust": false,
+      "apps": true,
+      "bindings": true,
+      "conformance": true,
+      "docker": false
+    }
+  },
+  {
     "name": "workflow",
     "paths": [".github/workflows/apps.yml"],
     "expected": {

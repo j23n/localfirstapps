@@ -6,6 +6,7 @@ This check deliberately complements syntax/record checks:
 * Gallery production code must not acquire new provider-placeholder,
   download-state, or QuickLook semantics.
 * Contacts UniFFI must not acquire new whole-vCard escape hatches.
+* Music UniFFI must not acquire serialized playlist/domain escape hatches.
 * Production decisions must not use best-effort `Vfs.exists`; authoritative
   code uses `try_exists` and propagates errors.
 
@@ -37,8 +38,9 @@ DEFAULT_BASELINE = Path("conformance/semantic/baseline.toml")
 
 GALLERY_KIND = "gallery-provider-semantics"
 CONTACTS_KIND = "contacts-serialized-domain-ffi"
+MUSIC_KIND = "music-serialized-domain-ffi"
 VFS_KIND = "authoritative-vfs-exists"
-KINDS = frozenset({GALLERY_KIND, CONTACTS_KIND, VFS_KIND})
+KINDS = frozenset({GALLERY_KIND, CONTACTS_KIND, MUSIC_KIND, VFS_KIND})
 
 GALLERY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("PhotoLocality", re.compile(r"\bPhotoLocality\b")),
@@ -68,6 +70,10 @@ GALLERY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 CONTACTS_ESCAPE_RE = re.compile(r"\bpub\s+fn\s+(vcard_text|save_vcard)\b")
+MUSIC_ESCAPE_RE = re.compile(
+    r"\bpub\s+fn\s+"
+    r"(playlist_text|save_playlist|playlist_json|track_json|library_json)\b"
+)
 VFS_TYPED_RE = re.compile(
     r"\b(?P<name>[A-Za-z_]\w*)\s*:\s*"
     r"(?:&\s*(?:mut\s+)?(?:dyn\s+)?)?"
@@ -271,6 +277,16 @@ def contacts_findings(path: str, code: str) -> list[Finding]:
     ]
 
 
+def music_findings(path: str, code: str) -> list[Finding]:
+    grouped: dict[str, list[re.Match[str]]] = {}
+    for match in MUSIC_ESCAPE_RE.finditer(code):
+        grouped.setdefault(match.group(1), []).append(match)
+    return [
+        Finding(MUSIC_KIND, path, symbol, len(matches), line_numbers(code, matches))
+        for symbol, matches in sorted(grouped.items())
+    ]
+
+
 def vfs_findings(path: str, code: str) -> list[Finding]:
     names = {match.group("name") for match in VFS_TYPED_RE.finditer(code)}
     names.update(match.group("name") for match in VFS_LOCAL_RE.finditer(code))
@@ -367,6 +383,15 @@ def findings_for(root: Path) -> list[Finding]:
                 continue
             rel = path.relative_to(root).as_posix()
             for finding in contacts_findings(rel, production_code(path)):
+                by_key[finding.key] = finding
+
+    music_src = root / "core/music-ffi/src"
+    if music_src.is_dir():
+        for path in sorted(music_src.rglob("*.rs")):
+            if is_skipped(path, root):
+                continue
+            rel = path.relative_to(root).as_posix()
+            for finding in music_findings(rel, production_code(path)):
                 by_key[finding.key] = finding
 
     for path in rust_production_files(root):
@@ -470,6 +495,11 @@ def baseline_metadata(kind: str) -> tuple[str, str]:
             "Known whole-vCard Contacts FFI escape hatch; records are syntax-green only.",
             "Contacts R6 boundary cleanup",
         )
+    if kind == MUSIC_KIND:
+        return (
+            "Known serialized Music domain payload on the FFI.",
+            "Music R6 boundary cleanup",
+        )
     return (
         "Known authoritative decision uses best-effort Vfs.exists and can hide IO errors.",
         "Phase 5 gallery vertical",
@@ -549,11 +579,22 @@ impl ContactsSession {
         "vcard_text",
     ], got_contacts
 
+    music = """\
+pub fn playlist_text() -> String { String::new() }
+pub fn save_playlist() {}
+// pub fn track_json() {}
+"""
+    got_music = music_findings("music.rs", mask_non_code(music))
+    assert [finding.symbol for finding in got_music] == [
+        "playlist_text",
+        "save_playlist",
+    ], got_music
+
     allowed = [
         Allow(f.kind, f.path, f.symbol, f.occurrences, "known", "wave")
-        for f in got_vfs + got_contacts
+        for f in got_vfs + got_contacts + got_music
     ]
-    assert compare(got_vfs + got_contacts, allowed) == []
+    assert compare(got_vfs + got_contacts + got_music, allowed) == []
     drifted = [
         Finding(
             got_vfs[0].kind,
@@ -562,7 +603,7 @@ impl ContactsSession {
             2,
             (1, 2),
         )
-    ] + got_contacts
+    ] + got_contacts + got_music
     assert any("occurrence drift" in error for error in compare(drifted, allowed))
 
     with tempfile.TemporaryDirectory() as tmp:

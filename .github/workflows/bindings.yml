@@ -46,6 +46,10 @@ jobs:
         working-directory: apps/contacts
         run: ./scripts/generate_bindings.sh
 
+      - name: Regenerate music UniFFI Swift
+        working-directory: apps/music
+        run: ./scripts/generate_bindings.sh
+
       - name: Fail on drift
         run: |
           git add -N apps/gallery/LocalGallery/GalleryCore.swift \
@@ -54,7 +58,9 @@ jobs:
                      apps/gallery/linux/swift-shim/CGalleryCoreFFI/GalleryCoreFFI.h \
                      apps/gallery/linux/swift-shim/CGalleryCoreFFI/module.modulemap \
                      apps/contacts/LocalContacts/ContactsCore.swift \
-                     apps/contacts/LocalContacts/ContactsCoreFFI.h
+                     apps/contacts/LocalContacts/ContactsCoreFFI.h \
+                     apps/music/LocalMusic/MusicCore.swift \
+                     apps/music/LocalMusic/MusicCoreFFI.h
           if ! git diff --exit-code -- \
                 apps/gallery/LocalGallery/GalleryCore.swift \
                 apps/gallery/LocalGallery/GalleryCoreFFI.h \
@@ -62,7 +68,9 @@ jobs:
                 apps/gallery/linux/swift-shim/CGalleryCoreFFI/GalleryCoreFFI.h \
                 apps/gallery/linux/swift-shim/CGalleryCoreFFI/module.modulemap \
                 apps/contacts/LocalContacts/ContactsCore.swift \
-                apps/contacts/LocalContacts/ContactsCoreFFI.h; then
+                apps/contacts/LocalContacts/ContactsCoreFFI.h \
+                apps/music/LocalMusic/MusicCore.swift \
+                apps/music/LocalMusic/MusicCoreFFI.h; then
             echo "UniFFI bindings drifted. Run the app generate_bindings.sh and commit." >&2
             exit 1
           fi

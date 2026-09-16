@@ -273,8 +273,18 @@ jobs:
         with:
           xcode-version: "${{ env.XCODE_VERSION }}"
 
+      - name: Rust toolchain (iOS targets)
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: "1.97.1"
+          targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
+
       - name: Install XcodeGen
         run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
+
+      - name: Build music-ffi
+        working-directory: apps/music
+        run: /bin/bash scripts/build_ffi.sh
 
       - name: Generate Xcode project
         working-directory: apps/music

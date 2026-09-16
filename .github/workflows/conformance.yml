@@ -83,6 +83,9 @@ jobs:
       - name: contacts-ffi Record inventory is green
         run: python3 conformance/r6/check.py --src core/contacts-ffi/src
 
+      - name: music-ffi Record inventory is green
+        run: python3 conformance/r6/check.py --src core/music-ffi/src
+
   r14:
     name: "ADR 0004 R14 generated sources"
     runs-on: ubuntu-24.04
