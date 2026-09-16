@@ -102,7 +102,7 @@ pub use pack::{
     PackSource, RootConfig,
 };
 pub use preprocess::{
-    host_heic_decode, limit_long_side, rgb_from_packed, CrateDecoder, HostHeicDecoder,
+    decode_for_analysis, limit_long_side, rgb_from_packed, CrateDecoder, HostHeicDecoder,
     ImageDecoder, ImageKind, PreprocessConfig, ResizeFilter, RgbImage, Tensor,
     ANALYSIS_MAX_LONG_SIDE, DECODER_VERSION, PREPROCESS_VERSION,
 };

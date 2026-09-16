@@ -270,25 +270,38 @@ pub trait HostHeicDecoder: Send + Sync {
     fn decode(&self, path: &str) -> MlResult<RgbImage>;
 }
 
-/// Ask `host` to decode `path` when both a host decoder and a HEIC extension
-/// are present.
+/// Decode one photo for either analysis engine and return the content key for
+/// the pixels that were decoded.
 ///
-/// * `Ok(None)` — no host, or not a HEIC path: caller uses the pinned path.
-/// * `Ok(Some(rgb))` — host produced pixels.
-/// * `Err(_)` — host was asked and failed. Callers must **not** fall through
-///   to software HEVC; that is the 48 MP allocation this gate exists to
-///   prevent.
-pub fn host_heic_decode(
+/// This is the single policy seam shared by tagging and faces:
+///
+/// * a HEIC/HEIF path uses the host port when one is installed;
+/// * a host failure is final and never falls through to software HEVC;
+/// * every other case reads through `vfs`, sniffs the bytes, and uses the
+///   pinned Rust decoder;
+/// * both paths return pixels capped to [`ANALYSIS_MAX_LONG_SIDE`].
+///
+/// `probe` is the hash from the streaming read immediately before this call.
+/// A path-opening host cannot return the bytes it decoded, so the host path
+/// keeps that probe as its content key. The software path hashes its actual
+/// read and returns that hash instead. Keeping this distinction here prevents
+/// the two engines from quietly acquiring different cache policy.
+pub fn decode_for_analysis(
+    vfs: &dyn gallery_vfs::Vfs,
     host: Option<&dyn HostHeicDecoder>,
     path: &str,
-) -> MlResult<Option<RgbImage>> {
-    let Some(host) = host else {
-        return Ok(None);
-    };
-    if !extension_is_heic(path) {
-        return Ok(None);
+    probe: &[u8; 32],
+) -> MlResult<(RgbImage, [u8; 32])> {
+    if let Some(host) = host.filter(|_| extension_is_heic(path)) {
+        let rgb = host.decode(path)?;
+        return Ok((limit_long_side(rgb, ANALYSIS_MAX_LONG_SIDE), *probe));
     }
-    host.decode(path).map(Some)
+
+    let bytes = vfs.read(path)?;
+    let hash = crate::hash::hash_bytes(&bytes);
+    let rgb = decode_oriented(path, &bytes)?;
+    drop(bytes);
+    Ok((limit_long_side(rgb, ANALYSIS_MAX_LONG_SIDE), hash))
 }
 
 /// Downscale so the long side is at most `max_long`. No-op when already
@@ -791,24 +804,36 @@ mod tests {
     }
 
     #[test]
-    fn host_heic_is_skipped_when_absent_or_not_heic() {
-        assert!(host_heic_decode(None, "/a/x.heic").unwrap().is_none());
-        assert!(host_heic_decode(Some(&OkHost), "/a/x.jpg")
-            .unwrap()
-            .is_none());
+    fn analysis_decode_uses_software_when_host_is_absent_or_not_heic() {
+        let vfs = gallery_vfs::MemVfs::new();
+        let mut png = Vec::new();
+        DynamicImage::ImageRgb8(solid(4, 2, [7, 8, 9]))
+            .write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png)
+            .unwrap();
+        vfs.insert("/a/x.heic", png.clone());
+        vfs.insert("/a/x.jpg", png);
+
+        let (without_host, _) = decode_for_analysis(&vfs, None, "/a/x.heic", &[1; 32]).unwrap();
+        assert_eq!(without_host.dimensions(), (4, 2));
+        let (wrong_extension, _) =
+            decode_for_analysis(&vfs, Some(&OkHost), "/a/x.jpg", &[2; 32]).unwrap();
+        assert_eq!(wrong_extension.get_pixel(0, 0).0, [7, 8, 9]);
     }
 
     #[test]
-    fn host_heic_success_is_some() {
-        let rgb = host_heic_decode(Some(&OkHost), "/a/x.heic")
-            .unwrap()
-            .expect("host should decode");
+    fn host_heic_success_keeps_the_probe_key() {
+        let vfs = gallery_vfs::MemVfs::new();
+        let probe = [3; 32];
+        let (rgb, hash) = decode_for_analysis(&vfs, Some(&OkHost), "/a/x.heic", &probe).unwrap();
         assert_eq!((rgb.width(), rgb.height()), (4, 2));
+        assert_eq!(hash, probe);
     }
 
     #[test]
-    fn host_heic_failure_does_not_look_like_absence() {
-        let err = host_heic_decode(Some(&FailHost), "/a/x.heic").unwrap_err();
+    fn host_heic_failure_does_not_fall_through_to_vfs() {
+        let vfs = gallery_vfs::MemVfs::new();
+        vfs.insert("/a/x.heic", b"this fallback must not be read".to_vec());
+        let err = decode_for_analysis(&vfs, Some(&FailHost), "/a/x.heic", &[4; 32]).unwrap_err();
         assert!(
             matches!(
                 err,

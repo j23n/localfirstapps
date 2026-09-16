@@ -66,7 +66,7 @@ use crate::engine::{default_workers, iso8601_utc_now, PROGRESS_INTERVAL, TAGGED_
 use crate::error::{MlError, MlResult};
 use crate::hash::content_hash;
 use crate::pack::{ClusteringConfig, ModelPack};
-use crate::preprocess::{decode_oriented, extension_supported};
+use crate::preprocess::{decode_for_analysis, extension_supported};
 
 use super::align::align_tensor;
 use super::cluster::{self, Assignment, FaceVec};
@@ -716,7 +716,12 @@ impl FaceEngine {
                 if cancelled() {
                     return Ok(None);
                 }
-                let (rgb, hash) = self.decode_for_faces(path, &probe)?;
+                let (rgb, hash) = decode_for_analysis(
+                    self.vfs.as_ref(),
+                    self.heic_decoder.as_deref(),
+                    path,
+                    &probe,
+                )?;
                 if cancelled() {
                     return Ok(None);
                 }
@@ -769,34 +774,6 @@ impl FaceEngine {
         let request = FaceWriteRequest::new(Vec::new(), self.face_key.clone(), tagged_at)
             .speaking_partially(Vec::<String>::new());
         self.write_with_retry(path, &request)
-    }
-
-    /// Decode one photo for detection. Same host-HEIC shortcut as tagging.
-    ///
-    /// The detector letterboxes to 640 and the embedder crops to 112, so a
-    /// 2048 long side is enough. Holding the oriented 48 MP buffer for detect
-    /// *and* every crop is what face workers used to do on a JPEG
-    /// library — hundreds of megabytes, on top of the ONNX sessions.
-    fn decode_for_faces(
-        &self,
-        path: &str,
-        probe: &[u8; 32],
-    ) -> MlResult<(image::RgbImage, [u8; 32])> {
-        if let Some(rgb) = crate::preprocess::host_heic_decode(self.heic_decoder.as_deref(), path)?
-        {
-            return Ok((
-                crate::preprocess::limit_long_side(rgb, crate::preprocess::ANALYSIS_MAX_LONG_SIDE),
-                *probe,
-            ));
-        }
-        let bytes = self.vfs.read(path)?;
-        let hash = crate::hash::hash_bytes(&bytes);
-        let rgb = decode_oriented(path, &bytes)?;
-        drop(bytes);
-        Ok((
-            crate::preprocess::limit_long_side(rgb, crate::preprocess::ANALYSIS_MAX_LONG_SIDE),
-            hash,
-        ))
     }
 
     /// Detect, align and embed every face in one decoded image.

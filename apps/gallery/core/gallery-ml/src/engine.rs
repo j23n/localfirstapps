@@ -57,7 +57,9 @@ use crate::encoder::ImageEncoder;
 use crate::error::{MlError, MlResult};
 use crate::hash::content_hash;
 use crate::pack::ModelPack;
-use crate::preprocess::{extension_supported, preprocess, PreprocessConfig};
+use crate::preprocess::{
+    decode_for_analysis, extension_supported, tensor_from_rgb, PreprocessConfig,
+};
 use crate::tagger::ZeroShotTagger;
 
 /// Upper bound on worker threads. See the module docs.
@@ -576,7 +578,13 @@ impl TaggingEngine {
                 if cancelled() {
                     return Ok(None);
                 }
-                let (tensor, hash) = self.decode_for_embed(path, &probe)?;
+                let (rgb, hash) = decode_for_analysis(
+                    self.vfs.as_ref(),
+                    self.heic_decoder.as_deref(),
+                    path,
+                    &probe,
+                )?;
+                let tensor = tensor_from_rgb(path, rgb, &self.preprocess)?;
                 if cancelled() {
                     return Ok(None);
                 }
@@ -630,36 +638,6 @@ impl TaggingEngine {
         self.sidecar_view(&item.path).is_some_and(|view| {
             view.photo_tools.tagger_version.as_deref() == Some(self.pack.version())
         })
-    }
-
-    /// Decode + preprocess one photo for embedding.
-    ///
-    /// HEIC on a host that installed a platform decoder skips the second full
-    /// file read (ImageIO opens the path itself) and the software HEVC
-    /// decode. A host failure is the photo's failure — software HEVC of a
-    /// 48 MP frame is the allocation a phone cannot absorb. JPEG/PNG stay
-    /// on the pinned `vfs.read` + `preprocess` path, hashed from the buffer
-    /// that is actually decoded so a rewrite between the probe hash and the
-    /// read cannot poison the cache.
-    fn decode_for_embed(
-        &self,
-        path: &str,
-        probe: &[u8; 32],
-    ) -> MlResult<(crate::Tensor, [u8; 32])> {
-        if let Some(rgb) = crate::preprocess::host_heic_decode(self.heic_decoder.as_deref(), path)?
-        {
-            // ImageIO already caps the long side; this is the backstop if a
-            // host decoder ignores its own thumbnail size.
-            let rgb =
-                crate::preprocess::limit_long_side(rgb, crate::preprocess::ANALYSIS_MAX_LONG_SIDE);
-            let tensor = crate::preprocess::tensor_from_rgb(path, rgb, &self.preprocess)?;
-            return Ok((tensor, *probe));
-        }
-        let bytes = self.vfs.read(path)?;
-        let hash = crate::hash::hash_bytes(&bytes);
-        let tensor = preprocess(path, &bytes, &self.preprocess)?;
-        drop(bytes);
-        Ok((tensor, hash))
     }
 }
 
