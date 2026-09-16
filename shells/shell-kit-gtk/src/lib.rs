@@ -8,7 +8,8 @@
 //! enums. An unhandled kind is a compile error.
 
 pub use localcore_ui::{
-    ActionRole, Affordance, ContactsScreen, ItemKind, NavIntent, ScreenKind, StatusSeverity,
+    ActionRole, Affordance, ContactsScreen, ItemKind, MusicScreen, NavIntent, ScreenKind,
+    StatusSeverity,
 };
 
 mod affordance;
