@@ -112,6 +112,106 @@ final class ContactsStore {
         !syncConflictGroups.isEmpty
     }
 
+    /// Default list rows from core (`title` + organization/email `subtitle`).
+    var listRows: [TextRow] {
+        let tag = showConflictsOnly ? nil : selectedTag
+        if let session, let rows = try? session.filteredListRows(query: "", tag: tag) {
+            if showConflictsOnly {
+                let conflicted = Set(
+                    contacts.compactMap { $0.conflictState == nil ? nil : $0.localContactsID }
+                )
+                return rows.filter { conflicted.contains($0.id) }
+            }
+            return rows
+        }
+        return filteredContacts.map { contact in
+            TextRow(
+                id: contact.localContactsID,
+                title: contact.displayName,
+                subtitle: contact.organization.isEmpty
+                    ? contact.emailAddresses.first?.value
+                    : contact.organization,
+                trailing: nil
+            )
+        }
+    }
+
+    /// Live-search hits. Empty query yields no hits; the list uses [`listRows`].
+    var searchHits: [SearchHit] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+        let tag = showConflictsOnly ? nil : selectedTag
+        if let session, let hits = try? session.searchHits(query: query, tag: tag) {
+            if showConflictsOnly {
+                let conflicted = Set(
+                    contacts.compactMap { $0.conflictState == nil ? nil : $0.localContactsID }
+                )
+                return hits.filter { conflicted.contains($0.id) }
+            }
+            return hits
+        }
+        return filteredContacts.map { contact in
+            SearchHit(
+                id: contact.localContactsID,
+                title: contact.displayName,
+                subtitle: contact.organization,
+                trailing: contact.organization.isEmpty ? nil : "Organization",
+                symbol: "contact-new-symbolic"
+            )
+        }
+    }
+
+    func listRow(for id: String) -> TextRow? {
+        listRows.first { $0.id == id }
+    }
+
+    func fieldRows(id: String) -> [FieldRow] {
+        (try? session?.fieldRows(id: id)) ?? []
+    }
+
+    func exportVCardText(id: String) throws -> String {
+        try openSession().exportVcardText(id: id)
+    }
+
+    func newContactDraft() -> ContactEditDraft {
+        if let session {
+            return session.newContactDraft()
+        }
+        return ContactEditDraft(
+            id: nil,
+            contentToken: nil,
+            fullName: "",
+            familyName: "",
+            givenName: "",
+            middleName: "",
+            namePrefix: "",
+            nameSuffix: "",
+            organization: "",
+            jobTitle: "",
+            nickname: "",
+            urls: [],
+            phones: [],
+            emails: [],
+            addresses: [],
+            birthday: nil,
+            note: "",
+            categories: [],
+            photo: nil
+        )
+    }
+
+    func contactEditDraft(id: String) throws -> ContactEditDraft {
+        try openSession().contactEditDraft(id: id)
+    }
+
+    @discardableResult
+    func save(_ draft: ContactEditDraft) async throws -> ContactEditDraft {
+        let session = try openSession()
+        let saved = try session.saveContact(command: SaveContactCommand(draft: draft))
+        try refreshFromSession(session)
+        return saved
+    }
+
     /// The folder's vCard layout, derived from how contacts are distributed across files.
     /// Two layouts are supported: every contact in its own file, or every contact in a single
     /// shared file. Anything else is `.mixed` and should be reconciled by the user.
@@ -370,6 +470,10 @@ final class ContactsStore {
 
     func syncConflictChoiceRows(canonicalName: String) throws -> [TextRow] {
         try openSession().conflictChoiceRows(canonicalName: canonicalName)
+    }
+
+    func conflictPreview(canonicalName: String) throws -> ConflictPreview {
+        try openSession().conflictPreview(canonicalName: canonicalName)
     }
 
     // MARK: - Session

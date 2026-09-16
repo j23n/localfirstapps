@@ -7,10 +7,10 @@ A file-based contact manager for iOS. Your contacts are stored as plain vCard (.
 
 The headless core is `core/contacts-core` (parse/write, folder index,
 Syncthing R8–R11, display rows, typed conflict state and actions).
-`contacts-ffi` copies those rows onto UniFFI. The iOS shell writes through
-`ContactsSession` and still parses vCard text for views and the
-Apple Contacts port; that serialized read is tracked R6 debt, not a
-completed boundary. Syncthing groups use `SyncConflictGroupSheet`.
+`contacts-ffi` copies those rows onto UniFFI. The iOS shell binds list,
+search, detail, edit, export, and Syncthing preview through `ContactsSession`.
+Apple Contacts sync stays an iOS host port (`CNSyncService`). Syncthing
+groups use `SyncConflictGroupSheet`.
 Accent tokens are `design/tokens/contacts.toml` (`ContactsTokens`,
 sourced light/dark). Screens are `ui-spec/screens.toml`.
 The Linux shell is `shells/contacts-gtk` (`--comet` for Comet).

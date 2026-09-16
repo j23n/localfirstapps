@@ -10,16 +10,17 @@ use std::sync::Mutex;
 use contacts_core::StdVfs;
 use contacts_core::{
     assign_tag_logged, bulk_delete_logged, choice_rows as core_choice_rows,
-    conflict_rows as core_conflict_rows, delete_logged, detail_rows as core_detail_rows,
-    export_vcard_text as core_export_vcard_text, is_conflict_name as core_is_conflict_name,
-    list_rows as core_list_rows, list_rows_filtered as core_list_rows_filtered, load_edit_draft,
-    remove_tag_logged, rename_tag_logged, resolve_logged, save_contact_logged,
+    conflict_preview as core_conflict_preview, conflict_rows as core_conflict_rows, delete_logged,
+    detail_rows as core_detail_rows, export_vcard_text as core_export_vcard_text,
+    is_conflict_name as core_is_conflict_name, list_rows as core_list_rows,
+    list_rows_filtered as core_list_rows_filtered, load_edit_draft, remove_tag_logged,
+    rename_tag_logged, resolve_logged, save_contact_logged, search_hits as core_search_hits,
     tag_rows as core_tag_rows, valid_device, BirthdayDraft as CoreBirthdayDraft,
-    ConflictRow as CoreConflictRow, ContactEditDraft as CoreContactEditDraft,
-    FieldRow as CoreFieldRow, LabeledAddressDraft as CoreLabeledAddressDraft,
-    LabeledValueDraft as CoreLabeledValueDraft, MergeKind as CoreMergeKind,
-    SaveContactCommand as CoreSaveContactCommand, Store, StoreError, TextRow as CoreTextRow,
-    TEMP_PREFIX,
+    ConflictPreview as CoreConflictPreview, ConflictRow as CoreConflictRow,
+    ContactEditDraft as CoreContactEditDraft, FieldRow as CoreFieldRow,
+    LabeledAddressDraft as CoreLabeledAddressDraft, LabeledValueDraft as CoreLabeledValueDraft,
+    MergeKind as CoreMergeKind, SaveContactCommand as CoreSaveContactCommand,
+    SearchHit as CoreSearchHit, Store, StoreError, TextRow as CoreTextRow, TEMP_PREFIX,
 };
 
 /// `text-row` (ADR 0004 R4).
@@ -156,6 +157,63 @@ pub enum MergeKind {
     DeletedVersusModified,
 }
 
+/// One live-search match. Same slot as [`TextRow`]; `subtitle` is the
+/// matched field value and `trailing` is the field kind.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct SearchHit {
+    /// Opaque key the shell hands back.
+    pub id: String,
+    /// Display name.
+    pub title: String,
+    /// Matched field value; the shell highlights the query it already holds.
+    pub subtitle: String,
+    /// Field kind (`Phone`, `Email`, …).
+    pub trailing: Option<String>,
+    /// Symbolic icon name for the matched field kind.
+    pub symbol: String,
+}
+
+/// R6 role: command DTO.
+///
+/// One side of a conflicting field.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct ConflictSide {
+    /// Copy basename or surviving path.
+    pub source: String,
+    /// Formatted field value on that copy.
+    pub value: String,
+}
+
+/// R6 role: command DTO.
+///
+/// One field that differs across Syncthing copies.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct ConflictFieldPreview {
+    /// Stable field key (`tel:cell`, `fn`, …).
+    pub field: String,
+    /// Visible sides the shell offers as a choice.
+    pub sides: Vec<ConflictSide>,
+}
+
+/// R6 role: command DTO.
+///
+/// Field-level preview for an explicit Syncthing-group review.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct ConflictPreview {
+    /// Group id the shell hands back to [`ContactsSession::resolve_group`].
+    pub id: String,
+    /// Surviving file name.
+    pub title: String,
+    /// Auto / choice / deleted-versus-modified.
+    pub kind: MergeKind,
+    /// Copy basenames that will be deleted on confirm.
+    pub discarded: Vec<String>,
+    /// Merged card as the user will see it if they confirm without edits.
+    pub merged_fields: Vec<FieldRow>,
+    /// Fields that differ. Empty when [`MergeKind::Auto`].
+    pub fields: Vec<ConflictFieldPreview>,
+}
+
 /// Display-ready conflict group plus typed disposition.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct ConflictRow {
@@ -290,6 +348,19 @@ impl ContactsSession {
             .collect())
     }
 
+    /// Live-search hits with the first matching field.
+    pub fn search_hits(
+        &self,
+        query: String,
+        tag: Option<String>,
+    ) -> Result<Vec<SearchHit>, ContactsError> {
+        let store = self.store.lock().expect("session lock");
+        Ok(core_search_hits(&store, &query, tag.as_deref())
+            .into_iter()
+            .map(to_search)
+            .collect())
+    }
+
     /// Display-ready tag filters with contact counts.
     pub fn tag_rows(&self) -> Result<Vec<TextRow>, ContactsError> {
         let store = self.store.lock().expect("session lock");
@@ -393,6 +464,19 @@ impl ContactsSession {
             .into_iter()
             .map(to_conflict)
             .collect())
+    }
+
+    /// Field-level preview for one Syncthing group.
+    pub fn conflict_preview(
+        &self,
+        canonical_name: String,
+    ) -> Result<ConflictPreview, ContactsError> {
+        let store = self.store.lock().expect("session lock");
+        Ok(to_preview(core_conflict_preview(
+            &self.vfs,
+            &store,
+            &canonical_name,
+        )?))
     }
 
     /// `text-row`s for one group's field choices. `id` is `field|source`.
@@ -524,6 +608,42 @@ fn to_text(row: CoreTextRow) -> TextRow {
         title: row.title,
         subtitle: row.subtitle,
         trailing: row.trailing,
+    }
+}
+
+fn to_search(hit: CoreSearchHit) -> SearchHit {
+    SearchHit {
+        id: hit.id,
+        title: hit.title,
+        subtitle: hit.field_value,
+        trailing: Some(hit.field_label),
+        symbol: hit.symbol.to_string(),
+    }
+}
+
+fn to_preview(preview: CoreConflictPreview) -> ConflictPreview {
+    ConflictPreview {
+        id: preview.id,
+        title: preview.title,
+        kind: match preview.kind {
+            CoreMergeKind::Auto => MergeKind::Auto,
+            CoreMergeKind::Choice => MergeKind::Choice,
+            CoreMergeKind::DeletedVersusModified => MergeKind::DeletedVersusModified,
+        },
+        discarded: preview.discarded,
+        merged_fields: preview.merged_fields.into_iter().map(to_field).collect(),
+        fields: preview
+            .fields
+            .into_iter()
+            .map(|field| ConflictFieldPreview {
+                field: field.field,
+                sides: field
+                    .sides
+                    .into_iter()
+                    .map(|(source, value)| ConflictSide { source, value })
+                    .collect(),
+            })
+            .collect(),
     }
 }
 

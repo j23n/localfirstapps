@@ -1,4 +1,4 @@
-//! Port of the Swift VCardParser / VCardWriter vectors.
+//! Parse / write vectors for the contacts-core vCard layer.
 
 use contacts_core::{parse, parse_multiple, suggested_file_name, write, Card, Labeled};
 

@@ -493,12 +493,12 @@ block C.
 | Dark token palettes ×4 | **done (3.5 + D4)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery dark *surfaces* are the authored D4 exception (`gallery.toml`). Health has no catalog; not invented. |
 | Milestone C review (ADR 0004) | **done (3.6)** | Contacts needed no new kind. That validates the inventory for this slice, not the family-wide UI architecture. Shared contact display/action state continues moving into `contacts-core`. |
 | `shell-kit-swift` | **4** | iOS contacts views are hand-rolled. Music is the next SwiftUI vertical. |
-| Contacts tags / logs / full GTK fields | **done (GTK)** | Routed on `contacts-gtk`. iOS tags/logs remain outside the C-loop. |
+| Contacts tags / logs / full GTK fields | **done** | Routed on `contacts-gtk`. iOS tags, logs, and display-row binding landed in the contacts wrap-up. |
 | GTK 4.22 list viewport | **done (4)** | GTK 4.22 wraps `ScrolledWindow` children in `Viewport`. `list_box_page()` keeps the `ListBox` handle; `.child().and_downcast::<ListBox>()` panics. |
 | GTK design pass | **in progress (Music stage)** | 2a–2c + HIG chrome + search + artwork; Music is Songs · Artists · Albums · Playlists with a persistent Now Playing column (mini-player when compact). Playback still needs `--features gstreamer-playback`. Reuse 23 shared of 25 Contacts / 27 Music. See [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). |
 | Music UI spec | **done (4)** | `apps/music/ui-spec/screens.toml`. |
 | Music GTK shell | **done (4)** | `music-gtk` over `music-core`. Playback is the `gstreamer-playback` feature. MPRIS and `--comet` are present. Density/polish is the design pass, not a second music rewrite. |
-| iOS contacts views parse vCard text | **debt** | Writes go through FFI, but `vcard_text` is a serialized-domain escape hatch. Replace it with explicit read/command/host-port DTOs; do not call contacts R6-complete meanwhile. |
+| iOS contacts views parse vCard text | **done** | List/search/detail/edit/export/Syncthing preview bind `TextRow` / `SearchHit` / `FieldRow` / `ContactEditDraft` / `ConflictPreview`. Swift `VCardParser` / `VCardWriter` deleted. Apple CN remains a host port. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **done (4)** | `music-core` + `fixtures/r8/`. Playlist write through `localcore-vfs`. |
 | Unify iOS onto `run_places` | **5** | Two orchestrators. Pack is shipped; collapse the Swift loop. |
@@ -556,8 +556,8 @@ workload before drawing shells).
    `SyncConflict` twins are one shared file under
    `localcore-conflict/support/`; tests read the grammar fixtures.
    UniFFI declarations use display records (`TextRow` / `FieldRow`);
-   `cargo test` is the gate. The later `vcard_text` read path remains
-   semantic R6 debt. No GTK.
+   `cargo test` is the gate. iOS later bound the same display records;
+   the Swift vCard twins are gone. No GTK.
 3. **3.2 Tokens + R14 codegen** — **done.** Light-only tables in
    `design/tokens/`. `scripts/gen_r14.py` emits R4 kinds and tokens.
    Gallery `Design.swift` aliases `GalleryTokens`. Dark companions
@@ -570,12 +570,10 @@ workload before drawing shells).
    `ContactsScreen`; neither view tree consumes those ids. Music GTK
    later became the second consumer (measured reuse). Design/density
    remains the GTK design pass.
-5. **3.4 iOS shell over the core.** **done.** Views remain and still
-   parse vCard text. `ContactsStore` load/save/delete go through
-   `ContactsSession`. `CNSyncService` stays a port. Apple CN sheet
-   stays. Syncthing groups use `conflict_rows` /
-   `conflict_choice_rows` / `resolve_group` and
-   `SyncConflictGroupSheet`. Folder log at `.contacts/log/<dev>/`
+5. **3.4 iOS shell over the core.** **done.** `ContactsStore` load/save/delete
+   go through `ContactsSession`. List, search, detail, edit, export, and the
+   Syncthing sheet bind core display/command DTOs. `CNSyncService` stays a
+   port. Apple CN sheet stays. Folder log at `.contacts/log/<dev>/`
    (`contact_saved` / `contact_deleted` / `group_resolved`). Queue
    keys NFC; log/blob through `Vfs`; event types are open.
 6. **3.5 GTK + Comet.** **done.** `shells/contacts-gtk` over
@@ -595,12 +593,11 @@ workload before drawing shells).
 > and Comet — choose a folder, list, search, view, edit, save, resolve
 > a **Syncthing `.vcf` group** (R8–R11). Apple Contacts sync remains
 > iOS-only. ADR 0004 was reviewed against both shells.
-> `contacts-ffi` is syntax-green for the record checker but remains
-> semantic R6 debt while iOS reparses `vcard_text`. Gallery FFI
-> windowing later emptied `conformance/r6/expected.txt`.
-> Gaps that do not reopen C: Swift `shell-kit` (Phase 4); iOS tags /
-> logs; iOS still parses vCard text in views. GTK tags / logs / full
-> edit fields landed after C.
+> `contacts-ffi` is syntax-green for the record checker. iOS no longer
+> reparses vCard text for views; Apple CN remains the host port.
+> Gallery FFI windowing later emptied `conformance/r6/expected.txt`.
+> Gaps that do not reopen C: Swift `shell-kit` (Phase 4). GTK tags /
+> logs / full edit fields landed after C.
 
 Size: L. 3.1 was Linux-container. 3.4 needs `macos-26`.
 
@@ -800,9 +797,10 @@ in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**A, B, Phase 3 (through 3.6 / Milestone C), and the Music GTK core
-loop are done.** `health-core` / `health-ffi` / `chart-row` started
-Phase 6 without a Health shell. Next engineering moves, in parallel:
+**A, B, Phase 3 (through 3.6 / Milestone C), the contacts iOS wrap-up,
+and the Music GTK core loop are done.** `health-core` / `health-ffi` /
+`chart-row` started Phase 6 without a Health shell. Next engineering
+moves, in parallel:
 
 - **GTK design pass** — **Music stage landed.** Primary menu,
   preferences/about, Contacts split+detail+conflict, global search,

@@ -1,4 +1,4 @@
-//! vCard 3.0 parse / write, matching the Swift `VCardParser` / `VCardWriter`.
+//! vCard 3.0 parse / write. Both shells go through this crate.
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;

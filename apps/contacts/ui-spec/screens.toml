@@ -58,13 +58,13 @@ id = "settings"
 kind = "settings"
 title = "Settings"
 # Folder first, domain middle, Info last (ADR 0007 R2).
-# Apple Contacts sync is iOS-only (ADR 0007 R15).
+# Apple Contacts sync is iOS-only (ADR 0007 R15); GTK omits `sync`.
 sections = [
     { id = "folder", item = "action-row" },
     { id = "sync", item = "action-row" },
     { id = "tags", item = "nav-row" },
-    { id = "info", item = "text-row" },
     { id = "diagnostics", item = "nav-row" },
+    { id = "info", item = "text-row" },
 ]
 item_nav = { intent = "push", destination = "logs" }
 

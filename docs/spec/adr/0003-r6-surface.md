@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-12
-- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`); 2026-09-16 (typed Contacts drafts replace serialized vCard reads and writes; Gallery generation-scoped structures, explicit host ports, and typed commands)
+- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`); 2026-09-16 (typed Contacts drafts replace serialized vCard reads and writes; Gallery generation-scoped structures, explicit host ports, and typed commands; iOS Contacts binds display rows and deletes the Swift vCard twins)
 - Parent: [0003-app-core.md](0003-app-core.md) R6, [0004-ui-spec-and-shells.md](0004-ui-spec-and-shells.md) R4
 
 ## Scope

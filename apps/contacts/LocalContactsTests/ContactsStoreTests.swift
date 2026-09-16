@@ -69,6 +69,17 @@ struct ContactsStoreComputedTests {
 
     // MARK: - filteredContacts
 
+    @Test("listRows falls back to displayName and organization without a session")
+    func listRowsFallback() {
+        let store = makeStore([
+            contact(given: "Alice", org: "Acme"),
+            contact(given: "Bob", emails: ["bob@x.com"]),
+        ])
+        let rows = Dictionary(uniqueKeysWithValues: store.listRows.map { ($0.title, $0.subtitle) })
+        #expect(rows["Alice"] == "Acme")
+        #expect(rows["Bob"] == "bob@x.com")
+    }
+
     @Test("filteredContacts: empty search returns all, sorted by displayName")
     func filterAll() {
         let store = makeStore([

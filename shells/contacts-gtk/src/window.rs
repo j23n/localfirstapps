@@ -1499,6 +1499,14 @@ impl Window {
 
     fn settings_spec(&self) -> SettingsScreen {
         let folder = self.inner.folder.borrow().clone();
+        let store = self.inner.store.borrow();
+        let contact_count = store.as_ref().map(|store| store.cards().len()).unwrap_or(0);
+        let tag_count = store
+            .as_ref()
+            .map(|store| tag_rows(store).len())
+            .unwrap_or(0);
+        drop(store);
+
         let change = adw::ActionRow::builder()
             .title("Change Folder")
             .activatable(true)
@@ -1507,9 +1515,18 @@ impl Window {
         let this = self.clone();
         change.connect_activated(move |_| this.pick_folder());
 
+        let reload = adw::ActionRow::builder()
+            .title("Reload")
+            .activatable(true)
+            .sensitive(folder.is_some())
+            .build();
+        reload.add_suffix(&gtk::Image::from_icon_name("view-refresh-symbolic"));
+        let this = self.clone();
+        reload.connect_activated(move |_| this.reload_folder());
+
         let tags = nav_row(&NavRowData {
             label: "Tags".into(),
-            trailing: Some("Rename or remove tags".into()),
+            trailing: Some(tag_count.to_string()),
         });
         let this = self.clone();
         tags.connect_activated(move |_| this.present_tag_management());
@@ -1525,7 +1542,7 @@ impl Window {
             groups: vec![
                 SettingsGroup {
                     id: "folder".into(),
-                    title: "Contacts Folder".into(),
+                    title: "Folder".into(),
                     rows: vec![
                         text_row(&TextRowData {
                             title: "Folder".into(),
@@ -1535,11 +1552,12 @@ impl Window {
                         })
                         .upcast(),
                         change.upcast(),
+                        reload.upcast(),
                     ],
                 },
                 SettingsGroup {
                     id: "tags".into(),
-                    title: "Contacts".into(),
+                    title: "Tags".into(),
                     rows: vec![tags.upcast()],
                 },
                 SettingsGroup {
@@ -1555,6 +1573,20 @@ impl Window {
                             title: "Device".into(),
                             subtitle: Some(self.inner.device.clone()),
                             trailing: None,
+                            leading: None,
+                        })
+                        .upcast(),
+                        text_row(&TextRowData {
+                            title: "Contacts".into(),
+                            subtitle: None,
+                            trailing: Some(contact_count.to_string()),
+                            leading: None,
+                        })
+                        .upcast(),
+                        text_row(&TextRowData {
+                            title: "Version".into(),
+                            subtitle: None,
+                            trailing: Some(env!("CARGO_PKG_VERSION").into()),
                             leading: None,
                         })
                         .upcast(),

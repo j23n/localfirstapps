@@ -2,8 +2,8 @@
 
 use contacts_core::{
     apply_draft, choice_rows, conflict_rows, delete_logged, draft_from_card, field_rows, list_rows,
-    read_ops, resolve_logged, save_logged, write, Card, ContactDraft, MemVfs, MergeKind, Store,
-    TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
+    read_ops, resolve_logged, save_logged, write, Birthday, Card, ContactDraft, MemVfs, MergeKind,
+    Store, TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
 };
 use localcore_vfs::{Entry, ReadSeek, Stat, Vfs, VfsError, VfsResult};
 
@@ -33,6 +33,31 @@ fn list_and_fields_match_ffi_copy() {
         read_ops(&vfs, "/lib").unwrap()[0].event_type,
         TYPE_CONTACT_SAVED
     );
+}
+
+#[test]
+fn birthday_field_is_display_ready() {
+    let mut card = Card::new("ada.vcf");
+    card.birthday = Some(Birthday {
+        year: Some(1815),
+        month: 12,
+        day: 10,
+    });
+    let with_year = field_rows(&card)
+        .into_iter()
+        .find(|row| row.id.as_deref() == Some("bday"))
+        .unwrap();
+    assert_eq!(with_year.value, "December 10, 1815");
+    card.birthday = Some(Birthday {
+        year: None,
+        month: 3,
+        day: 14,
+    });
+    let yearless = field_rows(&card)
+        .into_iter()
+        .find(|row| row.id.as_deref() == Some("bday"))
+        .unwrap();
+    assert_eq!(yearless.value, "March 14");
 }
 
 #[test]

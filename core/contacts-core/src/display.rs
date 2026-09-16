@@ -203,14 +203,10 @@ pub fn field_rows(card: &Card) -> Vec<FieldRow> {
         });
     }
     if let Some(birthday) = &card.birthday {
-        let value = match birthday.year {
-            Some(year) => format!("{year:04}-{:02}-{:02}", birthday.month, birthday.day),
-            None => format!("--{:02}-{:02}", birthday.month, birthday.day),
-        };
         rows.push(FieldRow {
             id: Some("bday".into()),
             label: "Birthday".into(),
-            value,
+            value: format_birthday_display(birthday),
             editable: true,
         });
     }
@@ -504,6 +500,31 @@ fn phone_matches(value: &str, needle: &str) -> bool {
     let digits_q: String = needle.chars().filter(|c| c.is_ascii_digit()).collect();
     let digits_v: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
     digits_q.len() >= 3 && digits_v.contains(&digits_q)
+}
+
+fn format_birthday_display(birthday: &crate::card::Birthday) -> String {
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    let month = MONTHS
+        .get(birthday.month.saturating_sub(1) as usize)
+        .copied()
+        .unwrap_or("?");
+    match birthday.year {
+        Some(year) => format!("{month} {}, {year}", birthday.day),
+        None => format!("{month} {}", birthday.day),
+    }
 }
 
 fn birthday_strings(birthday: &crate::card::Birthday) -> Vec<String> {

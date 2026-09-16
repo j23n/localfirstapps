@@ -82,7 +82,7 @@ struct ContactListView: View {
             .sheet(isPresented: $showAddContact) {
                 NavigationStack {
                     ContactsRouter.destination(
-                        ContactEditView(contact: Contact(), isNew: true)
+                        ContactEditView(draft: store.newContactDraft(), isNew: true)
                     )
                 }
             }
@@ -124,6 +124,10 @@ struct ContactListView: View {
         }
     }
 
+    private var isSearching: Bool {
+        !store.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var emptyState: some View {
         ContentUnavailableView {
             Label("No Contacts", systemImage: "person.crop.circle.badge.questionmark")
@@ -138,7 +142,9 @@ struct ContactListView: View {
     }
 
     private var contactList: some View {
-        VStack(spacing: 0) {
+        let hits = store.searchHits
+        let rowsByID = Dictionary(uniqueKeysWithValues: store.listRows.map { ($0.id, $0) })
+        return VStack(spacing: 0) {
             List(selection: isSelecting ? $selectedContactIDs : nil) {
                 if !store.allTags.isEmpty || store.hasConflicts {
                     TagFilterBar()
@@ -147,15 +153,41 @@ struct ContactListView: View {
                         .listRowSeparator(.hidden)
                 }
 
-                ForEach(store.groupedContacts, id: \.letter) { group in
-                    Section(group.letter) {
-                        ForEach(group.contacts) { contact in
+                if isSearching {
+                    ForEach(hits, id: \.id) { hit in
+                        if let contact = store.contacts.first(where: {
+                            $0.localContactsID == hit.id
+                        }) {
                             if isSelecting {
-                                ContactCard(contact: contact)
+                                ContactCard(contact: contact, hit: hit, query: store.searchText)
                                     .tag(contact.localContactsID)
                             } else {
                                 NavigationLink(value: contact.localContactsID) {
-                                    ContactCard(contact: contact)
+                                    ContactCard(contact: contact, hit: hit, query: store.searchText)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    ForEach(store.groupedContacts, id: \.letter) { group in
+                        Section(group.letter) {
+                            ForEach(group.contacts) { contact in
+                                let row = rowsByID[contact.localContactsID]
+                                if isSelecting {
+                                    ContactCard(
+                                        contact: contact,
+                                        title: row?.title ?? contact.displayName,
+                                        subtitle: row?.subtitle
+                                    )
+                                    .tag(contact.localContactsID)
+                                } else {
+                                    NavigationLink(value: contact.localContactsID) {
+                                        ContactCard(
+                                            contact: contact,
+                                            title: row?.title ?? contact.displayName,
+                                            subtitle: row?.subtitle
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -176,7 +208,7 @@ struct ContactListView: View {
                 }
             }
             .overlay {
-                if store.filteredContacts.isEmpty && !store.searchText.isEmpty {
+                if isSearching && hits.isEmpty {
                     ContentUnavailableView.search(text: store.searchText)
                 }
             }
@@ -251,20 +283,58 @@ struct ContactListView: View {
 
 struct ContactCard: View {
     let contact: Contact
+    var title: String
+    var subtitle: String? = nil
+    var hit: SearchHit? = nil
+    var query: String = ""
 
     private static let avatarSize: CGFloat = 36
     private static let avatarSpacing: CGFloat = 12
 
+    init(
+        contact: Contact,
+        title: String? = nil,
+        subtitle: String? = nil,
+        hit: SearchHit? = nil,
+        query: String = ""
+    ) {
+        self.contact = contact
+        self.title = hit?.title ?? title ?? contact.displayName
+        if let hit {
+            if let kind = hit.trailing, !kind.isEmpty {
+                self.subtitle = "\(kind): \(hit.subtitle)"
+            } else {
+                self.subtitle = hit.subtitle
+            }
+        } else {
+            self.subtitle = subtitle
+        }
+        self.hit = hit
+        self.query = query
+    }
+
     var body: some View {
         HStack(spacing: Self.avatarSpacing) {
-            AvatarView(contact: contact, size: Self.avatarSize)
+            if let hit {
+                Image(systemName: Self.systemImage(for: hit.symbol))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(width: Self.avatarSize, height: Self.avatarSize)
+            } else {
+                AvatarView(contact: contact, size: Self.avatarSize)
+            }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(contact.displayName)
+                Text(title)
                     .font(.body.weight(.medium))
 
-                if !contact.organization.isEmpty {
-                    Text(contact.organization)
+                if let hit {
+                    subtitleText(for: hit)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -281,24 +351,73 @@ struct ContactCard: View {
             }
         }
     }
+
+    @ViewBuilder
+    private func subtitleText(for hit: SearchHit) -> some View {
+        let highlighted = Self.highlighted(hit.subtitle, query: query)
+        if let kind = hit.trailing, !kind.isEmpty {
+            Text("\(kind): ") + Text(highlighted)
+        } else {
+            Text(highlighted)
+        }
+    }
+
+    /// Mark the first case-insensitive occurrence of `query` in `value`.
+    static func highlighted(_ value: String, query: String) -> AttributedString {
+        var text = AttributedString(value)
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty,
+              let stringRange = value.range(of: needle, options: .caseInsensitive),
+              let attrRange = Range(NSRange(stringRange, in: value), in: text) else {
+            return text
+        }
+        text[attrRange].font = .subheadline.weight(.semibold)
+        text[attrRange].backgroundColor = Color.accentColor.opacity(0.18)
+        return text
+    }
+
+    static func systemImage(for symbol: String) -> String {
+        switch symbol {
+        case "phone-symbolic": "phone"
+        case "mail-unread-symbolic": "envelope"
+        case "mark-location-symbolic": "mappin"
+        case "x-office-calendar-symbolic": "calendar"
+        case "system-users-symbolic": "building.2"
+        case "document-properties-symbolic": "briefcase"
+        case "web-browser-symbolic": "globe"
+        case "text-x-generic-symbolic": "note.text"
+        case "user-bookmarks-symbolic": "tag"
+        default: "person"
+        }
+    }
 }
 
 // MARK: - Avatar
 
 struct AvatarView: View {
-    let contact: Contact
+    let photoData: Data?
+    let initials: String
     let size: CGFloat
 
+    init(contact: Contact, size: CGFloat) {
+        self.init(photoData: contact.photoData, initials: contact.initials, size: size)
+    }
+
+    init(photoData: Data?, initials: String, size: CGFloat) {
+        self.photoData = photoData
+        self.initials = initials
+        self.size = size
+    }
+
     var body: some View {
-        if let photoData = contact.photoData,
-           let uiImage = UIImage(data: photoData) {
+        if let photoData, let uiImage = UIImage(data: photoData) {
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFill()
                 .frame(width: size, height: size)
                 .clipShape(Circle())
         } else {
-            Text(contact.initials)
+            Text(initials)
                 .font(.system(size: size * 0.36, weight: .medium, design: .rounded))
                 .foregroundStyle(.white)
                 .frame(width: size, height: size)

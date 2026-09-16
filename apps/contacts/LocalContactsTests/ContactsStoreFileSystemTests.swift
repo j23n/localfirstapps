@@ -638,4 +638,84 @@ struct ContactsStoreFileSystemTests {
         #expect(try readFile("pair.vcf", in: folder) == "not-a-vcard")
         #expect(store.contacts.count == 2)
     }
+
+    @Test("searchHits, fieldRows, and export bind core display records")
+    func coreDisplayAndExport() async throws {
+        let folder = try makeTempFolder()
+        defer { cleanup(folder) }
+
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nX-LOCALCONTACTS-ID:lcid-1\r\nEMAIL;TYPE=home:a@b.com\r\nEND:VCARD\r\n",
+            named: "alice.vcf",
+            in: folder
+        )
+
+        let store = makeStore(folder: folder)
+        await store.loadContacts()
+        store.searchText = "b.com"
+
+        let hits = store.searchHits
+        #expect(hits.count == 1)
+        #expect(hits[0].title == "Alice")
+        #expect(hits[0].subtitle == "a@b.com")
+        #expect(hits[0].trailing == "Email")
+
+        let fields = store.fieldRows(id: "lcid-1")
+        #expect(fields.contains { $0.label == "Name" && $0.value == "Alice" })
+        #expect(fields.contains { $0.id == "email:0" && $0.value == "a@b.com" })
+
+        let exported = try store.exportVCardText(id: "lcid-1")
+        #expect(exported.contains("FN:Alice"))
+        #expect(exported.contains("a@b.com"))
+    }
+
+    @Test("save(draft) writes through ContactEditDraft and keeps a custom FN")
+    func saveDraftPreservesCustomFullName() async throws {
+        let folder = try makeTempFolder()
+        defer { cleanup(folder) }
+
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Lady Lovelace\r\nN:Lovelace;Ada;;;\r\nX-LOCALCONTACTS-ID:lcid-1\r\nEND:VCARD\r\n",
+            named: "ada.vcf",
+            in: folder
+        )
+
+        let store = makeStore(folder: folder)
+        await store.loadContacts()
+        var draft = try store.contactEditDraft(id: "lcid-1")
+        #expect(draft.fullName == "Lady Lovelace")
+        draft.note = "wrote the engine"
+        let saved = try await store.save(draft)
+        #expect(saved.fullName == "Lady Lovelace")
+        #expect(saved.note == "wrote the engine")
+        let onDisk = try readFile("ada.vcf", in: folder)
+        #expect(onDisk.contains("FN:Lady Lovelace"))
+        #expect(onDisk.contains("N:Lovelace;Ada;"))
+        #expect(onDisk.contains("wrote the engine"))
+    }
+
+    @Test("conflictPreview lists discarded copies for an auto group")
+    func conflictPreviewAuto() async throws {
+        let folder = try makeTempFolder()
+        defer { cleanup(folder) }
+
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nX-LOCALCONTACTS-ID:lcid-1\r\nTEL;TYPE=cell:1\r\nEND:VCARD\r\n",
+            named: "alice.vcf",
+            in: folder
+        )
+        try writeFixture(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nX-LOCALCONTACTS-ID:lcid-1\r\nEMAIL;TYPE=home:a@b.com\r\nEND:VCARD\r\n",
+            named: "alice.sync-conflict-20200901-120000-PHONE01.vcf",
+            in: folder
+        )
+
+        let store = makeStore(folder: folder)
+        await store.loadContacts()
+        let preview = try store.conflictPreview(canonicalName: "alice.vcf")
+        #expect(preview.kind == .auto)
+        #expect(preview.fields.isEmpty)
+        #expect(preview.discarded.contains { $0.contains("sync-conflict") })
+        #expect(preview.mergedFields.contains { $0.value == "a@b.com" })
+    }
 }

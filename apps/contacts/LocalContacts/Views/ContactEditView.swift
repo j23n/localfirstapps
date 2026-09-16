@@ -4,25 +4,40 @@ import PhotosUI
 struct ContactEditView: View {
     @Environment(ContactsStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State var contact: Contact
+    @State private var draft: ContactEditDraft
     let isNew: Bool
 
+    @State private var urls: [IdentifiedLabeled]
+    @State private var phones: [IdentifiedLabeled]
+    @State private var emails: [IdentifiedLabeled]
+    @State private var addresses: [IdentifiedAddress]
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var newTag = ""
-
-    // Birthday editing
     @State private var hasBirthday: Bool
     @State private var birthdayDate: Date
+    @State private var lastComposedName: String
 
-    init(contact: Contact, isNew: Bool) {
-        self._contact = State(initialValue: contact)
+    init(draft: ContactEditDraft, isNew: Bool) {
+        self._draft = State(initialValue: draft)
         self.isNew = isNew
-        let hasBday = contact.birthday != nil
-        self._hasBirthday = State(initialValue: hasBday)
-        if let bday = contact.birthday,
-           let date = Calendar.current.date(from: bday) {
+        self._urls = State(initialValue: draft.urls.map(IdentifiedLabeled.init))
+        self._phones = State(initialValue: draft.phones.map(IdentifiedLabeled.init))
+        self._emails = State(initialValue: draft.emails.map(IdentifiedLabeled.init))
+        self._addresses = State(initialValue: draft.addresses.map(IdentifiedAddress.init))
+        self._hasBirthday = State(initialValue: draft.birthday != nil)
+        self._lastComposedName = State(initialValue: Self.structuredName(
+            given: draft.givenName,
+            middle: draft.middleName,
+            family: draft.familyName
+        ))
+        if let birthday = draft.birthday,
+           let date = Calendar.current.date(from: DateComponents(
+            year: birthday.year.map(Int.init),
+            month: Int(birthday.month),
+            day: Int(birthday.day)
+           )) {
             self._birthdayDate = State(initialValue: date)
         } else {
             self._birthdayDate = State(initialValue: Date())
@@ -31,20 +46,23 @@ struct ContactEditView: View {
 
     var body: some View {
         Form {
-            // Photo
             Section {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
-                        AvatarView(contact: contact, size: 80)
-                        let hasPhoto = contact.photoData != nil
+                        AvatarView(
+                            photoData: draft.photo,
+                            initials: Self.initials(from: draft),
+                            size: 80
+                        )
+                        let hasPhoto = draft.photo != nil
                         PhotosPicker(selection: $selectedPhoto, matching: .images) {
                             Text(hasPhoto ? "Change Photo" : "Add Photo")
                                 .font(.subheadline)
                         }
-                        if contact.photoData != nil {
+                        if draft.photo != nil {
                             Button("Remove Photo", role: .destructive) {
-                                contact.photoData = nil
+                                draft.photo = nil
                             }
                             .font(.subheadline)
                         }
@@ -54,32 +72,33 @@ struct ContactEditView: View {
                 .listRowBackground(Color.clear)
             }
 
-            // Name
             Section("Name") {
-                TextField("First Name", text: $contact.givenName)
-                TextField("Middle Name", text: $contact.middleName)
-                TextField("Last Name", text: $contact.familyName)
-                TextField("Name Prefix", text: $contact.namePrefix)
-                TextField("Name Suffix", text: $contact.nameSuffix)
+                TextField("Display Name", text: $draft.fullName)
+                TextField("First Name", text: $draft.givenName)
+                    .onChange(of: draft.givenName) { _, _ in syncDerivedFullName() }
+                TextField("Middle Name", text: $draft.middleName)
+                    .onChange(of: draft.middleName) { _, _ in syncDerivedFullName() }
+                TextField("Last Name", text: $draft.familyName)
+                    .onChange(of: draft.familyName) { _, _ in syncDerivedFullName() }
+                TextField("Name Prefix", text: $draft.namePrefix)
+                TextField("Name Suffix", text: $draft.nameSuffix)
             }
 
-            // Organization
             Section("Organization") {
-                TextField("Company", text: $contact.organization)
-                TextField("Job Title", text: $contact.jobTitle)
-                TextField("Nickname", text: $contact.nickname)
+                TextField("Company", text: $draft.organization)
+                TextField("Job Title", text: $draft.jobTitle)
+                TextField("Nickname", text: $draft.nickname)
             }
 
-            // Websites
             Section("Websites") {
-                ForEach(contact.urls) { url in
+                ForEach(urls) { row in
                     HStack {
-                        TextField("URL", text: fieldBinding(\.urls, id: url.id, to: \.value))
+                        TextField("URL", text: labeledBinding($urls, id: row.id, to: \.value))
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
 
                         Button {
-                            contact.urls.removeAll { $0.id == url.id }
+                            urls.removeAll { $0.id == row.id }
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundStyle(.red)
@@ -89,17 +108,16 @@ struct ContactEditView: View {
                 }
 
                 Button {
-                    contact.urls.append(LabeledValue(label: "homepage", value: ""))
+                    urls.append(IdentifiedLabeled(label: "homepage", value: ""))
                 } label: {
                     Label("Add Website", systemImage: "plus.circle.fill")
                 }
             }
 
-            // Phone Numbers
             Section("Phone Numbers") {
-                ForEach(contact.phoneNumbers) { phone in
+                ForEach(phones) { row in
                     HStack {
-                        Picker("", selection: fieldBinding(\.phoneNumbers, id: phone.id, to: \.label)) {
+                        Picker("", selection: labeledBinding($phones, id: row.id, to: \.label)) {
                             ForEach(["mobile", "home", "work", "main", "iphone", "other"], id: \.self) {
                                 Text($0.capitalized).tag($0)
                             }
@@ -107,11 +125,11 @@ struct ContactEditView: View {
                         .labelsHidden()
                         .frame(width: 100)
 
-                        TextField("Phone", text: fieldBinding(\.phoneNumbers, id: phone.id, to: \.value))
+                        TextField("Phone", text: labeledBinding($phones, id: row.id, to: \.value))
                             .keyboardType(.phonePad)
 
                         Button {
-                            contact.phoneNumbers.removeAll { $0.id == phone.id }
+                            phones.removeAll { $0.id == row.id }
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundStyle(.red)
@@ -121,17 +139,16 @@ struct ContactEditView: View {
                 }
 
                 Button {
-                    contact.phoneNumbers.append(LabeledValue(label: "mobile", value: ""))
+                    phones.append(IdentifiedLabeled(label: "mobile", value: ""))
                 } label: {
                     Label("Add Phone", systemImage: "plus.circle.fill")
                 }
             }
 
-            // Email
             Section("Email Addresses") {
-                ForEach(contact.emailAddresses) { email in
+                ForEach(emails) { row in
                     HStack {
-                        Picker("", selection: fieldBinding(\.emailAddresses, id: email.id, to: \.label)) {
+                        Picker("", selection: labeledBinding($emails, id: row.id, to: \.label)) {
                             ForEach(["home", "work", "other"], id: \.self) {
                                 Text($0.capitalized).tag($0)
                             }
@@ -139,12 +156,12 @@ struct ContactEditView: View {
                         .labelsHidden()
                         .frame(width: 100)
 
-                        TextField("Email", text: fieldBinding(\.emailAddresses, id: email.id, to: \.value))
+                        TextField("Email", text: labeledBinding($emails, id: row.id, to: \.value))
                             .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
 
                         Button {
-                            contact.emailAddresses.removeAll { $0.id == email.id }
+                            emails.removeAll { $0.id == row.id }
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundStyle(.red)
@@ -154,18 +171,17 @@ struct ContactEditView: View {
                 }
 
                 Button {
-                    contact.emailAddresses.append(LabeledValue(label: "home", value: ""))
+                    emails.append(IdentifiedLabeled(label: "home", value: ""))
                 } label: {
                     Label("Add Email", systemImage: "plus.circle.fill")
                 }
             }
 
-            // Addresses
             Section("Addresses") {
-                ForEach(contact.postalAddresses) { addr in
+                ForEach(addresses) { row in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Picker("", selection: fieldBinding(\.postalAddresses, id: addr.id, to: \.label)) {
+                            Picker("", selection: addressBinding($addresses, id: row.id, to: \.label)) {
                                 ForEach(["home", "work", "other"], id: \.self) {
                                     Text($0.capitalized).tag($0)
                                 }
@@ -175,7 +191,7 @@ struct ContactEditView: View {
                             Spacer()
 
                             Button {
-                                contact.postalAddresses.removeAll { $0.id == addr.id }
+                                addresses.removeAll { $0.id == row.id }
                             } label: {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundStyle(.red)
@@ -183,26 +199,25 @@ struct ContactEditView: View {
                             .buttonStyle(.plain)
                         }
 
-                        TextField("Street", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.street))
-                        TextField("City", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.city))
+                        TextField("Street", text: addressBinding($addresses, id: row.id, to: \.street))
+                        TextField("City", text: addressBinding($addresses, id: row.id, to: \.city))
                         HStack {
-                            TextField("State", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.state))
-                            TextField("ZIP", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.postalCode))
+                            TextField("State", text: addressBinding($addresses, id: row.id, to: \.state))
+                            TextField("ZIP", text: addressBinding($addresses, id: row.id, to: \.postalCode))
                                 .frame(width: 100)
                         }
-                        TextField("Country", text: fieldBinding(\.postalAddresses, id: addr.id, to: \.value.country))
+                        TextField("Country", text: addressBinding($addresses, id: row.id, to: \.country))
                     }
                     .padding(.vertical, 4)
                 }
 
                 Button {
-                    contact.postalAddresses.append(LabeledValue(label: "home", value: PostalAddress()))
+                    addresses.append(IdentifiedAddress(label: "home"))
                 } label: {
                     Label("Add Address", systemImage: "plus.circle.fill")
                 }
             }
 
-            // Birthday
             Section("Birthday") {
                 Toggle("Birthday", isOn: $hasBirthday)
                 if hasBirthday {
@@ -210,20 +225,18 @@ struct ContactEditView: View {
                 }
             }
 
-            // Notes
             Section("Notes") {
-                TextEditor(text: $contact.note)
+                TextEditor(text: $draft.note)
                     .frame(minHeight: 80)
             }
 
-            // Tags
             Section("Tags") {
-                ForEach(contact.categories, id: \.self) { tag in
+                ForEach(draft.categories, id: \.self) { tag in
                     HStack {
                         Text(tag)
                         Spacer()
                         Button {
-                            contact.categories.removeAll { $0 == tag }
+                            draft.categories.removeAll { $0 == tag }
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.secondary)
@@ -243,14 +256,13 @@ struct ContactEditView: View {
                     .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
-                // Existing tags suggestion
-                let existingTags = store.allTags.map(\.tag).filter { !contact.categories.contains($0) }
+                let existingTags = store.allTags.map(\.tag).filter { !draft.categories.contains($0) }
                 if !existingTags.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
                             ForEach(existingTags, id: \.self) { tag in
                                 Button(tag) {
-                                    contact.categories.append(tag)
+                                    draft.categories.append(tag)
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
@@ -268,19 +280,17 @@ struct ContactEditView: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                    saveContact()
+                    saveDraft()
                 }
                 .disabled(isSaving)
             }
         }
         .onChange(of: selectedPhoto) { _, newItem in
             Task {
-                if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                    // Compress to JPEG
-                    if let uiImage = UIImage(data: data),
-                       let jpeg = uiImage.jpegData(compressionQuality: 0.8) {
-                        contact.photoData = jpeg
-                    }
+                if let data = try? await newItem?.loadTransferable(type: Data.self),
+                   let uiImage = UIImage(data: data),
+                   let jpeg = uiImage.jpegData(compressionQuality: 0.8) {
+                    draft.photo = jpeg
                 }
             }
         }
@@ -294,55 +304,88 @@ struct ContactEditView: View {
         }
     }
 
-    /// A `Binding` into a labeled-value collection that resolves the element by its
-    /// stable `id` on every access rather than capturing an array index. This keeps
-    /// editing safe across insertions and deletions: a torn-down row can no longer
-    /// read a now-out-of-range index (the cause of "Index out of range" crashes with
-    /// binding-based `ForEach`), and the getter falls back to "" if the element is gone.
-    private func fieldBinding<T>(
-        _ collection: ReferenceWritableKeyPath<Contact, [LabeledValue<T>]>,
+    private func labeledBinding(
+        _ rows: Binding<[IdentifiedLabeled]>,
         id: UUID,
-        to field: WritableKeyPath<LabeledValue<T>, String>
+        to field: WritableKeyPath<IdentifiedLabeled, String>
     ) -> Binding<String> {
         Binding(
-            get: { contact[keyPath: collection].first { $0.id == id }?[keyPath: field] ?? "" },
+            get: { rows.wrappedValue.first { $0.id == id }?[keyPath: field] ?? "" },
             set: { newValue in
-                if let index = contact[keyPath: collection].firstIndex(where: { $0.id == id }) {
-                    contact[keyPath: collection][index][keyPath: field] = newValue
+                if let index = rows.wrappedValue.firstIndex(where: { $0.id == id }) {
+                    rows.wrappedValue[index][keyPath: field] = newValue
                 }
             }
         )
     }
 
+    private func addressBinding(
+        _ rows: Binding<[IdentifiedAddress]>,
+        id: UUID,
+        to field: WritableKeyPath<IdentifiedAddress, String>
+    ) -> Binding<String> {
+        Binding(
+            get: { rows.wrappedValue.first { $0.id == id }?[keyPath: field] ?? "" },
+            set: { newValue in
+                if let index = rows.wrappedValue.firstIndex(where: { $0.id == id }) {
+                    rows.wrappedValue[index][keyPath: field] = newValue
+                }
+            }
+        )
+    }
+
+    private func syncDerivedFullName() {
+        let composed = Self.structuredName(
+            given: draft.givenName,
+            middle: draft.middleName,
+            family: draft.familyName
+        )
+        if draft.fullName.isEmpty || draft.fullName == lastComposedName {
+            draft.fullName = composed
+        }
+        lastComposedName = composed
+    }
+
+    static func structuredName(given: String, middle: String, family: String) -> String {
+        [given, middle, family].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
     private func addTag() {
         let tag = newTag.trimmingCharacters(in: .whitespaces)
-        guard !tag.isEmpty, !contact.categories.contains(tag) else { return }
-        contact.categories.append(tag)
+        guard !tag.isEmpty, !draft.categories.contains(tag) else { return }
+        draft.categories.append(tag)
         newTag = ""
     }
 
-    private func saveContact() {
+    private func saveDraft() {
         isSaving = true
-
-        // Update computed full name
-        let parts = [contact.givenName, contact.middleName, contact.familyName].filter { !$0.isEmpty }
-        contact.fullName = parts.joined(separator: " ")
-
-        // Update birthday
+        draft.urls = urls.map(\.draft)
+        draft.phones = phones.map(\.draft)
+        draft.emails = emails.map(\.draft)
+        draft.addresses = addresses.map(\.draft)
         if hasBirthday {
-            contact.birthday = Calendar.current.dateComponents([.year, .month, .day], from: birthdayDate)
+            let parts = Calendar.current.dateComponents([.year, .month, .day], from: birthdayDate)
+            if let month = parts.month, let day = parts.day {
+                draft.birthday = BirthdayDraft(
+                    year: parts.year.map(Int32.init),
+                    month: UInt8(clamping: month),
+                    day: UInt8(clamping: day)
+                )
+            }
         } else {
-            contact.birthday = nil
+            draft.birthday = nil
         }
 
         Task {
             do {
-                try await store.save(contact)
-
-                do {
-                    try await store.syncService.pushContact(contact)
-                } catch {
-                    store.errorMessage = "Saved locally, but Apple Contacts sync failed: \(error.localizedDescription)"
+                let saved = try await store.save(draft)
+                if let id = saved.id,
+                   let contact = store.contacts.first(where: { $0.localContactsID == id }) {
+                    do {
+                        try await store.syncService.pushContact(contact)
+                    } catch {
+                        store.errorMessage = "Saved locally, but Apple Contacts sync failed: \(error.localizedDescription)"
+                    }
                 }
 
                 await MainActor.run {
@@ -353,5 +396,81 @@ struct ContactEditView: View {
                 isSaving = false
             }
         }
+    }
+
+    static func initials(from draft: ContactEditDraft) -> String {
+        let parts = [draft.givenName, draft.familyName].filter { !$0.isEmpty }
+        if parts.isEmpty { return "?" }
+        return parts.map { String($0.prefix(1)).uppercased() }.joined()
+    }
+}
+
+private struct IdentifiedLabeled: Identifiable {
+    let id: UUID
+    var label: String
+    var value: String
+
+    init(id: UUID = UUID(), label: String, value: String) {
+        self.id = id
+        self.label = label
+        self.value = value
+    }
+
+    init(_ draft: LabeledValueDraft) {
+        self.init(label: draft.label, value: draft.value)
+    }
+
+    var draft: LabeledValueDraft {
+        LabeledValueDraft(label: label, value: value)
+    }
+}
+
+private struct IdentifiedAddress: Identifiable {
+    let id: UUID
+    var label: String
+    var street: String
+    var city: String
+    var state: String
+    var postalCode: String
+    var country: String
+
+    init(
+        id: UUID = UUID(),
+        label: String,
+        street: String = "",
+        city: String = "",
+        state: String = "",
+        postalCode: String = "",
+        country: String = ""
+    ) {
+        self.id = id
+        self.label = label
+        self.street = street
+        self.city = city
+        self.state = state
+        self.postalCode = postalCode
+        self.country = country
+    }
+
+    init(_ draft: LabeledAddressDraft) {
+        self.init(
+            label: draft.label,
+            street: draft.street,
+            city: draft.city,
+            state: draft.state,
+            postalCode: draft.postalCode,
+            country: draft.country
+        )
+    }
+
+    var draft: LabeledAddressDraft {
+        LabeledAddressDraft(
+            label: label,
+            street: street,
+            city: city,
+            state: state,
+            postalCode: postalCode,
+            country: country
+        )
     }
 }

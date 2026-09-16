@@ -206,6 +206,52 @@ fn typed_draft_preserves_rich_fields_and_refuses_stale_save() {
 }
 
 #[test]
+fn search_hits_return_the_matched_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_str().unwrap();
+    fs::write(
+        dir.path().join("alice.vcf"),
+        b"BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:a1\r\nFN:Alice\r\nN:;Alice;;;\r\nEMAIL;TYPE=home:a@b.com\r\nEND:VCARD\r\n",
+    )
+    .unwrap();
+    let session = ContactsSession::open(root.into(), "test".into()).unwrap();
+    let hits = session.search_hits("b.com".into(), None).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, "a1");
+    assert_eq!(hits[0].title, "Alice");
+    assert_eq!(hits[0].subtitle, "a@b.com");
+    assert_eq!(hits[0].trailing.as_deref(), Some("Email"));
+}
+
+#[test]
+fn conflict_preview_lists_discarded_copies() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_str().unwrap();
+    fs::write(
+        dir.path().join("alice.vcf"),
+        b"BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:a1\r\nFN:Alice\r\nTEL;TYPE=cell:1\r\nEND:VCARD\r\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("alice.sync-conflict-20200901-120000-PHONE01.vcf"),
+        b"BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:a1\r\nFN:Alice\r\nEMAIL;TYPE=home:a@b.com\r\nEND:VCARD\r\n",
+    )
+    .unwrap();
+    let session = ContactsSession::open(root.into(), "test".into()).unwrap();
+    let preview = session.conflict_preview("alice.vcf".into()).unwrap();
+    assert_eq!(preview.kind, MergeKind::Auto);
+    assert!(preview
+        .discarded
+        .iter()
+        .any(|name| name.contains("sync-conflict")));
+    assert!(preview.fields.is_empty());
+    assert!(preview
+        .merged_fields
+        .iter()
+        .any(|row| row.value == "a@b.com"));
+}
+
+#[test]
 fn typed_tag_filter_and_bulk_actions_share_the_session() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_str().unwrap();

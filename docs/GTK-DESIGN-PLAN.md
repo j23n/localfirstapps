@@ -642,9 +642,8 @@ requested, one boxed list per section, empty state replaces the list).
 are assembled through builders, each with **the rows it has today**.
 Re-snapshot when mutter can capture. No new row data yet. Scope filters
 reuse `choice_dropdown` (no `AdwToggleGroup`). Contacts settings pass
-today’s rows as folder first / diagnostics / info last (spec still has
-`info` before `diagnostics`; Phase 3 edits `screens.toml`). Titles stay
-“Contacts Folder” / “About” until Phase 3.
+today’s rows as folder first / diagnostics / info last. Spec and both
+shells now put `info` last (ADR 0007 R2). Titles are Folder / Info.
 
 **2c. Shared row polish (landed; L3 avatars/symbols, L4, L6–L8, L10).** No
 thumbnails, chips, tiles, or flush lists; see the two-consumer table.
@@ -704,23 +703,17 @@ to the kit and get re-snapshotted.
 | logs | `page("Logs")`, header search toggle, level filter as `scope_toggle` (small fixed set), **Inset** list (not Flush), `monospace` message, dim timestamp | same |
 | sync-conflict-group | `sheet(Picker)` **field diff**, not a silent merge. Intro names the contact. Per-field rows: label + both values (Local / Incoming), radio or editable surviving value. Auto-mergeable fields pre-selected but still visible. Confirm names every discarded value (ADR 0007 R4). No "Resolve" that writes without a preview | same |
 
-Contacts settings notes. These are spec fixes; they apply to both
-platforms and land in `apps/contacts/ui-spec/screens.toml` first:
+Contacts settings notes. Landed on both shells:
 
-- **Order.** The spec puts `info` before `diagnostics`, which breaks ADR
-  0007 R2 (Info last). Move `info` last in the spec, then match on GTK
-  and iOS.
-- **`sync` section.** The spec comment says Apple Contacts sync is
-  iOS-only (ADR 0007 R15). GTK omits the group unless the core exposes a
-  Linux row for it. Record the omission in the routing comment, not as a
-  gap.
-- **Group titles.** GTK today says "Contacts Folder" and "About". Use
-  **Folder** and **Info** (ADR 0007 R1/R2).
+- **Order.** Spec is `folder`, `sync`, `tags`, `diagnostics`, `info`
+  (Info last, ADR 0007 R2). GTK omits `sync`.
+- **`sync` section.** Apple Contacts sync is iOS-only (ADR 0007 R15).
+- **Group titles.** **Folder** and **Info** (ADR 0007 R1/R2).
 - **Rows per group on GTK:**
   - Folder: path subtitle, Change Folder, Reload.
   - Tags: nav row with trailing count.
-  - Info: counts and version.
   - Diagnostics: Logs nav row.
+  - Info: counts and version.
 
   Anything more needs a core fact first.
 

@@ -6,190 +6,31 @@ struct ContactDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let contact: Contact
     @State private var showEdit = false
+    @State private var editDraft: ContactEditDraft?
     @State private var showDeleteConfirmation = false
     @State private var showConflictSheet = false
+    @State private var fields: [FieldRow] = []
+
+    private var displayed: Contact {
+        store.contacts.first { $0.localContactsID == contact.localContactsID } ?? contact
+    }
 
     var body: some View {
         List {
-            // Hero Header
-            Section {
-                VStack(spacing: 12) {
-                    AvatarView(contact: contact, size: 120)
+            heroSection
 
-                    Text(contact.displayName)
-                        .font(.title2.bold())
-                        .contextMenu { copyButton(contact.displayName) }
-
-                    if !contact.organization.isEmpty || !contact.jobTitle.isEmpty {
-                        let orgLine = [contact.jobTitle, contact.organization].filter { !$0.isEmpty }.joined(separator: " — ")
-                        Text(orgLine)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .contextMenu { copyButton(orgLine) }
-                    }
-
-                    if !contact.nickname.isEmpty {
-                        Text("\"\(contact.nickname)\"")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .italic()
-                            .contextMenu { copyButton(contact.nickname) }
-                    }
-
-                    if !contact.categories.isEmpty {
-                        HStack(spacing: 6) {
-                            ForEach(contact.categories, id: \.self) { tag in
-                                Text(tag)
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.accentColor.opacity(0.12), in: Capsule())
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .listRowBackground(Color.clear)
+            if displayed.conflictState != nil {
+                conflictBanner
             }
 
-            // Conflict Banner
-            if contact.conflictState != nil {
-                Section {
-                    Button {
-                        showConflictSheet = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: contact.conflictState?.isExternalEdit == true
-                                  ? "pencil.circle.fill" : "trash.circle.fill")
-                                .font(.title3)
-                                .foregroundStyle(.orange)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(contact.conflictState?.isExternalEdit == true
-                                     ? "External Edit Detected"
-                                     : "External Deletion Detected")
-                                    .font(.subheadline.weight(.medium))
-                                Text("Tap to resolve")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .tint(.primary)
-                }
-            }
-
-            // Phone Numbers
-            if !contact.phoneNumbers.isEmpty {
-                Section("Phone") {
-                    ForEach(contact.phoneNumbers) { phone in
-                        Group {
-                            if let url = Self.dialURL(phone.value) {
-                                Link(destination: url) {
-                                    valueRow(label: phone.label, value: phone.value)
-                                }
-                            } else {
-                                valueRow(label: phone.label, value: phone.value)
-                            }
-                        }
-                        .contextMenu { copyButton(phone.value) }
+            ForEach(Self.sections(from: fields), id: \.title) { section in
+                Section(section.title) {
+                    ForEach(section.rows, id: \.offset) { item in
+                        fieldRowView(item.row)
                     }
                 }
             }
 
-            // Emails
-            if !contact.emailAddresses.isEmpty {
-                Section("Email") {
-                    ForEach(contact.emailAddresses) { email in
-                        Group {
-                            if let url = Self.mailURL(email.value) {
-                                Link(destination: url) {
-                                    valueRow(label: email.label, value: email.value)
-                                }
-                            } else {
-                                valueRow(label: email.label, value: email.value)
-                            }
-                        }
-                        .contextMenu { copyButton(email.value) }
-                    }
-                }
-            }
-
-            // URLs
-            if !contact.urls.isEmpty {
-                Section("Website") {
-                    ForEach(contact.urls) { url in
-                        if let linkURL = Self.websiteURL(url.value) {
-                            Link(destination: linkURL) {
-                                LabeledContent {
-                                    Text(url.value)
-                                        .foregroundStyle(Color.accentColor)
-                                        .lineLimit(1)
-                                } label: {
-                                    Text(url.label.capitalized)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .contextMenu { copyButton(url.value) }
-                        }
-                    }
-                }
-            }
-
-            // Addresses
-            if !contact.postalAddresses.isEmpty {
-                Section("Address") {
-                    ForEach(contact.postalAddresses) { addr in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(addr.label.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(addr.value.formatted)
-                                .font(.body)
-                        }
-                        .contextMenu { copyButton(addr.value.formatted) }
-                    }
-                }
-            }
-
-            // Birthday
-            if let bday = contact.birthday, let month = bday.month, let day = bday.day {
-                Section("Birthday") {
-                    let bdayText: String = {
-                        if let year = bday.year {
-                            return birthdayString(year: year, month: month, day: day)
-                        } else {
-                            return birthdayString(month: month, day: day)
-                        }
-                    }()
-                    HStack {
-                        Text(bdayText)
-                        if let age = contact.age {
-                            Spacer()
-                            Text("Age \(age)")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .contextMenu { copyButton(bdayText) }
-                }
-            }
-
-            // Notes
-            if !contact.note.isEmpty {
-                Section("Notes") {
-                    Text(contact.note)
-                        .contextMenu { copyButton(contact.note) }
-                }
-            }
-
-            // Delete
             Section {
                 Button(role: .destructive) {
                     showDeleteConfirmation = true
@@ -206,29 +47,44 @@ struct ContactDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") {
-                    showEdit = true
+                HStack {
+                    Button {
+                        exportContact()
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Export")
+
+                    Button("Edit") {
+                        openEditor()
+                    }
                 }
             }
         }
         .sheet(isPresented: $showEdit) {
-            NavigationStack {
-                ContactsRouter.destination(
-                    ContactEditView(contact: contact.copy(), isNew: false)
-                )
+            if let editDraft {
+                NavigationStack {
+                    ContactsRouter.destination(
+                        ContactEditView(draft: editDraft, isNew: false)
+                    )
+                }
             }
         }
         .onChange(of: showEdit) { _, isEditing in
             store.isSuppressingReload = isEditing
+            if !isEditing {
+                editDraft = nil
+                reloadFields()
+            }
         }
         .sheet(isPresented: $showConflictSheet) {
-            ContactsRouter.destination(ConflictResolutionSheet(contact: contact))
+            ContactsRouter.destination(ConflictResolutionSheet(contact: displayed))
         }
         .confirmationDialog("Delete Contact", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 Task {
                     do {
-                        try await store.delete(contact)
+                        try await store.delete(displayed)
                         dismiss()
                     } catch {
                         store.errorMessage = error.localizedDescription
@@ -236,8 +92,134 @@ struct ContactDetailView: View {
                 }
             }
         } message: {
-            Text("This will permanently delete \(contact.displayName) and remove the .vcf file.")
+            Text("This will permanently delete \(displayed.displayName) and remove the .vcf file.")
         }
+        .onAppear { reloadFields() }
+        .onChange(of: displayed.contentToken) { _, _ in
+            reloadFields()
+        }
+    }
+
+    @ViewBuilder
+    private var heroSection: some View {
+        Section {
+            VStack(spacing: 12) {
+                AvatarView(contact: displayed, size: 120)
+
+                Text(displayed.displayName)
+                    .font(.title2.bold())
+                    .contextMenu { copyButton(displayed.displayName) }
+
+                if !displayed.organization.isEmpty || !displayed.jobTitle.isEmpty {
+                    let orgLine = [displayed.jobTitle, displayed.organization]
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " — ")
+                    Text(orgLine)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .contextMenu { copyButton(orgLine) }
+                }
+
+                if !displayed.nickname.isEmpty {
+                    Text("\"\(displayed.nickname)\"")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                        .contextMenu { copyButton(displayed.nickname) }
+                }
+
+                if !displayed.categories.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(displayed.categories, id: \.self) { tag in
+                            Text(tag)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.accentColor.opacity(0.12), in: Capsule())
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .listRowBackground(Color.clear)
+        }
+    }
+
+    @ViewBuilder
+    private var conflictBanner: some View {
+        Section {
+            Button {
+                showConflictSheet = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: displayed.conflictState?.isExternalEdit == true
+                          ? "pencil.circle.fill" : "trash.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayed.conflictState?.isExternalEdit == true
+                             ? "External Edit Detected"
+                             : "External Deletion Detected")
+                            .font(.subheadline.weight(.medium))
+                        Text("Tap to resolve")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .tint(.primary)
+        }
+    }
+
+    @ViewBuilder
+    private func fieldRowView(_ row: FieldRow) -> some View {
+        Group {
+            if let id = row.id, id.hasPrefix("tel:"), let url = Self.dialURL(row.value) {
+                Link(destination: url) {
+                    valueRow(label: row.label, value: row.value)
+                }
+            } else if let id = row.id, id.hasPrefix("email:"), let url = Self.mailURL(row.value) {
+                Link(destination: url) {
+                    valueRow(label: row.label, value: row.value)
+                }
+            } else if let id = row.id, id.hasPrefix("url:"), let url = Self.websiteURL(row.value) {
+                Link(destination: url) {
+                    LabeledContent {
+                        Text(row.value)
+                            .foregroundStyle(Color.accentColor)
+                            .lineLimit(1)
+                    } label: {
+                        Text(row.label)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if row.id == "bday" {
+                HStack {
+                    Text(row.value)
+                    if let age = displayed.age {
+                        Spacer()
+                        Text("Age \(age)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                LabeledContent {
+                    Text(row.value)
+                } label: {
+                    Text(row.label)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .contextMenu { copyButton(row.value) }
     }
 
     @ViewBuilder
@@ -246,8 +228,33 @@ struct ContactDetailView: View {
             Text(value)
                 .foregroundStyle(Color.accentColor)
         } label: {
-            Text(label.capitalized)
+            Text(label)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private func reloadFields() {
+        fields = store.fieldRows(id: displayed.localContactsID)
+    }
+
+    private func openEditor() {
+        do {
+            editDraft = try store.contactEditDraft(id: displayed.localContactsID)
+            showEdit = true
+        } catch {
+            store.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func exportContact() {
+        do {
+            let text = try store.exportVCardText(id: displayed.localContactsID)
+            let name = displayed.fileName.isEmpty ? "contact.vcf" : displayed.fileName
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            ShareSheet.present(items: [url])
+        } catch {
+            store.errorMessage = error.localizedDescription
         }
     }
 
@@ -298,17 +305,45 @@ struct ContactDetailView: View {
         }
     }
 
-    private func birthdayString(year: Int, month: Int, day: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .long
-        let date = Calendar.current.date(from: DateComponents(year: year, month: month, day: day))!
-        return formatter.string(from: date)
+    static func isHeroField(_ row: FieldRow) -> Bool {
+        switch row.id {
+        case "fn", "org", "title", "nickname", "photo":
+            return true
+        case let id? where id.hasPrefix("category:"):
+            return true
+        default:
+            return false
+        }
     }
 
-    private func birthdayString(month: Int, day: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM d"
-        let date = Calendar.current.date(from: DateComponents(month: month, day: day))!
-        return formatter.string(from: date)
+    static func sectionTitle(for row: FieldRow) -> String {
+        guard let id = row.id else { return row.label }
+        if id.hasPrefix("tel:") { return "Phone" }
+        if id.hasPrefix("email:") { return "Email" }
+        if id.hasPrefix("url:") { return "Website" }
+        if id.hasPrefix("adr:") { return "Address" }
+        if id == "bday" { return "Birthday" }
+        if id == "note" { return "Notes" }
+        return row.label
+    }
+
+    static func sections(from rows: [FieldRow]) -> [(title: String, rows: [(offset: Int, row: FieldRow)])] {
+        let order = ["Phone", "Email", "Website", "Address", "Birthday", "Notes"]
+        var grouped: [String: [(offset: Int, row: FieldRow)]] = [:]
+        for (offset, row) in rows.enumerated() where !isHeroField(row) {
+            grouped[sectionTitle(for: row), default: []].append((offset, row))
+        }
+        var result: [(title: String, rows: [(offset: Int, row: FieldRow)])] = []
+        for title in order {
+            if let rows = grouped.removeValue(forKey: title) {
+                result.append((title, rows))
+            }
+        }
+        for title in grouped.keys.sorted() {
+            if let rows = grouped[title] {
+                result.append((title, rows))
+            }
+        }
+        return result
     }
 }

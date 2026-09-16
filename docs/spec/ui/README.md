@@ -8,6 +8,8 @@ dark accents as of 3.5). Semantic screen inventories live under
 [`music`](../../../apps/music/ui-spec/screens.toml), and the curated static
 [`health`](../../../apps/health/ui-spec/screens.toml) reference. A missing
 *kind* fails the kit build; an unbound *screen* is a gap (Milestone C).
+Contacts `settings` sections are Folder first and Info last
+(ADR 0007 R2); Apple Contacts `sync` is iOS-only.
 
 ```
 python3 scripts/gen_r14.py          # kinds, screen ids, tokens

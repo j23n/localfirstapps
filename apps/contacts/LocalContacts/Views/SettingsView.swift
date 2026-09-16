@@ -25,7 +25,7 @@ struct SettingsView: View {
             dismissLabel: "Done",
             onDismiss: { dismiss() }
         ) {
-                Section("Contacts Folder") {
+                Section("Folder") {
                     Button {
                         showFolderPicker = true
                     } label: {
@@ -43,16 +43,12 @@ struct SettingsView: View {
                     ShellActionRow(
                         .init(
                             actionID: "reload-contacts",
-                            label: "Reload Contacts",
+                            label: "Reload",
                             isEnabled: !store.isLoading,
                             leadingSymbol: "arrow.clockwise"
                         )
                     ) { _ in
                         Task { await store.loadContacts() }
-                    }
-
-                    if let lastSync = store.lastSyncedAt {
-                        LabeledContent("Last Synced", value: lastSync, format: .dateTime)
                     }
                 }
 
@@ -153,34 +149,21 @@ struct SettingsView: View {
                     }
                 }
 
-                statsSection
-
-                diagnosticsSection
-
-                Section("About") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("LocalContacts manages your contacts as .vcf files in a folder of your choice — no import, no cloud account.")
-                            .font(.callout)
-
-                        Text("Found a bug or have feedback? Open an issue or get in touch:")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                Section {
+                    ShellNavRow(
+                        .init(
+                            destinationID: "logs",
+                            label: "Logs",
+                            leadingSymbol: "doc.text.magnifyingglass"
+                        )
+                    ) {
+                        ContactsRouter.destination(LogsView())
                     }
-                    .padding(.vertical, 4)
-
-                    Button {
-                        openURL(Self.githubURL)
-                    } label: {
-                        LabeledContent {
-                            Image(systemName: "arrow.up.right")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } label: {
-                            Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
-                        }
-                    }
-                    .tint(.primary)
+                } header: {
+                    Text("Diagnostics")
                 }
+
+                infoSection
         }
             .onAppear {
                 if !hasSeenSyncInfo {
@@ -227,11 +210,11 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var statsSection: some View {
-        Section("Stats") {
+    private var infoSection: some View {
+        Section("Info") {
             ShellTextRow(
                 .init(
-                    title: "Total Contacts",
+                    title: "Contacts",
                     trailingValue: "\(store.contacts.count)"
                 )
             )
@@ -256,26 +239,33 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(layoutColor)
             }
-        }
-    }
 
-    @ViewBuilder
-    private var diagnosticsSection: some View {
-        Section {
-            ShellNavRow(
-                .init(
-                    destinationID: "logs",
-                    label: "Logs",
-                    leadingSymbol: "doc.text.magnifyingglass"
-                )
-            ) {
-                ContactsRouter.destination(LogsView())
-            }
             ShellTextRow(
                 .init(title: "Version", trailingValue: appVersion)
             )
-        } header: {
-            Text("Diagnostics")
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("LocalContacts manages your contacts as .vcf files in a folder of your choice — no import, no cloud account.")
+                    .font(.callout)
+
+                Text("Found a bug or have feedback? Open an issue or get in touch:")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+
+            Button {
+                openURL(Self.githubURL)
+            } label: {
+                LabeledContent {
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } label: {
+                    Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+            }
+            .tint(.primary)
         }
     }
 }

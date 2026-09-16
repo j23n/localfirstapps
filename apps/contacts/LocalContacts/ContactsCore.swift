@@ -614,6 +614,11 @@ public protocol ContactsSessionProtocol: AnyObject, Sendable {
     func conflictChoiceRows(canonicalName: String) throws  -> [TextRow]
 
     /**
+     * Field-level preview for one Syncthing group.
+     */
+    func conflictPreview(canonicalName: String) throws  -> ConflictPreview
+
+    /**
      * Conflict groups with display copy and a typed merge disposition.
      */
     func conflictRows() throws  -> [ConflictRow]
@@ -688,6 +693,11 @@ public protocol ContactsSessionProtocol: AnyObject, Sendable {
      * Validate and save a typed contact edit.
      */
     func saveContact(command: SaveContactCommand) throws  -> ContactEditDraft
+
+    /**
+     * Live-search hits with the first matching field.
+     */
+    func searchHits(query: String, tag: String?) throws  -> [SearchHit]
 
     /**
      * Display-ready tag filters with contact counts.
@@ -788,6 +798,19 @@ open func conflictChoiceRows(canonicalName: String)throws  -> [TextRow]  {
     return try  FfiConverterSequenceTypeTextRow.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
         uniffiCallStatus in
     uniffi_contacts_ffi_fn_method_contactssession_conflict_choice_rows(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(canonicalName),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Field-level preview for one Syncthing group.
+     */
+open func conflictPreview(canonicalName: String)throws  -> ConflictPreview  {
+    return try  FfiConverterTypeConflictPreview_lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_conflict_preview(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(canonicalName),uniffiCallStatus
     )
@@ -987,6 +1010,20 @@ open func saveContact(command: SaveContactCommand)throws  -> ContactEditDraft  {
 }
 
     /**
+     * Live-search hits with the first matching field.
+     */
+open func searchHits(query: String, tag: String?)throws  -> [SearchHit]  {
+    return try  FfiConverterSequenceTypeSearchHit.lift(try rustCallWithError(FfiConverterTypeContactsError_lift) {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_method_contactssession_search_hits(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(query),
+        FfiConverterOptionString.lower(tag),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Display-ready tag filters with contact counts.
      */
 open func tagRows()throws  -> [TextRow]  {
@@ -1128,6 +1165,188 @@ public func FfiConverterTypeBirthdayDraft_lower(_ value: BirthdayDraft) -> RustB
 
 
 /**
+ * R6 role: command DTO.
+ *
+ * One field that differs across Syncthing copies.
+ */
+public struct ConflictFieldPreview: Equatable, Hashable {
+    /**
+     * Stable field key (`tel:cell`, `fn`, …).
+     */
+    public var field: String
+    /**
+     * Visible sides the shell offers as a choice.
+     */
+    public var sides: [ConflictSide]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Stable field key (`tel:cell`, `fn`, …).
+         */field: String,
+        /**
+         * Visible sides the shell offers as a choice.
+         */sides: [ConflictSide]) {
+        self.field = field
+        self.sides = sides
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ConflictFieldPreview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictFieldPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictFieldPreview {
+        return
+            try ConflictFieldPreview(
+                field: FfiConverterString.read(from: &buf),
+                sides: FfiConverterSequenceTypeConflictSide.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ConflictFieldPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.field, into: &buf)
+        FfiConverterSequenceTypeConflictSide.write(value.sides, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictFieldPreview_lift(_ buf: RustBuffer) throws -> ConflictFieldPreview {
+    return try FfiConverterTypeConflictFieldPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictFieldPreview_lower(_ value: ConflictFieldPreview) -> RustBuffer {
+    return FfiConverterTypeConflictFieldPreview.lower(value)
+}
+
+
+/**
+ * R6 role: command DTO.
+ *
+ * Field-level preview for an explicit Syncthing-group review.
+ */
+public struct ConflictPreview: Equatable, Hashable {
+    /**
+     * Group id the shell hands back to [`ContactsSession::resolve_group`].
+     */
+    public var id: String
+    /**
+     * Surviving file name.
+     */
+    public var title: String
+    /**
+     * Auto / choice / deleted-versus-modified.
+     */
+    public var kind: MergeKind
+    /**
+     * Copy basenames that will be deleted on confirm.
+     */
+    public var discarded: [String]
+    /**
+     * Merged card as the user will see it if they confirm without edits.
+     */
+    public var mergedFields: [FieldRow]
+    /**
+     * Fields that differ. Empty when [`MergeKind::Auto`].
+     */
+    public var fields: [ConflictFieldPreview]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Group id the shell hands back to [`ContactsSession::resolve_group`].
+         */id: String,
+        /**
+         * Surviving file name.
+         */title: String,
+        /**
+         * Auto / choice / deleted-versus-modified.
+         */kind: MergeKind,
+        /**
+         * Copy basenames that will be deleted on confirm.
+         */discarded: [String],
+        /**
+         * Merged card as the user will see it if they confirm without edits.
+         */mergedFields: [FieldRow],
+        /**
+         * Fields that differ. Empty when [`MergeKind::Auto`].
+         */fields: [ConflictFieldPreview]) {
+        self.id = id
+        self.title = title
+        self.kind = kind
+        self.discarded = discarded
+        self.mergedFields = mergedFields
+        self.fields = fields
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ConflictPreview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictPreview {
+        return
+            try ConflictPreview(
+                id: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                kind: FfiConverterTypeMergeKind.read(from: &buf),
+                discarded: FfiConverterSequenceString.read(from: &buf),
+                mergedFields: FfiConverterSequenceTypeFieldRow.read(from: &buf),
+                fields: FfiConverterSequenceTypeConflictFieldPreview.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ConflictPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterTypeMergeKind.write(value.kind, into: &buf)
+        FfiConverterSequenceString.write(value.discarded, into: &buf)
+        FfiConverterSequenceTypeFieldRow.write(value.mergedFields, into: &buf)
+        FfiConverterSequenceTypeConflictFieldPreview.write(value.fields, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictPreview_lift(_ buf: RustBuffer) throws -> ConflictPreview {
+    return try FfiConverterTypeConflictPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictPreview_lower(_ value: ConflictPreview) -> RustBuffer {
+    return FfiConverterTypeConflictPreview.lower(value)
+}
+
+
+/**
  * Display-ready conflict group plus typed disposition.
  */
 public struct ConflictRow: Equatable, Hashable {
@@ -1223,6 +1442,77 @@ public func FfiConverterTypeConflictRow_lift(_ buf: RustBuffer) throws -> Confli
 #endif
 public func FfiConverterTypeConflictRow_lower(_ value: ConflictRow) -> RustBuffer {
     return FfiConverterTypeConflictRow.lower(value)
+}
+
+
+/**
+ * R6 role: command DTO.
+ *
+ * One side of a conflicting field.
+ */
+public struct ConflictSide: Equatable, Hashable {
+    /**
+     * Copy basename or surviving path.
+     */
+    public var source: String
+    /**
+     * Formatted field value on that copy.
+     */
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Copy basename or surviving path.
+         */source: String,
+        /**
+         * Formatted field value on that copy.
+         */value: String) {
+        self.source = source
+        self.value = value
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ConflictSide: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictSide: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictSide {
+        return
+            try ConflictSide(
+                source: FfiConverterString.read(from: &buf),
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ConflictSide, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.source, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictSide_lift(_ buf: RustBuffer) throws -> ConflictSide {
+    return try FfiConverterTypeConflictSide.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictSide_lower(_ value: ConflictSide) -> RustBuffer {
+    return FfiConverterTypeConflictSide.lower(value)
 }
 
 
@@ -1800,6 +2090,106 @@ public func FfiConverterTypeSaveContactCommand_lower(_ value: SaveContactCommand
 
 
 /**
+ * One live-search match. Same slot as [`TextRow`]; `subtitle` is the
+ * matched field value and `trailing` is the field kind.
+ */
+public struct SearchHit: Equatable, Hashable {
+    /**
+     * Opaque key the shell hands back.
+     */
+    public var id: String
+    /**
+     * Display name.
+     */
+    public var title: String
+    /**
+     * Matched field value; the shell highlights the query it already holds.
+     */
+    public var subtitle: String
+    /**
+     * Field kind (`Phone`, `Email`, …).
+     */
+    public var trailing: String?
+    /**
+     * Symbolic icon name for the matched field kind.
+     */
+    public var symbol: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Opaque key the shell hands back.
+         */id: String,
+        /**
+         * Display name.
+         */title: String,
+        /**
+         * Matched field value; the shell highlights the query it already holds.
+         */subtitle: String,
+        /**
+         * Field kind (`Phone`, `Email`, …).
+         */trailing: String?,
+        /**
+         * Symbolic icon name for the matched field kind.
+         */symbol: String) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.trailing = trailing
+        self.symbol = symbol
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SearchHit: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchHit: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchHit {
+        return
+            try SearchHit(
+                id: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                subtitle: FfiConverterString.read(from: &buf),
+                trailing: FfiConverterOptionString.read(from: &buf),
+                symbol: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchHit, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.subtitle, into: &buf)
+        FfiConverterOptionString.write(value.trailing, into: &buf)
+        FfiConverterString.write(value.symbol, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchHit_lift(_ buf: RustBuffer) throws -> SearchHit {
+    return try FfiConverterTypeSearchHit.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchHit_lower(_ value: SearchHit) -> RustBuffer {
+    return FfiConverterTypeSearchHit.lower(value)
+}
+
+
+/**
  * `text-row` (ADR 0004 R4).
  */
 public struct TextRow: Equatable, Hashable {
@@ -2240,6 +2630,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeConflictFieldPreview: FfiConverterRustBuffer {
+    typealias SwiftType = [ConflictFieldPreview]
+
+    public static func write(_ value: [ConflictFieldPreview], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeConflictFieldPreview.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ConflictFieldPreview] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ConflictFieldPreview]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeConflictFieldPreview.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeConflictRow: FfiConverterRustBuffer {
     typealias SwiftType = [ConflictRow]
 
@@ -2257,6 +2672,31 @@ fileprivate struct FfiConverterSequenceTypeConflictRow: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeConflictRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeConflictSide: FfiConverterRustBuffer {
+    typealias SwiftType = [ConflictSide]
+
+    public static func write(_ value: [ConflictSide], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeConflictSide.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ConflictSide] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ConflictSide]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeConflictSide.read(from: &buf))
         }
         return seq
     }
@@ -2340,6 +2780,31 @@ fileprivate struct FfiConverterSequenceTypeLabeledValueDraft: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSearchHit: FfiConverterRustBuffer {
+    typealias SwiftType = [SearchHit]
+
+    public static func write(_ value: [SearchHit], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSearchHit.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SearchHit] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SearchHit]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSearchHit.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTextRow: FfiConverterRustBuffer {
     typealias SwiftType = [TextRow]
 
@@ -2397,6 +2862,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_contacts_ffi_checksum_method_contactssession_conflict_choice_rows() != 60559) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_conflict_preview() != 9561) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_contacts_ffi_checksum_method_contactssession_conflict_rows() != 55083) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2440,6 +2908,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_contacts_ffi_checksum_method_contactssession_save_contact() != 10322) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_contacts_ffi_checksum_method_contactssession_search_hits() != 57782) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_contacts_ffi_checksum_method_contactssession_tag_rows() != 33675) {

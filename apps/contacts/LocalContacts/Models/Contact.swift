@@ -34,9 +34,6 @@ final class Contact: Identifiable, @unchecked Sendable {
     var categories: [String]
     var photoData: Data?
 
-    // Round-trip: unknown vCard lines preserved verbatim
-    var unknownFields: [String]
-
     // Conflict tracking
     var conflictState: ConflictState?
 
@@ -62,7 +59,6 @@ final class Contact: Identifiable, @unchecked Sendable {
         note: String = "",
         categories: [String] = [],
         photoData: Data? = nil,
-        unknownFields: [String] = [],
         conflictState: ConflictState? = nil
     ) {
         self.id = id
@@ -86,7 +82,6 @@ final class Contact: Identifiable, @unchecked Sendable {
         self.note = note
         self.categories = categories
         self.photoData = photoData
-        self.unknownFields = unknownFields
         self.conflictState = conflictState
     }
 
@@ -141,7 +136,6 @@ final class Contact: Identifiable, @unchecked Sendable {
             note: self.note,
             categories: self.categories,
             photoData: self.photoData,
-            unknownFields: self.unknownFields,
             conflictState: self.conflictState
         )
     }
