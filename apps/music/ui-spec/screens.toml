@@ -1,0 +1,106 @@
+# localmusic screens. Semantic only (ADR 0004 R2).
+# Identifiers are generated into MusicScreen (Rust + Swift).
+# The media transport remains a host port: AVFoundation on iOS and
+# gstreamer/MPRIS on Linux (ADR 0007 R15).
+
+app = "music"
+
+[[screens]]
+id = "folder-picker"
+kind = "detail"
+title = "LocalMusic"
+affordances = ["primary-action"]
+# No folder chosen. The primary action opens the host folder picker.
+sections = [
+    { id = "welcome", item = "status-row" },
+]
+
+[[screens]]
+id = "library"
+kind = "list"
+title = "Library"
+affordances = ["search", "sort", "primary-action"]
+item_nav = { intent = "replace", destination = "now-playing" }
+# Search, ordering, and section labels are music-core policy.
+sections = [
+    { id = "scan", item = "progress-row" },
+    { id = "tracks", item = "media-item" },
+]
+
+[[screens]]
+id = "playlist-list"
+kind = "list"
+title = "Playlists"
+affordances = ["primary-action", "confirm"]
+item_nav = { intent = "push", destination = "playlist-detail" }
+sections = [
+    { id = "playlists", item = "media-item" },
+]
+
+[[screens]]
+id = "playlist-detail"
+kind = "detail"
+title = "Playlist"
+affordances = ["selection", "primary-action", "confirm"]
+item_nav = { intent = "sheet", destination = "add-tracks" }
+sections = [
+    { id = "actions", item = "action-row" },
+    { id = "tracks", item = "media-item" },
+    { id = "missing", item = "status-row" },
+]
+
+[[screens]]
+id = "add-tracks"
+kind = "list"
+title = "Add Tracks"
+affordances = ["search", "selection", "confirm"]
+sections = [
+    { id = "tracks", item = "media-item" },
+]
+
+[[screens]]
+id = "now-playing"
+kind = "viewer"
+title = "Now Playing"
+affordances = ["primary-action"]
+sections = [
+    { id = "track", item = "media-item" },
+    { id = "transport", item = "action-row" },
+]
+
+[[screens]]
+id = "settings"
+kind = "settings"
+title = "Settings"
+affordances = ["primary-action"]
+# Folder first, domain middle, diagnostics/info last (ADR 0007 R2).
+sections = [
+    { id = "folder", item = "action-row" },
+    { id = "scan", item = "progress-row" },
+    { id = "stats", item = "text-row" },
+    { id = "diagnostics", item = "nav-row" },
+    { id = "info", item = "text-row" },
+]
+item_nav = { intent = "push", destination = "logs" }
+
+[[screens]]
+id = "logs"
+kind = "list"
+title = "Logs"
+affordances = ["search", "filter", "overflow"]
+sections = [
+    { id = "entries", item = "text-row" },
+]
+
+[[screens]]
+id = "sync-conflict-group"
+kind = "detail"
+title = "Sync Conflict"
+affordances = ["confirm"]
+# ADR 0005 R8-R11: Syncthing .m3u/.m3u8 copies. Disjoint edits
+# auto-merge; competing edits require an explicit choice; delete-vs-modify
+# preserves the modified data.
+sections = [
+    { id = "entries", item = "field-row" },
+    { id = "actions", item = "action-row" },
+]

@@ -57,3 +57,58 @@ impl ContactsScreen {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MusicScreen {
+    FolderPicker,
+    Library,
+    PlaylistList,
+    PlaylistDetail,
+    AddTracks,
+    NowPlaying,
+    Settings,
+    Logs,
+    SyncConflictGroup,
+}
+
+impl MusicScreen {
+    pub const ALL: &'static [Self] = &[
+        Self::FolderPicker,
+        Self::Library,
+        Self::PlaylistList,
+        Self::PlaylistDetail,
+        Self::AddTracks,
+        Self::NowPlaying,
+        Self::Settings,
+        Self::Logs,
+        Self::SyncConflictGroup,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FolderPicker => "folder-picker",
+            Self::Library => "library",
+            Self::PlaylistList => "playlist-list",
+            Self::PlaylistDetail => "playlist-detail",
+            Self::AddTracks => "add-tracks",
+            Self::NowPlaying => "now-playing",
+            Self::Settings => "settings",
+            Self::Logs => "logs",
+            Self::SyncConflictGroup => "sync-conflict-group",
+        }
+    }
+
+    pub fn kind(self) -> ScreenKind {
+        match self {
+            Self::FolderPicker => ScreenKind::Detail,
+            Self::Library => ScreenKind::List,
+            Self::PlaylistList => ScreenKind::List,
+            Self::PlaylistDetail => ScreenKind::Detail,
+            Self::AddTracks => ScreenKind::List,
+            Self::NowPlaying => ScreenKind::Viewer,
+            Self::Settings => ScreenKind::Settings,
+            Self::Logs => ScreenKind::List,
+            Self::SyncConflictGroup => ScreenKind::Detail,
+        }
+    }
+}
