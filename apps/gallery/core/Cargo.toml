@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "localcore-geo",
     "gallery-model",
     "gallery-vfs",
     "gallery-meta",

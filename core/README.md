@@ -4,7 +4,7 @@ This workspace holds `localcore-*` crates (ADR 0001 R9), the first
 app core, and the R14 vocabulary crate:
 
 `localcore-vfs`, `localcore-id`, `localcore-walk`, `localcore-conflict`,
-`localcore-queue`, `localcore-log`, `localcore-blob`, `localcore-geo`,
+`localcore-queue`, `localcore-log`, `localcore-blob`,
 `localcore-ui` (ADR 0004 kinds + token hex; no UI toolkit),
 `contacts-core` (display rows, typed conflict state and actions),
 `contacts-ffi` (record-inventory green; iOS writes through it, while
@@ -15,7 +15,8 @@ Token tables live in `design/tokens/` (sourced dark accents as of
 with `python3 scripts/gen_r14.py`; CI runs `--check`. GTK lives in
 `shells/` (`shell-kit-gtk`, `contacts-gtk`), not here.
 
-Gallery remains at `apps/gallery/core` until later verticals move here.
+Gallery remains at `apps/gallery/core`, including its Gallery-only
+`localcore-geo` package, until later verticals move here.
 
 `.github/workflows/rust.yml` is the crate gate: `cargo test --locked
 --workspace --all-targets` on this workspace (`localcore` job) and on

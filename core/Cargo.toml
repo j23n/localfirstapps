@@ -5,7 +5,6 @@ members = [
     "contacts-ffi",
     "localcore-blob",
     "localcore-conflict",
-    "localcore-geo",
     "localcore-id",
     "localcore-log",
     "localcore-queue",
