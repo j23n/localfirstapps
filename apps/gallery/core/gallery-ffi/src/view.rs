@@ -67,7 +67,10 @@ pub struct ViewStructure {
 pub struct GalleryMediaItem {
     pub id: String,
     pub thumbnail_ref: String,
+    /// Pre-formatted UTC capture time, used by the visible-range chrome.
     pub label: Option<String>,
+    /// Spoken filename; separate from the visual/date label.
+    pub accessibility_label: Option<String>,
     pub badge: Option<String>,
 }
 

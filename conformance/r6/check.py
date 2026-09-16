@@ -85,6 +85,7 @@ SLOT_KINDS: dict[str, dict[str, frozenset[str]]] = {
                 "thumbnail_ref",
                 "thumbnail_id",
                 "label",
+                "accessibility_label",
                 "badge",
             }
         ),

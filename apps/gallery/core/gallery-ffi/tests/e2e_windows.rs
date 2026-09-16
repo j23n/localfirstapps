@@ -40,19 +40,25 @@ fn generated_library_ffi_windows_are_bounded_and_generation_checked() {
     let index = LibraryIndex::new();
     index.build(scanned.flat_photos);
     let structure = index.photo_structure();
-    let ids = &structure.sections[0].item_ids;
-    assert!(ids.len() >= expected);
+    let id_count: usize = structure
+        .sections
+        .iter()
+        .map(|section| section.item_ids.len())
+        .sum();
+    assert!(id_count >= expected);
 
     let mut crossed = 0usize;
     let mut largest = 0usize;
-    for offset in (0..ids.len()).step_by(128) {
-        let rows = index
-            .photo_window("photos".into(), offset as u64, 128, structure.generation)
-            .expect("current generation");
-        largest = largest.max(rows.len());
-        crossed += rows.len();
+    for section in &structure.sections {
+        for offset in (0..section.item_ids.len()).step_by(128) {
+            let rows = index
+                .photo_window(section.id.clone(), offset as u64, 128, structure.generation)
+                .expect("current generation");
+            largest = largest.max(rows.len());
+            crossed += rows.len();
+        }
     }
-    assert_eq!(crossed, ids.len());
+    assert_eq!(crossed, id_count);
     assert_eq!(
         largest, 128,
         "no FFI content allocation may exceed its window"
@@ -61,12 +67,21 @@ fn generated_library_ffi_windows_are_bounded_and_generation_checked() {
     let filtered = index.set_photo_view("anna".into(), Vec::new());
     assert!(filtered.generation > structure.generation);
     assert!(matches!(
-        index.photo_window("photos".into(), 0, 128, structure.generation),
+        index.photo_window(
+            structure.sections[0].id.clone(),
+            0,
+            128,
+            structure.generation
+        ),
         Err(ViewError::StaleGeneration { .. })
     ));
-    let filtered_rows = index
-        .photo_window("photos".into(), 0, 128, filtered.generation)
-        .expect("fresh filtered generation");
+    let filtered_rows = if let Some(section) = filtered.sections.first() {
+        index
+            .photo_window(section.id.clone(), 0, 128, filtered.generation)
+            .expect("fresh filtered generation")
+    } else {
+        Vec::new()
+    };
     assert!(filtered_rows.len() <= 128);
 
     let horizon_ceiling_ms = env::var("LOCALGALLERY_E2E_HORIZON_MAX_MS")

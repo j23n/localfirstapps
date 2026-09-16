@@ -64,7 +64,7 @@ key the row; it is not a domain key the shell interprets.
 | Slot kind | Required fields | Optional fields |
 |---|---|---|
 | `text-row` | `title` | `id`, `subtitle`, `trailing`, `trailing_value`, `leading_symbol`, `symbol`, typed action/disposition |
-| `media-item` | one of `thumbnail`, `thumbnail_ref`, `thumbnail_id` | `id`, `label`, `badge`, and the unused thumbnail aliases |
+| `media-item` | one of `thumbnail`, `thumbnail_ref`, `thumbnail_id` | `id`, `label`, `accessibility_label`, `badge`, and the unused thumbnail aliases |
 | `field-row` | `label`, `value` | `id`, `editable`, `editability` |
 | `toggle-row` | `label`, and one of `on`, `on_off`, `state` | `id` |
 | `action-row` | `label`, `role`, `enabled` | `id` |

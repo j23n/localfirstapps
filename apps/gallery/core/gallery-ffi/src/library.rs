@@ -41,7 +41,7 @@ use gallery_memories::{
     cluster_key, compute_scheduled, generate_cancellable, Contact, GenerationInputs, LeafFolder,
     Memory, MemoryType, PersonLink, UtcOffset, SCHEDULED_MEMORY_HORIZON_DAYS,
 };
-use gallery_model::{AppleDate, HierarchicalTag, PhotoFile, StableId};
+use gallery_model::{AppleDate, CivilDateTime, HierarchicalTag, PhotoFile, StableId};
 
 use crate::scanner::{photo_from_record, ScanPhoto};
 use crate::view::{
@@ -142,12 +142,19 @@ struct Indexed {
     /// The current Photos-screen projection. Structure returns these ids;
     /// content windows index the same vector after checking `generation`.
     visible_photo_ids: Vec<StableId>,
+    visible_sections: Vec<PhotoViewSection>,
     /// Search/filter intent that produced `visible_photo_ids`.
     visible_key: String,
     /// Platform-resolved UTC offset for each photo at capture time. Parallel
     /// to the index photo table and populated once with the library build so a
     /// scheduled-memory run does not marshal 20,000 offsets again.
     photo_time_zone_offsets: Vec<i32>,
+}
+
+struct PhotoViewSection {
+    id: String,
+    title: String,
+    item_ids: Vec<StableId>,
 }
 
 impl Default for LibraryIndex {
@@ -159,6 +166,7 @@ impl Default for LibraryIndex {
                 people: Vec::new(),
                 generation: 0,
                 visible_photo_ids: Vec::new(),
+                visible_sections: Vec::new(),
                 visible_key: String::new(),
                 photo_time_zone_offsets: Vec::new(),
             }),
@@ -240,9 +248,13 @@ impl LibraryIndex {
             people: people.iter().map(TagSuggestionRecord::of).collect(),
             build_millis: started.elapsed().as_millis() as u64,
         };
+        let visible_photo_ids = index.sorted_photo_ids();
+        let visible_sections =
+            photo_view_sections(&index, &visible_photo_ids, &photo_time_zone_offsets);
         let mut guard = write(&self.inner);
         guard.generation = guard.generation.saturating_add(1);
-        guard.visible_photo_ids = index.sorted_photo_ids();
+        guard.visible_photo_ids = visible_photo_ids;
+        guard.visible_sections = visible_sections;
         guard.visible_key.clear();
         guard.index = index;
         guard.tags = tags;
@@ -263,12 +275,19 @@ impl LibraryIndex {
                 .iter()
                 .map(|path| suggestion_for_path(path))
                 .collect();
-            guard.visible_photo_ids = guard
+            let visible_photo_ids: Vec<StableId> = guard
                 .index
                 .search(&query, &required, &guard.tags)
                 .into_iter()
                 .map(|photo| photo.id)
                 .collect();
+            let visible_sections = photo_view_sections(
+                &guard.index,
+                &visible_photo_ids,
+                &guard.photo_time_zone_offsets,
+            );
+            guard.visible_photo_ids = visible_photo_ids;
+            guard.visible_sections = visible_sections;
             guard.visible_key = key;
             guard.generation = guard.generation.saturating_add(1);
         }
@@ -306,7 +325,7 @@ impl LibraryIndex {
                         .map(|photo| photo.id)
                         .collect()
                 });
-            let visible_photo_ids = photo_ids
+            let visible_photo_ids: Vec<StableId> = photo_ids
                 .into_iter()
                 .map(|id| parse_id(&id))
                 .filter(|id| {
@@ -316,7 +335,13 @@ impl LibraryIndex {
                             .is_none_or(|matching| matching.contains(id))
                 })
                 .collect();
+            let visible_sections = photo_view_sections(
+                &guard.index,
+                &visible_photo_ids,
+                &guard.photo_time_zone_offsets,
+            );
             guard.visible_photo_ids = visible_photo_ids;
+            guard.visible_sections = visible_sections;
             guard.visible_key = key;
             guard.generation = guard.generation.saturating_add(1);
         }
@@ -336,23 +361,28 @@ impl LibraryIndex {
         limit: u64,
         generation: u64,
     ) -> Result<Vec<GalleryMediaItem>, ViewError> {
-        if section_id != "photos" {
+        let guard = read(&self.inner);
+        // Generation wins over section lookup: every section id belongs to
+        // the requested structure, so an absent old id is stale, not unknown.
+        checked_window(generation, guard.generation, 0, 0, 0)?;
+        let item_ids = if section_id == "photos" {
+            guard.visible_photo_ids.as_slice()
+        } else if let Some(section) = guard
+            .visible_sections
+            .iter()
+            .find(|section| section.id == section_id)
+        {
+            section.item_ids.as_slice()
+        } else {
             return Err(ViewError::SectionNotFound {
                 section_id,
                 message: "That Gallery photo section no longer exists.".into(),
                 user_actionable: true,
             });
-        }
-        let guard = read(&self.inner);
-        let range = checked_window(
-            generation,
-            guard.generation,
-            offset,
-            limit,
-            guard.visible_photo_ids.len(),
-        )?;
+        };
+        let range = checked_window(generation, guard.generation, offset, limit, item_ids.len())?;
         let mut rows = Vec::with_capacity(range.len());
-        for id in &guard.visible_photo_ids[range] {
+        for id in &item_ids[range] {
             if let Some(photo) = guard.index.photo(*id) {
                 rows.push(photo_media_item(photo));
             }
@@ -476,19 +506,90 @@ impl LibraryIndex {
     }
 }
 
+fn photo_view_sections(
+    index: &CoreIndex,
+    item_ids: &[StableId],
+    time_zone_offsets: &[i32],
+) -> Vec<PhotoViewSection> {
+    let offsets: HashMap<StableId, i32> = index
+        .photos()
+        .iter()
+        .enumerate()
+        .map(|(position, photo)| {
+            (
+                photo.id,
+                time_zone_offsets.get(position).copied().unwrap_or(0),
+            )
+        })
+        .collect();
+    let mut sections: Vec<PhotoViewSection> = Vec::new();
+    let mut current_key = String::new();
+    for (position, id) in item_ids.iter().copied().enumerate() {
+        let (key, title) = index
+            .photo(id)
+            .and_then(|photo| photo.date_taken)
+            .map(|date| {
+                let local_unix =
+                    date.unix_secs_f64() + f64::from(offsets.get(&id).copied().unwrap_or(0));
+                let civil = CivilDateTime::from_unix_secs_f64(local_unix);
+                (
+                    format!("{:04}-{:02}", civil.year, civil.month),
+                    format!("{} {}", month_name(civil.month), civil.year),
+                )
+            })
+            .unwrap_or_else(|| ("unknown".into(), "Unknown Date".into()));
+        if key != current_key {
+            current_key = key.clone();
+            sections.push(PhotoViewSection {
+                id: format!("photos:{position}:{key}"),
+                title,
+                item_ids: Vec::new(),
+            });
+        }
+        sections
+            .last_mut()
+            .expect("a section was just created")
+            .item_ids
+            .push(id);
+    }
+    sections
+}
+
+fn month_name(month: u32) -> &'static str {
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    month
+        .checked_sub(1)
+        .and_then(|index| MONTHS.get(index as usize))
+        .copied()
+        .unwrap_or("Unknown")
+}
+
 fn photo_structure(indexed: &Indexed) -> ViewStructure {
     ViewStructure {
         state: content_state(indexed.visible_photo_ids.len()),
-        sections: vec![ViewSection {
-            id: "photos".into(),
-            title: "Photos".into(),
-            slot_kind: ViewSlotKind::MediaItem,
-            item_ids: indexed
-                .visible_photo_ids
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
-        }],
+        sections: indexed
+            .visible_sections
+            .iter()
+            .map(|section| ViewSection {
+                id: section.id.clone(),
+                title: section.title.clone(),
+                slot_kind: ViewSlotKind::MediaItem,
+                item_ids: section.item_ids.iter().map(ToString::to_string).collect(),
+            })
+            .collect(),
         actions: vec![
             ViewAction {
                 id: "search".into(),
@@ -527,7 +628,8 @@ fn photo_media_item(photo: &PhotoFile) -> GalleryMediaItem {
     GalleryMediaItem {
         id: photo.id.to_string(),
         thumbnail_ref: photo.url.path().to_string(),
-        label: Some(photo.filename.clone()),
+        label: photo.date_taken.map(AppleDate::to_utc_string),
+        accessibility_label: Some(photo.filename.clone()),
         badge,
     }
 }
@@ -1243,6 +1345,36 @@ mod tests {
     }
 
     #[test]
+    fn photo_structure_groups_ids_without_putting_content_in_structure() {
+        let index = LibraryIndex::default();
+        index.build_with_time_zone_offsets(
+            vec![
+                photo("/lib/january.jpg", Some(0.0), &[]),
+                photo("/lib/february.jpg", Some(32.0 * 86_400.0), &[]),
+                photo("/lib/unknown.jpg", None, &[]),
+            ],
+            vec![0; 3],
+        );
+        let structure = index.photo_structure();
+        assert_eq!(
+            structure
+                .sections
+                .iter()
+                .map(|section| section.title.as_str())
+                .collect::<Vec<_>>(),
+            ["February 2001", "January 2001", "Unknown Date"]
+        );
+        assert!(structure
+            .sections
+            .iter()
+            .all(|section| section.item_ids.len() == 1));
+        let february = index
+            .photo_window(structure.sections[0].id.clone(), 0, 1, structure.generation)
+            .unwrap();
+        assert_eq!(february[0].accessibility_label.as_deref(), Some("february"));
+    }
+
+    #[test]
     fn changing_filter_intent_invalidates_an_old_window() {
         let index = LibraryIndex::default();
         index.build(vec![
@@ -1260,7 +1392,7 @@ mod tests {
             index
                 .photo_window("photos".into(), 0, 20, rome.generation)
                 .unwrap()[0]
-                .label
+                .accessibility_label
                 .as_deref(),
             Some("rome")
         );
@@ -1281,7 +1413,7 @@ mod tests {
             index
                 .photo_window("photos".into(), 0, 20, drill_in.generation)
                 .unwrap()[0]
-                .label
+                .accessibility_label
                 .as_deref(),
             Some("paris")
         );
