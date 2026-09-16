@@ -1,7 +1,7 @@
 # Graph check (ADR 0002 R13, green after localcore-geo), Milestone A
 # source greps (no FileProvider / MetricKit in production Swift/Go),
-# ADR 0003 R6 (still red: gallery-ffi domain Records), and ADR 0004 R14
-# generated-source drift.
+# ADR 0007 R16 review controls, semantic debt baseline, ADR 0003 R6
+# (still red: gallery-ffi domain Records), and ADR 0004 R14 generated drift.
 name: Conformance
 
 on:
@@ -45,6 +45,30 @@ jobs:
 
       - name: Production Swift/Go APIs
         run: python3 conformance/source/check.py
+
+  review-control:
+    name: "ADR 0007 R16 review controls"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Self-test
+        run: python3 conformance/r16/check.py --self-test
+
+      - name: Checklist and pull request template
+        run: python3 conformance/r16/check.py
+
+  semantic:
+    name: "Semantic debt baseline"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Self-test
+        run: python3 conformance/semantic/check.py --self-test
+
+      - name: Production semantic conformance
+        run: python3 conformance/semantic/check.py
 
   r6:
     name: "ADR 0003 R6 record inventory"

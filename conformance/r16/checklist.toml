@@ -1,0 +1,32 @@
+version = 1
+template = ".github/pull_request_template.md"
+
+[[question]]
+id = "shell-policy"
+title = "Shell-owned policy"
+requirements = ["ADR 0001 R4", "ADR 0003 R5"]
+prompt = "Does this change put any ordering, filtering, grouping, formatting, validation, action-availability, or error-classification policy in a shell? Identify the app-core answer or explain why none is affected."
+
+[[question]]
+id = "ffi-display-readiness"
+title = "FFI display readiness"
+requirements = ["ADR 0003 R6"]
+prompt = "Does every changed FFI value remain a display-ready primitive, pre-ordered id list, one-slot display record, explicit command DTO, or narrow host-port DTO, with no serialized domain entity crossing? Name the records or DTOs reviewed."
+
+[[question]]
+id = "adaptive-native-shell"
+title = "Adaptive native behavior"
+requirements = ["ADR 0004 R8", "ADR 0004 R9"]
+prompt = "How does each affected shell keep native controls, navigation, accessibility, and host integration while adapting chrome to width, including the 550-CSS-pixel GTK/Comet boundary?"
+
+[[question]]
+id = "rule-preservation"
+title = "Rule preservation"
+requirements = ["ADR 0007 R7", "ADR 0007 R8"]
+prompt = "Which domain rules changed, and where are their single app-core assertions and shared preservation fixtures? If no domain rule changed, identify the evidence used to reach that conclusion."
+
+[[question]]
+id = "unavailable-real-inputs"
+title = "Unavailable real inputs"
+requirements = ["ADR 0007 R9"]
+prompt = "Did this work require an unavailable real personal export, photo library, contact file, device, or platform input? If so, did the affected work stop and ask for that input instead of synthesizing a plausible substitute?"

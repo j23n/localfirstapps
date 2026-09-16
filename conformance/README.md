@@ -76,9 +76,33 @@ name `NSFileProvider*`, `ubiquitousItem*`, or `MXMetric*`. Generated
 `GalleryCore.swift`, the Linux UniFFI shim, `vendor/`, and
 `apps/health/reference/web-ui/` are excluded.
 
+This is a regression check for host APIs retired at Milestone A, not a ban on
+selecting a provider-backed folder whose bytes are already local. ADR 0005 R2
+forbids app-initiated materialisation and provider lifecycle in the domain
+model.
+
 `.github/workflows/conformance.yml` runs this next to the graph check.
 Crate tests are a separate gate: `.github/workflows/rust.yml`
 (`localcore` and `gallery-core`).
+
+## Human review controls — ADR 0007 R16
+
+```
+python3 conformance/r16/check.py
+python3 conformance/r16/check.py --self-test
+```
+
+`conformance/r16/checklist.toml` is the machine-readable source of truth for
+the requirements CI cannot decide. Stable `r16:` markers and exact prompts
+bind it to `.github/pull_request_template.md`. The template requires prose
+answers for shell-owned policy (ADR 0001 R4 / ADR 0003 R5), FFI display
+readiness (ADR 0003 R6), adaptive native shell behavior (ADR 0004 R8/R9),
+single app-core assertions and shared preservation fixtures (ADR 0007 R7/R8),
+and unavailable real inputs (ADR 0007 R9).
+
+The checker reads only files in the checkout. It has no dependency on a
+pull-request event or GitHub API, so the same command can move unchanged into
+a reusable workflow later.
 
 ## Display records — ADR 0003 R6
 
@@ -104,7 +128,34 @@ Record cannot hide behind the known ones.
 arguments override the file (same shape as the graph check). The flag
 is dropped when the surface goes green.
 
-## Later
+## Semantic debt guard
 
-AST checks land here as later phases make their requirements
-mechanically true.
+```
+python3 conformance/semantic/check.py
+python3 conformance/semantic/check.py --self-test
+```
+
+`conformance/semantic/check.py` catches behavior that the API-spelling grep
+and Record taxonomy do not:
+
+- production Gallery `PhotoLocality`, `DownloadStatus`, related FFI fields,
+  provider-placeholder branches, and QuickLook/materialization behavior;
+- exported Contacts `vcard_text` / `save_vcard` whole-domain payloads;
+- production Rust calls that use best-effort `Vfs.exists` for an
+  authoritative decision instead of propagating `try_exists` errors.
+
+Known debt is explicit in `conformance/semantic/baseline.toml`. Every entry
+pins an exact category, path, symbol, and occurrence count, plus its rationale
+and target wave. A new path/symbol or another occurrence fails; removing debt
+makes the baseline stale so the removal and allowlist update land together.
+
+Only production source is scanned. Separate `tests`/`*Tests`, fixtures,
+benches, vendor/build output, Rust `cfg(test)` items, generated
+`GalleryCore.swift`, and the generated Linux Swift shim are excluded.
+Comments and string literals are masked rather than treated as semantics.
+
+## Workflow
+
+`.github/workflows/conformance.yml` runs both new checkers as checkout-local
+jobs, including their self-tests. Their commands and inputs remain independent
+of workflow event shape for later reusable-workflow conversion.
