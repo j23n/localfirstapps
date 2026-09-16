@@ -132,6 +132,21 @@ func DBPath(root string) string {
 
 // Rebuild deletes derived/archive.db and reconstructs it from the log.
 func Rebuild(root string) error {
+	_, err := RebuildReport(root)
+	return err
+}
+
+// RebuildReport reconstructs the projection from every complete log line and
+// returns any torn-tail diagnostics. It never repairs the log.
+func RebuildReport(root string) (log.Report, error) {
+	rep, err := log.ReadReport(root)
+	if err != nil {
+		return log.Report{}, err
+	}
+	return rep, rebuild(root, rep.Events)
+}
+
+func rebuild(root string, evs []event.Event) error {
 	path := DBPath(root)
 	for _, p := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
@@ -139,11 +154,6 @@ func Rebuild(root string) error {
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-
-	evs, err := log.ReadAll(root)
-	if err != nil {
 		return err
 	}
 

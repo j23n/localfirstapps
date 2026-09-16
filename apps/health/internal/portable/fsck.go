@@ -1,7 +1,6 @@
 package portable
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -19,11 +18,18 @@ type Issue struct {
 	EventID string
 }
 
+// Diagnostic is a recoverable condition that does not make fsck fail.
+type Diagnostic struct {
+	Kind   string
+	Detail string
+}
+
 // Report is a read-only integrity result. Fsck never repairs.
 type Report struct {
-	Events int
-	Blobs  int
-	Issues []Issue
+	Events      int
+	Blobs       int
+	Diagnostics []Diagnostic
+	Issues      []Issue
 }
 
 // OK is true when nothing is wrong.
@@ -31,6 +37,14 @@ func (r Report) OK() bool { return len(r.Issues) == 0 }
 
 // Write prints a human-readable report.
 func (r Report) Write(w io.Writer) {
+	for _, diag := range r.Diagnostics {
+		switch diag.Kind {
+		case "torn_tail":
+			fmt.Fprintf(w, "torn tail %s\n", diag.Detail)
+		default:
+			fmt.Fprintf(w, "%s %s\n", diag.Kind, diag.Detail)
+		}
+	}
 	for _, is := range r.Issues {
 		switch is.Kind {
 		case "mismatch":
@@ -39,8 +53,6 @@ func (r Report) Write(w io.Writer) {
 			fmt.Fprintf(w, "missing sha256=%s event=%s\n", is.SHA256, is.EventID)
 		case "orphan":
 			fmt.Fprintf(w, "orphan sha256=%s\n", is.SHA256)
-		case "torn_tail":
-			fmt.Fprintf(w, "torn tail %s\n", is.Detail)
 		default:
 			fmt.Fprintf(w, "%s sha256=%s %s\n", is.Kind, is.SHA256, is.Detail)
 		}
@@ -68,18 +80,17 @@ func (r Report) Write(w io.Writer) {
 // is referenced by some event. Read-only; never writes.
 func Fsck(root string) (Report, error) {
 	var rep Report
-	evs, err := log.ReadAll(root)
+	logRep, err := log.ReadReport(root)
 	if err != nil {
-		var torn *log.TornTailError
-		if errors.As(err, &torn) {
-			rep.Issues = append(rep.Issues, Issue{
-				Kind:   "torn_tail",
-				Detail: fmt.Sprintf("%s offset=%d", torn.Path, torn.Offset),
-			})
-			return rep, nil
-		}
 		return rep, err
 	}
+	for _, torn := range logRep.TornTails {
+		rep.Diagnostics = append(rep.Diagnostics, Diagnostic{
+			Kind:   "torn_tail",
+			Detail: fmt.Sprintf("%s offset=%d", torn.Path, torn.Offset),
+		})
+	}
+	evs := logRep.Events
 	rep.Events = len(evs)
 	listed, err := blobs.List(root)
 	if err != nil {
@@ -161,8 +172,6 @@ func Fsck(root string) (Report, error) {
 
 func issueOrder(kind string) int {
 	switch kind {
-	case "torn_tail":
-		return 0
 	case "mismatch":
 		return 1
 	case "missing":

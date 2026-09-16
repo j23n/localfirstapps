@@ -50,7 +50,7 @@ func run(stdout, stderr io.Writer, args []string) int {
 	case "import":
 		err = cmdImport(stdout, root, args[1:])
 	case "rebuild":
-		err = cmdRebuild(stdout, root, args[1:])
+		err = cmdRebuild(stdout, stderr, root, args[1:])
 	case "query":
 		err = cmdQuery(stdout, root, args[1:])
 	case "observations":
@@ -227,14 +227,18 @@ func cmdImport(stdout io.Writer, root string, args []string) error {
 	return err
 }
 
-func cmdRebuild(stdout io.Writer, root string, args []string) error {
+func cmdRebuild(stdout, stderr io.Writer, root string, args []string) error {
 	fs := flag.NewFlagSet("rebuild", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("rebuild: %w", err)
 	}
-	if err := projection.Rebuild(root); err != nil {
+	rep, err := projection.RebuildReport(root)
+	if err != nil {
 		return fmt.Errorf("rebuild: %w", err)
+	}
+	for i := range rep.TornTails {
+		fmt.Fprintf(stderr, "rebuild: %s\n", &rep.TornTails[i])
 	}
 	fmt.Fprintln(stdout, projection.DBPath(root))
 	return nil

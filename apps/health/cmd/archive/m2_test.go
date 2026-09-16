@@ -147,6 +147,52 @@ func TestFsckDetectsProblemsCLI(t *testing.T) {
 	}
 }
 
+func TestRebuildAndFsckSurfaceTornTailWithoutRepair(t *testing.T) {
+	root := t.TempDir()
+	runOK(t, "-root", root, "append", "-dev", "manual", "-type", "note", "-body", `{"text":"complete"}`)
+	paths, err := filepath.Glob(filepath.Join(root, "log", "manual", "*.ndjson"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("log paths=%v err=%v", paths, err)
+	}
+	path := paths[0]
+	complete, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	torn := append(append([]byte(nil), complete...), []byte(`{"id":"torn`)...)
+	if err := os.WriteFile(path, torn, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errb bytes.Buffer
+	if code := run(&out, &errb, []string{"-root", root, "rebuild"}); code != 0 {
+		t.Fatalf("rebuild code=%d out=%s err=%s", code, out.String(), errb.String())
+	}
+	if strings.Contains(out.String(), "torn") || !strings.Contains(errb.String(), "torn tail") {
+		t.Fatalf("diagnostic streams out=%q err=%q", out.String(), errb.String())
+	}
+	query := runOK(t, "-root", root, "query")
+	if !strings.Contains(query, `"text":"complete"`) || strings.Contains(query, "torn_tail") {
+		t.Fatalf("projected events: %s", query)
+	}
+
+	out.Reset()
+	errb.Reset()
+	if code := run(&out, &errb, []string{"-root", root, "fsck"}); code != 0 {
+		t.Fatalf("fsck code=%d out=%s err=%s", code, out.String(), errb.String())
+	}
+	if !strings.Contains(out.String(), "torn tail") || !strings.Contains(out.String(), "ok 1 events 0 blobs") {
+		t.Fatalf("fsck output: %s", out.String())
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, torn) {
+		t.Fatal("rebuild or fsck repaired the log")
+	}
+}
+
 func TestCloudSyncWarning(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "Dropbox", "archive")
 	if err := os.MkdirAll(root, 0o755); err != nil {

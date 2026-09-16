@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"archive/internal/event"
@@ -68,7 +69,7 @@ func TestReadAllFixture(t *testing.T) {
 	}
 }
 
-func TestReadAllTornTail(t *testing.T) {
+func TestReadReportTornTail(t *testing.T) {
 	dst := t.TempDir()
 	src := filepath.Join("..", "..", "testdata", "m0", "log")
 	if err := copyLogTree(dst, src); err != nil {
@@ -91,19 +92,63 @@ func TestReadAllTornTail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = ReadAll(dst)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := ReadReport(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Events) != 6 {
+		t.Fatalf("complete events=%d want 6", len(rep.Events))
+	}
+	if len(rep.TornTails) != 1 {
+		t.Fatalf("torn tails=%d want 1", len(rep.TornTails))
+	}
+	diag := &rep.TornTails[0]
+	if diag.Path != path {
+		t.Fatalf("path=%s want %s", diag.Path, path)
+	}
+	if diag.Offset != offset {
+		t.Fatalf("offset=%d want %d", diag.Offset, offset)
+	}
+	if diag.Err == nil {
+		t.Fatal("missing wrapped JSON error")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("ReadReport repaired or rewrote the log")
+	}
+
+	evs, err := ReadAll(dst)
 	var torn *TornTailError
 	if !errors.As(err, &torn) {
 		t.Fatalf("want TornTailError, got %v", err)
 	}
-	if torn.Path != path {
-		t.Fatalf("path=%s want %s", torn.Path, path)
+	if len(evs) != 6 {
+		t.Fatalf("ReadAll complete events=%d want 6", len(evs))
 	}
-	if torn.Offset != offset {
-		t.Fatalf("offset=%d want %d", torn.Offset, offset)
+}
+
+func TestReadReportMidFileMalformedIsHardError(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "log", "manual")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if torn.Err == nil {
-		t.Fatal("missing wrapped JSON error")
+	path := filepath.Join(dir, "2024-01.ndjson")
+	body := `{"id":"a","ts":"2024-01-15T12:00:00.000000000Z","dev":"manual","type":"note","body":{"text":"ok"}}` + "\n" +
+		"{not-json}\n" +
+		`{"id":"b","ts":"2024-01-15T12:01:00.000000000Z","dev":"manual","type":"note","body":{"text":"ok"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadReport(root); err == nil || !strings.Contains(err.Error(), path+":2:") {
+		t.Fatalf("want line 2 hard error, got %v", err)
 	}
 }
 

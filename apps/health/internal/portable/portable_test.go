@@ -335,8 +335,14 @@ func TestFsckTornTail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if countKind(rep, "torn_tail") != 1 {
-		t.Fatalf("torn_tail=%d issues=%+v", countKind(rep, "torn_tail"), rep.Issues)
+	if len(rep.Diagnostics) != 1 || rep.Diagnostics[0].Kind != "torn_tail" {
+		t.Fatalf("diagnostics=%+v", rep.Diagnostics)
+	}
+	if !rep.OK() {
+		t.Fatalf("torn tail is diagnostic, not corruption: %+v", rep.Issues)
+	}
+	if rep.Events != 6 || rep.Blobs != 1 {
+		t.Fatalf("counts after torn tail: %+v", rep)
 	}
 	var buf bytes.Buffer
 	rep.Write(&buf)
@@ -348,6 +354,12 @@ func TestFsckTornTail(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), strconv.FormatInt(info.Size(), 10)) {
 		t.Fatalf("report missing expected offset %d: %s", info.Size(), buf.String())
+	}
+	if !strings.Contains(buf.String(), "ok 6 events 1 blobs") {
+		t.Fatalf("report should remain healthy: %s", buf.String())
+	}
+	if got := mustRead(t, path); !bytes.Equal(got, append(mustRead(t, filepath.Join("..", "..", "testdata", "m0", "log", "manual", "2024-01.ndjson")), []byte(`{"id":"torn`)...)) {
+		t.Fatal("fsck repaired or rewrote the torn log")
 	}
 }
 

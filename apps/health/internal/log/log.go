@@ -32,6 +32,13 @@ func (e *TornTailError) Error() string {
 
 func (e *TornTailError) Unwrap() error { return e.Err }
 
+// Report contains events recovered from all complete lines and diagnostics for
+// ignored torn tails.
+type Report struct {
+	Events    []event.Event
+	TornTails []TornTailError
+}
+
 // Append writes one event line to log/<dev>/YYYY-MM.ndjson.
 func Append(root string, ev event.Event) error {
 	if err := ev.Validate(); err != nil {
@@ -87,14 +94,31 @@ func syncDir(dir string) error {
 }
 
 // ReadAll walks log/*/*.ndjson and returns events sorted by (ts, id).
+//
+// Use ReadReport when complete events must remain available in the presence
+// of a torn tail. ReadAll preserves its strict behavior for callers that must
+// not proceed without inspecting that diagnostic.
 func ReadAll(root string) ([]event.Event, error) {
-	dir := filepath.Join(root, "log")
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return nil, nil
-	} else if err != nil {
+	rep, err := ReadReport(root)
+	if err != nil {
 		return nil, err
 	}
-	var out []event.Event
+	if len(rep.TornTails) > 0 {
+		return rep.Events, &rep.TornTails[0]
+	}
+	return rep.Events, nil
+}
+
+// ReadReport walks log/*/*.ndjson and returns complete events plus torn-tail
+// diagnostics. Malformed newline-terminated content remains a hard error.
+func ReadReport(root string) (Report, error) {
+	dir := filepath.Join(root, "log")
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return Report{}, nil
+	} else if err != nil {
+		return Report{}, err
+	}
+	var rep Report
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -105,24 +129,27 @@ func ReadAll(root string) ([]event.Event, error) {
 		if !strings.HasSuffix(d.Name(), ".ndjson") {
 			return nil
 		}
-		evs, err := readFile(path)
+		evs, torn, err := readFile(path)
 		if err != nil {
 			return err
 		}
-		out = append(out, evs...)
+		rep.Events = append(rep.Events, evs...)
+		if torn != nil {
+			rep.TornTails = append(rep.TornTails, *torn)
+		}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return Report{}, err
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Less(out[j]) })
-	return out, nil
+	sort.Slice(rep.Events, func(i, j int) bool { return rep.Events[i].Less(rep.Events[j]) })
+	return rep, nil
 }
 
-func readFile(path string) ([]event.Event, error) {
+func readFile(path string) ([]event.Event, *TornTailError, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
 	br := bufio.NewReaderSize(f, 64*1024)
@@ -135,7 +162,7 @@ func readFile(path string) ([]event.Event, error) {
 			break
 		}
 		if err != nil && err != io.EOF {
-			return nil, fmt.Errorf("%s: %w", path, err)
+			return nil, nil, fmt.Errorf("%s: %w", path, err)
 		}
 		hasNL := len(line) > 0 && line[len(line)-1] == '\n'
 		raw := bytes.TrimSpace(line)
@@ -150,9 +177,9 @@ func readFile(path string) ([]event.Event, error) {
 		var ev event.Event
 		if jerr := json.Unmarshal(raw, &ev); jerr != nil {
 			if !hasNL && err == io.EOF {
-				return nil, &TornTailError{Path: path, Offset: offset, Err: jerr}
+				return out, &TornTailError{Path: path, Offset: offset, Err: jerr}, nil
 			}
-			return nil, fmt.Errorf("%s:%d: %w", path, lineNo, jerr)
+			return nil, nil, fmt.Errorf("%s:%d: %w", path, lineNo, jerr)
 		}
 		out = append(out, ev)
 		offset += int64(len(line))
@@ -160,7 +187,7 @@ func readFile(path string) ([]event.Event, error) {
 			break
 		}
 	}
-	return out, nil
+	return out, nil, nil
 }
 
 // HasBlobImport reports whether a blob_import for sha256 already exists.

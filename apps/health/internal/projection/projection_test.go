@@ -116,6 +116,47 @@ func TestRebuildFixture(t *testing.T) {
 	}
 }
 
+func TestRebuildReportKeepsCompleteEventsBeforeTornTail(t *testing.T) {
+	root := t.TempDir()
+	copyTree(t, filepath.Join("..", "..", "testdata", "m0"), root)
+	path := filepath.Join(root, "log", "manual", "2024-01.ndjson")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	torn := append(append([]byte(nil), before...), []byte(`{"id":"torn`)...)
+	if err := os.WriteFile(path, torn, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := RebuildReport(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Events) != 6 || len(rep.TornTails) != 1 {
+		t.Fatalf("events=%d torn_tails=%d", len(rep.Events), len(rep.TornTails))
+	}
+	db, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts, err := TableCounts(db)
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.Events != 6 {
+		t.Fatalf("projected events=%d want 6", counts.Events)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(torn) {
+		t.Fatal("rebuild repaired or rewrote the torn log")
+	}
+}
+
 func TestRetractedBlobImportNotProjected(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join("..", "..", "testdata", "apple", "export.xml")
