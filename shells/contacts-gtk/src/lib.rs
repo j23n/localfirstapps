@@ -141,8 +141,10 @@ fn xdg_config_home() -> PathBuf {
 mod tests {
     use super::*;
     use contacts_core::{
-        apply_draft, conflict_rows, field_rows, list_rows, read_ops, save_logged, write, Card,
-        ContactDraft, MemVfs, MergeKind, Store, TYPE_CONTACT_SAVED,
+        assign_tag_logged, bulk_delete_logged, detail_rows, list_rows_filtered, load_edit_draft,
+        new_edit_draft, read_ops, remove_tag_logged, rename_tag_logged, save_contact_logged,
+        tag_rows, BirthdayDraft, LabeledAddressDraft, LabeledValueDraft, MemVfs,
+        SaveContactCommand, Store, TYPE_CONTACT_SAVED,
     };
     use shell_kit_gtk::ContactsScreen;
 
@@ -187,49 +189,175 @@ mod tests {
     fn list_rows_and_save_log() {
         let vfs = MemVfs::new();
         let mut store = Store::open(&vfs, "/lib").unwrap();
-        let mut card = Card::new("");
-        apply_draft(
-            &mut card,
-            &ContactDraft {
-                given: "Ada".into(),
-                family: "Lovelace".into(),
-                organization: "Analytical".into(),
-                phone: "555".into(),
-                email: "ada@example".into(),
-                note: "note".into(),
-                ..ContactDraft::default()
-            },
-        );
-        let saved = save_logged(&vfs, &mut store, "linux-test", card).unwrap();
-        let rows = list_rows(&store, "ada");
+        let mut draft = new_edit_draft();
+        draft.given_name = "Ada".into();
+        draft.family_name = "Lovelace".into();
+        draft.organization = "Analytical".into();
+        draft.phones.push(LabeledValueDraft {
+            label: "mobile".into(),
+            value: "555".into(),
+        });
+        draft.emails.push(LabeledValueDraft {
+            label: "home".into(),
+            value: "ada@example".into(),
+        });
+        draft.note = "note".into();
+        let saved =
+            save_contact_logged(&vfs, &mut store, "linux-test", SaveContactCommand { draft })
+                .unwrap();
+        let id = saved.id.unwrap();
+        let rows = list_rows_filtered(&store, "ada", None);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].id, saved.local_id);
+        assert_eq!(rows[0].id, id);
         assert_eq!(rows[0].title, "Ada Lovelace");
         assert_eq!(rows[0].subtitle.as_deref(), Some("Analytical"));
-        let fields = field_rows(store.get(&saved.local_id).unwrap());
+        let fields = detail_rows(&store, &id).unwrap();
         assert_eq!(fields[0].label, "Name");
         let ops = read_ops(&vfs, "/lib").unwrap();
         assert_eq!(ops[0].event_type, TYPE_CONTACT_SAVED);
     }
 
     #[test]
-    fn conflict_summary_trailing() {
+    fn filtered_lists_tags_and_bulk_actions_use_typed_commands() {
         let vfs = MemVfs::new();
-        let mut alice = Card::new("alice.vcf");
-        alice.local_id = "alice-1".into();
-        alice.full_name = "Alice".into();
-        vfs.insert("/lib/alice.vcf", write(&alice).into_bytes());
-        vfs.insert(
-            "/lib/alice.sync-conflict-20200901-120000-PHONE01.vcf",
-            b"BEGIN:VCARD\nVERSION:3.0\nFN:Alice Phone\nEND:VCARD\n".to_vec(),
+        let mut store = Store::open(&vfs, "/lib").unwrap();
+        let mut ada = new_edit_draft();
+        ada.given_name = "Ada".into();
+        ada.categories.push("pioneers".into());
+        let ada = save_contact_logged(
+            &vfs,
+            &mut store,
+            "linux-test",
+            SaveContactCommand { draft: ada },
+        )
+        .unwrap()
+        .id
+        .unwrap();
+        let mut grace = new_edit_draft();
+        grace.given_name = "Grace".into();
+        let grace = save_contact_logged(
+            &vfs,
+            &mut store,
+            "linux-test",
+            SaveContactCommand { draft: grace },
+        )
+        .unwrap()
+        .id
+        .unwrap();
+
+        assert_eq!(
+            assign_tag_logged(
+                &vfs,
+                &mut store,
+                "linux-test",
+                "pioneers",
+                &[ada.clone(), grace.clone()],
+            )
+            .unwrap(),
+            1
         );
-        let store = Store::open(&vfs, "/lib").unwrap();
-        let rows = conflict_rows(&vfs, &store).unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].title, "alice.vcf");
-        assert_eq!(rows[0].subtitle, "1 copy");
-        assert_eq!(rows[0].trailing, "needs choice");
-        assert_eq!(rows[0].disposition, MergeKind::Choice);
+        assert_eq!(list_rows_filtered(&store, "", Some("pioneers")).len(), 2);
+        assert_eq!(
+            list_rows_filtered(&store, "ada", Some("pioneers"))[0].id,
+            ada
+        );
+        assert_eq!(tag_rows(&store)[0].trailing.as_deref(), Some("2 contacts"));
+        assert_eq!(
+            rename_tag_logged(&vfs, &mut store, "linux-test", "pioneers", "computing",).unwrap(),
+            2
+        );
+        assert_eq!(
+            remove_tag_logged(&vfs, &mut store, "linux-test", "computing").unwrap(),
+            2
+        );
+        assert_eq!(
+            bulk_delete_logged(&vfs, &mut store, "linux-test", &[grace]).unwrap(),
+            1
+        );
+        assert_eq!(list_rows_filtered(&store, "", None).len(), 1);
+    }
+
+    #[test]
+    fn full_draft_save_preserves_values_the_editor_does_not_change() {
+        let vfs = MemVfs::new();
+        let mut store = Store::open(&vfs, "/lib").unwrap();
+        let mut draft = new_edit_draft();
+        draft.full_name = "Dr Ada M Lovelace".into();
+        draft.family_name = "Lovelace".into();
+        draft.given_name = "Ada".into();
+        draft.middle_name = "M".into();
+        draft.name_prefix = "Dr".into();
+        draft.name_suffix = "Countess".into();
+        draft.organization = "Analytical".into();
+        draft.job_title = "Programmer".into();
+        draft.nickname = "Enchantress".into();
+        draft.urls = vec![LabeledValueDraft {
+            label: "work".into(),
+            value: "https://example.test".into(),
+        }];
+        draft.phones = vec![
+            LabeledValueDraft {
+                label: "home".into(),
+                value: "111".into(),
+            },
+            LabeledValueDraft {
+                label: "work".into(),
+                value: "222".into(),
+            },
+        ];
+        draft.emails = vec![LabeledValueDraft {
+            label: "home".into(),
+            value: "ada@example.test".into(),
+        }];
+        draft.addresses = vec![LabeledAddressDraft {
+            label: "home".into(),
+            street: "1 Computing Lane".into(),
+            city: "London".into(),
+            state: String::new(),
+            postal_code: "N1".into(),
+            country: "UK".into(),
+        }];
+        draft.birthday = Some(BirthdayDraft {
+            year: None,
+            month: 12,
+            day: 10,
+        });
+        draft.note = "Original note".into();
+        draft.categories = vec!["friends".into(), "pioneers".into()];
+        draft.photo = Some(vec![0xff, 0xd8, 0xff, 0xd9]);
+
+        let saved =
+            save_contact_logged(&vfs, &mut store, "linux-test", SaveContactCommand { draft })
+                .unwrap();
+        let id = saved.id.unwrap();
+        let before = load_edit_draft(&vfs, &mut store, &id).unwrap();
+        let mut edited = before.clone();
+        edited.note = "Changed note".into();
+        let after = save_contact_logged(
+            &vfs,
+            &mut store,
+            "linux-test",
+            SaveContactCommand { draft: edited },
+        )
+        .unwrap();
+
+        assert_eq!(after.full_name, before.full_name);
+        assert_eq!(after.family_name, before.family_name);
+        assert_eq!(after.given_name, before.given_name);
+        assert_eq!(after.middle_name, before.middle_name);
+        assert_eq!(after.name_prefix, before.name_prefix);
+        assert_eq!(after.name_suffix, before.name_suffix);
+        assert_eq!(after.organization, before.organization);
+        assert_eq!(after.job_title, before.job_title);
+        assert_eq!(after.nickname, before.nickname);
+        assert_eq!(after.urls, before.urls);
+        assert_eq!(after.phones, before.phones);
+        assert_eq!(after.emails, before.emails);
+        assert_eq!(after.addresses, before.addresses);
+        assert_eq!(after.birthday, before.birthday);
+        assert_eq!(after.categories, before.categories);
+        assert_eq!(after.photo, before.photo);
+        assert_eq!(after.note, "Changed note");
     }
 
     #[test]
@@ -249,6 +377,8 @@ mod tests {
             ContactDetail,
             ContactEdit,
             Settings,
+            TagManagement,
+            Logs,
             SyncConflictGroup,
         ] {
             let _ = screen.as_str();

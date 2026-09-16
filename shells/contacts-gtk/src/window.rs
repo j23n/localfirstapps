@@ -1,16 +1,18 @@
 //! Laptop chrome or the Comet collapse. Bindings come from `shell-kit-gtk`.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::gio;
 
 use contacts_core::{
-    apply_draft, choice_rows, conflict_rows, delete_logged, draft_from_card, field_rows, list_rows,
-    resolve_logged, save_logged, write, Card, ContactDraft, MergeKind, StdVfs, Store, Vfs,
-    TEMP_PREFIX,
+    assign_tag_logged, bulk_delete_logged, choice_rows, conflict_rows, delete_logged, detail_rows,
+    export_vcard_text, list_rows_filtered, load_edit_draft, new_edit_draft, remove_tag_logged,
+    rename_tag_logged, resolve_logged, save_contact_logged, tag_rows, BirthdayDraft,
+    ContactEditDraft, LabeledAddressDraft, LabeledValueDraft, MergeKind, SaveContactCommand,
+    StdVfs, Store, Vfs, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
     action_row, apply_token_css, banner, confirm_dialog, field_row, field_row_widget, list_page,
@@ -43,6 +45,15 @@ struct Inner {
     list: gtk::ListBox,
     banner: adw::Banner,
     add: gtk::Button,
+    tag_filter: gtk::DropDown,
+    tag_names: RefCell<Vec<Option<String>>>,
+    selected_tag: RefCell<Option<String>>,
+    selection_toggle: gtk::ToggleButton,
+    selection_actions: gtk::Box,
+    selection_count: gtk::Label,
+    assign_tag: gtk::Button,
+    bulk_delete: gtk::Button,
+    selected_ids: RefCell<BTreeSet<String>>,
     settings_nav: adw::NavigationView,
     settings_box: gtk::Box,
     toast: adw::ToastOverlay,
@@ -102,13 +113,47 @@ impl Window {
         let search = search_entry();
         search.set_placeholder_text(Some("Name, company, phone, or email"));
         search.set_hexpand(true);
+        let tag_filter = gtk::DropDown::from_strings(&["All tags"]);
+        tag_filter.set_tooltip_text(Some("Filter by tag"));
+        let selection_toggle = gtk::ToggleButton::with_label("Select");
+        let list_controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        list_controls.set_margin_top(8);
+        list_controls.set_margin_bottom(8);
+        list_controls.set_margin_start(8);
+        list_controls.set_margin_end(8);
+        list_controls.append(&search);
+        list_controls.append(&tag_filter);
+        list_controls.append(&selection_toggle);
+
+        let selection_count = gtk::Label::new(Some("0 selected"));
+        selection_count.set_xalign(0.0);
+        selection_count.set_hexpand(true);
+        let assign_tag = action_row(&ActionRowData {
+            label: "Assign Tag".into(),
+            role: ActionRole::Normal,
+            enabled: false,
+        });
+        let bulk_delete = action_row(&ActionRowData {
+            label: "Delete".into(),
+            role: ActionRole::Destructive,
+            enabled: false,
+        });
+        let selection_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        selection_actions.set_margin_bottom(8);
+        selection_actions.set_margin_start(8);
+        selection_actions.set_margin_end(8);
+        selection_actions.set_visible(false);
+        selection_actions.append(&selection_count);
+        selection_actions.append(&assign_tag);
+        selection_actions.append(&bulk_delete);
         let scroll = list_page();
         let list = scroll
             .child()
             .and_downcast::<gtk::ListBox>()
             .expect("list_page child");
         list_col.append(&conflict_banner);
-        list_col.append(&search);
+        list_col.append(&list_controls);
+        list_col.append(&selection_actions);
         list_col.append(&scroll);
 
         let root_stack = gtk::Stack::new();
@@ -173,6 +218,15 @@ impl Window {
             list: list.clone(),
             banner: conflict_banner.clone(),
             add: add.clone(),
+            tag_filter: tag_filter.clone(),
+            tag_names: RefCell::new(vec![None]),
+            selected_tag: RefCell::new(None),
+            selection_toggle: selection_toggle.clone(),
+            selection_actions: selection_actions.clone(),
+            selection_count: selection_count.clone(),
+            assign_tag: assign_tag.clone(),
+            bulk_delete: bulk_delete.clone(),
+            selected_ids: RefCell::new(BTreeSet::new()),
             settings_nav: settings_nav.clone(),
             settings_box: settings_box.clone(),
             toast,
@@ -201,11 +255,57 @@ impl Window {
             searched.refill_list();
         });
 
+        let filtered = this.clone();
+        tag_filter.connect_selected_notify(move |dropdown| {
+            let tag = filtered
+                .inner
+                .tag_names
+                .borrow()
+                .get(dropdown.selected() as usize)
+                .cloned()
+                .flatten();
+            filtered.inner.selected_tag.replace(tag);
+            filtered.inner.selected_ids.borrow_mut().clear();
+            filtered.update_selection_actions();
+            filtered.refill_list();
+        });
+
+        let selecting = this.clone();
+        selection_toggle.connect_toggled(move |button| {
+            let active = button.is_active();
+            button.set_label(if active { "Done" } else { "Select" });
+            if !active {
+                selecting.inner.selected_ids.borrow_mut().clear();
+            }
+            selecting
+                .inner
+                .add
+                .set_sensitive(!active && selecting.inner.store.borrow().is_some());
+            selecting.update_selection_actions();
+            selecting.refill_list();
+        });
+
+        let assigning = this.clone();
+        assign_tag.connect_clicked(move |_| assigning.present_bulk_tag());
+
+        let deleting = this.clone();
+        bulk_delete.connect_clicked(move |_| deleting.confirm_bulk_delete());
+
         let opened = this.clone();
         list.connect_row_activated(move |_, row| {
             let id = row.widget_name();
             if !id.is_empty() {
-                opened.push_detail(&id);
+                if opened.inner.selection_toggle.is_active() {
+                    let mut selected = opened.inner.selected_ids.borrow_mut();
+                    if !selected.remove(id.as_str()) {
+                        selected.insert(id.to_string());
+                    }
+                    drop(selected);
+                    opened.update_selection_actions();
+                    opened.refill_list();
+                } else {
+                    opened.push_detail(&id);
+                }
             }
         });
 
@@ -301,10 +401,13 @@ impl Window {
     fn open_folder(&self, folder: &str) {
         match Store::open(&self.inner.vfs, folder) {
             Ok(store) => {
-                let count = store.cards().len();
+                let count = list_rows_filtered(&store, "", None).len();
                 self.inner.store.replace(Some(store));
                 self.inner.folder.replace(Some(folder.to_string()));
                 self.inner.paths.save_folder(folder);
+                self.inner.selection_toggle.set_active(false);
+                self.inner.selected_ids.borrow_mut().clear();
+                self.inner.selected_tag.replace(None);
                 self.inner
                     .root_stack
                     .set_visible_child_name(route_id(ContactsScreen::ContactList));
@@ -318,6 +421,7 @@ impl Window {
                     "folder",
                     format!("Opened contacts folder with {count} contacts"),
                 );
+                self.refill_tag_filter();
                 self.refill_list();
                 self.refill_settings();
             }
@@ -342,7 +446,8 @@ impl Window {
             return;
         };
         let query = self.inner.query.borrow().clone();
-        let rows = list_rows(&store, &query);
+        let selected_tag = self.inner.selected_tag.borrow().clone();
+        let rows = list_rows_filtered(&store, &query, selected_tag.as_deref());
         if rows.is_empty() {
             self.inner.list.append(&status_row(&StatusRowData {
                 message: "No contacts".into(),
@@ -357,6 +462,12 @@ impl Window {
                 });
                 widget.set_activatable(true);
                 widget.set_widget_name(&row.id);
+                if self.inner.selection_toggle.is_active() {
+                    let check = gtk::CheckButton::new();
+                    check.set_active(self.inner.selected_ids.borrow().contains(&row.id));
+                    check.set_sensitive(false);
+                    widget.add_prefix(&check);
+                }
                 self.inner.list.append(&widget);
             }
         }
@@ -382,24 +493,72 @@ impl Window {
         }
     }
 
+    fn refill_tag_filter(&self) {
+        let rows = self
+            .inner
+            .store
+            .borrow()
+            .as_ref()
+            .map(tag_rows)
+            .unwrap_or_default();
+        let current = self.inner.selected_tag.borrow().clone();
+        let mut names = vec![None];
+        let mut labels = vec!["All tags".to_string()];
+        for row in rows {
+            labels.push(row.title);
+            names.push(Some(row.id));
+        }
+        let selected = current
+            .as_ref()
+            .and_then(|tag| {
+                names
+                    .iter()
+                    .position(|candidate| candidate.as_ref() == Some(tag))
+            })
+            .unwrap_or(0);
+        if selected == 0 {
+            self.inner.selected_tag.replace(None);
+        }
+        self.inner.tag_names.replace(names);
+        let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+        self.inner
+            .tag_filter
+            .set_model(Some(&gtk::StringList::new(&label_refs)));
+        self.inner.tag_filter.set_selected(selected as u32);
+    }
+
+    fn update_selection_actions(&self) {
+        let count = self.inner.selected_ids.borrow().len();
+        self.inner
+            .selection_count
+            .set_label(&format!("{count} selected"));
+        self.inner.assign_tag.set_sensitive(count > 0);
+        self.inner.bulk_delete.set_sensitive(count > 0);
+        self.inner
+            .selection_actions
+            .set_visible(self.inner.selection_toggle.is_active());
+    }
+
     fn push_detail(&self, id: &str) {
         let Some(store) = self.inner.store.borrow().clone() else {
             return;
         };
-        let Some(card) = store.get(id).cloned() else {
-            self.record(LogLevel::Warning, "contact", "Contact was not found");
-            self.toast("Not found");
-            return;
+        let fields = match detail_rows(&store, id) {
+            Ok(fields) => fields,
+            Err(err) => {
+                self.record(LogLevel::Warning, "contact", "Contact was not found");
+                self.toast(&err.to_string());
+                return;
+            }
         };
         if self.inner.nav.navigation_stack().n_items() > 1 {
             self.inner.nav.pop();
         }
-        let fields = field_rows(&card);
         let title = fields
             .iter()
             .find(|row| row.id.as_deref() == Some("fn"))
             .map(|row| row.value.clone())
-            .unwrap_or_else(|| card.local_id.clone());
+            .unwrap_or_else(|| id.to_string());
         let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
         column.set_margin_top(12);
         column.set_margin_bottom(12);
@@ -436,15 +595,15 @@ impl Window {
         self.inner.nav.push(&page);
 
         let editor = self.clone();
-        let edit_id = card.local_id.clone();
+        let edit_id = id.to_string();
         edit.connect_clicked(move |_| editor.present_edit(Some(edit_id.clone())));
 
         let exporter = self.clone();
-        let exported = card.clone();
-        export.connect_clicked(move |_| exporter.export_card(&exported));
+        let export_id = id.to_string();
+        export.connect_clicked(move |_| exporter.export_contact(&export_id));
 
         let deleter = self.clone();
-        let delete_id = card.local_id.clone();
+        let delete_id = id.to_string();
         delete.connect_clicked(move |_| deleter.confirm_delete(&delete_id));
     }
 
@@ -465,6 +624,7 @@ impl Window {
                 Some(Ok(())) => {
                     this.record(LogLevel::Info, "contact", "Deleted contact");
                     this.inner.nav.pop_to_page(&this.inner.root_page);
+                    this.refill_tag_filter();
                     this.refill_list();
                 }
                 Some(Err(err)) => {
@@ -484,77 +644,138 @@ impl Window {
         dialog.present(&self.inner.window);
     }
 
+    fn present_bulk_tag(&self) {
+        let ids: Vec<String> = self.inner.selected_ids.borrow().iter().cloned().collect();
+        if ids.is_empty() {
+            return;
+        }
+        let tag = entry_field("Tag", "");
+        let apply = primary_action("Assign");
+        let page = adw::PreferencesPage::new();
+        let group = adw::PreferencesGroup::new();
+        group.add(&tag);
+        page.add(&group);
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        column.append(&page);
+        column.append(&apply);
+        let dialog = sheet("Assign Tag", &column);
+        dialog.present(&self.inner.window);
+
+        let this = self.clone();
+        apply.connect_clicked(move |_| {
+            let result = this.with_store_mut(|vfs, store| {
+                assign_tag_logged(vfs, store, &this.inner.device, tag.text().as_str(), &ids)
+            });
+            match result {
+                Some(Ok(changed)) => {
+                    this.record(
+                        LogLevel::Info,
+                        "tag",
+                        format!("Assigned tag to {changed} contacts"),
+                    );
+                    dialog.close();
+                    this.inner.selection_toggle.set_active(false);
+                    this.refill_tag_filter();
+                    this.refill_list();
+                }
+                Some(Err(err)) => {
+                    this.record(LogLevel::Error, "tag", "Could not assign tag");
+                    this.toast(&err.to_string());
+                }
+                None => this.toast("No folder selected. Please select a contacts folder first."),
+            }
+        });
+    }
+
+    fn confirm_bulk_delete(&self) {
+        let ids: Vec<String> = self.inner.selected_ids.borrow().iter().cloned().collect();
+        if ids.is_empty() {
+            return;
+        }
+        let dialog = confirm_dialog(&ConfirmData {
+            question: format!("Delete {} contacts?", ids.len()),
+            destructive_label: "Delete".into(),
+        });
+        let this = self.clone();
+        dialog.connect_response(None, move |_, response| {
+            if response != "confirm" {
+                return;
+            }
+            let result = this.with_store_mut(|vfs, store| {
+                bulk_delete_logged(vfs, store, &this.inner.device, &ids)
+            });
+            match result {
+                Some(Ok(deleted)) => {
+                    this.record(
+                        LogLevel::Info,
+                        "contact",
+                        format!("Deleted {deleted} contacts"),
+                    );
+                    this.inner.selection_toggle.set_active(false);
+                    this.refill_tag_filter();
+                    this.refill_list();
+                }
+                Some(Err(err)) => {
+                    this.record(LogLevel::Error, "contact", "Could not delete contacts");
+                    this.toast(&err.to_string());
+                }
+                None => this.toast("No folder selected. Please select a contacts folder first."),
+            }
+        });
+        dialog.present(&self.inner.window);
+    }
+
     fn present_edit(&self, id: Option<String>) {
         let draft = if let Some(id) = id.as_ref() {
-            let Some(store) = self.inner.store.borrow().clone() else {
-                return;
-            };
-            match store.get(id) {
-                Some(card) => draft_from_card(card),
-                None => {
+            match self.with_store_mut(|vfs, store| load_edit_draft(vfs, store, id)) {
+                Some(Ok(draft)) => draft,
+                Some(Err(err)) => {
                     self.record(LogLevel::Warning, "contact", "Contact was not found");
-                    self.toast("Not found");
+                    self.toast(&err.to_string());
+                    return;
+                }
+                None => {
+                    self.toast("No folder selected. Please select a contacts folder first.");
                     return;
                 }
             }
         } else {
-            ContactDraft::default()
+            new_edit_draft()
         };
 
-        let page = adw::PreferencesPage::new();
-        let group = adw::PreferencesGroup::new();
-        let given = entry_field("First Name", &draft.given);
-        let family = entry_field("Last Name", &draft.family);
-        let org = entry_field("Company", &draft.organization);
-        let phone = entry_field("Phone", &draft.phone);
-        let email = entry_field("Email", &draft.email);
-        let note = entry_field("Notes", &draft.note);
-        group.add(&given);
-        group.add(&family);
-        group.add(&org);
-        group.add(&phone);
-        group.add(&email);
-        group.add(&note);
-        page.add(&group);
-
+        let form = ContactEditForm::new(&draft, self);
         let save = primary_action("Save");
         let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        column.append(&page);
+        column.append(&form.scroller);
         column.append(&save);
         let dialog = sheet("Contact", &column);
         dialog.set_widget_name(route_id(ContactsScreen::ContactEdit));
         dialog.present(&self.inner.window);
 
         let this = self.clone();
-        let existing = draft.id.clone();
         save.connect_clicked(move |_| {
-            let filled = ContactDraft {
-                id: existing.clone(),
-                given: given.text().to_string(),
-                family: family.text().to_string(),
-                organization: org.text().to_string(),
-                phone: phone.text().to_string(),
-                email: email.text().to_string(),
-                note: note.text().to_string(),
+            let filled = match form.fill_draft(draft.clone()) {
+                Ok(filled) => filled,
+                Err(message) => {
+                    this.record(LogLevel::Warning, "contact", "Contact form is invalid");
+                    this.toast(&message);
+                    return;
+                }
             };
-            let mut card = if let Some(id) = filled.id.as_ref() {
-                this.inner
-                    .store
-                    .borrow()
-                    .as_ref()
-                    .and_then(|store| store.get(id).cloned())
-                    .unwrap_or_else(|| Card::new(""))
-            } else {
-                Card::new("")
-            };
-            apply_draft(&mut card, &filled);
-            let result =
-                this.with_store_mut(|vfs, store| save_logged(vfs, store, &this.inner.device, card));
+            let result = this.with_store_mut(|vfs, store| {
+                save_contact_logged(
+                    vfs,
+                    store,
+                    &this.inner.device,
+                    SaveContactCommand { draft: filled },
+                )
+            });
             match result {
                 Some(Ok(_)) => {
                     this.record(LogLevel::Info, "contact", "Saved contact");
                     dialog.close();
                     this.inner.nav.pop_to_page(&this.inner.root_page);
+                    this.refill_tag_filter();
                     this.refill_list();
                 }
                 Some(Err(err)) => {
@@ -573,13 +794,30 @@ impl Window {
         });
     }
 
-    fn export_card(&self, card: &Card) {
+    fn export_contact(&self, id: &str) {
+        let text = match self
+            .inner
+            .store
+            .borrow()
+            .as_ref()
+            .map(|store| export_vcard_text(store, id))
+        {
+            Some(Ok(text)) => text,
+            Some(Err(err)) => {
+                self.record(LogLevel::Error, "export", "Could not export contact");
+                self.toast(&err.to_string());
+                return;
+            }
+            None => {
+                self.toast("No folder selected. Please select a contacts folder first.");
+                return;
+            }
+        };
         let dialog = gtk::FileDialog::builder()
             .title("Export contact")
-            .initial_name(&card.file_name)
+            .initial_name("contact.vcf")
             .modal(true)
             .build();
-        let text = write(card);
         let window = self.inner.window.clone();
         let this = self.clone();
         dialog.save(
@@ -819,6 +1057,146 @@ impl Window {
         }
     }
 
+    fn present_tag_management(&self) {
+        let scroll = list_page();
+        let list = scroll
+            .child()
+            .and_downcast::<gtk::ListBox>()
+            .expect("list_page child");
+        self.refill_tag_management(&list);
+        let page = push_page("Tags", &scroll);
+        page.set_widget_name(route_id(ContactsScreen::TagManagement));
+        self.inner.settings_nav.push(&page);
+    }
+
+    fn refill_tag_management(&self, list: &gtk::ListBox) {
+        while let Some(child) = list.first_child() {
+            list.remove(&child);
+        }
+        let rows = self
+            .inner
+            .store
+            .borrow()
+            .as_ref()
+            .map(tag_rows)
+            .unwrap_or_default();
+        if rows.is_empty() {
+            list.append(&status_row(&StatusRowData {
+                message: "No tags".into(),
+                severity: StatusSeverity::Info,
+            }));
+            return;
+        }
+        for tag in rows {
+            let row = text_row(&TextRowData {
+                title: tag.title,
+                subtitle: tag.subtitle,
+                trailing: tag.trailing,
+            });
+            let rename = gtk::Button::from_icon_name("document-edit-symbolic");
+            rename.set_tooltip_text(Some("Rename tag"));
+            let remove = gtk::Button::from_icon_name("user-trash-symbolic");
+            remove.set_tooltip_text(Some("Remove tag"));
+            remove.add_css_class("destructive-action");
+            row.add_suffix(&rename);
+            row.add_suffix(&remove);
+            list.append(&row);
+
+            let this = self.clone();
+            let name = tag.id.clone();
+            let refreshed = list.clone();
+            rename.connect_clicked(move |_| this.present_rename_tag(&name, &refreshed));
+
+            let this = self.clone();
+            let name = tag.id;
+            let refreshed = list.clone();
+            remove.connect_clicked(move |_| this.confirm_remove_tag(&name, &refreshed));
+        }
+    }
+
+    fn present_rename_tag(&self, old_name: &str, managed_list: &gtk::ListBox) {
+        let name = entry_field("Name", old_name);
+        let rename = primary_action("Rename");
+        let page = adw::PreferencesPage::new();
+        let group = adw::PreferencesGroup::new();
+        group.add(&name);
+        page.add(&group);
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        column.append(&page);
+        column.append(&rename);
+        let dialog = sheet("Rename Tag", &column);
+        dialog.present(&self.inner.window);
+
+        let this = self.clone();
+        let old_name = old_name.to_string();
+        let managed_list = managed_list.clone();
+        rename.connect_clicked(move |_| {
+            let result = this.with_store_mut(|vfs, store| {
+                rename_tag_logged(
+                    vfs,
+                    store,
+                    &this.inner.device,
+                    &old_name,
+                    name.text().as_str(),
+                )
+            });
+            match result {
+                Some(Ok(changed)) => {
+                    this.record(
+                        LogLevel::Info,
+                        "tag",
+                        format!("Renamed tag on {changed} contacts"),
+                    );
+                    dialog.close();
+                    this.refill_tag_filter();
+                    this.refill_list();
+                    this.refill_tag_management(&managed_list);
+                }
+                Some(Err(err)) => {
+                    this.record(LogLevel::Error, "tag", "Could not rename tag");
+                    this.toast(&err.to_string());
+                }
+                None => this.toast("No folder selected. Please select a contacts folder first."),
+            }
+        });
+    }
+
+    fn confirm_remove_tag(&self, tag: &str, managed_list: &gtk::ListBox) {
+        let dialog = confirm_dialog(&ConfirmData {
+            question: format!("Remove tag “{tag}” from every contact?"),
+            destructive_label: "Remove".into(),
+        });
+        let this = self.clone();
+        let tag = tag.to_string();
+        let managed_list = managed_list.clone();
+        dialog.connect_response(None, move |_, response| {
+            if response != "confirm" {
+                return;
+            }
+            let result = this.with_store_mut(|vfs, store| {
+                remove_tag_logged(vfs, store, &this.inner.device, &tag)
+            });
+            match result {
+                Some(Ok(changed)) => {
+                    this.record(
+                        LogLevel::Info,
+                        "tag",
+                        format!("Removed tag from {changed} contacts"),
+                    );
+                    this.refill_tag_filter();
+                    this.refill_list();
+                    this.refill_tag_management(&managed_list);
+                }
+                Some(Err(err)) => {
+                    this.record(LogLevel::Error, "tag", "Could not remove tag");
+                    this.toast(&err.to_string());
+                }
+                None => this.toast("No folder selected. Please select a contacts folder first."),
+            }
+        });
+        dialog.present(&self.inner.window);
+    }
+
     fn present_logs(&self) {
         self.record(LogLevel::Info, "diagnostics", "Opened app diagnostics");
 
@@ -946,6 +1324,17 @@ impl Window {
         folder_group.add(&change);
         page.add(&folder_group);
 
+        let contacts = adw::PreferencesGroup::new();
+        contacts.set_title("Contacts");
+        let tags = nav_row(&NavRowData {
+            label: "Tags".into(),
+            trailing: Some("Rename or remove tags".into()),
+        });
+        let this = self.clone();
+        tags.connect_activated(move |_| this.present_tag_management());
+        contacts.add(&tags);
+        page.add(&contacts);
+
         let diagnostics = adw::PreferencesGroup::new();
         diagnostics.set_title("Diagnostics");
         let logs = nav_row(&NavRowData {
@@ -976,6 +1365,571 @@ impl Window {
         page.add(&info);
         page
     }
+}
+
+#[derive(Clone)]
+struct ContactEditForm {
+    scroller: gtk::ScrolledWindow,
+    full_name: adw::EntryRow,
+    family_name: adw::EntryRow,
+    given_name: adw::EntryRow,
+    middle_name: adw::EntryRow,
+    name_prefix: adw::EntryRow,
+    name_suffix: adw::EntryRow,
+    organization: adw::EntryRow,
+    job_title: adw::EntryRow,
+    nickname: adw::EntryRow,
+    urls: LabeledValueList,
+    phones: LabeledValueList,
+    emails: LabeledValueList,
+    addresses: AddressList,
+    birthday_enabled: gtk::CheckButton,
+    birthday_year: adw::EntryRow,
+    birthday_month: adw::EntryRow,
+    birthday_day: adw::EntryRow,
+    note: gtk::TextView,
+    categories: StringList,
+    photo: Rc<RefCell<Option<Vec<u8>>>>,
+}
+
+impl ContactEditForm {
+    fn new(draft: &ContactEditDraft, owner: &Window) -> Self {
+        let page = adw::PreferencesPage::new();
+
+        let names = adw::PreferencesGroup::new();
+        names.set_title("Name");
+        let full_name = entry_field("Display Name", &draft.full_name);
+        let family_name = entry_field("Family Name", &draft.family_name);
+        let given_name = entry_field("Given Name", &draft.given_name);
+        let middle_name = entry_field("Middle Name", &draft.middle_name);
+        let name_prefix = entry_field("Prefix", &draft.name_prefix);
+        let name_suffix = entry_field("Suffix", &draft.name_suffix);
+        for entry in [
+            &full_name,
+            &family_name,
+            &given_name,
+            &middle_name,
+            &name_prefix,
+            &name_suffix,
+        ] {
+            names.add(entry);
+        }
+        page.add(&names);
+
+        let work = adw::PreferencesGroup::new();
+        work.set_title("Organization");
+        let organization = entry_field("Organization", &draft.organization);
+        let job_title = entry_field("Job Title", &draft.job_title);
+        let nickname = entry_field("Nickname", &draft.nickname);
+        for entry in [&organization, &job_title, &nickname] {
+            work.add(entry);
+        }
+        page.add(&work);
+
+        let (phones_group, phones) = labeled_value_group("Phones", "Phone number", &draft.phones);
+        page.add(&phones_group);
+        let (emails_group, emails) =
+            labeled_value_group("Email Addresses", "Email address", &draft.emails);
+        page.add(&emails_group);
+        let (urls_group, urls) = labeled_value_group("URLs", "URL", &draft.urls);
+        page.add(&urls_group);
+
+        let (addresses_group, addresses) = address_group(&draft.addresses);
+        page.add(&addresses_group);
+
+        let birthday_group = adw::PreferencesGroup::new();
+        birthday_group.set_title("Birthday");
+        let birthday_enabled = gtk::CheckButton::with_label("Include birthday");
+        birthday_enabled.set_active(draft.birthday.is_some());
+        let birthday_year = entry_field(
+            "Year (optional)",
+            &draft
+                .birthday
+                .as_ref()
+                .and_then(|birthday| birthday.year)
+                .map(|year| year.to_string())
+                .unwrap_or_default(),
+        );
+        let birthday_month = entry_field(
+            "Month",
+            &draft
+                .birthday
+                .as_ref()
+                .map(|birthday| birthday.month.to_string())
+                .unwrap_or_default(),
+        );
+        let birthday_day = entry_field(
+            "Day",
+            &draft
+                .birthday
+                .as_ref()
+                .map(|birthday| birthday.day.to_string())
+                .unwrap_or_default(),
+        );
+        for entry in [&birthday_year, &birthday_month, &birthday_day] {
+            entry.set_sensitive(birthday_enabled.is_active());
+        }
+        let year = birthday_year.clone();
+        let month = birthday_month.clone();
+        let day = birthday_day.clone();
+        birthday_enabled.connect_toggled(move |enabled| {
+            for entry in [&year, &month, &day] {
+                entry.set_sensitive(enabled.is_active());
+            }
+        });
+        birthday_group.add(&birthday_enabled);
+        birthday_group.add(&birthday_year);
+        birthday_group.add(&birthday_month);
+        birthday_group.add(&birthday_day);
+        page.add(&birthday_group);
+
+        let notes = adw::PreferencesGroup::new();
+        notes.set_title("Notes");
+        let note = gtk::TextView::new();
+        note.set_wrap_mode(gtk::WrapMode::WordChar);
+        note.buffer().set_text(&draft.note);
+        let note_scroll = gtk::ScrolledWindow::builder()
+            .child(&note)
+            .min_content_height(100)
+            .build();
+        notes.add(&note_scroll);
+        page.add(&notes);
+
+        let (categories_group, categories) = string_list_group("Tags", &draft.categories);
+        page.add(&categories_group);
+
+        let photo_group = adw::PreferencesGroup::new();
+        photo_group.set_title("Photo");
+        let photo_row = adw::ActionRow::builder().title("Photo").build();
+        set_photo_status(&photo_row, draft.photo.as_deref());
+        let choose_photo = gtk::Button::with_label("Choose JPEG");
+        let remove_photo = gtk::Button::with_label("Remove");
+        remove_photo.add_css_class("destructive-action");
+        photo_row.add_suffix(&choose_photo);
+        photo_row.add_suffix(&remove_photo);
+        photo_group.add(&photo_row);
+        page.add(&photo_group);
+
+        let photo = Rc::new(RefCell::new(draft.photo.clone()));
+        let selected_photo = photo.clone();
+        let status = photo_row.clone();
+        let window = owner.inner.window.clone();
+        let reporter = owner.clone();
+        choose_photo.connect_clicked(move |_| {
+            let picker = gtk::FileDialog::builder()
+                .title("Choose Contact Photo")
+                .modal(true)
+                .build();
+            let filter = gtk::FileFilter::new();
+            filter.set_name(Some("JPEG images"));
+            filter.add_mime_type("image/jpeg");
+            filter.add_suffix("jpg");
+            filter.add_suffix("jpeg");
+            picker.set_default_filter(Some(&filter));
+            let selected_photo = selected_photo.clone();
+            let status = status.clone();
+            let reporter = reporter.clone();
+            picker.open(
+                Some(&window),
+                gio::Cancellable::NONE,
+                move |result| match result {
+                    Ok(file) => match file.path().map(std::fs::read) {
+                        Some(Ok(bytes)) if bytes.starts_with(&[0xff, 0xd8, 0xff]) => {
+                            set_photo_status(&status, Some(&bytes));
+                            selected_photo.replace(Some(bytes));
+                        }
+                        Some(Ok(_)) => reporter.toast("Choose a JPEG image"),
+                        Some(Err(err)) => {
+                            reporter.record(
+                                LogLevel::Error,
+                                "photo",
+                                "Could not read contact photo",
+                            );
+                            reporter.toast(&err.to_string());
+                        }
+                        None => reporter.toast("The selected photo is not a local file"),
+                    },
+                    Err(err) => {
+                        let message = err.to_string();
+                        if !message.contains("Dismissed") && !message.contains("dismissed") {
+                            reporter.record(
+                                LogLevel::Error,
+                                "photo",
+                                "Contact photo picker failed",
+                            );
+                            reporter.toast(&message);
+                        }
+                    }
+                },
+            );
+        });
+        let removed_photo = photo.clone();
+        let status = photo_row;
+        remove_photo.connect_clicked(move |_| {
+            removed_photo.replace(None);
+            set_photo_status(&status, None);
+        });
+
+        let scroller = gtk::ScrolledWindow::builder()
+            .child(&page)
+            .min_content_height(520)
+            .vexpand(true)
+            .build();
+
+        Self {
+            scroller,
+            full_name,
+            family_name,
+            given_name,
+            middle_name,
+            name_prefix,
+            name_suffix,
+            organization,
+            job_title,
+            nickname,
+            urls,
+            phones,
+            emails,
+            addresses,
+            birthday_enabled,
+            birthday_year,
+            birthday_month,
+            birthday_day,
+            note,
+            categories,
+            photo,
+        }
+    }
+
+    fn fill_draft(&self, mut draft: ContactEditDraft) -> Result<ContactEditDraft, String> {
+        draft.full_name = self.full_name.text().to_string();
+        draft.family_name = self.family_name.text().to_string();
+        draft.given_name = self.given_name.text().to_string();
+        draft.middle_name = self.middle_name.text().to_string();
+        draft.name_prefix = self.name_prefix.text().to_string();
+        draft.name_suffix = self.name_suffix.text().to_string();
+        draft.organization = self.organization.text().to_string();
+        draft.job_title = self.job_title.text().to_string();
+        draft.nickname = self.nickname.text().to_string();
+        draft.urls = self.urls.values();
+        draft.phones = self.phones.values();
+        draft.emails = self.emails.values();
+        draft.addresses = self.addresses.values();
+        draft.birthday = if self.birthday_enabled.is_active() {
+            let year_text = self.birthday_year.text();
+            let year = if year_text.trim().is_empty() {
+                None
+            } else {
+                Some(
+                    year_text
+                        .trim()
+                        .parse::<i32>()
+                        .map_err(|_| "Birthday year must be a number".to_string())?,
+                )
+            };
+            let month = self
+                .birthday_month
+                .text()
+                .trim()
+                .parse::<u8>()
+                .map_err(|_| "Birthday month must be a number".to_string())?;
+            let day = self
+                .birthday_day
+                .text()
+                .trim()
+                .parse::<u8>()
+                .map_err(|_| "Birthday day must be a number".to_string())?;
+            Some(BirthdayDraft { year, month, day })
+        } else {
+            None
+        };
+        let buffer = self.note.buffer();
+        draft.note = buffer
+            .text(&buffer.start_iter(), &buffer.end_iter(), true)
+            .to_string();
+        draft.categories = self.categories.values();
+        draft.photo = self.photo.borrow().clone();
+        Ok(draft)
+    }
+}
+
+#[derive(Clone)]
+struct LabeledValueList {
+    container: gtk::Box,
+    rows: Rc<RefCell<Vec<LabeledValueEditor>>>,
+    value_placeholder: String,
+}
+
+#[derive(Clone)]
+struct LabeledValueEditor {
+    widget: gtk::Box,
+    label: gtk::Entry,
+    value: gtk::Entry,
+}
+
+impl LabeledValueList {
+    fn new(value_placeholder: &str) -> Self {
+        Self {
+            container: gtk::Box::new(gtk::Orientation::Vertical, 6),
+            rows: Rc::new(RefCell::new(Vec::new())),
+            value_placeholder: value_placeholder.to_string(),
+        }
+    }
+
+    fn append(&self, initial: LabeledValueDraft) {
+        let widget = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let label = gtk::Entry::builder()
+            .placeholder_text("Label")
+            .width_chars(10)
+            .build();
+        label.set_text(&initial.label);
+        let value = gtk::Entry::builder()
+            .placeholder_text(&self.value_placeholder)
+            .hexpand(true)
+            .build();
+        value.set_text(&initial.value);
+        let remove = gtk::Button::from_icon_name("list-remove-symbolic");
+        remove.set_tooltip_text(Some("Remove row"));
+        widget.append(&label);
+        widget.append(&value);
+        widget.append(&remove);
+        self.container.append(&widget);
+        self.rows.borrow_mut().push(LabeledValueEditor {
+            widget: widget.clone(),
+            label,
+            value,
+        });
+
+        let list = self.clone();
+        remove.connect_clicked(move |_| {
+            list.container.remove(&widget);
+            list.rows.borrow_mut().retain(|row| row.widget != widget);
+        });
+    }
+
+    fn values(&self) -> Vec<LabeledValueDraft> {
+        self.rows
+            .borrow()
+            .iter()
+            .map(|row| LabeledValueDraft {
+                label: row.label.text().to_string(),
+                value: row.value.text().to_string(),
+            })
+            .collect()
+    }
+}
+
+fn labeled_value_group(
+    title: &str,
+    value_placeholder: &str,
+    rows: &[LabeledValueDraft],
+) -> (adw::PreferencesGroup, LabeledValueList) {
+    let group = adw::PreferencesGroup::new();
+    group.set_title(title);
+    let list = LabeledValueList::new(value_placeholder);
+    for row in rows {
+        list.append(row.clone());
+    }
+    let add = gtk::Button::with_label("Add");
+    let added = list.clone();
+    add.connect_clicked(move |_| added.append(LabeledValueDraft::default()));
+    group.add(&list.container);
+    group.add(&add);
+    (group, list)
+}
+
+#[derive(Clone)]
+struct AddressList {
+    container: gtk::Box,
+    rows: Rc<RefCell<Vec<AddressEditor>>>,
+}
+
+#[derive(Clone)]
+struct AddressEditor {
+    widget: gtk::Frame,
+    label: gtk::Entry,
+    street: gtk::Entry,
+    city: gtk::Entry,
+    state: gtk::Entry,
+    postal_code: gtk::Entry,
+    country: gtk::Entry,
+}
+
+impl AddressList {
+    fn new() -> Self {
+        Self {
+            container: gtk::Box::new(gtk::Orientation::Vertical, 6),
+            rows: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+
+    fn append(&self, initial: LabeledAddressDraft) {
+        let widget = gtk::Frame::new(None);
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        column.set_margin_top(6);
+        column.set_margin_bottom(6);
+        column.set_margin_start(6);
+        column.set_margin_end(6);
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let label = gtk::Entry::builder()
+            .placeholder_text("Label")
+            .hexpand(true)
+            .build();
+        label.set_text(&initial.label);
+        let remove = gtk::Button::from_icon_name("list-remove-symbolic");
+        remove.set_tooltip_text(Some("Remove address"));
+        header.append(&label);
+        header.append(&remove);
+        column.append(&header);
+
+        let grid = gtk::Grid::builder()
+            .column_spacing(6)
+            .row_spacing(6)
+            .build();
+        let street = address_entry("Street", &initial.street);
+        let city = address_entry("City", &initial.city);
+        let state = address_entry("State / Region", &initial.state);
+        let postal_code = address_entry("Postal Code", &initial.postal_code);
+        let country = address_entry("Country", &initial.country);
+        grid.attach(&street, 0, 0, 2, 1);
+        grid.attach(&city, 0, 1, 1, 1);
+        grid.attach(&state, 1, 1, 1, 1);
+        grid.attach(&postal_code, 0, 2, 1, 1);
+        grid.attach(&country, 1, 2, 1, 1);
+        column.append(&grid);
+        widget.set_child(Some(&column));
+        self.container.append(&widget);
+        self.rows.borrow_mut().push(AddressEditor {
+            widget: widget.clone(),
+            label,
+            street,
+            city,
+            state,
+            postal_code,
+            country,
+        });
+
+        let list = self.clone();
+        remove.connect_clicked(move |_| {
+            list.container.remove(&widget);
+            list.rows.borrow_mut().retain(|row| row.widget != widget);
+        });
+    }
+
+    fn values(&self) -> Vec<LabeledAddressDraft> {
+        self.rows
+            .borrow()
+            .iter()
+            .map(|row| LabeledAddressDraft {
+                label: row.label.text().to_string(),
+                street: row.street.text().to_string(),
+                city: row.city.text().to_string(),
+                state: row.state.text().to_string(),
+                postal_code: row.postal_code.text().to_string(),
+                country: row.country.text().to_string(),
+            })
+            .collect()
+    }
+}
+
+fn address_group(rows: &[LabeledAddressDraft]) -> (adw::PreferencesGroup, AddressList) {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Addresses");
+    let list = AddressList::new();
+    for row in rows {
+        list.append(row.clone());
+    }
+    let add = gtk::Button::with_label("Add Address");
+    let added = list.clone();
+    add.connect_clicked(move |_| added.append(LabeledAddressDraft::default()));
+    group.add(&list.container);
+    group.add(&add);
+    (group, list)
+}
+
+fn address_entry(placeholder: &str, value: &str) -> gtk::Entry {
+    let entry = gtk::Entry::builder()
+        .placeholder_text(placeholder)
+        .hexpand(true)
+        .build();
+    entry.set_text(value);
+    entry
+}
+
+#[derive(Clone)]
+struct StringList {
+    container: gtk::Box,
+    rows: Rc<RefCell<Vec<StringEditor>>>,
+}
+
+#[derive(Clone)]
+struct StringEditor {
+    widget: gtk::Box,
+    value: gtk::Entry,
+}
+
+impl StringList {
+    fn new() -> Self {
+        Self {
+            container: gtk::Box::new(gtk::Orientation::Vertical, 6),
+            rows: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+
+    fn append(&self, initial: &str) {
+        let widget = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let value = gtk::Entry::builder()
+            .placeholder_text("Tag")
+            .hexpand(true)
+            .build();
+        value.set_text(initial);
+        let remove = gtk::Button::from_icon_name("list-remove-symbolic");
+        remove.set_tooltip_text(Some("Remove tag"));
+        widget.append(&value);
+        widget.append(&remove);
+        self.container.append(&widget);
+        self.rows.borrow_mut().push(StringEditor {
+            widget: widget.clone(),
+            value,
+        });
+
+        let list = self.clone();
+        remove.connect_clicked(move |_| {
+            list.container.remove(&widget);
+            list.rows.borrow_mut().retain(|row| row.widget != widget);
+        });
+    }
+
+    fn values(&self) -> Vec<String> {
+        self.rows
+            .borrow()
+            .iter()
+            .map(|row| row.value.text().to_string())
+            .collect()
+    }
+}
+
+fn string_list_group(title: &str, values: &[String]) -> (adw::PreferencesGroup, StringList) {
+    let group = adw::PreferencesGroup::new();
+    group.set_title(title);
+    let list = StringList::new();
+    for value in values {
+        list.append(value);
+    }
+    let add = gtk::Button::with_label("Add Tag");
+    let added = list.clone();
+    add.connect_clicked(move |_| added.append(""));
+    group.add(&list.container);
+    group.add(&add);
+    (group, list)
+}
+
+fn set_photo_status(row: &adw::ActionRow, photo: Option<&[u8]>) {
+    let status = match photo {
+        Some(bytes) => format!("{} bytes", bytes.len()),
+        None => "No photo".into(),
+    };
+    row.set_subtitle(&status);
 }
 
 fn entry_field(label: &str, value: &str) -> adw::EntryRow {

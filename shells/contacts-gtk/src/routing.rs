@@ -9,6 +9,7 @@ pub const ROUTED_SCREENS: &[ContactsScreen] = &[
     ContactsScreen::ContactDetail,
     ContactsScreen::ContactEdit,
     ContactsScreen::Settings,
+    ContactsScreen::TagManagement,
     ContactsScreen::Logs,
     ContactsScreen::SyncConflictGroup,
 ];
@@ -23,9 +24,10 @@ pub const fn gtk_route(screen: ContactsScreen) -> Option<ContactsScreen> {
         | ContactsScreen::ContactDetail
         | ContactsScreen::ContactEdit
         | ContactsScreen::Settings
+        | ContactsScreen::TagManagement
         | ContactsScreen::Logs
         | ContactsScreen::SyncConflictGroup => Some(screen),
-        ContactsScreen::TagManagement | ContactsScreen::AppleConflict => None,
+        ContactsScreen::AppleConflict => None,
     }
 }
 
@@ -56,9 +58,6 @@ mod tests {
             .copied()
             .filter(|screen| gtk_route(*screen).is_none())
             .collect();
-        assert_eq!(
-            unrouted,
-            [ContactsScreen::TagManagement, ContactsScreen::AppleConflict]
-        );
+        assert_eq!(unrouted, [ContactsScreen::AppleConflict]);
     }
 }
