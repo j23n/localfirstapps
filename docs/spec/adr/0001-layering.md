@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (`shell-kit-gtk`); 2026-09-14 (`contacts-gtk`); 2026-09-14 (Milestone C); 2026-09-16 (responsibilities, not packages)
+- Revised: 2026-09-11 (r2); 2026-09-13 (`shell-kit-gtk`); 2026-09-14 (`contacts-gtk`); 2026-09-14 (Milestone C); 2026-09-16 (responsibilities, not packages); 2026-09-16 (Gallery crate consumers)
 
 ## Scope
 
@@ -133,6 +133,19 @@ Shared shell bindings are a destination for demonstrated reuse, not a
 mandatory package created from an inventory. `shell-kit-gtk` is provisional after contacts:
 music is the first opportunity to show whether its APIs remove real app-shell
 code without reducing native behavior to placeholder widgets.
+
+Phase 5B also measured Gallery's path-dependency consumers before revisiting
+its crate count. `gallery-model` and `gallery-vfs` have seven and six
+production consumers; `gallery-meta`, `gallery-ml`, `gallery-index`,
+`gallery-scan`, and `gallery-session` each serve multiple independently built
+consumers. `gallery-memories` has one direct production consumer, but that
+count alone demonstrates neither duplicated policy nor a harmful edge.
+`gallery-ffi` is an external adapter, so zero Cargo path consumers is expected
+and is not evidence that it belongs inside another crate. No cycle, feature
+leak, duplicated ownership, or consumer simplification was demonstrated.
+Consequently no Gallery crates are merged. The machine-readable inventory is
+`docs/spec/evidence/gallery-phase5b-2026-09-16.json`; crate count remains
+non-normative.
 
 R9 (r2) records a split that already existed by accident — gallery's `linux/`
 has always carried its own lockfile — and makes it deliberate, because the

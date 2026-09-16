@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-11 (spikes opened); 2026-09-12 (R10 fixture-pack exception, lifted the same day); 2026-09-16 (unmeasured hypotheses and current pack variants)
+- Revised: 2026-09-11 (r2); 2026-09-11 (spikes opened); 2026-09-12 (R10 fixture-pack exception, lifted the same day); 2026-09-16 (unmeasured hypotheses and current pack variants); 2026-09-16 (Phase 5B model evidence)
 
 ## Scope
 
@@ -123,11 +123,14 @@ pack, and therefore cannot be a capability. This constrains model selection
 and is not negotiable at build time.
 
 OpenCV Zoo SFace with YuNet is a licence-compatible **candidate**, not the
-selected replacement. Published benchmark results do not measure this app's
-crop alignment, personal-library clustering, migration outcome, or
-target-device cost. `PACK_VARIANT` MUST remain until representative product
-evidence supports a replacement. A future swap changes `face_pack_key` and
-is migration M3 under ADR 0005 R19.
+selected replacement. Phase 5B established the candidate's direct landmark
+order and measured modestly better pair/clustering quality over a deterministic
+100-image LFW subset on x86-64, with higher peak RSS and no arm64, iPhone,
+Comet, or representative personal-library run. That evidence is insufficient
+for selection, so the production switch is rejected, the current face weights
+remain, and `PACK_VARIANT` MUST remain. A future swap changes `face_pack_key`
+and is migration M3 under ADR 0005 R19; it requires separate survival tests
+before `PACK_VARIANT` retirement.
 
 **R14.** A pack is identified by version and verified by hash before use. An
 app with no pack, or a pack failing verification, disables the capabilities
@@ -159,10 +162,12 @@ needs no band; adding one there is meaningless, because there is no recorded
 prior decision to retain.
 
 `ε` is declared in the pack manifest. It is a conventional retention band.
-No arm64 / x86-64 fixture has measured whether the current value bounds
-cross-instruction-set drift, so adequacy for that purpose remains a
-hypothesis. R15 convergence relies on recorded decisions and byte-idempotent
-writes, not on presenting ε as a measured ISA margin.
+Phase 5B recorded the fixture and model/input hashes on x86-64, but no arm64
+execution environment was available. No arm64 / x86-64 pair has therefore
+measured whether the current value bounds cross-instruction-set drift, so
+adequacy for that purpose remains a hypothesis. R15 convergence relies on
+recorded decisions and byte-idempotent writes, not on presenting ε as a
+measured ISA margin.
 
 A capability with a thresholded decision and no retention band is
 non-conforming: two devices straddling the bar will rewrite each other's

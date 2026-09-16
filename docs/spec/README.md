@@ -100,16 +100,18 @@ and it is the third that gets broken.
 
 Written answers live in `docs/spec/spikes/`.
 
-1. **Face licence.** SFace with YuNet is licence-compatible, but crop
-   alignment, personal-library clustering, migration outcome, and
-   target-device cost are unmeasured. It is a candidate, not a selection;
+1. **Face licence.** SFace with YuNet is licence-compatible. Phase 5B
+   established direct landmark order and modestly better quality on a
+   deterministic 100-image LFW subset, but measured higher peak RSS and had
+   no arm64 or target-device execution. The production switch is rejected;
    `PACK_VARIANT=full|tagging` remains.
 2. **Flatpak portal.** The current Linux build is native and has no Flatpak
-   manifest. Portal stat, watch, read, and atomic-rename behaviour was not
-   measured, so Flatpak is neither approved nor forbidden by the spec.
-3. **Cross-ISA ε.** No arm64/x86-64 fixture was run. ε remains a
-   conventional retention band; its adequacy as an ISA margin is a
-   hypothesis, not a measurement.
+   manifest. Native rescan, watch, stat, and conflict controls passed, but the
+   environment had no desktop session or document-portal grant. A support
+   claim is rejected until the harness runs through a real persisted grant.
+3. **Cross-ISA ε.** Phase 5B recorded x86-64 model/input hashes; no arm64
+   execution was available. ε remains a conventional retention band; its
+   adequacy as an ISA margin is a hypothesis, not a measurement.
 
 ## What is deliberately absent
 

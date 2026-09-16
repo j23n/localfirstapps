@@ -22,8 +22,9 @@ not inherit a relink obligation.
 2. **Cargo `license` fields and AppStream `project_license` /
    `metadata_license` use the SPDX id `MPL-2.0`.**
 3. **HEIC decode stays on the permissive + ImageIO seam**
-   (`gallery_ml::preprocess::ImageDecoder`). Do not take LGPL
-   decoders into the shipping binary.
+   (`decode_for_analysis`: `HostHeicDecoder` for host hardware,
+   `ImageDecoder` for the pinned software path). Do not take LGPL decoders
+   into the shipping binary.
 4. **Third-party model weights are not covered by MPL-2.0.** Face
    models in the default full pack remain insightface research /
    non-commercial; see ADR 0003.

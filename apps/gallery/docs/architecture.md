@@ -44,8 +44,12 @@ crates in-process. Neither shell reaches past `gallery-ffi` /
 
 ## Analysis decode
 
+- Tagging and faces share `decode_for_analysis`, including host selection,
+  host-failure behavior, content-key handling, and the 2048-pixel long-side
+  cap. There is no engine-specific decoder policy.
 - **iOS tagging/faces:** ImageIO (hardware) for HEIC; JPEG/PNG stay on
-  the pinned Rust preprocess path.
+  the pinned Rust preprocess path. ImageIO is reached through the narrow
+  `HostHeicDecoder` port.
 - **`cargo test` and Linux:** software HEVC (`heif-oxide` + `rust_h265`)
   for HEIC; same JPEG/PNG crates. A host ImageIO decoder is never
   installed on those builds.

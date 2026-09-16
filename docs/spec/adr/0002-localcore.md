@@ -3,7 +3,8 @@
 - Status: Accepted
 - Date: 2026-09-11
 - Revised: 2026-09-11 (r2); 2026-09-11 (native Linux path, no portal);
-  2026-09-16 (dependency-tripwire exception policy)
+  2026-09-16 (dependency-tripwire exception policy);
+  2026-09-16 (portal experiment controls)
 
 ## Scope
 
@@ -65,10 +66,12 @@ answer requires IPC, a daemon, or a fetch (ADR 0005 R2). There is no batching
 tier and no probe budget, because there is nothing expensive left to batch.
 
 R6 assumes stat is cheap enough for a pass over the selected folder. The
-current Linux build uses a native host path. Flatpak and document-portal
-behaviour have not been measured, so this document neither bans nor approves
-that packaging. Any packaging that proxies filesystem calls MUST measure
-stat, watch, read, and atomic-rename behaviour before claiming conformance;
+current Linux build uses a native host path. Phase 5B's native controls
+measured stat, watch, rescan, and atomic rename successfully, but its
+environment had no desktop session, document-portal owner, or persisted
+folder grant. Flatpak support is therefore rejected for this revision. Any
+packaging that proxies filesystem calls MUST run those measurements through
+a real grant, including after session restart, before claiming conformance;
 an expensive or semantically different result reopens this requirement.
 
 **R7.** **Conflict awareness.** The scanner recognises sync-conflict copies

@@ -197,24 +197,28 @@ no export step that could be non-deterministic.
 |  | SCRFD-500M + w600k_mbf | YuNet + SFace |
 | --- | --- | --- |
 | distribution | one GitHub release asset, 15 MB, plain binary | two files in `opencv_zoo` behind git-lfs; a raw fetch returns a 131-byte pointer |
-| landmark convention | SCRFD's 5 points are the same order and definition `w600k_mbf`'s training crops were aligned with | YuNet emits the eyes in the opposite order |
+| landmark convention | SCRFD's 5 points are the same order and definition `w600k_mbf`'s training crops were aligned with | Phase 5B measured YuNet's direct image-left/image-right order against OpenCV's SFace reference crop |
 | ONNX graph | opset 11, static output shapes, no control flow | comparable |
 | size | 2.5 + 13.6 MB | 0.23 + 38 MB |
 | licence | **non-commercial research only** | Apache-2.0 / MIT |
 
 The current implementation predates product validation of YuNet + SFace and
-uses a detector/embedder pairing with a known alignment contract. Alignment
-is the part of a face pipeline that fails *silently*: a mismatched landmark
-order produces crops that look wrong only if rendered, and embeddings that
-cluster badly for reasons no log line explains. This explains the current
-pack; it is not evidence that the permissive candidate fails.
+uses a detector/embedder pairing with a known alignment contract. Phase 5B
+removed one uncertainty: YuNet already emits image-left eye, image-right eye,
+nose, image-left mouth, image-right mouth. No permutation is required, and
+the direct crop matched OpenCV's SFace reference to at most one channel value
+on both fixtures. Alignment is the part of a face pipeline that fails
+*silently*, so that result is pinned in the evidence harness rather than
+assumed from row labels.
 
 The licence is a real constraint on shipping, not a footnote, so
 `PACK_VARIANT=full|tagging` remains. The manifest declares detector geometry,
 normalization, output names, strides and anchor layout, but moving to the
-permissive pairing still requires measured alignment, representative
-clustering, migration outcome, target-device cost, a pack rebuild, and
-threshold recalibration.
+permissive pairing still requires representative personal-library clustering,
+arm64 plus target-device cost, a pack rebuild, migration outcome, and
+threshold recalibration. The deterministic 100-image LFW run improved pair F1
+from 0.9501 to 0.9691 but raised peak RSS from 144.36 MiB to 184.34 MiB; that
+is insufficient for selection.
 
 ### Face thresholds
 

@@ -102,16 +102,18 @@ PACK_VARIANT=tagging ./scripts/prepare_pack.sh
 ```
 
 SFace + YuNet is a licence-compatible replacement candidate, not a selected
-pack. Alignment, representative-library clustering, migration outcome, and
-target-device cost have not been measured. Keep
-`PACK_VARIANT=full|tagging` until that evidence supports a change.
+pack. Phase 5B established direct landmark alignment and measured a
+deterministic 100-image LFW subset on x86-64, but no representative
+personal-library, arm64, iPhone, or Comet result was available. The production
+switch is rejected and `PACK_VARIANT=full|tagging` remains.
 
 ### Third-party licences
 
 The app is MPL-2.0. Linked decode/inference crates are permissive
 (ONNX Runtime MIT; `heif-oxide` + `rust_h265` MIT OR Apache-2.0).
 HEIC does not use libheif/libde265 (LGPL-3.0). The decode seam is
-`gallery_ml::preprocess::ImageDecoder`.
+`gallery_ml::preprocess::decode_for_analysis`; hardware HEIC remains a
+`HostHeicDecoder` port and software format decode remains an `ImageDecoder`.
 
 ## Tests
 

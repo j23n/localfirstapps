@@ -3,7 +3,8 @@
 Linux shell for LocalContacts (Phase 3.5 / Milestone C). Links
 `shell-kit-gtk` and `contacts-core` (display rows and logged actions
 live in the core). No UniFFI. Host filesystem is a path. This tree has no
-Flatpak manifest; portal behaviour is unmeasured.
+Flatpak manifest. Phase 5B native folder controls passed, but no live portal
+session or persisted grant was available; Flatpak support is not claimed.
 
 ```
 cd shells

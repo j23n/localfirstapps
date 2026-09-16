@@ -2,8 +2,10 @@
 
 Spike 0.6 / ADR 0006 R12–R13 identify OpenCV Zoo **YuNet** + **SFace**
 as a licence-compatible candidate to replace insightface `buffalo_sc`
-(SCRFD-500M + w600k_mbf). That selection has not been made. If the candidate
-passes product measurements, its weights will change
+(SCRFD-500M + w600k_mbf). Phase 5B measured alignment, a deterministic
+100-image LFW subset, and x86-64 cost, then rejected selection because no
+arm64 or target-device run was available and peak RSS increased. If a future
+evidence set supports the candidate, its weights will change
 [`ModelPack::face_pack_key`](../core/gallery-ml/src/pack.rs)
 (`detector_hash + embedder_hash # preprocess + align`).
 [`FaceEngine::with_models`](../core/gallery-ml/src/face/engine.rs) compares
@@ -41,19 +43,19 @@ a name rather than delete one because a model changed its mind).
 
 ## Remaining work
 
-The SFace + YuNet ONNX files are not in the tree. Do **not** download
-them as part of this fixture.
+The SFace + YuNet ONNX files are not in the production pack or this migration
+fixture. The evidence harness downloads hash-pinned temporary copies only.
 
-1. Measure crop/landmark alignment, representative personal-library
-   clustering, migration outcome, and target-device performance for YuNet +
-   SFace. Licence compatibility and published LFW accuracy do not answer
-   these questions.
+1. Extend the recorded Phase 5B evidence with representative personal-library
+   clustering, the identical model/input run on arm64, and actual iPhone and
+   Comet runtime/peak-memory measurements.
 2. If those measurements support selection, teach
    `scripts/build_model_pack/` to fetch and hash-pin YuNet + SFace (OpenCV
    Zoo; Apache-2.0 / MIT). Today `face_models.py` still pulls
    `buffalo_sc.zip`.
-3. Keep `PACK_VARIANT=full|tagging` until that evidence-backed replacement
-   can make the distributable pack include faces.
+3. Add migration-specific M3 survival tests in the production-switch commit,
+   then retire `PACK_VARIANT=full|tagging` only when the distributable pack
+   actually includes the selected face models.
 4. Recalibrate clustering thresholds (SFace is 128-d; current numbers
    are cosine bars for 512-d w600k_mbf).
 5. Regenerate face goldens only after new weights are selected and committed.

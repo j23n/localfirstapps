@@ -41,8 +41,9 @@ cd ../linux && cargo test --no-default-features
 A tagging-only pack is the distribution default: the full pack's face
 models are research / non-commercial. Personal builds may stage
 `PACK_VARIANT=full`. Keep `PACK_VARIANT=full|tagging`: SFace + YuNet is only
-a licence-compatible candidate until alignment, representative clustering,
-migration outcome, and target-device cost are measured.
+a licence-compatible candidate. Phase 5B's x86-64 LFW result was not enough
+to select it without representative personal-library, arm64, iPhone, and
+Comet evidence.
 
 ## Linux
 
@@ -59,8 +60,9 @@ locally (see [linux/INSTALL.md](../linux/INSTALL.md)).
 
 - App: [MPL-2.0](../LICENSE) ([ADR 0004](adr/0004-mpl-licensing.md)).
 - Model weights: separate. Do not ship `buffalo_sc` faces.
-- Do not substitute SFace + YuNet in a release until the product evidence is
-  recorded; licence compatibility alone is not selection.
+- Do not substitute SFace + YuNet in a release. The recorded Phase 5B
+  evidence explicitly rejects the current switch; licence compatibility and
+  one x86-64 public-library run are not selection.
 - HEIC: ImageIO on iOS analysis; software path elsewhere. No libheif.
 
 ## Taxonomy provenance (manual gate)

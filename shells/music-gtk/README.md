@@ -33,4 +33,6 @@ so headless builders need no GStreamer development package. Tests inject the
 deterministic mock. CI compiles and links the real adapter with
 `--all-features`, but audio output, media-key integration, Flatpak portal
 behavior, embedded metadata/artwork, and physical Comet layout still require
-manual validation on suitable hardware.
+manual validation on suitable hardware. Phase 5B passed native folder
+controls only; it had no live portal session or persisted document grant and
+does not establish Flatpak support.

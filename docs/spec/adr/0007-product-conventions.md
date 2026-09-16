@@ -81,7 +81,7 @@ owns, where a platform difference is expected rather than a defect:
 | Media-key and now-playing transport | MPRemoteCommandCenter | MPRIS over D-Bus |
 | System address-book sync | Contacts framework | none — files only |
 | Share | share sheet | file save |
-| Folder grant | security-scoped bookmark | a host path; Flatpak portal behaviour is unmeasured |
+| Folder grant | security-scoped bookmark | a host path; Flatpak support rejected pending a real persisted-grant experiment |
 | Background scheduling | BGTaskScheduler | none — foreground only |
 | Crash and diagnostics capture | local opt-in file, explicit user share | local opt-in file, explicit user share |
 | Bulk ingestion of a system health store | HealthKit (ADR 0008) | none |
