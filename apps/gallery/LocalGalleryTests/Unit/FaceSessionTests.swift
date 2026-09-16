@@ -73,7 +73,7 @@ final class FaceSessionTests: XCTestCase {
 
     /// The cluster with the most faces — for these fixtures, the one reaching
     /// more than one photo.
-    private func biggestCluster(_ session: FaceSession) throws -> ClusterSummary {
+    private func biggestCluster(_ session: FaceSession) throws -> FaceClusterHostRow {
         let clusters = try session.clusters()
             .sorted { ($0.size, $1.id) > ($1.size, $0.id) }
         return try XCTUnwrap(clusters.first, "the run produced no clusters")
@@ -752,7 +752,7 @@ private final class FaceRecorder: FaceProgressListener, Sendable {
         state.withLock { $0.sidecars.append(contentsOf: paths) }
     }
 
-    func onFinished(summary: FaceRunSummary) {
+    func onFinished(summary: FaceRunCommandResult) {
         let converted = FaceService.Summary(
             processed: Int(summary.processed),
             photosWithFaces: Int(summary.photosWithFaces),
@@ -798,7 +798,7 @@ private final class GatedFaceListener: FaceProgressListener, Sendable {
     func onPhotosWithFaces(paths: [String]) {}
     func onSidecarsWritten(paths: [String]) {}
 
-    func onFinished(summary: FaceRunSummary) {
+    func onFinished(summary: FaceRunCommandResult) {
         finished.signal()
     }
 }

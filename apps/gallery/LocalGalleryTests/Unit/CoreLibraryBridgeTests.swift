@@ -499,7 +499,7 @@ final class CoreLibraryBridgeTests: XCTestCase {
     ///
     /// The hosted failure at ~1110 ms was mostly a second full-library FFI
     /// marshal: the index already owned these photos, but the horizon rebuilt
-    /// 20k `ScanPhoto`s and their UTC offsets again. Publish once before the
+    /// 20k `ScannedMediaHost` values and their UTC offsets again. Publish once before the
     /// clock, then measure five independent horizon runs over that retained
     /// generation. Median + worst-sample gates are deterministic enough for a
     /// shared runner while still rejecting both a broad slowdown and a single

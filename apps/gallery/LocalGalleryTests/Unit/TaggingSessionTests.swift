@@ -404,7 +404,7 @@ private final class TaggingRecorder: TaggingProgressListener, Sendable {
         state.withLock { $0.taggedPaths.append(contentsOf: paths) }
     }
 
-    func onFinished(summary: TaggingRunSummary) {
+    func onFinished(summary: TaggingRunCommandResult) {
         let converted = TaggingService.Summary(
             processed: Int(summary.processed),
             tagged: Int(summary.tagged),
@@ -451,7 +451,7 @@ private final class GatedListener: TaggingProgressListener, Sendable {
 
     func onPhotosTagged(paths: [String]) {}
 
-    func onFinished(summary: TaggingRunSummary) {
+    func onFinished(summary: TaggingRunCommandResult) {
         finished.signal()
     }
 }
