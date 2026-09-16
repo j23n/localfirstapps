@@ -1,7 +1,7 @@
 # localfiles — implementation plan (r2)
 
 Four apps, three platforms, one engineer with an agent fleet, evenings and
-weekends. Written against spec r2 (`spec-r2/`).
+weekends. Written against the specification in `docs/spec/`.
 
 ---
 
@@ -120,18 +120,21 @@ state.
 |---|---|---|---|
 | **M1** | Stable ids re-key to NFC | Phase 2 changed the id function; dependent cache/state rewrite **5** | fixture proves the key changes, not that path-keyed state survives |
 | **M2** | Tier-2 `UserDefaults` → event log | Phase 2 added replay + dual-write; authority cutover **5** | encoding is exercised; UserDefaults remains authoritative |
-| **M3** | Face-cluster re-key on a model swap | Phase 2 preflight fixture; candidate validation and pack swap **5** | fixture proves XMP survives a cache reset, not a model migration |
+| **M3** | Face-cluster re-key on a model swap | Phase 2 preflight fixture; candidate measurements and any evidence-backed swap **5** | fixture proves XMP survives a cache reset, not a model migration |
 | **M4** | `LibrarySnapshot` sidecar identity | Phase 1 | **checked — not a migration.** See Phase 1. |
 | **M5** | Apple Health dated cutover | Phase 6 | real but trivial; a bounded first query, nothing rewritten |
 
 ### Milestone A exit criteria
 
-1. Monorepo exists, layout per ADR 0001 R1/R9, originals archived read-only.
+1. Monorepo exists, responsibilities assigned per ADR 0001 R1 and workspaces
+   rooted per R9; originals are archived read-only.
 2. The pure deletions have landed (Phase 1) — ~6,500 lines, no replacements.
 3. `CONVENTIONS.md` retired, all 18 sections dispositioned.
-4. The dependency-graph check runs, is **red**, and its allowlist is written.
-5. All three spikes have written answers (`docs/spec/spikes/`): SFace + YuNet
-   (R12/R13 outcome 1); no Flatpak or portal; ISA drift assumed negligible.
+4. At the close of Milestone A, the dependency-graph check runs and is
+   **red**, with its allowlist written. It becomes green at Milestone B.
+5. All three spike notes record their evidence status (`docs/spec/spikes/`):
+   SFace + YuNet is licence-compatible but otherwise unvalidated; Flatpak
+   portal behaviour is unmeasured; cross-ISA drift is unmeasured.
 6. All four apps build and test exactly as before.
 
 ---
@@ -148,16 +151,18 @@ No app behaviour changes. Nothing here blocks on a Mac.
 
 `apps/{gallery,contacts,music,health}`
 
-SHAs changed; `git log apps/<name>` keeps the original commits. The
-standalone GitHub remotes still need redirect READMEs — Phase 3,
-with 3.0.
+SHAs changed; `git log apps/<name>` keeps the original commits. Former
+standalone remotes are outside this tree, so redirect work cannot be
+performed here. The concrete in-tree guidance is each app README naming its
+canonical `apps/<name>` location and the root workflows that supersede
+nested standalone workflows.
 
 Current tree (`core/` is extracted; `shells/` has the kit and contacts-gtk):
 
 ```
-.agents/            agent instructions (CONVENTIONS.md retired in 0.2)
-docs/               index.html style.css screenshots/   (Pages source)
-  spec/             the eight ADRs + spike answers
+.agents/            agent instructions and work-item routing
+docs/               index.html style.css                (Pages source)
+  spec/             the eight ADRs + spike evidence notes
   IMPLEMENTATION-PLAN.md
 docker/
 mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
@@ -182,7 +187,7 @@ docs/               Pages + spec/
 docker/  mac/
 core/               workspace 1: localcore-* and <app>-core-*   (no UI deps)
 shells/             workspace 2: shell-kit-gtk + four Linux shells
-apps/*/ios/         SwiftUI shells
+apps/*/             per-app files and SwiftUI shells (kept at current app roots)
 conformance/
 ```
 
@@ -216,29 +221,32 @@ Generated UniFFI Swift is committed at
 hazard (checksum mismatch against a stale xcframework) is still real;
 `.github/workflows/bindings.yml` regenerates and fails on drift. Linux
 gets `apps/gallery/linux/swift-shim/` (`swift build` against a host
-`libgallery_ffi.so`) and `scripts/generate_bindings.sh` as the
+`libgallery_ffi.so`) and `apps/gallery/scripts/generate_bindings.sh` as the
 Xcode-free refresh. `openssl-devel` is now a required agent-image
 package — `ort` → `ureq` → `native-tls` on the host build.
 
 **0.5 The conformance harness, graph check first — done.**
 `conformance/graph/check.py` walks both `core/Cargo.lock` and
 `apps/gallery/core/Cargo.lock` against `conformance/graph/allowlist.toml`.
-One entry: `ort` / `ort-sys`, build-time, `ORT_LIB_LOCATION`. Phase 2
-deleted `gallery-geo`; the check is **green**. R6 stays expected-red
-(`conformance/r6/expected.txt`) until gallery-ffi is rewritten.
+The current reviewed build-time exception is `ort` / `ort-sys`, with
+`ORT_LIB_LOCATION` as the offline override. The graph was red through
+Milestone A; Phase 2 deleted `gallery-geo`, and the current check is
+**green**. R6 stays expected-red (`conformance/r6/expected.txt`) until
+gallery-ffi is rewritten.
 
-**0.6 Three spikes — documented.** Written outcomes live in `docs/spec/spikes/`;
+**0.6 Three spikes — documented.** Evidence notes live in `docs/spec/spikes/`;
 their evidence is not equally complete.
 
 | Spike | Answer | Consequence |
 |---|---|---|
-| **Face licence** | SFace + YuNet is an Apache-2.0 candidate; product alignment, clustering quality and device cost were not measured. | Keep one-pack intent provisional. Validate against representative libraries before the Phase 5 swap. |
-| **Flatpak portal** | Native packaging was selected without running the proposed portal measurements. | Native-first; Flatpak is unsupported for now, not architecturally forbidden. |
-| **Cross-ISA ε** | No cross-ISA fixture was run; the note selected conventional hysteresis policy. | R16 uses a retention band, but makes no measured ISA claim. |
+| **Face licence** | SFace + YuNet is an Apache-2.0 candidate; product alignment, clustering quality and device cost were not measured. | Keep one-pack intent provisional. Validate against representative libraries before any selection. |
+| **Flatpak portal** | The current build is native; none of the proposed portal measurements ran. | Flatpak suitability remains unmeasured, neither approved nor banned. |
+| **Cross-ISA ε** | No cross-ISA fixture was run; the note selected conventional hysteresis policy. | R16 uses a retention band; adequacy as an ISA margin remains a hypothesis. |
 
-> **Gate:** all four apps build and test exactly as before, from the new
-> layout, with no behaviour change. The graph check is red and its allowlist
-> is written. All three spikes have written answers.
+> **Historical Phase 0 gate:** all four apps build and test exactly as before,
+> from the new layout, with no behaviour change. The graph check is red and
+> its allowlist is written. All three spike notes record what was and was not
+> measured. The graph's current green state is the later Milestone B result.
 
 Size: M. Almost entirely agent work.
 
@@ -270,7 +278,7 @@ Recorded before the cut (2026-09-12):
 
 | Delete / move | Makes true |
 |---|---|
-| `PhotoMaterializer`, `CloudStorageService`, `FileProviderDetector`, `RemoteBadge`, `CoreProviderProbe`, Cloud Storage settings, materialize/cloud APIs | ADR 0005 R2 |
+| `PhotoMaterializer`, `CloudStorageService`, `FileProviderDetector`, `RemoteBadge`, `CoreProviderProbe`, Cloud Storage settings, materialize/cloud APIs | Removes app-initiated materialisation; legacy placeholder/download fields remain compatibility debt |
 | `CrashDiagnosticsService` ×3 (MetricKit) and its Settings chrome | ADR 0006 R9, ADR 0007 R17 |
 | `archive serve` (loopback). UI relocated, not deleted | ADR 0006 R9 |
 
@@ -289,7 +297,7 @@ share-sheet export; it is not a decoder and no ADR retires it. `EXIFService`
 missing `timeZone` is deliberate. Both are "replace with a named replacement"
 rows, and neither replacement is named yet.
 
-**Amend, do not retire, `localgallery/docs/adr/0002`.** It carries four
+**Amend, do not retire, `apps/gallery/docs/adr/0002-scan-freshness.md`.** It carries four
 decisions and only one is about provider probes. Decision 3 ("a light pass may
 reuse a cached row only after a live size+mtime check") *is* ADR 0002 R5's
 definition of `light`; decision 1 is its dedupe rule; decision 4 is why
@@ -334,12 +342,13 @@ something.
 
 The Swift deletions batch into one Mac session; the rest is container work.
 
-> **Recorded outcome (Milestone A):** named provider/MetricKit services and
+> **Recorded outcome at the close of Milestone A:** named provider/MetricKit services and
 > host API linkages are gone, and the v20 fixture still decodes. Semantic
 > placeholder/download state remains and is explicit debt; the source checker
 > proves retired host API linkage only. The graph
 > check is red with exactly one un-allowlisted entry (`gallery-geo`), which is
-> the honest state until Phase 2. **`LibrarySnapshot` is still v20**, and a
+> the honest historical state until Phase 2 made it green. **`LibrarySnapshot`
+> is still v20**, and a
 > fixture written by the pre-deletion build decodes on the post-deletion build
 > with no rescan.
 
@@ -381,7 +390,7 @@ fixture and a survival assertion):
 |---|---|---|
 | **M1** | Stable ids re-key NFC→ | ADR 0002 R4. Person state, thumbnails, memory ids and widget deep links are all path-keyed. |
 | **M2** | Tier-2 `UserDefaults` → event log | ADR 0005 R5/R13/R14. Gallery persists `me`, `hiddenPeople`, `featured`, `pinnedPeople`, `featuredPhotoByPerson`, `mePersonPath`, `personContactLinks` — all path-keyed snapshots, which R13 forbids. `migratePersonState` becomes a replayed `person_renamed` event. |
-| **M3** | Face-cluster re-key | Survival fixture is B. The SFace + YuNet pack swap is Phase 5. |
+| **M3** | Face-cluster re-key | Survival fixture is B. Candidate measurements and any evidence-backed swap are Phase 5. |
 
 > **Gate (Milestone B)** — closed 2026-09-12 on the amended list. The
 > backlog table below is not unfinished extract.
@@ -398,8 +407,8 @@ fixture and a survival assertion):
 >   `allCountries` (class `P`) + NE 10 m admin-0.
 > - `localcore-log` has a gallery replay test and a health Go↔Rust golden.
 > - M1–M3 **preflight/regression fixtures** pass. M1 dependent state
->   rewrites, M2 authority cutover, and the M3 candidate validation/pack
->   swap remain Phase 5.
+>   rewrites, M2 authority cutover, and the M3 candidate measurements and
+>   any evidence-backed swap remain Phase 5.
 > - 20k: `scan_tree` exists. Local `e2e_20k.sh` records scan / enrich /
 >   index / memories against `e2e_baselines/` (not a merge gate yet;
 >   GitHub job is Phase 5; no tree in-repo).
@@ -432,14 +441,13 @@ block C.
 | `shell-kit-swift` | **4** | iOS contacts views are hand-rolled. Music is the next SwiftUI vertical. |
 | Contacts tags / logs / full GTK fields | **later / 4+** | Specified; not the C-loop. |
 | iOS contacts views parse vCard text | **debt** | Writes go through FFI, but `vcard_text` is a serialized-domain escape hatch. Replace it with explicit read/command/host-port DTOs; do not call contacts R6-complete meanwhile. |
-| Old-remote redirect READMEs | **3** | With 3.0. Standalone remotes still need them. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **4** | Playlist write through `localcore-vfs`. |
 | Unify iOS onto `run_places` | **5** | Two orchestrators. Pack is shipped; collapse the Swift loop. |
 | M2 UserDefaults cutover | **5** | After gallery iOS is green. Do not copy the dual-write into 3.1. |
 | M1 thumb / widget / `library_cache` rewrite | **5** | Path-keyed leftovers. Rewrite them; do not leave orphans as the plan. |
 | Queue places / thumbs / EXIF | **5** | Tagging and faces already use `localcore-queue`. |
-| M3 pack swap (SFace + YuNet) | **5** | Top remaining product risk. Spike may run during 3; swap lands here. |
+| M3 candidate validation / possible pack swap | **5** | Measure SFace + YuNet alignment, representative clustering and target-device cost first. Keep `PACK_VARIANT` unless evidence supports the swap. |
 | `ImageIOHeicDecoder` | **5** | Decoder seam with the gallery core loop. |
 | R8–R11 for gallery `.xmp` | **5** | Same conflict grammar as contacts, on sidecars. |
 | gallery-ffi R6 rewrite (45 Records) | **5** | ADR 0003 R4 windowing. |
@@ -512,7 +520,8 @@ workload before drawing shells).
 6. **3.5 GTK + Comet.** **done.** `shells/contacts-gtk` over
    `shell-kit-gtk` + `contacts-core` (no UniFFI). Same binary,
    `--comet` (540×620 + bottom nav). Host filesystem is a path.
-   No Flatpak. Share is a file save. Sourced dark accents in the
+   This tree has no Flatpak manifest; portal suitability is unmeasured.
+   Share is a file save. Sourced dark accents in the
    token tables; generator emits `ACCENT_DARK` / `accentDark` /
    `prefers-color-scheme: dark`.
 7. **3.6 Milestone C review.** **done.** No new kind was needed for
@@ -570,9 +579,11 @@ scrolls or does not); media port for video thumbnails.
 
 Phase 5 also lands the deferred gallery rows: unify iOS onto
 `run_places`, M2 UserDefaults cutover, M1 thumb / widget /
-`library_cache` rewrite, queue places / thumbs / EXIF, M3 SFace +
-YuNet pack swap, `ImageIOHeicDecoder`, R8–R11 on `.xmp`, and the 20k
-e2e GitHub job (the local `e2e_20k.sh` suite already exists).
+`library_cache` rewrite, queue places / thumbs / EXIF, M3 candidate
+measurements and any evidence-backed face-pack decision,
+`ImageIOHeicDecoder`, R8–R11 on `.xmp`, and the 20k e2e GitHub job (the
+local `e2e_20k.sh` suite already exists). `PACK_VARIANT` remains until
+that evidence supports retiring it.
 
 That gap list is the difference between roughly 8k and 30k lines of GTK.
 Each row is a decision you can revisit later with a working app in hand.
@@ -631,11 +642,13 @@ knowingly unbuildable for a platform, so `macos-26` stays a signal rather than
 an expected-red job — which is precisely when committed-binding drift would
 otherwise go unnoticed.
 
-| Work | Verified by |
-|---|---|
-| `core/**`, `shells/**`, `conformance/**`, `docs/**` | `cargo test` in the container, seconds |
-| FFI surface change | Linux `swift build` shim (0.4), then `macos-26` |
-| `apps/*/ios/**` | `macos-26` by default; Mac VM interactively when >1 round |
+| Work | Environment | Verified by |
+|---|---|---|
+| `core/**`, `shells/**`, `apps/gallery/core/**`, `apps/gallery/linux/**` | Fedora container | the relevant `cargo test` workspace |
+| `apps/health/**` | Fedora container | `CGO_ENABLED=1 GOFLAGS=-mod=vendor go test ./...` |
+| `docs/**`, `conformance/**` | Fedora container | conformance checks and textual consistency searches |
+| FFI surface change | container, then Mac | Linux `swift build` shim (0.4), then `macos-26` |
+| app Swift | Mac | `macos-26` by default; Mac VM interactively when more than one round is needed |
 
 **Task shape:** one requirement, one fixture, one PR. "Make `contacts-core`
 satisfy ADR 0005 R7, here is the fixture directory, the check must go red to
@@ -647,9 +660,10 @@ review question (ADR 0007 R16) and you read the diff.
 
 ## 7. Risks, ranked
 
-1. **Face-model swap quality.** The licence spike came back positive
-   (SFace + YuNet). What remains is whether personal-library clustering
-   holds up after M3 orphans every user-assigned name.
+1. **Face-model candidate quality.** Licensing makes SFace + YuNet eligible
+   for evaluation, but alignment, personal-library clustering, migration
+   outcome, and target-device cost remain unmeasured. `PACK_VARIANT` stays
+   until that evidence exists.
 2. **ADR 0003 R4's windowed boundary not being enough.** If a 20k grid still
    stutters through UniFFI, the fallback is the current arrangement — shell
    holds the structs — which costs ADR 0003 R6 and with it the only structural
@@ -683,9 +697,10 @@ differential harness, and `shell-kit` making shells 2–4 progressively cheaper.
 What added to it: `localcore-geo`, the five migrations, and the token work —
 all of which existed in r1 too, just not on the page.
 
-Each phase leaves something shippable. Phases 0–2 change no user-visible
-behaviour except removing cloud placeholders and network geocoding, so the
-first year's risk is concentrated in Phase 3, which is the cheapest app.
+Each phase leaves something shippable. Phases 0–2 removed cloud integration
+and network geocoding; legacy placeholder/download compatibility fields
+remained explicit debt. The first year's larger product risk is concentrated
+in Phase 3, which is the cheapest app.
 
 ---
 
@@ -698,10 +713,9 @@ engineering move is Phase 4 (localmusic over `shell-kit`, and
 **You, now**
 
 1. Keep the four **root** workflows green on tip.
-2. **Phase 3:** redirect READMEs on the old standalone remotes.
-3. Local 20k e2e can be run anytime
+2. Local 20k e2e can be run anytime
    (`apps/gallery/scripts/e2e_20k.sh`; `LOCALGALLERY_E2E_RECORD=1`
    rewrites the golden). Promoting that suite to a GitHub job is
    **Phase 5**.
-4. Phase 4/5/6 backlog may run in parallel; it does not block C.
+3. Phase 4/5/6 backlog may run in parallel; it does not block C.
    The gazetteer pack is `allCountries` class `P`.

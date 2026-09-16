@@ -19,9 +19,11 @@ its vertical moves; route by the whole work item across those boundaries.
 
 | Work | Environment | Verified by |
 |---|---|---|
-| `core/**`, `shells/**`, `apps/gallery/core/**`, `apps/gallery/linux/**`, `apps/health/**`, `docs/**`, `conformance/**` | Fedora container (`docker/`) | `cargo test` / `go test`, seconds |
+| `core/**`, `shells/**`, `apps/gallery/core/**`, `apps/gallery/linux/**` | Fedora container (`docker/`) | relevant workspace `cargo test` |
+| `apps/health/**` | Fedora container (`docker/`) | `CGO_ENABLED=1 GOFLAGS=-mod=vendor go test ./...` |
+| `docs/**`, `conformance/**` | Fedora container (`docker/`) | conformance checks and textual consistency searches |
 | FFI surface change | container, then Mac | Linux `swift build` shim (Phase 0.4), then `macos-26` |
-| `apps/gallery/**` Swift, `apps/contacts/**`, `apps/music/**` | Mac (`mac/`) | `macos-26` by default; Mac VM interactively when >1 round |
+| app Swift | Mac (`mac/`) | `macos-26` by default; Mac VM interactively when more than one round is needed |
 
 Two agents in one checkout fight over the git index. Before a long edit,
 `git worktree add .worktrees/<task> -b <branch>` and work there.

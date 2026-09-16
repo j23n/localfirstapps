@@ -3,8 +3,9 @@
 Unit + integration tests for LocalContacts. Run via the `LocalContacts`
 scheme — the test target is wired into it, and the monorepo `contacts`
 job in `.github/workflows/apps.yml` executes `xcodebuild test`. A
-UI-test target (`LocalContactsUITests`) is also on the scheme. The
-nested `.github/workflows/test.yml` is for the old standalone remote.
+UI-test target (`LocalContactsUITests`) is also on the scheme. The nested
+`.github/workflows/test.yml` is retained only for a standalone checkout; the
+root `apps.yml` job is canonical in this monorepo.
 
 ## Conventions
 

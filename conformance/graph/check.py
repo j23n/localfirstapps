@@ -285,6 +285,31 @@ def load_policy(allow_path: Path, policy_path: Path) -> Policy:
     return _policy_from_docs(allow_doc, policy_doc)
 
 
+def allowlist_errors(entries: list[dict]) -> list[str]:
+    """Validate the explicit evidence required by ADR 0002 R13."""
+    errors: list[str] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(entries, start=1):
+        prefix = f"allowlist entry {index}"
+        crates = entry.get("crates")
+        if not isinstance(crates, list) or not crates or not all(
+            isinstance(crate, str) and crate.strip() for crate in crates
+        ):
+            errors.append(f"{prefix}: crates must be a non-empty string list")
+            crates = []
+        for crate in crates:
+            if crate in seen:
+                errors.append(f"{prefix}: duplicate crate {crate}")
+            seen.add(crate)
+        if entry.get("scope") != "build-time":
+            errors.append(f"{prefix}: scope must be build-time")
+        for field in ("why", "offline", "review"):
+            value = entry.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"{prefix}: {field} must be documented")
+    return errors
+
+
 LOCKFILE_RELS = ("core/Cargo.lock", "apps/gallery/core/Cargo.lock")
 
 
@@ -494,6 +519,13 @@ def run_self_test() -> int:
         allow_entries=(ort_entry,),
         forbidden={"ureq": "network", "gtk": "ui"},
     )
+    assert allowlist_errors(policy.allow_entries) == []
+    assert allowlist_errors([{"crates": ["ort"], "scope": "runtime"}]) == [
+        "allowlist entry 1: scope must be build-time",
+        "allowlist entry 1: why must be documented",
+        "allowlist entry 1: offline must be documented",
+        "allowlist entry 1: review must be documented",
+    ]
 
     geo = parse_cargo_lock(
         """

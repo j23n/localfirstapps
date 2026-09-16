@@ -2,48 +2,52 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (`shell-kit-gtk`); 2026-09-14 (`contacts-gtk`); 2026-09-14 (Milestone C)
+- Revised: 2026-09-11 (r2); 2026-09-13 (`shell-kit-gtk`); 2026-09-14 (`contacts-gtk`); 2026-09-14 (Milestone C); 2026-09-16 (responsibilities, not packages)
 
 ## Scope
 
-The layers every app is built from, and what may cross each boundary.
+The responsibilities every app must assign, and what may cross each ownership
+boundary. These names describe roles in the architecture, not directories,
+crates, targets, or a mandatory package count.
 
 ## Requirements
 
 **R1.** The architecture separates six responsibilities:
 
-```
-shell/        per platform, per app. Binds the UI spec to native widgets; owns
-              host integration. SwiftUI (iOS) and GTK4/libadwaita (Linux, Comet).
-shell-kit/    optional per-platform extraction for bindings proven reusable by
-              at least two apps. Depends on the slot vocabulary and nothing
-              else — no app core, no domain type.
-              User input leaves it as an opaque action identifier through a
-              callback its host shell installs; it never calls an app core.
-ui-spec/      per app. Screens, slots, actions, navigation, design tokens.
-              Data, not code (ADR 0004).
-app-core/     per app. Parsing, mutation, enrichment, domain policy, and the
-              view models the shells bind to (ADR 0003).
-localcore/    shared by all apps. Locate, walk, index, project, reconcile,
-              queue, atomic write, stable ids (ADR 0002).
-platform/     per platform, defined by app-core as narrow ports. Security
-              scopes, media playback, system contacts, share sheets.
-```
+- **Shell** — per platform and app. Binds the UI spec to native widgets and
+  owns host integration. SwiftUI on iOS; GTK4/libadwaita on Linux and Comet.
+- **Shared shell bindings** — an optional per-platform extraction, made only
+  for bindings proven reusable by at least two apps. It depends on the slot
+  vocabulary and no app core or domain type. User input leaves it as an
+  opaque action identifier through a callback installed by the shell.
+- **UI specification** — per app. Screens, slots, actions, navigation, and
+  design tokens. Data, not code (ADR 0004).
+- **App core** — per app. Parsing, mutation, enrichment, domain policy, and
+  the view models shells bind to (ADR 0003).
+- **Local core** — shared by all apps. Locate, walk, index, project,
+  reconcile, queue, atomic write, and stable ids (ADR 0002).
+- **Platform integration** — per platform, reached through narrow ports
+  declared by an app core. Security scopes, media playback, system contacts,
+  and share sheets.
 
-These are ownership boundaries, not a required package count. A shell may
-hold a binding until a second app proves it reusable; extracting a
-`shell-kit` is an implementation decision, not evidence that reuse exists.
+An implementation MAY co-locate several responsibilities in one package or
+split one responsibility across packages, provided ownership and dependency
+rules remain visible. A shell may hold a reusable-looking binding until a
+second app proves it reusable; extracting a `shell-kit` is an implementation
+decision, not evidence that reuse exists.
 
-**R2.** Dependencies point downward only. `localcore` MUST NOT depend on any
-app core. An app core MUST NOT depend on another app core. A shell MUST NOT
-path-depend on a `localcore-*` crate; everything it needs is re-exposed by
-its app core. `shell-kit` MUST NOT depend on any app core or on `localcore`:
-it is reachable from a shell and reaches nothing but the slot vocabulary.
+**R2.** Dependencies between the R1 responsibilities point downward only,
+whether the code is co-located or packaged separately. Code owning the local
+core responsibility MUST NOT depend on an app core. An app core MUST NOT
+depend on another app core. A shell MUST NOT path-depend on a `localcore-*`
+crate; everything it needs is re-exposed by its app core. An extracted
+`shell-kit` MUST NOT depend on any app core or on `localcore`: it is reachable
+from a shell and reaches nothing but the slot vocabulary.
 
-**R3.** `localcore` and every app core are written in Rust and MUST compile
-for every target platform with the same source. Platform-conditional
-compilation inside these layers is permitted only for the `platform/` port
-implementations.
+**R3.** Code owning the local-core and app-core responsibilities is written
+in Rust and MUST compile for every target platform with the same source.
+Platform-conditional compilation in that code is permitted only for
+implementations of platform-integration ports.
 
 **R4.** A shell MUST contain no domain logic. Specifically, a shell MUST NOT
 decide ordering, filtering, grouping, string formatting, action availability,
@@ -89,6 +93,9 @@ Gallery's existing core and Linux workspaces remain separate until its
 vertical migrates. The repository therefore currently tracks four lockfiles;
 the two-workspace shape is a destination, not a present-tense invariant.
 
+R9 is a repository packaging rule independent of R1. It does not require one
+crate or directory for each responsibility.
+
 Feature unification is per workspace, so a GTK feature flag cannot reach an
 app core and `cargo test` in `core/` runs on a machine with no GUI libraries
 installed.
@@ -97,6 +104,8 @@ installed.
 
 - The dependency graph is acyclic and downward. A build that inverts any
   edge in R2 fails.
+- No conformance check infers the architecture from a package count; review
+  assigns each piece of code to an R1 responsibility and checks its edges.
 - `cargo build` for each app core succeeds for iOS and Linux targets from
   unmodified sources.
 - A `shell-kit` manifest, when one exists, names no app core and no domain
@@ -120,8 +129,8 @@ R4 is the load-bearing requirement. A shell that computes anything is a shell
 that must be re-verified per platform, and with two toolkits and four apps
 that is eight places for the same bug.
 
-`shell-kit` is a destination for demonstrated reuse, not a mandatory layer
-created from an inventory. `shell-kit-gtk` is provisional after contacts:
+Shared shell bindings are a destination for demonstrated reuse, not a
+mandatory package created from an inventory. `shell-kit-gtk` is provisional after contacts:
 music is the first opportunity to show whether its APIs remove real app-shell
 code without reducing native behavior to placeholder widgets.
 

@@ -30,7 +30,8 @@ claude                              # /login on first run
 ~/localfiles/          <- the monorepo, mounted at /work
   docker/              <- here
   apps/{gallery,contacts,music,health}/
-  docs/
+  core/  shells/       <- shared Rust cores and GTK shells
+  conformance/  docs/  .agents/
 ```
 
 `bootstrap.sh` derives `WORKSPACE` from its own location (the directory
@@ -104,8 +105,10 @@ meanwhile.
 
 ## What it can and cannot build
 
-Builds and tests here: every Rust crate in `apps/gallery/core`, the GTK shell
-in `apps/gallery/linux`, and all of `apps/health` (cgo + sqlite).
+Builds and tests here: both Rust workspaces in `core/` and `shells/`, every
+Rust crate in `apps/gallery/core`, both gallery Linux configurations in
+`apps/gallery/linux`, and all of `apps/health` (cgo + sqlite). The
+conformance and documentation consistency checks also run here.
 
 Cannot, ever: `xcodegen`, `xcodebuild`, the iOS slices of
 `GalleryCore.xcframework`, and therefore every Swift test in gallery,
@@ -114,9 +117,12 @@ An agent that changes Swift here has written unverified code and must say so.
 
 Work-item routing: [`.agents/ROUTING.md`](../.agents/ROUTING.md).
 
-First `cargo build` needs the network: crates.io plus the ~85 MB prebuilt ONNX
-Runtime the `ort` crate fetches. It lands in the `cache` volume and is paid
-once for all agents, not once per container.
+An uncached Cargo bootstrap fetches crates.io sources. The current reviewed
+ADR 0002 R13 build-time exception is `ort`, whose build script can also fetch
+the ~85 MB prebuilt ONNX Runtime. It lands in the `cache` volume and is paid
+once for all agents, not once per container; this does not permit runtime
+networking. For an offline build, pre-populate Cargo's cache and set
+`ORT_LIB_LOCATION` to a directory containing `libonnxruntime.a`.
 
 ## SECURITY
 

@@ -35,10 +35,11 @@ crates in-process. Neither shell reaches past `gallery-ffi` /
 | Library folder | User-selected tree (security-scoped bookmark on iOS; a path on Linux) | The rest of the filesystem. Sidecar writes and move/delete/create stay under that root. |
 | Image bytes | Never rewritten by the core | Sidecars (`.xmp`), caches, exports the user asked for |
 | `gallery-cache.sqlite` | Work queues, embeddings, face clusters | Not portable truth; wipe is safe |
-| File Provider (iOS) | **Retired.** The scanner is local-only; `ProviderProbe` is off the UniFFI surface. | Placeholders do not enter the projection. |
+| Provider-backed folder (iOS) | Folder grant may come from the host; only entries with local readable bytes enter the scanner. | No provider probe, download request, materialisation, progress, or remote badge |
 | Place names | Bundled gazetteer + admin-0 polygons (`localcore-geo`) | Coordinates stay on the device. Country is point-in-polygon, not nearest city. |
 | Model pack | Local ONNX + labels, hash-verified | Optional. Missing pack disables tagging and faces only. |
-| Logs | In-app ring buffer (`LogStore`) | No MetricKit; no automatic export |
+| Synced person log | Schema-defined tier-2 operations under `.gallery/log/<dev>/` | Domain replay only; not diagnostics |
+| Local diagnostics | Opt-in in-app ring buffer (`LogStore`), outside the library | No MetricKit, automatic export, or upload |
 | Widgets (iOS) | App Group snapshots | Deep links back into the app |
 
 ## Analysis decode
@@ -61,6 +62,7 @@ Swift block comments.
 
 ## Determinism
 
-Decision-identical tags across devices: pinned pack hashes, CPU ONNX
-execution provider, hysteresis so float drift does not flap keywords.
-Results key on **content hash**, not path.
+Decision convergence across devices uses pinned pack hashes, recorded
+decisions, byte-idempotent writes, and hysteresis. The current epsilon has
+not been measured as a cross-ISA bound. Results key on **content hash**, not
+path.

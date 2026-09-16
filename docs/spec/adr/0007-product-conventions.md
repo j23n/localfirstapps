@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-11 (no Flatpak / portal); 2026-09-11 (0.2: CONVENTIONS.md deleted)
+- Revised: 2026-09-11 (r2); 2026-09-11 (native Linux delivery); 2026-09-11 (0.2: CONVENTIONS.md deleted); 2026-09-16 (domain logs separated from local diagnostics)
 
 ## Scope
 
@@ -81,9 +81,9 @@ owns, where a platform difference is expected rather than a defect:
 | Media-key and now-playing transport | MPRemoteCommandCenter | MPRIS over D-Bus |
 | System address-book sync | Contacts framework | none — files only |
 | Share | share sheet | file save |
-| Folder grant | security-scoped bookmark | a path |
+| Folder grant | security-scoped bookmark | a host path; Flatpak portal behaviour is unmeasured |
 | Background scheduling | BGTaskScheduler | none — foreground only |
-| Crash and diagnostics capture | local file, explicit user share | local file, explicit user share |
+| Crash and diagnostics capture | local opt-in file, explicit user share | local opt-in file, explicit user share |
 | Bulk ingestion of a system health store | HealthKit (ADR 0008) | none |
 
 Anything not on this table is subject to ADR 0001 R6 without exception.
@@ -112,23 +112,31 @@ synthesising a plausible one.
 open an item, perform the app's primary action.
 
 **R16.** **Requirements that CI cannot check are named, and reviewed by a
-person.** ADR 0001 R4, ADR 0003 R5, ADR 0004 R8, ADR 0004 R9 and R7 above are
-not mechanically checkable beyond the structural guard in ADR 0003 R6. Each
-carries a review question in the pull-request template, answered by the
-author in prose. A conformance harness reduces review load; it does not
-remove it, and a plan that assumes otherwise is mis-costed.
+person.** ADR 0001 R4, ADR 0002 R13's build-time exception scope, ADR 0003
+R5, ADR 0004 R8, ADR 0004 R9 and R7 above are not mechanically checkable
+beyond their structural guards. Each carries a review question in the
+pull-request template, answered by the author in prose. A conformance harness
+reduces review load; it does not remove it, and a plan that assumes otherwise
+is mis-costed.
 
 ### Logging and diagnostics
 
-**R11.** One logging facility, in `localcore`, used by every layer. Nothing
-writes to stdout outside tests. Identifying strings — paths, names, contact
-details — pass through redaction at the call site, and log capture is
-opt-in.
+**R11.** **Synced domain logs and local diagnostics are different state.**
+Tier-2 event logs record domain operations needed for projection and
+reconciliation (ADR 0005 R4–R18). They live in the synced folder, contain
+only schema-defined domain events, and are not diagnostic capture.
+
+Diagnostics use one local logging interface across layers. Capture is
+opt-in, per-device, and stored outside the synced folder; disabling or
+clearing it cannot alter domain state. Nothing writes diagnostics to stdout
+outside tests. Identifying strings — paths, names, contact details — pass
+through redaction at the call site.
 
 **R17.** Diagnostics never leave the device by any automatic path. There is
-no crash-reporting framework, no telemetry, and no usage analytics on any
-platform. A crash report is a local file the user chooses to attach to an
-email or an issue (ADR 0006 R9).
+no MetricKit integration, crash-reporting framework, telemetry, usage
+analytics, background upload, or automatic attachment on any platform. A
+diagnostic or crash file exists only after local opt-in and leaves only when
+the user explicitly shares it (ADR 0006 R9).
 
 ### Distribution
 
@@ -175,7 +183,12 @@ locale API expecting it to be welcome.
 - No committed fixture contains real personal data.
 - The pull-request template carries a question for each requirement named in
   R16.
-- No source links a crash-reporting or analytics framework.
+- Synced event logs contain schema-defined domain events only; diagnostics
+  never appear under the selected folder.
+- Diagnostic capture is local and opt-in, and clearing it leaves replayed
+  domain state unchanged.
+- No source links MetricKit, a crash-reporting or analytics framework, or an
+  automatic diagnostic-upload path.
 - Each app has a documented build command per platform that works from a
   clean checkout, and each README follows R18's shape.
 - No source in an app core or a shell calls a platform locale, date-format,
@@ -185,11 +198,11 @@ locale API expecting it to be welcome.
 ## Rationale
 
 These are the conventions that survived as conventions because they carry no
-behaviour a compiler could check. Everything that does — logging, identity,
-scanning, formatting — moved into `localcore` or an app core, because the
-family has already demonstrated what shape-only rules do over time: three
-apps, three drifted implementations of the same logger, each defensible on
-its own.
+behaviour a compiler could check. Everything that does — diagnostic logging,
+domain event replay, identity, scanning, formatting — moved into `localcore`
+or an app core, because the family has already demonstrated what shape-only
+rules do over time: three apps, three drifted implementations of the same
+logger, each defensible on its own.
 
 R8 is the mechanism that keeps two shells and four apps honest without a
 person checking. A fixture read by exactly one implementation tests that
@@ -209,7 +222,7 @@ dispositioned here; the file is deleted.
 | 3 | Build settings | **Dropped.** iOS/Xcode idioms. Per-platform commands are R12. |
 | 4 | State management | **Dropped.** A SwiftUI `@Observable` Store in the shell contradicts ADR 0001 R4 and ADR 0003. |
 | 5 | Folder access | **Moved.** Bookmark as a per-device exception: ADR 0005 R5. Folder grant: R15. The UIKit picker dance is one toolkit and is dropped. |
-| 6 | Logging | **Moved.** One facility in `localcore`: R11. Per-app `os.Logger` namespaces contradict R11. |
+| 6 | Logging | **Moved.** Local diagnostics use one interface and stay separate from synced domain events: R11. Per-app `os.Logger` namespaces contradict R11. |
 | 7 | Settings sheet | **Moved.** Section order: R2. SwiftUI chrome (`.inline`, `.confirmationAction`) dropped. |
 | 8 | App shell & navigation | **Dropped.** `TabView` / `NavigationStack` are one toolkit. Navigation intents are ADR 0004 R4. |
 | 9 | Stable IDs | **Moved.** ADR 0002 R4, which adds NFC. Hashing path bytes as they arrive contradicted R4. |

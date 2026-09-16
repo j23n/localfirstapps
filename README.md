@@ -1,7 +1,7 @@
 # localfiles
 
 Four apps, one repository. Each app projects a user-selected folder of files
-into a browsable view and never contacts a network.
+into a browsable view and performs no runtime networking.
 
 | Path | App | Build from |
 |---|---|---|
@@ -20,7 +20,7 @@ CI (root `.github/workflows` only — nested `apps/*/.github` does not run here)
 
 | Workflow | What it proves |
 |---|---|
-| `conformance.yml` | Graph, retired-host-API greps, ADR 0003 R6 Record inventory (`gallery-ffi` expected-red; contacts syntax-green with serialized-vCard debt), ADR 0004 R14 `--check` |
+| `conformance.yml` | Currently-green runtime dependency graph with reviewed build-time exceptions, retired-host-API greps, ADR 0003 R6 Record inventory (`gallery-ffi` expected-red; contacts syntax-green with serialized-vCard debt), ADR 0004 R14 `--check` |
 | `bindings.yml` | UniFFI drift (gallery + contacts) + Linux Swift shim |
 | `rust.yml` | `cargo test --locked --workspace` for `core/` and `apps/gallery/core` |
 | `apps.yml` | Gallery Linux + iOS, shells workspace (`shell-kit-gtk` + `contacts-gtk`), contacts iOS, music iOS, health log/event |

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-11 (spikes: SFace; ε not ISA-sized); 2026-09-12 (R10 fixture-pack exception, lifted the same day)
+- Revised: 2026-09-11 (r2); 2026-09-11 (spikes opened); 2026-09-12 (R10 fixture-pack exception, lifted the same day); 2026-09-16 (unmeasured hypotheses and current pack variants)
 
 ## Scope
 
@@ -105,23 +105,29 @@ Landmark names reach the apps as **sidecar metadata**, written by the desktop
 tagger from image content, and are read like any other tag. An app MUST
 render a landmark name it finds and MUST NOT try to derive one.
 
-**R12.** Photo tagging and face clustering run **on-device**, on every
-platform, from a **single model pack**. There is one pack; there are no
-variants, no feature-gated subsets, and no per-platform difference in what a
-pack contains.
+**R12.** Photo tagging and face clustering run **on-device** on every
+platform where the corresponding models are installed. Model-pack format,
+verification, and the hashes for a named variant are platform-independent;
+there MUST NOT be an ISA- or platform-specific build of the same variant.
+
+A variant MAY omit a capability when licensing or distribution requires it.
+The current `PACK_VARIANT=full|tagging` split remains: `full` contains the
+existing non-commercial face weights and is not distributable; `tagging`
+omits them and is the distributable variant. One redistributable pack
+containing faces is a desired simplification, not a conformance claim, until
+a replacement passes R13 and the product measurements below.
 
 **R13.** **Every weight in a distributed pack MUST carry a licence permitting
 redistribution.** A model that may not be redistributed cannot be in the
 pack, and therefore cannot be a capability. This constrains model selection
 and is not negotiable at build time.
 
-R12 and R13 together were unsatisfied while the embedder was insightface
-`buffalo_sc` (research / non-commercial) and the `full` / `tagging` pack
-split existed as the workaround. **Spike outcome 1 is recorded:** the
-embedder is OpenCV Zoo SFace and the detector is YuNet, both
-redistributable (Apache-2.0 / MIT). R12 and R13 stand unchanged. One pack;
-`PACK_VARIANT` is retired. Swapping models changes `face_pack_key` and is
-migration M3 under ADR 0005 R19.
+OpenCV Zoo SFace with YuNet is a licence-compatible **candidate**, not the
+selected replacement. Published benchmark results do not measure this app's
+crop alignment, personal-library clustering, migration outcome, or
+target-device cost. `PACK_VARIANT` MUST remain until representative product
+evidence supports a replacement. A future swap changes `face_pack_key` and
+is migration M3 under ADR 0005 R19.
 
 **R14.** A pack is identified by version and verified by hash before use. An
 app with no pack, or a pack failing verification, disables the capabilities
@@ -152,9 +158,11 @@ threshold that only partitions unnamed faces writes nothing to a file and
 needs no band; adding one there is meaningless, because there is no recorded
 prior decision to retain.
 
-`ε` is declared in the pack manifest. **Cross-instruction-set drift is
-assumed negligible** (spike 0.6): ε is a conventional retention band, not a
-measured ISA margin, and no arm64 / x86-64 fixture is required.
+`ε` is declared in the pack manifest. It is a conventional retention band.
+No arm64 / x86-64 fixture has measured whether the current value bounds
+cross-instruction-set drift, so adequacy for that purpose remains a
+hypothesis. R15 convergence relies on recorded decisions and byte-idempotent
+writes, not on presenting ε as a measured ISA margin.
 
 A capability with a thresholded decision and no retention band is
 non-conforming: two devices straddling the bar will rewrite each other's
@@ -194,14 +202,14 @@ discovered at runtime.
   countries.
 - No POI or landmark dataset is present; a landmark name in a sidecar is
   rendered, and none is derived from coordinates.
-- The pack manifest enumerates every weight with its licence, and every
-  entry permits redistribution.
+- Every distributed pack variant enumerates every weight with its licence,
+  and every entry permits redistribution. The non-distributed `full` variant
+  remains clearly marked as such.
 - Re-running a capability over unchanged inputs writes no file and changes no
   modification time.
 - Every thresholded decision has a retention-band test: a score just inside
-  the band retains a recorded decision, one outside it does not. ε is the
-  conventional band in the pack manifest; no cross-ISA drift fixture is
-  required.
+  the band retains a recorded decision, one outside it does not. No
+  cross-ISA bound is claimed without a fixture measuring both architectures.
 - A file carrying a newer pack version is left untouched by a core running an
   older pack, and rewritten by one running a newer pack.
 - Two devices tagging the same fixture library, each seeded with the other's
@@ -230,12 +238,11 @@ makes.
 
 R15 through R17 (r2) replace a requirement that asked for bit-identical
 results across instruction sets. Convergence is by recorded decision:
-idempotent writes, a retention band, and pack precedence. Spike 0.6 further
-records that **ISA drift is assumed negligible**, so ε is a conventional
-band in the pack manifest rather than a measured cross-ISA margin. The
-remaining gaps R15–R17 close are the band itself (tagging had one; face
-detection and auto-tag matching did not) and the precedence rule for
-version skew.
+idempotent writes, a retention band, and pack precedence. Spike 0.6 did not
+measure ISA drift; the 2026-09-16 revision therefore records ε only as a
+conventional band and leaves any cross-ISA sizing claim open. The remaining
+gaps R15–R17 close are the band itself (tagging had one; face detection and
+auto-tag matching did not) and the precedence rule for version skew.
 
 R9 is unconditional because every candidate exemption turned out to be
 avoidable. Host file materialisation goes with ADR 0005 R2's on-disk rule,

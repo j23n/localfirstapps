@@ -2,8 +2,9 @@
 
 The goal state for the localfiles family. These documents describe what the
 system **is**, not how to get there from where the code stands today. They
-live in this monorepo at `docs/spec/` and are intended to be sufficient to
-begin work without further design decisions.
+live in this monorepo at `docs/spec/`. Normative boundaries are settled;
+choices that depend on measurements are named as open hypotheses rather than
+silently promoted into decisions.
 
 **Revision r2.** The decisions this revision changed are listed at the end.
 
@@ -34,9 +35,10 @@ Folders are synchronised between devices by Syncthing / SyncTrain. No app
 participates in synchronisation; each app is a correct reader and writer of a
 folder that changes underneath it.
 
-Files are **on disk or absent** (ADR 0005 R2). No app understands cloud
-placeholders, download states, or on-demand materialisation. What the
-synchroniser has put in the folder is the whole of what exists.
+Files have **local bytes or are absent to the app** (ADR 0005 R2). A selected
+folder may be provider-backed, but the app does not understand placeholders,
+download states, or on-demand materialisation. The byte-resident view made
+available by the synchroniser or provider is the whole of what exists.
 
 ## Documents
 
@@ -98,13 +100,16 @@ and it is the third that gets broken.
 
 Written answers live in `docs/spec/spikes/`.
 
-1. **Face licence — outcome 1.** Embedder is OpenCV Zoo SFace, detector is
-   YuNet. ADR 0006 R12 and R13 stand. One pack. Changing the models re-keys
-   every face cluster (M3, ADR 0005 R19).
-2. **No Flatpak, no portal.** Linux is a native GTK binary over the host
-   filesystem. Folder grant is a path; share is a file save.
-3. **ISA drift is assumed negligible.** ADR 0006 R16's ε is a conventional
-   retention band, not a measured cross-ISA margin.
+1. **Face licence.** SFace with YuNet is licence-compatible, but crop
+   alignment, personal-library clustering, migration outcome, and
+   target-device cost are unmeasured. It is a candidate, not a selection;
+   `PACK_VARIANT=full|tagging` remains.
+2. **Flatpak portal.** The current Linux build is native and has no Flatpak
+   manifest. Portal stat, watch, read, and atomic-rename behaviour was not
+   measured, so Flatpak is neither approved nor forbidden by the spec.
+3. **Cross-ISA ε.** No arm64/x86-64 fixture was run. ε remains a
+   conventional retention band; its adequacy as an ISA margin is a
+   hypothesis, not a measurement.
 
 ## What is deliberately absent
 
@@ -138,7 +143,7 @@ The amendments are the stronger claims that did not:
 | Five layers | Six responsibilities, with `shell-kit` extracted only after reuse is demonstrated — ADR 0001 R1 | Package count is not an architecture invariant |
 | — | Two Cargo workspaces — ADR 0001 R9 | keeps GTK features out of app cores and makes the graph check one command |
 | Results must be bit-identical across devices | Results must converge, via idempotent writes, retention bands, and pack precedence — ADR 0006 R15–R17 | bit-identity across instruction sets is unachievable and was never what prevented conflicts |
-| — | Every thresholded decision carries a retention band — ADR 0006 R16 | tagging had one; face detection and auto-tag matching did not; ISA drift is assumed negligible |
+| — | Every thresholded decision carries a retention band — ADR 0006 R16 | tagging had one; face detection and auto-tag matching did not; no cross-ISA bound is claimed without measurement |
 | — | Newer pack wins, older defers — ADR 0006 R17 | version skew is the one divergence no determinism rule absorbs |
 | "`cargo tree` contains no networking crate" | Resolved-graph tripwire with zero exceptions by default and exact reviewed build-time exceptions — ADR 0002 R13 | the r1 bullet was unsatisfiable the day it was written; a finite crate policy is a tripwire, not proof of runtime behavior |
 | Temp prefix unspecified | A `Vfs` parameter, with an ignore rule per app — ADR 0002 R3 | a shared prefix would have four apps writing `.gallery-tmp-` |

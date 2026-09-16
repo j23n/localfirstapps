@@ -64,11 +64,12 @@ are the only attributes read. `localcore` MUST NOT read an attribute whose
 answer requires IPC, a daemon, or a fetch (ADR 0005 R2). There is no batching
 tier and no probe budget, because there is nothing expensive left to batch.
 
-R6 assumes stat is cheap. Linux delivery is a native path on the host
-filesystem (no Flatpak, no portal), so that assumption holds. A deployment
-that made stat expensive — a sandbox filesystem proxy, for instance —
-would be a finding against the deployment, and would reopen this
-requirement rather than being absorbed silently.
+R6 assumes stat is cheap enough for a pass over the selected folder. The
+current Linux build uses a native host path. Flatpak and document-portal
+behaviour have not been measured, so this document neither bans nor approves
+that packaging. Any packaging that proxies filesystem calls MUST measure
+stat, watch, read, and atomic-rename behaviour before claiming conformance;
+an expensive or semantically different result reopens this requirement.
 
 **R7.** **Conflict awareness.** The scanner recognises sync-conflict copies
 by filename and reports them as conflict groups rather than records
@@ -156,5 +157,7 @@ differently, they disagree about the library while both being "correct".
 
 R13 (r2) exists because the r1 conformance bullet — "`cargo tree` contains no
 networking crate" — was unsatisfiable on the day it was written, for a reason
-ADR 0006 R9 already permitted. A rule with a documented, bounded exception is
-enforceable; a rule with an undocumented one is decoration.
+ADR 0006 R9 already permitted. The 2026-09-16 revision removes the arbitrary
+one-entry cap without weakening the product promise: runtime networking stays
+at zero, while every build-time exception remains explicit, offline-capable,
+and human-reviewed.

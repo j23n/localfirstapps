@@ -1,16 +1,19 @@
 # M3 — Face-pack re-key
 
-Spike 0.6 / ADR 0006 R12–R13 replace insightface `buffalo_sc`
-(SCRFD-500M + w600k_mbf) with OpenCV Zoo **YuNet** + **SFace**. The new
-weights change [`ModelPack::face_pack_key`](../core/gallery-ml/src/pack.rs)
+Spike 0.6 / ADR 0006 R12–R13 identify OpenCV Zoo **YuNet** + **SFace**
+as a licence-compatible candidate to replace insightface `buffalo_sc`
+(SCRFD-500M + w600k_mbf). That selection has not been made. If the candidate
+passes product measurements, its weights will change
+[`ModelPack::face_pack_key`](../core/gallery-ml/src/pack.rs)
 (`detector_hash + embedder_hash # preprocess + align`).
 [`FaceEngine::with_models`](../core/gallery-ml/src/face/engine.rs) compares
 that key to `meta.face_pack` and, on mismatch, calls
 [`CacheDb::reset_face_results`](../core/gallery-ml/src/cache.rs).
 
-This document is the ADR 0005 R19 record for that migration. The survival
-fixture is `gallery-ml` integration test `m3_survival` (SQL + XMP; no ONNX).
-The pack files themselves have **not** been swapped in this tree.
+This document and `gallery-ml` integration test `m3_survival` (SQL + XMP; no
+ONNX) are migration preflight. They prove the reset boundary, not that YuNet
++ SFace is suitable or selected. The pack files themselves have **not** been
+swapped in this tree.
 
 ## What is lost
 
@@ -41,14 +44,19 @@ a name rather than delete one because a model changed its mind).
 The SFace + YuNet ONNX files are not in the tree. Do **not** download
 them as part of this fixture.
 
-1. Teach `scripts/build_model_pack/` to fetch and hash-pin YuNet + SFace
-   (OpenCV Zoo; Apache-2.0 / MIT). Today `face_models.py` still pulls
+1. Measure crop/landmark alignment, representative personal-library
+   clustering, migration outcome, and target-device performance for YuNet +
+   SFace. Licence compatibility and published LFW accuracy do not answer
+   these questions.
+2. If those measurements support selection, teach
+   `scripts/build_model_pack/` to fetch and hash-pin YuNet + SFace (OpenCV
+   Zoo; Apache-2.0 / MIT). Today `face_models.py` still pulls
    `buffalo_sc.zip`.
-2. Retire `buffalo_sc` and `PACK_VARIANT=full|tagging`. One pack; R12/R13
-   no longer need a non-commercial split.
-3. Recalibrate clustering thresholds (SFace is 128-d; current numbers
+3. Keep `PACK_VARIANT=full|tagging` until that evidence-backed replacement
+   can make the distributable pack include faces.
+4. Recalibrate clustering thresholds (SFace is 128-d; current numbers
    are cosine bars for 512-d w600k_mbf).
-4. Regenerate face goldens once the new weights are committed.
+5. Regenerate face goldens only after new weights are selected and committed.
 
 ## Release-note obligation (ADR 0005 R19)
 

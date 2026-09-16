@@ -3,7 +3,10 @@
 Lives at `apps/music` in the localfiles monorepo. Commands below are
 from that directory.
 
-A music player for locally stored audio files on iOS. Point it at a folder on your device or cloud storage and it becomes your library — no streaming service required.
+A music player for locally stored audio files on iOS. Point it at a folder
+whose files already have local bytes and it becomes your library — no
+streaming service required. The folder may be provider-backed, but the app
+does not request downloads or materialise placeholders.
 
 ## Features
 

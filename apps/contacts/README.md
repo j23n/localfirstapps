@@ -26,7 +26,8 @@ The Linux shell is `shells/contacts-gtk` (`--comet` for Comet).
 
 Log growth is at most one event per user save, delete, or
 Syncthing-group resolve. The Tier-2 append is best-effort after the
-authoritative vCard mutation. That is a gesture log; no compaction.
+authoritative vCard mutation. That is a synced, schema-defined domain gesture
+log, not local diagnostic capture; no compaction.
 
 ```
 ./scripts/generate_bindings.sh   # UniFFI Swift (Linux-safe)
@@ -80,7 +81,10 @@ Then build and run on a simulator or device (iOS 18+).
 
 ## Setup
 
-On first launch, the app asks you to select (or create) a folder for storing `.vcf` files. This can be any folder accessible to the app — including one synced by Syncthing or iCloud Drive.
+On first launch, the app asks you to select (or create) a folder for storing
+`.vcf` files. Syncthing and provider-backed folders such as iCloud Drive are
+usable for entries whose bytes are already local; the app does not request
+downloads or materialise placeholders.
 
 Contacts permission is optional. Without it, the app works as a standalone vCard manager. With it, contacts sync to Apple Contacts.
 

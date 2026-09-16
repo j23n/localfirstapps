@@ -14,9 +14,10 @@ would force a full rescan.
 Linux reuses a snapshot whenever one exists, so a "trust cache forever"
 rule can hide edits indefinitely.
 
-The original write-up was about iCloud File Provider XPC cost. That
-surface is gone (family ADR 0005 R2). The remaining decisions are about
-freshness, not providers.
+The original write-up was about iCloud File Provider XPC cost. Provider
+probing and app-initiated materialisation are gone (family ADR 0005 R2).
+The remaining decisions are about freshness over entries with local bytes,
+not provider lifecycle.
 
 ## Decision
 
@@ -48,7 +49,8 @@ freshness, not providers.
 
 - Launch stays fast on an unchanged library; edits need a stat (light)
   or an explicit full rescan.
-- Placeholders do not enter the projection. `ContentVersion` is
-  size+mtime only; `downloadStatus` is omitted when `local`. Snapshot
-  stays v20. Photos are local files; there is no on-demand materialize.
+- Placeholders do not enter the projection. A provider-backed folder is
+  usable only for entries whose bytes are already local. `ContentVersion` is
+  size+mtime only; `downloadStatus` is omitted when `local`. Snapshot stays
+  v20, and the app never requests on-demand materialisation.
 - Linux must not treat "snapshot exists" as "never look at disk again."

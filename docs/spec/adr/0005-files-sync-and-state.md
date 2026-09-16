@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2)
+- Revised: 2026-09-11 (r2); 2026-09-16 (local-byte provider folders)
 
 ## Scope
 
@@ -24,15 +24,21 @@ only as the direct result of a user action.
 position, hidden and featured sets, the health event log. Nobody else reads
 these, so the format is ours, and it is R3's.
 
-**R2.** **Files are on disk or they do not exist.** An app reads a plain
-directory tree. There are no placeholders, no download states, no
-materialisation, no remote badges, and no per-file attribute that requires a
-daemon, an IPC round trip, or a fetch to answer. A path the filesystem does
-not currently hold bytes for is simply absent from the projection until it
-is present.
+**R2.** **Files have local bytes or they do not exist to the app.** An app
+reads a directory tree through ordinary list, stat, read, and atomic-write
+operations. The selected folder MAY be on a local disk, maintained by a
+synchroniser, or exposed by a file provider, but only entries whose bytes are
+already local enter the projection.
 
-Cross-device availability is the synchroniser's job, not the app's: the
-folder is whatever Syncthing has placed there.
+The app MUST NOT request a download, materialise a placeholder, track
+provider progress, or show a remote badge. A host folder picker or bookmark
+may grant the directory; that is not permission to add provider lifecycle to
+the domain model. If a provider exposes a name without readable local bytes,
+that entry is absent until the provider has made the bytes local by a process
+outside the app.
+
+Cross-device availability and provider residency are external concerns. The
+folder is the local-byte view they have placed on this device.
 
 **R3.** A projection — any index, cache, or database rebuildable from tiers 1
 and 2 — is authority for nothing. It MUST be safe to delete at any moment,
@@ -145,8 +151,10 @@ what is lost.
 
 ## Conformance
 
-- No source references a placeholder, download state, ubiquitous-item
-  attribute, or file-provider API.
+- No source initiates provider download/materialisation, observes provider
+  progress, or models a placeholder, download state, or remote badge.
+- A host-provided folder containing a non-resident entry projects only the
+  entries with readable local bytes; the app issues no request to fetch it.
 - A path present in a cached projection but absent from disk drops out of
   the projection on the next pass without an error state.
 - Every persisted value is classified tier 1 or tier 2 in the app's

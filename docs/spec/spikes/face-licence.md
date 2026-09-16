@@ -9,13 +9,13 @@ cost are not yet established for this product.
 
 OpenCV Zoo **SFace** with **YuNet** is a license-compatible candidate.
 
-| | Current | Chosen |
+| | Current | Candidate |
 |---|---|---|
 | Embedder | insightface `buffalo_sc` (MBF, 512-D) | OpenCV Zoo **SFace** (`face_recognition_sface_2021dec.onnx`, 128-D) |
 | Embedder licence | research / non-commercial | **Apache-2.0** (weights and conversion) |
 | Detector | SCRFD (same NC pack) | **YuNet** (MIT / Apache-2.0) |
 | LFW (published) | InsightFace family, strong | **99.40%** (OpenCV Zoo `tools/eval`) |
-| Runtime | ONNX / `ort` | ONNX / `ort` — same ADR 0002 R13 allowlist entry |
+| Runtime | ONNX / `ort` | ONNX / `ort` — covered by the current reviewed ADR 0002 R13 build-time exception |
 
 Published LFW accuracy is not evidence for this app's crop alignment,
 personal-library clustering thresholds, migration UX, or target-device

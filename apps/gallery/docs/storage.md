@@ -34,7 +34,7 @@ written to the sidecar.
 | `gallery-cache.sqlite` | iOS Application Support; Linux XDG data | ML queues, embeddings, face clusters |
 | Library snapshot JSON | App cache | Last tree + optional sidecar manifest (v20) |
 | Memories cache | App cache | Generated rail; evicted if the library snapshot version mismatches |
-| Sidecar parse cache (iOS) | App cache | Parsed XMP for evicted provider files |
+| Sidecar parse cache (iOS) | App cache | Parsed XMP from locally read sidecars |
 | Thumbnails | iOS disk cache; Linux Freedesktop `thumbnails/large` and `x-large` | Display only |
 | Geo cache | App support / XDG | Place-lookup results by coordinates |
 | Widget snapshots (iOS) | App Group | Pre-rendered tiles and deep-link ids |
@@ -71,12 +71,23 @@ The log syncs with the library. The device id (`galleryDeviceId` in
 UserDefaults) is the ADR 0005 R5 per-device exception and must not
 sync. Memory chrome (`hiddenMemories`, …) is not in this log.
 
+This is a schema-defined domain event log, not a diagnostic log. It syncs
+because replayed person decisions must follow the folder.
+
 A pre-M2 UserDefaults dump lives at
 `core/localcore-log/tests/fixtures/m2/userdefaults-person-state.json`.
 
-## File-provider folders (iOS)
+## Local diagnostics
 
-Non-local items stay placeholders until opened. Sidecars can be
-fetched in bulk and cached so tags remain searchable after the
-provider evicts the `.xmp`. Clearing downloads does not remove
-sidecars you already have on disk in the folder.
+Diagnostic capture is opt-in and per-device. The in-app ring buffer and any
+explicitly exported diagnostic file stay outside the library folder; they do
+not sync or upload automatically. Clearing diagnostics does not change the
+person event log or any projected domain state.
+
+## Provider-backed folders (iOS)
+
+Provider-backed folders are accepted only for entries whose bytes are already
+local. The app does not request downloads, materialise placeholders, track
+provider progress, or preserve searchability by fetching sidecars in bulk. A
+non-resident entry is absent from the projection until the provider makes its
+bytes local outside the app.

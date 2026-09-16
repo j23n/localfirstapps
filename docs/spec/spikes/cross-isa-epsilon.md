@@ -1,8 +1,8 @@
 # Spike: Cross-ISA ε
 
-**Status:** policy chosen; measurement unanswered, reviewed 2026-09-14  
+**Status:** retention policy chosen; ISA measurement unanswered, reviewed 2026-09-14
 **Question:** Same fixture scored on arm64 and x86-64 — maximum absolute score drift, versus the pack's `hysteresis_epsilon`.  
-**Outcome:** **Use conventional hysteresis; make no measured ISA claim.**
+**Outcome:** **Use conventional hysteresis; cross-ISA adequacy remains a hypothesis.**
 
 ## Answer
 
@@ -15,4 +15,5 @@ ADR 0006 R16 still requires a retention band on every thresholded decision that 
 
 - R16 is amended: ε is a conventional retention band declared in the pack manifest, not a measured ISA margin.
 - The R16 conformance item that demanded a cross-ISA drift fixture is dropped.
-- No Phase 2 work item exists to measure ε. M3 is only the SFace model swap.
+- Phase 2 did not measure ε. Any future claim that it bounds cross-ISA drift
+  requires an arm64/x86-64 fixture and recorded result.

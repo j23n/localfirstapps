@@ -155,9 +155,10 @@ corpus of a few thousand photographs that this repo does not have and must not
 invent.
 
 `hysteresis_epsilon` is 0.02: an owned tag is retracted only below `T − ε`. That
-is an order of magnitude above the measured cross-stack score drift (2.2e-3)
-and an order of magnitude below the gap between a photo that shows a cat and
-one that does not, so float drift cannot flap tags.
+is an order of magnitude above the 2.2e-3 cross-stack drift measured on the
+calibration setup and an order of magnitude below the observed cat/non-cat
+gap. That is not an arm64/x86-64 measurement, so it does not establish ε as
+a cross-ISA bound.
 
 ## Face models (schema 2)
 
@@ -191,7 +192,7 @@ Both come from insightface's `buffalo_sc` release asset, downloaded whole and
 hash-pinned (`face_models.py`). Nothing is converted or re-exported, so there is
 no export step that could be non-deterministic.
 
-### Why these two, and not YuNet + SFace
+### Why the current implementation still uses these two
 
 |  | SCRFD-500M + w600k_mbf | YuNet + SFace |
 | --- | --- | --- |
@@ -201,16 +202,19 @@ no export step that could be non-deterministic.
 | size | 2.5 + 13.6 MB | 0.23 + 38 MB |
 | licence | **non-commercial research only** | Apache-2.0 / MIT |
 
-The alignment contract decided it. It is the one part of a face pipeline that
-fails *silently*: a mismatched landmark order produces crops that look wrong
-only if you render them, and embeddings that cluster badly for reasons no log
-line explains. A detector and an embedder built against each other have no
-conversion step to get wrong.
+The current implementation predates product validation of YuNet + SFace and
+uses a detector/embedder pairing with a known alignment contract. Alignment
+is the part of a face pipeline that fails *silently*: a mismatched landmark
+order produces crops that look wrong only if rendered, and embeddings that
+cluster badly for reasons no log line explains. This explains the current
+pack; it is not evidence that the permissive candidate fails.
 
-The licence is a real constraint on shipping, not a footnote, and the mitigation
-is structural: the manifest declares the detector's geometry, normalization,
-output names, strides and anchor layout, so moving to the permissive pairing is
-a pack rebuild and a threshold re-calibration, not a code change.
+The licence is a real constraint on shipping, not a footnote, so
+`PACK_VARIANT=full|tagging` remains. The manifest declares detector geometry,
+normalization, output names, strides and anchor layout, but moving to the
+permissive pairing still requires measured alignment, representative
+clustering, migration outcome, target-device cost, a pack rebuild, and
+threshold recalibration.
 
 ### Face thresholds
 

@@ -10,7 +10,8 @@ xcodebuild test \
 ```
 
 CI on this monorepo is the `music` job in `.github/workflows/apps.yml`.
-The nested `.github/workflows/test.yml` is for the old standalone remote.
+The nested `.github/workflows/test.yml` is retained only for a standalone
+checkout; the root `apps.yml` job is canonical here.
 
 Tests use [Swift Testing](https://developer.apple.com/xcode/swift-testing/)
 (`@Test`, `#expect`, `#require`). XCTest assertions and `XCTestCase`

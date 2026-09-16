@@ -42,8 +42,9 @@ They are not read-only. Sidecar writes and file move/delete/create
 are described in [docs/storage.md](docs/storage.md). Image bytes are
 not rewritten by the core.
 
-There is no product network egress. There is no LocalGallery account
-or telemetry backend.
+There is no product runtime network egress. There is no LocalGallery account
+or telemetry backend. Local diagnostic capture is opt-in, stays outside the
+synced folder, and is shared only by an explicit user action.
 
 ## Requirements
 
@@ -73,8 +74,10 @@ those files do not match a fresh bindgen. Do not hand-edit them.
 The LocalGallery target's **Build Rust Core** phase runs
 `build_core.sh`; pass `--release` only when you invoke it from the CLI.
 
-The first `build_core.sh` on a machine downloads a static ONNX Runtime
-(~85 MB) into `~/Library/Caches/ort.pyke.io/`. Offline:
+The current reviewed build-time exception is `ort`: the first
+`build_core.sh` on a machine downloads a static ONNX Runtime (~85 MB) into
+`~/Library/Caches/ort.pyke.io/`. This does not permit runtime networking.
+Offline:
 `ORT_LIB_LOCATION` pointing at a directory that contains
 `libonnxruntime.a`.
 
@@ -97,6 +100,11 @@ distribute — the default full pack's face models are insightface
 ```bash
 PACK_VARIANT=tagging ./scripts/prepare_pack.sh
 ```
+
+SFace + YuNet is a licence-compatible replacement candidate, not a selected
+pack. Alignment, representative-library clustering, migration outcome, and
+target-device cost have not been measured. Keep
+`PACK_VARIANT=full|tagging` until that evidence supports a change.
 
 ### Third-party licences
 
@@ -130,8 +138,9 @@ companion; surfaces stay light.
 ## CI
 
 On this monorepo, gallery crates are the root `rust.yml` and the Linux
-+ iOS suites are the `gallery-*` jobs in root `apps.yml`. Nested
-`.github/workflows/test.yml` is for the old standalone remote. The
++ iOS suites are the `gallery-*` jobs in root `apps.yml`. The nested
+`.github/workflows/test.yml` remains only for a standalone checkout; the
+root workflows are canonical here. The
 20k generated-library regression suite is local-only
 (`apps/gallery/scripts/e2e_20k.sh`: scan, enrich, index, memories);
 it does not run in CI.
@@ -149,9 +158,11 @@ a mapping at that commit reproduces the pinned hash. Do not invent one.
 
 ## Setup
 
-On first launch, pick (or create) a folder of photos. Syncthing and
-iCloud Drive folders are fine. Scan Photos is opt-in and writes
-sidecars. Places resolves GPS offline.
+On first launch, pick (or create) a folder of photos. Syncthing folders and
+provider-backed folders such as iCloud Drive are usable only for files whose
+bytes are already local. LocalGallery does not request downloads or
+materialise placeholders. Scan Photos is opt-in and writes sidecars. Places
+resolves GPS offline.
 
 ## Linux
 

@@ -7,9 +7,12 @@ mounted at `/work`.
 /work/docs/spec          family specification (ADRs)
 /work/docs               Pages + IMPLEMENTATION-PLAN.md
 /work/apps/gallery       photos   (Rust core + SwiftUI + GTK)
-/work/apps/contacts      contacts (SwiftUI)
+/work/apps/contacts      contacts (SwiftUI app)
 /work/apps/music         music    (SwiftUI)
 /work/apps/health        health   (Go)
+/work/core               shared local cores + contacts core/FFI
+/work/shells             GTK shell kit + contacts GTK/Comet shell
+/work/conformance        structural spec checks
 /work/docker             this container
 /work/.agents            agent instructions
 ```
@@ -37,7 +40,9 @@ requirement you are conforming to (`ADR 0005 R2`) in the commit message.
   did not dirty.
 - Another agent may be in the same checkout. Before a long edit,
   `git worktree add /work/.worktrees/<task> -b <branch>` and work there.
-- The Apple halves cannot be built here — no Xcode, no iOS SDK. `cargo test`,
-  `go test`, and the GTK shell are what this container verifies. Say
-  "unverified on iOS" rather than implying a Swift build passed.
+- The Apple halves cannot be built here — no Xcode, no iOS SDK. The
+  `core/`, `shells/`, `apps/gallery/core`, `apps/gallery/linux`, and
+  `apps/health` tests plus conformance checks are what this container
+  verifies. Say "unverified on iOS" rather than implying a Swift build
+  passed.
 - Route work by work item, not by path. See `/work/.agents/ROUTING.md`.
