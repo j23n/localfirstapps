@@ -135,7 +135,7 @@ enum EnrichmentService {
         // so the sidecar document's `exists` + a byte read decide whether
         // empty means retract or "keep what we already have".
         let metadata = readImageMetadata(path: photo.url.path)
-        let sidecar = SidecarDocument.read(imagePath: photo.url.path)
+        let sidecar = (try? SidecarDocument.read(imagePath: photo.url.path)) ?? .empty
         let tags = metadata.hierarchicalTags.map {
             HierarchicalTag(fullPath: $0.fullPath, namespace: $0.namespace,
                             displayName: $0.displayName)

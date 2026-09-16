@@ -265,7 +265,7 @@ final class ScanActivityLog {
         at: Date = Date()
     ) -> ScanActivityEntry {
         let url = URL(fileURLWithPath: path).standardizedFileURL
-        let doc = SidecarDocument.read(imagePath: path)
+        let doc = (try? SidecarDocument.read(imagePath: path)) ?? .empty
         let tags = doc.rawTags.filter { tag in
             let ns = tag.split(separator: "/").first.map(String.init)?.lowercased()
             switch phase {

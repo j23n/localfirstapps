@@ -49,6 +49,7 @@ use gallery_vfs::{FileTime, Vfs};
 use localcore_walk::{
     decomposed, walk_with_hooks, ConflictGroup, WalkDirectory, WalkFile, WalkOutcome,
 };
+use unicode_normalization::UnicodeNormalization;
 
 use crate::classify::{
     classify, image_stem_key, sidecar_for, sidecar_owner_key, video_stem, MediaKind,
@@ -59,7 +60,8 @@ use crate::classify::{
 pub struct ScanInput {
     /// Reuse cached `PhotoFile`s for unchanged paths — the light scan.
     pub reuse_cached: bool,
-    /// Previous scan's photos, keyed by path.
+    /// Previous scan's photos, keyed by path. Keys are compared in NFC so
+    /// canonically equivalent filesystem spellings share one cache row.
     pub cached_photos: HashMap<String, PhotoFile>,
     /// Previous scan's sidecar rows, keyed by photo id. A hit here is what
     /// lets a light scan skip rebuilding a `.xmp` row when the listing still
@@ -167,13 +169,7 @@ pub fn scan_with_hooks(
     on_progress: Option<&dyn Fn(usize)>,
     cancelled: Option<&dyn Fn() -> bool>,
 ) -> Option<ScanOutcome> {
-    let walked = walk_with_hooks(
-        vfs,
-        root,
-        &is_gallery_content,
-        on_progress,
-        cancelled,
-    )?;
+    let walked = walk_with_hooks(vfs, root, &is_gallery_content, on_progress, cancelled)?;
     let outcome = Walk::assemble(input, walked);
     // Walk progress counts *content* files (images, videos, sidecars). The
     // scan callback's documented total is photos, so finish on that number.
@@ -227,6 +223,7 @@ struct ScanNode {
 
 struct Walk<'a> {
     input: &'a ScanInput,
+    cached_photos: HashMap<String, &'a PhotoFile>,
     nodes: Vec<ScanNode>,
     flat_photos: Vec<PhotoFile>,
     needs_enrichment: bool,
@@ -241,6 +238,7 @@ impl<'a> Walk<'a> {
     fn new(input: &'a ScanInput) -> Self {
         Walk {
             input,
+            cached_photos: normalized_cached_photos(input),
             nodes: Vec::new(),
             flat_photos: Vec::new(),
             needs_enrichment: false,
@@ -262,11 +260,7 @@ impl<'a> Walk<'a> {
     }
 
     fn ingest_directory(&mut self, dir: &WalkDirectory, all_files: &[WalkFile]) {
-        let files: Vec<&WalkFile> = dir
-            .file_indices
-            .iter()
-            .map(|&i| &all_files[i])
-            .collect();
+        let files: Vec<&WalkFile> = dir.file_indices.iter().map(|&i| &all_files[i]).collect();
         let (scan_files, sidecars) = self.classify_files(&files);
         let photos = self.build_photos(scan_files, &sidecars);
         self.nodes.push(ScanNode {
@@ -312,7 +306,7 @@ impl<'a> Walk<'a> {
             let file_size = entry.size as i64;
             let mod_date = entry.mtime.map(apple_date);
             files.push(ScanFile {
-                unchanged: self.input.cached_photos.get(&entry.path).is_some_and(|c| {
+                unchanged: self.cached_photo(&entry.path).is_some_and(|c| {
                     c.file_size == file_size && c.file_modification_date == mod_date
                 }),
                 path: entry.path.clone(),
@@ -350,7 +344,7 @@ impl<'a> Walk<'a> {
         let mut photos = Vec::new();
 
         for file in files.iter().filter(|f| f.is_image) {
-            self.seen_paths.insert(file.path.clone());
+            self.seen_paths.insert(nfc_path(&file.path));
             // The image branch keeps the stem's original case.
             let filename = stem(&file.name).to_string();
             let live = video_by_stem.get(&filename.to_lowercase()).cloned();
@@ -370,7 +364,7 @@ impl<'a> Walk<'a> {
             if image_stems.contains(&key) {
                 continue; // paired: it belongs to its image, not to itself
             }
-            self.seen_paths.insert(file.path.clone());
+            self.seen_paths.insert(nfc_path(&file.path));
             // …and the video branch reuses the pairing key, which is
             // lowercased. `Clip.MOV` becomes `clip` (landmine 22).
             let photo = self.photo_for(file, key, None, true);
@@ -389,7 +383,7 @@ impl<'a> Walk<'a> {
         live: Option<String>,
         is_video: bool,
     ) -> PhotoFile {
-        let cached = self.input.cached_photos.get(&file.path);
+        let cached = self.cached_photo(&file.path);
         let unchanged = file.unchanged;
 
         let photo = if file.reusable(self.input) {
@@ -413,6 +407,10 @@ impl<'a> Walk<'a> {
             self.needs_enrichment = true;
         }
         photo
+    }
+
+    fn cached_photo(&self, path: &str) -> Option<&'a PhotoFile> {
+        self.cached_photos.get(&nfc_path(path)).copied()
     }
 
     /// The slow path: a fresh `PhotoFile`, with whatever the cache can still
@@ -502,7 +500,8 @@ impl<'a> Walk<'a> {
 
     fn finish(self, walked: WalkOutcome) -> ScanOutcome {
         let Walk {
-            input,
+            input: _,
+            cached_photos,
             nodes,
             flat_photos,
             needs_enrichment,
@@ -522,7 +521,7 @@ impl<'a> Walk<'a> {
         // it lives under a directory whose listing failed, in which case it is
         // merely invisible this pass and must not be reported as gone.
         let mut removed_paths: Vec<String> = Vec::new();
-        for path in input.cached_photos.keys() {
+        for path in cached_photos.keys() {
             if seen_paths.contains(path) {
                 continue;
             }
@@ -551,6 +550,36 @@ impl<'a> Walk<'a> {
             conflict_groups,
         }
     }
+}
+
+fn nfc_path(path: &str) -> String {
+    path.nfc().collect()
+}
+
+/// Collapse canonically equivalent cache keys before any lookup or diff.
+///
+/// A cache written before path identity moved to NFC may contain both forms.
+/// Prefer the already-NFC row when that happens so the survivor is stable
+/// regardless of `HashMap` iteration order.
+fn normalized_cached_photos(input: &ScanInput) -> HashMap<String, &PhotoFile> {
+    let mut normalized: HashMap<String, (bool, &PhotoFile)> = HashMap::new();
+    for (path, photo) in &input.cached_photos {
+        let key = nfc_path(path);
+        let is_nfc = path == &key;
+        match normalized.entry(key) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert((is_nfc, photo));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) if is_nfc && !entry.get().0 => {
+                entry.insert((true, photo));
+            }
+            _ => {}
+        }
+    }
+    normalized
+        .into_iter()
+        .map(|(path, (_, photo))| (path, photo))
+        .collect()
 }
 
 /// Assemble the recursive tree from the flat node list.
@@ -815,6 +844,57 @@ mod tests {
         }
         let out = scan(&vfs2, "/lib", &cache(&cold));
         assert_eq!(out.removed_paths, vec!["/lib/Nested/n.jpg"]);
+    }
+
+    #[test]
+    fn nfc_cache_key_hits_an_nfd_listing_path() {
+        let nfc = "/lib/caf\u{e9}.jpg";
+        let nfd = "/lib/cafe\u{301}.jpg";
+        let cached_vfs = MemVfs::new();
+        cached_vfs.insert_at(nfc, vec![0u8; 10], FileTime::new(1000, 0));
+        let cold = scan(&cached_vfs, "/lib", &ScanInput::default());
+
+        let live_vfs = MemVfs::new();
+        live_vfs.insert_at(nfd, vec![0u8; 10], FileTime::new(1000, 0));
+        let light = scan(&live_vfs, "/lib", &cache(&cold));
+
+        assert_eq!(light.stats.cache_hits, 1);
+        assert!(light.added_paths.is_empty());
+        assert!(light.modified_paths.is_empty());
+        assert!(light.removed_paths.is_empty());
+        assert_eq!(light.flat_photos.len(), 1);
+    }
+
+    #[test]
+    fn nfd_and_nfc_cache_rows_collapse_to_one_key() {
+        let nfc = "/lib/caf\u{e9}.jpg";
+        let nfd = "/lib/cafe\u{301}.jpg";
+        let vfs = MemVfs::new();
+        vfs.insert_at(nfd, vec![0u8; 10], FileTime::new(1000, 0));
+        let cold = scan(&vfs, "/lib", &ScanInput::default());
+        let nfd_photo = cold.flat_photos[0].clone();
+        let mut nfc_photo = nfd_photo.clone();
+        nfc_photo.url = gallery_model::photo::FileUrl::new(nfc);
+
+        let input = ScanInput {
+            reuse_cached: true,
+            cached_photos: HashMap::from([
+                (nfd.to_string(), nfd_photo),
+                (nfc.to_string(), nfc_photo),
+            ]),
+            cached_sidecar_manifest: HashMap::new(),
+        };
+        let light = scan(&vfs, "/lib", &input);
+
+        assert_eq!(light.stats.cache_hits, 1);
+        assert_eq!(light.flat_photos.len(), 1);
+        assert!(light.added_paths.is_empty());
+        assert!(light.modified_paths.is_empty());
+        assert!(
+            light.removed_paths.is_empty(),
+            "the second normalization form became a duplicate cache row: {:?}",
+            light.removed_paths
+        );
     }
 
     #[test]
@@ -1116,7 +1196,11 @@ mod tests {
         std::os::unix::fs::symlink(root.join("b"), root.join("cycle_a")).unwrap();
         std::os::unix::fs::symlink(root.join("cycle_a"), root.join("b")).unwrap();
 
-        let out = scan(&StdVfs::new(), root.to_str().unwrap(), &ScanInput::default());
+        let out = scan(
+            &StdVfs::new(),
+            root.to_str().unwrap(),
+            &ScanInput::default(),
+        );
         assert_eq!(
             out.flat_photos.len(),
             1,
@@ -1142,7 +1226,11 @@ mod tests {
         std::fs::write(outside.join("secret.jpg"), vec![0u8; 8]).unwrap();
         std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
 
-        let out = scan(&StdVfs::new(), root.to_str().unwrap(), &ScanInput::default());
+        let out = scan(
+            &StdVfs::new(),
+            root.to_str().unwrap(),
+            &ScanInput::default(),
+        );
         let found = paths(&out.flat_photos);
         assert_eq!(found.len(), 1, "{found:?}");
         assert!(found[0].ends_with("/inside.jpg"), "{found:?}");
@@ -1270,10 +1358,9 @@ mod tests {
             .flat_map(|g| g.copies.iter())
             .count();
         assert_eq!(copies, 4);
-        assert!(out.conflict_groups.iter().all(|g| {
-            g.copies
-                .iter()
-                .all(|c| c.name.contains(".sync-conflict-"))
-        }));
+        assert!(out
+            .conflict_groups
+            .iter()
+            .all(|g| { g.copies.iter().all(|c| c.name.contains(".sync-conflict-")) }));
     }
 }

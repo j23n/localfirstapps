@@ -26,13 +26,13 @@ struct PhotoInfoPanel: View {
             exifData = nil
             sidecar = SidecarDocument.empty
             async let exif = store.loadEXIF(for: photo)
-            sidecar = SidecarDocument.read(imageURL: photo.url)
+            sidecar = (try? SidecarDocument.read(imageURL: photo.url)) ?? .empty
             exifData = await exif
             isLoading = false
         }
         .onChange(of: store.analysis.isRunning) { _, running in
             guard !running else { return }
-            sidecar = SidecarDocument.read(imageURL: photo.url)
+            sidecar = (try? SidecarDocument.read(imageURL: photo.url)) ?? .empty
         }
     }
 

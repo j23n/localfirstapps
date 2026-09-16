@@ -11362,8 +11362,8 @@ public func readImageMetadata(path: String) -> ImageMetadataRecord  {
 /**
  * Read `{image}.xmp` (then the Lightroom alt) and project it.
  */
-public func readSidecar(imagePath: String) -> SidecarViewRecord  {
-    return try!  FfiConverterTypeSidecarViewRecord_lift(try! rustCall() {
+public func readSidecar(imagePath: String)throws  -> SidecarViewRecord  {
+    return try  FfiConverterTypeSidecarViewRecord_lift(try rustCallWithError(FfiConverterTypeScanError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_read_sidecar(
         FfiConverterString.lower(imagePath),uniffiCallStatus
@@ -11561,7 +11561,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_read_image_metadata() != 54304) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_read_sidecar() != 59064) {
+    if (uniffi_gallery_ffi_checksum_func_read_sidecar() != 42960) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_read_video_date() != 2678) {

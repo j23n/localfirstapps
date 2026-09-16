@@ -1,6 +1,6 @@
 //! Where a photo's `.xmp` sidecar lives (schema §1.4).
 
-use gallery_vfs::Vfs;
+use gallery_vfs::{Vfs, VfsResult};
 
 /// `IMG_1234.jpg` → `IMG_1234.jpg.xmp`.
 ///
@@ -33,12 +33,18 @@ pub fn alt_sidecar_path(image_path: &str) -> Option<String> {
 }
 
 /// Appended form first, then the Lightroom alt.
-pub fn sidecar_exists(vfs: &dyn Vfs, image_path: &str) -> bool {
+///
+/// Only [`gallery_vfs::VfsError::NotFound`] means absence; permission and I/O
+/// failures propagate to the caller.
+pub fn sidecar_exists(vfs: &dyn Vfs, image_path: &str) -> VfsResult<bool> {
     let canonical = sidecar_path(image_path);
-    if vfs.exists(&canonical) {
-        return true;
+    if vfs.try_exists(&canonical)? {
+        return Ok(true);
     }
-    alt_sidecar_path(image_path).is_some_and(|p| vfs.exists(&p))
+    match alt_sidecar_path(image_path) {
+        Some(path) => vfs.try_exists(&path),
+        None => Ok(false),
+    }
 }
 
 /// Bytes of the sidecar that exists, appended form preferred.
@@ -101,7 +107,7 @@ mod tests {
         let vfs = gallery_vfs::MemVfs::new();
         vfs.insert("/lib/a.jpg.xmp", b"<x/>".to_vec());
         vfs.insert("/lib/a.xmp", b"<alt/>".to_vec());
-        assert!(sidecar_exists(&vfs, "/lib/a.jpg"));
+        assert!(sidecar_exists(&vfs, "/lib/a.jpg").unwrap());
         assert_eq!(
             read_sidecar_bytes(&vfs, "/lib/a.jpg").as_deref(),
             Some(&b"<x/>"[..])
@@ -112,7 +118,7 @@ mod tests {
     fn sidecar_exists_falls_back_to_the_lightroom_alt() {
         let vfs = gallery_vfs::MemVfs::new();
         vfs.insert("/lib/a.xmp", b"<alt/>".to_vec());
-        assert!(sidecar_exists(&vfs, "/lib/a.jpg"));
+        assert!(sidecar_exists(&vfs, "/lib/a.jpg").unwrap());
         assert_eq!(
             read_sidecar_bytes(&vfs, "/lib/a.jpg").as_deref(),
             Some(&b"<alt/>"[..])
@@ -123,7 +129,53 @@ mod tests {
     fn a_photo_with_no_sidecar_file_is_missing() {
         let vfs = gallery_vfs::MemVfs::new();
         vfs.insert("/lib/a.jpg", b"jpeg".to_vec());
-        assert!(!sidecar_exists(&vfs, "/lib/a.jpg"));
+        assert!(!sidecar_exists(&vfs, "/lib/a.jpg").unwrap());
         assert_eq!(read_sidecar_bytes(&vfs, "/lib/a.jpg"), None);
+    }
+
+    #[test]
+    fn permission_denied_is_not_reported_as_an_absent_sidecar() {
+        struct DeniedVfs(gallery_vfs::MemVfs);
+
+        impl Vfs for DeniedVfs {
+            fn open(
+                &self,
+                path: &str,
+            ) -> gallery_vfs::VfsResult<Box<dyn gallery_vfs::ReadSeek + Send>> {
+                self.0.open(path)
+            }
+
+            fn stat(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Stat> {
+                if path == "/lib/a.jpg.xmp" {
+                    return Err(gallery_vfs::VfsError::PermissionDenied {
+                        path: path.to_string(),
+                    });
+                }
+                self.0.stat(path)
+            }
+
+            fn list(&self, dir: &str) -> gallery_vfs::VfsResult<Vec<gallery_vfs::Entry>> {
+                self.0.list(dir)
+            }
+
+            fn stat_entry(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Entry> {
+                self.0.stat_entry(path)
+            }
+
+            fn write_atomic(&self, path: &str, bytes: &[u8]) -> gallery_vfs::VfsResult<()> {
+                self.0.write_atomic(path, bytes)
+            }
+
+            fn exists(&self, path: &str) -> bool {
+                self.0.exists(path)
+            }
+        }
+
+        let err = sidecar_exists(&DeniedVfs(gallery_vfs::MemVfs::new()), "/lib/a.jpg").unwrap_err();
+        assert!(matches!(
+            err,
+            gallery_vfs::VfsError::PermissionDenied { path }
+                if path == "/lib/a.jpg.xmp"
+        ));
     }
 }

@@ -317,7 +317,7 @@ struct ScanActivityDetailView: View {
         .navigationTitle(entry.filename)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: entry.id) {
-            sidecar = SidecarDocument.read(imageURL: photo.url)
+            sidecar = (try? SidecarDocument.read(imageURL: photo.url)) ?? .empty
         }
         .fullScreenCover(item: $viewerPhoto) { _ in
             PhotoViewerView(photos: album.isEmpty ? [photo] : album, currentPhotoID: $viewerCurrentID)

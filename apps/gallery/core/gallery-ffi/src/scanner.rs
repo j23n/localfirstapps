@@ -38,7 +38,7 @@ use gallery_model::snapshot::{
     self, ContentVersion, DownloadStatus, LibrarySnapshot, SidecarCandidate, SnapshotError,
 };
 use gallery_scan::{scan_with_hooks, ScanInput};
-use gallery_vfs::{StdVfs, Vfs};
+use gallery_vfs::{StdVfs, Vfs, VfsError};
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -107,6 +107,23 @@ impl From<SnapshotError> for ScanError {
                 ScanError::SnapshotVersionMismatch { found, expected }
             }
             SnapshotError::Payload(detail) => ScanError::SnapshotPayload { detail },
+        }
+    }
+}
+
+impl From<VfsError> for ScanError {
+    fn from(error: VfsError) -> Self {
+        let path = match &error {
+            VfsError::NotFound { path }
+            | VfsError::PermissionDenied { path }
+            | VfsError::NotADirectory { path }
+            | VfsError::AlreadyExists { path }
+            | VfsError::InvalidPath { path, .. }
+            | VfsError::Io { path, .. } => path.clone(),
+        };
+        ScanError::Io {
+            path,
+            detail: error.to_string(),
         }
     }
 }
@@ -729,28 +746,25 @@ pub struct SidecarViewRecord {
 
 /// Read `{image}.xmp` (then the Lightroom alt) and project it.
 #[uniffi::export]
-pub fn read_sidecar(image_path: String) -> SidecarViewRecord {
-    let vfs = StdVfs::new();
-    let canonical = gallery_meta::sidecar_path(&image_path);
-    let chosen = if vfs.exists(&canonical) {
+pub fn read_sidecar(image_path: String) -> Result<SidecarViewRecord, ScanError> {
+    read_sidecar_from(&StdVfs::new(), &image_path)
+}
+
+fn read_sidecar_from(vfs: &dyn Vfs, image_path: &str) -> Result<SidecarViewRecord, ScanError> {
+    let canonical = gallery_meta::sidecar_path(image_path);
+    let chosen = if vfs.try_exists(&canonical)? {
         Some(canonical)
     } else {
-        gallery_meta::alt_sidecar_path(&image_path).filter(|p| vfs.exists(p))
-    };
-    let Some(path) = chosen else {
-        return SidecarViewRecord::default();
-    };
-    let bytes = match vfs.read(&path) {
-        Ok(b) => b,
-        Err(_) => {
-            return SidecarViewRecord {
-                exists: true,
-                sidecar_path: Some(path),
-                ..SidecarViewRecord::default()
-            };
+        match gallery_meta::alt_sidecar_path(image_path) {
+            Some(path) if vfs.try_exists(&path)? => Some(path),
+            _ => None,
         }
     };
-    sidecar_view_from_parse(&path, &bytes)
+    let Some(path) = chosen else {
+        return Ok(SidecarViewRecord::default());
+    };
+    let bytes = vfs.read(&path)?;
+    Ok(sidecar_view_from_parse(&path, &bytes))
 }
 
 fn sidecar_view_from_parse(path: &str, bytes: &[u8]) -> SidecarViewRecord {
@@ -1379,5 +1393,52 @@ mod tests {
         let parsed = parse_xmp_bytes(xmp.to_vec());
         assert_eq!(parsed.raw_tags, vec!["People/Alice".to_string()]);
         assert_eq!(parsed.country_code.as_deref(), Some("IT"));
+    }
+
+    #[test]
+    fn permission_denied_sidecar_is_not_reported_as_absent() {
+        struct DeniedVfs(gallery_vfs::MemVfs);
+
+        impl Vfs for DeniedVfs {
+            fn open(
+                &self,
+                path: &str,
+            ) -> gallery_vfs::VfsResult<Box<dyn gallery_vfs::ReadSeek + Send>> {
+                self.0.open(path)
+            }
+
+            fn stat(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Stat> {
+                if path == "/lib/a.jpg.xmp" {
+                    return Err(VfsError::PermissionDenied {
+                        path: path.to_string(),
+                    });
+                }
+                self.0.stat(path)
+            }
+
+            fn list(&self, dir: &str) -> gallery_vfs::VfsResult<Vec<gallery_vfs::Entry>> {
+                self.0.list(dir)
+            }
+
+            fn stat_entry(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Entry> {
+                self.0.stat_entry(path)
+            }
+
+            fn write_atomic(&self, path: &str, bytes: &[u8]) -> gallery_vfs::VfsResult<()> {
+                self.0.write_atomic(path, bytes)
+            }
+
+            fn exists(&self, path: &str) -> bool {
+                self.0.exists(path)
+            }
+        }
+
+        let err =
+            read_sidecar_from(&DeniedVfs(gallery_vfs::MemVfs::new()), "/lib/a.jpg").unwrap_err();
+        assert!(matches!(
+            err,
+            ScanError::Io { path, detail }
+                if path == "/lib/a.jpg.xmp" && detail.contains("permission denied")
+        ));
     }
 }

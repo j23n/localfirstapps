@@ -34,7 +34,7 @@ final class PhotoToolsMetadataTests: XCTestCase {
         """
         try xmp.write(to: photoURL.appendingPathExtension("xmp"), atomically: true, encoding: .utf8)
 
-        let meta = SidecarDocument.read(imageURL: photoURL).tools
+        let meta = try SidecarDocument.read(imageURL: photoURL).tools
         XCTAssertEqual(meta.taggerVersion, "mobileclip-s2-2026.1")
         XCTAssertEqual(meta.taggedAt, "2026-08-03T10:00:00Z")
         XCTAssertEqual(meta.clipModel, "mobileclip-s2-2026.1")

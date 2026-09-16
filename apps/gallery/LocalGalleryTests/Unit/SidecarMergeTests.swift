@@ -166,13 +166,13 @@ final class SidecarMergeTests: XCTestCase {
         let temp = makeTemp()
         let image = temp.appending("photo.jpg")
         XCTAssertTrue(FileManager.default.createFile(atPath: image.path, contents: Data()))
-        let missing = SidecarDocument.read(imagePath: image.path)
+        let missing = try SidecarDocument.read(imagePath: image.path)
         XCTAssertFalse(missing.exists)
         XCTAssertFalse(EnrichmentService.sidecarReadSucceeded(missing))
 
         let xmp = URL(fileURLWithPath: image.path + ".xmp")
         try Data("<x:xmpmeta/>".utf8).write(to: xmp)
-        let present = SidecarDocument.read(imagePath: image.path)
+        let present = try SidecarDocument.read(imagePath: image.path)
         XCTAssertTrue(present.exists)
         XCTAssertTrue(EnrichmentService.sidecarReadSucceeded(present))
     }

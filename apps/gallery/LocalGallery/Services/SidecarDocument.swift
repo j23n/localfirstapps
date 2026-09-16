@@ -26,12 +26,12 @@ struct SidecarDocument: Equatable, Sendable {
         decisions: []
     )
 
-    static func read(imagePath path: String) -> SidecarDocument {
-        from(readSidecar(imagePath: path))
+    static func read(imagePath path: String) throws -> SidecarDocument {
+        from(try readSidecar(imagePath: path))
     }
 
-    static func read(imageURL: URL) -> SidecarDocument {
-        read(imagePath: imageURL.path)
+    static func read(imageURL: URL) throws -> SidecarDocument {
+        try read(imagePath: imageURL.path)
     }
 
     static func parse(data: Data, url: URL?) -> SidecarDocument {

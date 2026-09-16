@@ -2094,10 +2094,10 @@ fn info_box(photo: &PhotoFile) -> gtk::Box {
         box_.append(&tags);
     }
 
-    let sidecar = if sidecar_exists(&StdVfs::new(), photo.path()) {
-        sidecar_path(photo.path())
-    } else {
-        "No sidecar on disk".into()
+    let sidecar = match sidecar_exists(&StdVfs::new(), photo.path()) {
+        Ok(true) => sidecar_path(photo.path()),
+        Ok(false) => "No sidecar on disk".into(),
+        Err(_) => "Sidecar unavailable".into(),
     };
     let side = adw::ActionRow::builder()
         .title("Sidecar")

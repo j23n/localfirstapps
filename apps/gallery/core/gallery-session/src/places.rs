@@ -7,7 +7,7 @@ use gallery_meta::places::write_places;
 use gallery_meta::read_view;
 use gallery_meta::sidecar::{alt_sidecar_path, sidecar_path};
 use gallery_model::photo::PhotoFile;
-use gallery_vfs::Vfs;
+use gallery_vfs::{Vfs, VfsResult};
 
 use crate::eligibility::{is_places_candidate, places_needed};
 
@@ -61,12 +61,27 @@ pub fn run_places(
             summary.cancelled = true;
             break;
         }
-        if !force && !sidecar_places_needed(vfs, photo.path()) {
-            summary.skipped += 1;
-            if let Some(cb) = on_progress {
-                cb(i + 1, total);
+        if !force {
+            match sidecar_places_needed(vfs, photo.path()) {
+                Ok(true) => {}
+                Ok(false) => {
+                    summary.skipped += 1;
+                    if let Some(cb) = on_progress {
+                        cb(i + 1, total);
+                    }
+                    continue;
+                }
+                Err(error) => {
+                    summary.failed += 1;
+                    if summary.error.is_none() {
+                        summary.error = Some(error.to_string());
+                    }
+                    if let Some(cb) = on_progress {
+                        cb(i + 1, total);
+                    }
+                    continue;
+                }
             }
-            continue;
         }
         let (Some(lat), Some(lon)) = (photo.gps_latitude, photo.gps_longitude) else {
             summary.skipped += 1;
@@ -116,31 +131,28 @@ fn row_tags(photo: &PhotoFile) -> impl Iterator<Item = &str> {
     photo.hierarchical_tags.iter().map(|t| t.full_path.as_str())
 }
 
-fn sidecar_places_needed(vfs: &dyn Vfs, image_path: &str) -> bool {
-    let tags = sidecar_tag_paths(vfs, image_path);
-    places_needed(tags, false)
+fn sidecar_places_needed(vfs: &dyn Vfs, image_path: &str) -> VfsResult<bool> {
+    let tags = sidecar_tag_paths(vfs, image_path)?;
+    Ok(places_needed(tags, false))
 }
 
-fn sidecar_tag_paths(vfs: &dyn Vfs, image_path: &str) -> Vec<String> {
+fn sidecar_tag_paths(vfs: &dyn Vfs, image_path: &str) -> VfsResult<Vec<String>> {
     let target = sidecar_path(image_path);
-    let bytes = if vfs.exists(&target) {
-        vfs.read(&target).ok()
+    let bytes = if vfs.try_exists(&target)? {
+        Some(vfs.read(&target)?)
     } else {
-        alt_sidecar_path(image_path).and_then(|alt| {
-            if vfs.exists(&alt) {
-                vfs.read(&alt).ok()
-            } else {
-                None
-            }
-        })
+        match alt_sidecar_path(image_path) {
+            Some(alt) if vfs.try_exists(&alt)? => Some(vfs.read(&alt)?),
+            _ => None,
+        }
     };
     let Some(bytes) = bytes else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Ok(view) = read_view(&bytes) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    view.tags_list
+    Ok(view.tags_list)
 }
 
 #[cfg(test)]
@@ -149,7 +161,7 @@ mod tests {
     use crate::geo::{Gazetteer, ReverseGeocoder};
     use gallery_meta::place_from_parts;
     use gallery_model::photo::HierarchicalTag;
-    use gallery_vfs::MemVfs;
+    use gallery_vfs::{MemVfs, VfsError};
     use std::time::Duration;
 
     struct FakeGeo;
@@ -269,5 +281,81 @@ mod tests {
             view.tags_list
         );
         assert_eq!(view.photo_tools.country_code.as_deref(), Some("FR"));
+    }
+
+    #[test]
+    fn permission_denied_sidecar_is_a_failure_not_absence() {
+        struct DeniedVfs(MemVfs);
+
+        impl Vfs for DeniedVfs {
+            fn open(
+                &self,
+                path: &str,
+            ) -> gallery_vfs::VfsResult<Box<dyn gallery_vfs::ReadSeek + Send>> {
+                self.0.open(path)
+            }
+
+            fn stat(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Stat> {
+                if path == "/lib/a.jpg.xmp" {
+                    return Err(VfsError::PermissionDenied {
+                        path: path.to_string(),
+                    });
+                }
+                self.0.stat(path)
+            }
+
+            fn list(&self, dir: &str) -> gallery_vfs::VfsResult<Vec<gallery_vfs::Entry>> {
+                self.0.list(dir)
+            }
+
+            fn stat_entry(&self, path: &str) -> gallery_vfs::VfsResult<gallery_vfs::Entry> {
+                self.0.stat_entry(path)
+            }
+
+            fn write_atomic(&self, path: &str, bytes: &[u8]) -> gallery_vfs::VfsResult<()> {
+                self.0.write_atomic(path, bytes)
+            }
+
+            fn exists(&self, path: &str) -> bool {
+                self.0.exists(path)
+            }
+        }
+
+        struct MustNotLookup;
+
+        impl ReverseGeocoder for MustNotLookup {
+            fn lookup(
+                &self,
+                _lat: f64,
+                _lon: f64,
+            ) -> Result<Option<gallery_meta::PlaceWriteRequest>, GeoError> {
+                panic!("permission denial was treated as an absent sidecar")
+            }
+
+            fn min_interval(&self) -> Duration {
+                Duration::ZERO
+            }
+        }
+
+        let inner = MemVfs::new();
+        inner.write_atomic("/lib/a.jpg", b"x").unwrap();
+        let mut cache = GeoCache::new();
+        let summary = run_places(
+            &DeniedVfs(inner),
+            &[still_with_gps()],
+            &MustNotLookup,
+            &mut cache,
+            false,
+            &AtomicBool::new(false),
+            None,
+        );
+
+        assert_eq!(summary.failed, 1, "{summary:?}");
+        assert_eq!(summary.written, 0);
+        assert_eq!(summary.skipped, 0);
+        assert!(summary
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("permission denied")));
     }
 }

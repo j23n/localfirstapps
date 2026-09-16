@@ -948,7 +948,9 @@ final class GalleryStore {
                 .compactMap { indexByKey[$0] }
                 .first
             guard let idx else { continue }
-            let doc = SidecarDocument.read(imagePath: path)
+            guard let doc = try? SidecarDocument.read(imagePath: path) else {
+                continue
+            }
             var merged = photos[idx]
             merged.apply(doc)
             if merged.hierarchicalTags == photos[idx].hierarchicalTags,

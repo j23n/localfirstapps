@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 
 pub use localcore_vfs::{
-    Entry, EntryKind, FileTime, MemVfs, ReadSeek, Stat, Vfs, VfsError, VfsResult,
-    take_unsupported_names,
+    take_unsupported_names, Entry, EntryKind, FileTime, MemVfs, ReadSeek, Stat, Vfs, VfsError,
+    VfsResult,
 };
 
 /// Name of the temp file [`Vfs::write_atomic`] uses, so listings can skip it.
@@ -50,6 +50,9 @@ impl Vfs for StdVfs {
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
         self.inner().write_atomic(path, bytes)
     }
+    fn try_exists(&self, path: &str) -> VfsResult<bool> {
+        self.inner().try_exists(path)
+    }
     fn exists(&self, path: &str) -> bool {
         self.inner().exists(path)
     }
@@ -72,5 +75,17 @@ mod tests {
     fn facade_std_vfs_uses_the_gallery_prefix() {
         assert_eq!(StdVfs.inner().temp_prefix(), TEMP_PREFIX);
         assert_eq!(StdVfs::new().inner().temp_prefix(), TEMP_PREFIX);
+    }
+
+    #[test]
+    fn facade_exposes_fallible_existence_checks() {
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("present");
+        std::fs::write(&present, b"x").unwrap();
+
+        assert!(StdVfs.try_exists(present.to_str().unwrap()).unwrap());
+        assert!(!StdVfs
+            .try_exists(dir.path().join("missing").to_str().unwrap())
+            .unwrap());
     }
 }

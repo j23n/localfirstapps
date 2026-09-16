@@ -27,7 +27,7 @@ final class SidecarDocumentTests: XCTestCase {
         """
         try xmp.write(to: URL(fileURLWithPath: image.path + ".xmp"), atomically: true, encoding: .utf8)
 
-        let doc = SidecarDocument.read(imagePath: image.path)
+        let doc = try SidecarDocument.read(imagePath: image.path)
         XCTAssertTrue(doc.exists)
         XCTAssertEqual(doc.rawTags, ["People/Ada"])
         XCTAssertEqual(doc.tools.facePack, "buffalo_sc-2026.1")

@@ -467,7 +467,7 @@ impl TaggingEngine {
 
     fn reopen_missing_sidecars(&self) -> MlResult<()> {
         for row in self.cache.done_rows_with_stat()? {
-            if !gallery_meta::sidecar_exists(self.vfs.as_ref(), &row.path) {
+            if !gallery_meta::sidecar_exists(self.vfs.as_ref(), &row.path)? {
                 self.cache.mark_stale(&row.path)?;
             }
         }

@@ -3,30 +3,6 @@
 version = 1
 
 [[allow]]
-kind = "authoritative-vfs-exists"
-path = "apps/gallery/core/gallery-ffi/src/scanner.rs"
-symbol = "vfs.exists"
-occurrences = 2
-rationale = "Sidecar selection currently treats stat errors as absence before an FFI read."
-target_wave = "Phase 5 gallery vertical"
-
-[[allow]]
-kind = "authoritative-vfs-exists"
-path = "apps/gallery/core/gallery-meta/src/sidecar.rs"
-symbol = "vfs.exists"
-occurrences = 2
-rationale = "Sidecar presence currently collapses Vfs errors into a best-effort boolean."
-target_wave = "Phase 5 gallery vertical"
-
-[[allow]]
-kind = "authoritative-vfs-exists"
-path = "apps/gallery/core/gallery-session/src/places.rs"
-symbol = "vfs.exists"
-occurrences = 2
-rationale = "Place-tag projection currently treats sidecar stat errors as an absent sidecar."
-target_wave = "Phase 5 gallery vertical"
-
-[[allow]]
 kind = "gallery-provider-semantics"
 path = "apps/gallery/LocalGallery/Components/ThumbnailView.swift"
 symbol = "useQuickLook"

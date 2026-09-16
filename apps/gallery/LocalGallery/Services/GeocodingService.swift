@@ -121,7 +121,8 @@ final class GeocodingService {
     nonisolated static func isEligible(_ photo: PhotoFile, force: Bool = false) -> Bool {
         guard isCandidate(photo) else { return false }
         if force { return true }
-        return LocalGallery.placesStillNeeded(tags: placeTags(for: photo).map(\.fullPath))
+        guard let tags = try? placeTags(for: photo) else { return false }
+        return LocalGallery.placesStillNeeded(tags: tags.map(\.fullPath))
     }
 
     /// Downloaded still with GPS. No sidecar I/O — safe on the main actor
@@ -145,14 +146,14 @@ final class GeocodingService {
     }
 
     /// Sidecar has no finished `Places/…/City` path. Reads the file.
-    nonisolated static func placesStillNeeded(_ photo: PhotoFile) -> Bool {
-        LocalGallery.placesStillNeeded(tags: placeTags(for: photo).map(\.fullPath))
+    nonisolated static func placesStillNeeded(_ photo: PhotoFile) throws -> Bool {
+        LocalGallery.placesStillNeeded(tags: try placeTags(for: photo).map(\.fullPath))
     }
 
     /// Places tags from the sidecar. No sidecar ⇒ none, so a write-path
     /// pass will geocode even when the library row already carries a name.
-    nonisolated static func placeTags(for photo: PhotoFile) -> [HierarchicalTag] {
-        let doc = SidecarDocument.read(imageURL: photo.url)
+    nonisolated static func placeTags(for photo: PhotoFile) throws -> [HierarchicalTag] {
+        let doc = try SidecarDocument.read(imageURL: photo.url)
         guard doc.exists else { return [] }
         return doc.rawTags.map { HierarchicalTag(raw: $0) }
     }
@@ -190,15 +191,27 @@ final class GeocodingService {
                 onPlaceRecorded?(photo.url, nil, .skipped)
                 continue
             }
-            if !force && !Self.placesStillNeeded(photo) {
-                summary.skipped += 1
-                onPlaceRecorded?(photo.url, nil, .skipped)
-                if summary.skipped == 1 || summary.skipped.isMultiple(of: 500) {
-                    Log.ml.info(
-                        "Places skip already-placed \(summary.skipped) \(Log.r.path(photo.url))"
+            if !force {
+                do {
+                    if try !Self.placesStillNeeded(photo) {
+                        summary.skipped += 1
+                        onPlaceRecorded?(photo.url, nil, .skipped)
+                        if summary.skipped == 1 || summary.skipped.isMultiple(of: 500) {
+                            Log.ml.info(
+                                "Places skip already-placed \(summary.skipped) \(Log.r.path(photo.url))"
+                            )
+                        }
+                        continue
+                    }
+                } catch {
+                    summary.failed += 1
+                    lastError = error.localizedDescription
+                    onPlaceRecorded?(photo.url, nil, .failed(error.localizedDescription))
+                    Log.ml.error(
+                        "Places sidecar read failed for \(Log.r.path(photo.url)): \(Log.r.error(error))"
                     )
+                    continue
                 }
-                continue
             }
             Log.ml.info(
                 "Places photo \(summary.processed)/\(candidates.count) \(Log.r.path(photo.url)) \(Log.r.gps(lat, lon))"
