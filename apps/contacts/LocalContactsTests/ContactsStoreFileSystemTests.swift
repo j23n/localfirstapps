@@ -604,8 +604,8 @@ struct ContactsStoreFileSystemTests {
         #expect(try readFile("carol.vcf", in: folder).contains("FN:Caroline"))
     }
 
-    @Test("save of a corrupt multi-vCard file keeps in-memory siblings")
-    func saveCorruptFileKeepsMemorySiblings() async throws {
+    @Test("save refuses a corrupt multi-vCard without replacing it from stale memory")
+    func saveCorruptFileIsRefused() async throws {
         let folder = try makeTempFolder()
         defer { cleanup(folder) }
 
@@ -631,10 +631,11 @@ struct ContactsStoreFileSystemTests {
 
         let bob = try #require(store.contacts.first { $0.localContactsID == "lcid-B" })
         bob.fullName = "Robert"
-        try await store.save(bob)
+        await #expect(throws: ContactsError.NotFound) {
+            try await store.save(bob)
+        }
 
-        let onDisk = try readFile("pair.vcf", in: folder)
-        #expect(onDisk.contains("FN:Alice"))
-        #expect(onDisk.contains("FN:Robert"))
+        #expect(try readFile("pair.vcf", in: folder) == "not-a-vcard")
+        #expect(store.contacts.count == 2)
     }
 }
