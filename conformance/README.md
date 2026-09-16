@@ -10,7 +10,7 @@ python3 conformance/graph/check.py
 python3 conformance/graph/check.py --self-test
 ```
 
-## Graph — ADR 0002 R13
+## Dependency tripwire — ADR 0002 R13
 
 `conformance/graph/` walks every core lockfile that exists —
 `core/Cargo.lock` and `apps/gallery/core/Cargo.lock` — and unions
@@ -18,13 +18,51 @@ findings by package name. Preferring only `core/` would hide a
 networking crate that lives only in the extracted workspace.
 `--lockfile` is a single-file override.
 
-The allowlist has one entry: `ort` / `ort-sys`, build-time, offline
-override `ORT_LIB_LOCATION`.
+The policy is zero-exception by default. Every `[[allow]]` is an explicit
+reviewed build-time exception with a reason, offline override, and the exact
+known policy hits below its roots. The checker fails malformed, duplicate,
+unused, or unreviewed entries. It also fails if those transitive hits grow or
+shrink without an allowlist update. The current exception is `ort` /
+`ort-sys`; `ORT_LIB_LOCATION` bypasses their build-time binary download.
+It remains valid because gallery enables `download-binaries` but not
+`fetch-models`; `cargo tree -p gallery-ml -e all --locked` places `ureq` and
+its TLS/OpenSSL chain under `ort-sys [build-dependencies]`, not the runtime
+dependency tree.
 
 The graph is **green**. Place names come from `localcore-geo` (packed
 gazetteer + admin-0 polygons). `gallery-geo` and its `ureq` client are
 gone. `--expect-violations` remains for pinning a known-red graph; it
 is not used here.
+
+This is a dependency-review tripwire over a curated crate list. Green does
+not prove that no dependency can open a socket.
+
+### Offline ORT build gate
+
+Run this when the ORT version, features, or exception changes. First install
+the normal gallery-core build prerequisites (including OpenSSL development
+files), pre-provision a target-matched ONNX Runtime static library and the
+locked Cargo sources, then disconnect the runner's network using the
+platform's network namespace or interface control. From a clean checkout:
+
+```
+cd apps/gallery/core
+export ORT_LIB_LOCATION=/absolute/path/to/target-matched/onnxruntime/lib
+test -f "$ORT_LIB_LOCATION/libonnxruntime.a"
+CARGO_NET_OFFLINE=true \
+  CARGO_TARGET_DIR="${TMPDIR:-/tmp}/localfiles-ort-offline-target" \
+  cargo build --locked -p gallery-ml
+```
+
+Remove the temporary target directory before repeating the gate so
+`ort-sys`'s build script is exercised. No model pack is needed for this
+compile-only probe.
+
+This is deliberately a documented review gate rather than CI: the repository
+does not ship a target-specific ONNX Runtime archive, obtaining that archive
+would perform the very network download under test, and reliable interface
+isolation is runner-specific. A fake library would only make the probe pass
+the linker and would not validate the documented override.
 
 ## Source — Milestone A (Phase 1)
 

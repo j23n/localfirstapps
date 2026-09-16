@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""ADR 0002 R13 — dependency-graph check over the core lockfiles.
+"""ADR 0002 R13 — dependency tripwire over the core lockfiles.
 
-Walks the resolved graph, not source text. A source grep would have
-certified a Nominatim client as clean; this check does not.
+Walks the resolved graph, not source text, looking for curated families of
+networking, UI, and platform crates. A source grep would have certified a
+Nominatim client as clean; this tripwire did not. Passing it is not proof that
+no dependency can open a socket.
 
 Both `core/Cargo.lock` and `apps/gallery/core/Cargo.lock` are scanned
 when they exist, and findings are unioned by package name. Preferring
@@ -19,7 +21,8 @@ Exit 0 when the graph is clean, or when --expect-violations matches
 exactly. Exit 1 on a real mismatch. Exit 2 on usage / IO errors.
 
 Traversal: from each workspace package, follow third-party edges.
-Allowlisted packages are not entered (ort's ureq stays invisible).
+Reviewed build-time exception roots are not entered (ort's ureq stays
+invisible as a finding), but their expected policy hits are checked exactly.
 Sibling workspace packages are not entered (a clean crate does not
 inherit a sibling's finding). The finding is the workspace crate
 that introduced the edge.
@@ -29,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tomllib
 from collections import defaultdict
@@ -54,12 +58,26 @@ class Package:
 @dataclass
 class Policy:
     allow: frozenset[str]
-    allow_entries: list[dict]
+    allow_entries: tuple["AllowEntry", ...]
     forbidden: dict[str, str]  # crate name -> class (network/ui/platform)
 
     @property
     def allow_entry_count(self) -> int:
         return len(self.allow_entries)
+
+
+@dataclass(frozen=True)
+class AllowEntry:
+    crates: tuple[str, ...]
+    expected_policy_hits: frozenset[str]
+    scope: str
+    why: str
+    offline: str
+    reviewed: str
+
+
+class PolicyError(ValueError):
+    """The checked-in policy or allowlist is invalid or has drifted."""
 
 
 @dataclass
@@ -135,18 +153,136 @@ def parse_cargo_lock(text: str) -> list[Package]:
     return packages
 
 
+CRATE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
+ALLOW_KEYS = {
+    "crates",
+    "expected_policy_hits",
+    "scope",
+    "why",
+    "offline",
+    "reviewed",
+}
+POLICY_CLASSES = ("network", "ui", "platform")
+
+
+def _nonempty_string(table: dict, key: str, label: str) -> str:
+    value = table.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise PolicyError(f"{label}.{key} must be a non-empty string")
+    return value.strip()
+
+
+def _crate_list(table: dict, key: str, label: str) -> tuple[str, ...]:
+    value = table.get(key)
+    if not isinstance(value, list) or not value:
+        raise PolicyError(f"{label}.{key} must be a non-empty array of crate names")
+    if any(
+        not isinstance(crate, str) or not CRATE_NAME.fullmatch(crate)
+        for crate in value
+    ):
+        raise PolicyError(f"{label}.{key} contains a malformed crate name")
+    duplicates = sorted({crate for crate in value if value.count(crate) > 1})
+    if duplicates:
+        raise PolicyError(
+            f"{label}.{key} contains duplicate crates: {', '.join(duplicates)}"
+        )
+    return tuple(value)
+
+
+def _policy_from_docs(allow_doc: dict, policy_doc: dict) -> Policy:
+    unknown_roots = sorted(set(allow_doc) - {"allow"})
+    if unknown_roots:
+        raise PolicyError(
+            "allowlist has unknown top-level keys: " + ", ".join(unknown_roots)
+        )
+
+    raw_entries = allow_doc.get("allow", [])
+    if not isinstance(raw_entries, list):
+        raise PolicyError("allowlist.allow must be an array of tables")
+
+    entries: list[AllowEntry] = []
+    owners: dict[str, int] = {}
+    for index, raw in enumerate(raw_entries):
+        label = f"allow[{index}]"
+        if not isinstance(raw, dict):
+            raise PolicyError(f"{label} must be a table")
+        missing = sorted(ALLOW_KEYS - set(raw))
+        unknown = sorted(set(raw) - ALLOW_KEYS)
+        if missing:
+            raise PolicyError(f"{label} is missing fields: {', '.join(missing)}")
+        if unknown:
+            raise PolicyError(f"{label} has unknown fields: {', '.join(unknown)}")
+
+        crates = _crate_list(raw, "crates", label)
+        expected = _crate_list(raw, "expected_policy_hits", label)
+        scope = _nonempty_string(raw, "scope", label)
+        if scope != "build-time":
+            raise PolicyError(
+                f"{label}.scope must be 'build-time', got {scope!r}"
+            )
+
+        for crate in crates:
+            if crate in owners:
+                raise PolicyError(
+                    f"{label}.crates duplicates {crate!r} from "
+                    f"allow[{owners[crate]}]"
+                )
+            owners[crate] = index
+
+        entries.append(
+            AllowEntry(
+                crates=crates,
+                expected_policy_hits=frozenset(expected),
+                scope=scope,
+                why=_nonempty_string(raw, "why", label),
+                offline=_nonempty_string(raw, "offline", label),
+                reviewed=_nonempty_string(raw, "reviewed", label),
+            )
+        )
+
+    unknown_classes = sorted(set(policy_doc) - set(POLICY_CLASSES))
+    missing_classes = sorted(set(POLICY_CLASSES) - set(policy_doc))
+    if unknown_classes:
+        raise PolicyError(
+            "policy has unknown top-level keys: " + ", ".join(unknown_classes)
+        )
+    if missing_classes:
+        raise PolicyError(
+            "policy is missing classes: " + ", ".join(missing_classes)
+        )
+
+    forbidden: dict[str, str] = {}
+    for klass in POLICY_CLASSES:
+        raw = policy_doc[klass]
+        if not isinstance(raw, dict) or set(raw) != {"crates"}:
+            raise PolicyError(f"policy.{klass} must contain only a crates array")
+        for crate in _crate_list(raw, "crates", f"policy.{klass}"):
+            previous = forbidden.get(crate)
+            if previous is not None:
+                raise PolicyError(
+                    f"policy crate {crate!r} is duplicated in {previous} and {klass}"
+                )
+            forbidden[crate] = klass
+
+    for index, entry in enumerate(entries):
+        unknown_hits = sorted(entry.expected_policy_hits - forbidden.keys())
+        if unknown_hits:
+            raise PolicyError(
+                f"allow[{index}].expected_policy_hits names crates absent from "
+                f"policy.toml: {', '.join(unknown_hits)}"
+            )
+
+    return Policy(
+        allow=frozenset(owners),
+        allow_entries=tuple(entries),
+        forbidden=forbidden,
+    )
+
+
 def load_policy(allow_path: Path, policy_path: Path) -> Policy:
     allow_doc = tomllib.loads(allow_path.read_text())
     policy_doc = tomllib.loads(policy_path.read_text())
-    entries = list(allow_doc.get("allow") or [])
-    allow: set[str] = set()
-    for entry in entries:
-        allow.update(entry.get("crates") or [])
-    forbidden: dict[str, str] = {}
-    for klass in ("network", "ui", "platform"):
-        for crate in policy_doc.get(klass, {}).get("crates") or []:
-            forbidden[crate] = klass
-    return Policy(allow=frozenset(allow), allow_entries=entries, forbidden=forbidden)
+    return _policy_from_docs(allow_doc, policy_doc)
 
 
 LOCKFILE_RELS = ("core/Cargo.lock", "apps/gallery/core/Cargo.lock")
@@ -180,6 +316,89 @@ def _packages_by_name(packages: list[Package]) -> dict[str, list[Package]]:
     for pkg in packages:
         by_name[pkg.name].append(pkg)
     return by_name
+
+
+def _reachable_third_party(packages: list[Package]) -> set[str]:
+    by_name = _packages_by_name(packages)
+    workspace = [pkg for pkg in packages if pkg.workspace]
+    workspace_names = {pkg.name for pkg in workspace}
+    reachable: set[str] = set()
+
+    def walk(start: str, crate: str, stack: set[str]) -> None:
+        if crate in workspace_names and crate != start:
+            return
+        if crate in stack:
+            return
+        if crate not in workspace_names:
+            reachable.add(crate)
+        stack.add(crate)
+        try:
+            for pkg in by_name.get(crate, []):
+                for dep in pkg.deps:
+                    walk(start, dep, stack)
+        finally:
+            stack.remove(crate)
+
+    for pkg in workspace:
+        walk(pkg.name, pkg.name, set())
+    return reachable
+
+
+def _forbidden_below(
+    roots: tuple[str, ...], packages: list[Package], forbidden: dict[str, str]
+) -> set[str]:
+    by_name = _packages_by_name(packages)
+    hits: set[str] = set()
+    seen: set[str] = set()
+    todo = list(roots)
+    while todo:
+        crate = todo.pop()
+        if crate in seen:
+            continue
+        seen.add(crate)
+        if crate in forbidden:
+            hits.add(crate)
+        for pkg in by_name.get(crate, []):
+            todo.extend(pkg.deps)
+    return hits
+
+
+def validate_allowlist_usage(
+    policy: Policy, package_groups: list[list[Package]]
+) -> None:
+    """Reject stale exceptions and undocumented changes below their roots."""
+    reachable: set[str] = set()
+    for packages in package_groups:
+        reachable.update(_reachable_third_party(packages))
+
+    errors: list[str] = []
+    for index, entry in enumerate(policy.allow_entries):
+        unused_roots = sorted(set(entry.crates) - reachable)
+        if unused_roots:
+            errors.append(
+                f"allow[{index}] has unused crates: {', '.join(unused_roots)}"
+            )
+
+        actual_hits: set[str] = set()
+        for packages in package_groups:
+            actual_hits.update(
+                _forbidden_below(entry.crates, packages, policy.forbidden)
+            )
+        undocumented = sorted(actual_hits - entry.expected_policy_hits)
+        stale = sorted(entry.expected_policy_hits - actual_hits)
+        if undocumented:
+            errors.append(
+                f"allow[{index}] has undocumented policy hits: "
+                + ", ".join(undocumented)
+            )
+        if stale:
+            errors.append(
+                f"allow[{index}] has unused expected_policy_hits: "
+                + ", ".join(stale)
+            )
+
+    if errors:
+        raise PolicyError("; ".join(errors))
 
 
 def findings_for(packages: list[Package], policy: Policy) -> list[Finding]:
@@ -222,7 +441,7 @@ def findings_for(packages: list[Package], policy: Policy) -> list[Finding]:
 def render(lockfiles: list[Path], policy: Policy, found: list[Finding]) -> str:
     lines: list[str] = []
     status = "RED" if found else "GREEN"
-    lines.append(f"ADR 0002 R13 — dependency graph  [{status}]")
+    lines.append(f"ADR 0002 R13 — dependency tripwire  [{status}]")
     if len(lockfiles) == 1:
         lines.append(f"lockfile: {lockfiles[0]}")
     else:
@@ -230,42 +449,49 @@ def render(lockfiles: list[Path], policy: Policy, found: list[Finding]) -> str:
         for lockfile in lockfiles:
             lines.append(f"  {lockfile}")
     allow = ", ".join(sorted(policy.allow)) or "(empty)"
-    lines.append(f"allowlist ({policy.allow_entry_count} "
-                 f"{'entry' if policy.allow_entry_count == 1 else 'entries'}): {allow}")
-    if policy.allow_entry_count != 1:
-        lines.append(
-            "warning: ADR 0002 R13 permits one allowlist entry without an "
-            "amendment; this file has "
-            f"{policy.allow_entry_count}."
-        )
+    lines.append(
+        f"reviewed build-time exceptions ({policy.allow_entry_count} "
+        f"{'entry' if policy.allow_entry_count == 1 else 'entries'}): {allow}"
+    )
     for entry in policy.allow_entries:
-        why = entry.get("why", "")
-        offline = entry.get("offline", "")
-        crates = ", ".join(entry.get("crates") or [])
-        if why:
-            lines.append(f"  {crates}: {why}")
-        if offline:
-            lines.append(f"  offline: {offline}")
+        crates = ", ".join(entry.crates)
+        expected = ", ".join(sorted(entry.expected_policy_hits))
+        lines.append(f"  {crates}: {entry.why}")
+        lines.append(f"    reviewed: {entry.reviewed}")
+        lines.append(f"    expected policy hits: {expected}")
+        lines.append(f"    offline: {entry.offline}")
     if found:
         lines.append("")
-        lines.append("un-allowlisted entries:")
+        lines.append("un-excepted policy hits:")
         for f in found:
             lines.append(f"  {f.package}")
             lines.append(f"    via: {f.via} ({f.klass})")
         lines.append("")
         lines.append(
-            "A source grep would have missed a client that lives in a "
-            "dependency. Place lookup is localcore-geo; no gallery-geo remains."
+            "This tripwire found a curated dependency family that requires "
+            "review; it does not inspect runtime socket behavior."
         )
     else:
-        lines.append("no networking, UI, or platform crate outside the allowlist.")
+        lines.append(
+            "no known networking, UI, or platform crate outside the reviewed "
+            "exceptions; this tripwire is not proof that dependencies cannot "
+            "open sockets."
+        )
     return "\n".join(lines) + "\n"
 
 
 def run_self_test() -> int:
+    ort_entry = AllowEntry(
+        crates=("ort", "ort-sys"),
+        expected_policy_hits=frozenset({"ureq"}),
+        scope="build-time",
+        why="test fixture",
+        offline="ORT_LIB_LOCATION=/fixture",
+        reviewed="ADR 0002 R13",
+    )
     policy = Policy(
         allow=frozenset({"ort", "ort-sys"}),
-        allow_entries=[{"crates": ["ort", "ort-sys"]}],
+        allow_entries=(ort_entry,),
         forbidden={"ureq": "network", "gtk": "ui"},
     )
 
@@ -298,6 +524,15 @@ dependencies = [
 ]
 [[package]]
 name = "ort"
+version = "2.0.0-rc.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00"
+dependencies = [
+ "ort-sys",
+ "ureq",
+]
+[[package]]
+name = "ort-sys"
 version = "2.0.0-rc.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00"
@@ -381,6 +616,121 @@ checksum = "00"
         Finding(package="gallery-geo", via="ureq", klass="network")
     ]
 
+    # Allowlist conformance is exact. Zero exceptions is the default; every
+    # checked-in exception must remain used and must document the precise
+    # curated policy hits hidden below its roots.
+    validate_allowlist_usage(policy, [ort])
+    zero_policy = Policy(
+        allow=frozenset(),
+        allow_entries=(),
+        forbidden=policy.forbidden,
+    )
+    validate_allowlist_usage(zero_policy, [geo])
+
+    def expect_policy_error(call, text: str) -> None:
+        try:
+            call()
+        except PolicyError as exc:
+            assert text in str(exc), exc
+        else:
+            raise AssertionError(f"expected PolicyError containing {text!r}")
+
+    drifted_ort = parse_cargo_lock(
+        """
+[[package]]
+name = "gallery-ml"
+version = "0.1.0"
+dependencies = ["ort"]
+[[package]]
+name = "ort"
+version = "2.0.0-rc.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = ["ort-sys", "ureq", "reqwest"]
+[[package]]
+name = "ort-sys"
+version = "2.0.0-rc.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = ["ureq"]
+[[package]]
+name = "ureq"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+[[package]]
+name = "reqwest"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"""
+    )
+    drift_policy = Policy(
+        allow=policy.allow,
+        allow_entries=policy.allow_entries,
+        forbidden={**policy.forbidden, "reqwest": "network"},
+    )
+    expect_policy_error(
+        lambda: validate_allowlist_usage(drift_policy, [drifted_ort]),
+        "undocumented policy hits: reqwest",
+    )
+
+    ort_without_network = parse_cargo_lock(
+        """
+[[package]]
+name = "gallery-ml"
+version = "0.1.0"
+dependencies = ["ort"]
+[[package]]
+name = "ort"
+version = "2.0.0-rc.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = ["ort-sys"]
+[[package]]
+name = "ort-sys"
+version = "2.0.0-rc.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"""
+    )
+    expect_policy_error(
+        lambda: validate_allowlist_usage(policy, [ort_without_network]),
+        "unused expected_policy_hits: ureq",
+    )
+    expect_policy_error(
+        lambda: validate_allowlist_usage(policy, [geo]),
+        "unused crates: ort, ort-sys",
+    )
+
+    raw_entry = {
+        "crates": ["ort", "ort-sys"],
+        "expected_policy_hits": ["ureq"],
+        "scope": "build-time",
+        "why": "test fixture",
+        "offline": "ORT_LIB_LOCATION=/fixture",
+        "reviewed": "ADR 0002 R13",
+    }
+    raw_policy = {
+        "network": {"crates": ["ureq"]},
+        "ui": {"crates": ["gtk"]},
+        "platform": {"crates": ["metal"]},
+    }
+    parsed_zero = _policy_from_docs({}, raw_policy)
+    assert parsed_zero.allow_entries == ()
+    expect_policy_error(
+        lambda: _policy_from_docs(
+            {"allow": [raw_entry, dict(raw_entry)]}, raw_policy
+        ),
+        "duplicates 'ort'",
+    )
+    malformed = dict(raw_entry)
+    del malformed["offline"]
+    expect_policy_error(
+        lambda: _policy_from_docs({"allow": [malformed]}, raw_policy),
+        "missing fields: offline",
+    )
+    unreviewed = dict(raw_entry)
+    del unreviewed["reviewed"]
+    expect_policy_error(
+        lambda: _policy_from_docs({"allow": [unreviewed]}, raw_policy),
+        "missing fields: reviewed",
+    )
+
     print("self-test: ok")
     return 0
 
@@ -422,8 +772,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
-    policy = load_policy(HERE / "allowlist.toml", HERE / "policy.toml")
+    try:
+        policy = load_policy(HERE / "allowlist.toml", HERE / "policy.toml")
+    except PolicyError as exc:
+        print(f"error: graph policy: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        print(f"error: cannot load graph policy: {exc}", file=sys.stderr)
+        return 2
+
     groups: list[list[Finding]] = []
+    package_groups: list[list[Package]] = []
     scanned: list[Path] = []
     for lockfile in lockfiles:
         packages = parse_cargo_lock(lockfile.read_text())
@@ -435,6 +794,7 @@ def main(argv: list[str] | None = None) -> int:
             # source. Skip it so it cannot hide the gallery lockfile.
             continue
         scanned.append(lockfile)
+        package_groups.append(packages)
         groups.append(findings_for(packages, policy))
     if not scanned:
         print(
@@ -443,6 +803,12 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    try:
+        validate_allowlist_usage(policy, package_groups)
+    except PolicyError as exc:
+        print(f"error: graph policy: {exc}", file=sys.stderr)
+        return 1
+
     found = union_findings(groups)
     names = [f.package for f in found]
 

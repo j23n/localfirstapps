@@ -64,8 +64,9 @@ no configuration that introduces one.
 **Build-time** downloads (a toolchain fetching a prebuilt dependency) are not
 runtime code paths, but every one MUST appear on ADR 0002 R13's allowlist with
 a documented offline override, so that a build succeeds with no network
-available. Conformance is the dependency-graph check in ADR 0002 R13; a source
-grep does not discharge this requirement.
+available. ADR 0002 R13's resolved-graph tripwire catches known dependency
+families and allowlist drift; it complements review and the offline build gate
+rather than proving the absence of socket behavior.
 
 **R10.** **Place names come from a bundled dataset.** Photo coordinates
 resolve to a locality and a country entirely offline. The dataset is chosen

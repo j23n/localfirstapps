@@ -80,10 +80,11 @@ expensive one.
    (ADR 0006 R15–R17). A capability reads what the file already says, retains
    decisions inside a retention band, defers to a newer pack, and writes
    nothing when nothing changed.
-4. **The no-network rule is checked over the dependency graph**
-   (ADR 0002 R13), against a one-entry allowlist. A source grep passes a
-   crate that opens a socket, which is how a live reverse-geocoding client
-   survived inside a no-network codebase.
+4. **The no-network rule has a resolved-dependency tripwire**
+   (ADR 0002 R13), with zero exceptions by default and explicit reviewed
+   build-time exceptions. It catches known transitive networking families
+   that source grep misses; passing it is not proof that no dependency can
+   open a socket.
 5. **Changing an identity rule or a derived-data key is a migration**
    (ADR 0005 R19), and a migration is not done until existing state survives
    it with a fixture to prove it.
@@ -139,7 +140,7 @@ The amendments are the stronger claims that did not:
 | Results must be bit-identical across devices | Results must converge, via idempotent writes, retention bands, and pack precedence — ADR 0006 R15–R17 | bit-identity across instruction sets is unachievable and was never what prevented conflicts |
 | — | Every thresholded decision carries a retention band — ADR 0006 R16 | tagging had one; face detection and auto-tag matching did not; ISA drift is assumed negligible |
 | — | Newer pack wins, older defers — ADR 0006 R17 | version skew is the one divergence no determinism rule absorbs |
-| "`cargo tree` contains no networking crate" | Graph check against a one-entry allowlist — ADR 0002 R13 | the r1 bullet was unsatisfiable the day it was written |
+| "`cargo tree` contains no networking crate" | Resolved-graph tripwire with zero exceptions by default and exact reviewed build-time exceptions — ADR 0002 R13 | the r1 bullet was unsatisfiable the day it was written; a finite crate policy is a tripwire, not proof of runtime behavior |
 | Temp prefix unspecified | A `Vfs` parameter, with an ignore rule per app — ADR 0002 R3 | a shared prefix would have four apps writing `.gallery-tmp-` |
 | "A missing binding MUST fail the build", with no mechanism | Generated enums make vocabulary omissions fail — ADR 0004 R14 | Widget capability still requires tests and review |
 | Host differences undefined | Closed host-surfaces table — ADR 0007 R15 | ADR 0001 R6 read strictly forbade iOS-only widgets and read loosely bounded nothing |

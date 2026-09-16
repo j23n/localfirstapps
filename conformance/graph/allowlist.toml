@@ -1,13 +1,23 @@
 # ADR 0002 R13 — the dependency-graph allowlist.
 #
-# Exactly one entry. Adding a second [[allow]] is an amendment to that
-# ADR, not a local convenience. The checker prints a warning if this
-# file grows so the amendment cannot be silent.
+# Default: no entries. Each exception must be a reviewed build-time-only
+# case with an offline build command. The checker rejects incomplete,
+# duplicate, unused, or unreviewed entries and exact policy-hit drift below
+# an exception root.
 #
-# An allowlisted crate is build-time only and has a documented override
-# that makes a clean-checkout build succeed with the network down.
+# `expected_policy_hits` makes transitive changes visible. It is the exact
+# set of crates from policy.toml currently hidden below this entry's roots.
 
 [[allow]]
 crates = ["ort", "ort-sys"]
-why = "build-time fetch of the prebuilt ONNX Runtime static library"
-offline = "ORT_LIB_LOCATION pointing at a directory holding libonnxruntime.a"
+expected_policy_hits = [
+    "native-tls",
+    "openssl",
+    "openssl-sys",
+    "ureq",
+    "ureq-proto",
+]
+scope = "build-time"
+why = "ort-sys download-binaries fetches the prebuilt ONNX Runtime static library at build time; ort fetch-models is disabled"
+offline = "CARGO_NET_OFFLINE=true with ORT_LIB_LOCATION pointing at a target-matched directory holding libonnxruntime.a"
+reviewed = "ADR 0002 R13"

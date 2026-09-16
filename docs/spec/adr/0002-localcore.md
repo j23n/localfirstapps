@@ -2,7 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-11 (native Linux path, no portal)
+- Revised: 2026-09-11 (r2); 2026-09-11 (native Linux path, no portal);
+  2026-09-16 (dependency-tripwire exception policy)
 
 ## Scope
 
@@ -19,7 +20,9 @@ is generic over a **record** type supplied by an app core.
 core. Its only I/O is through the `Vfs` port (R3).
 
 **R2.** `localcore` MUST NOT perform network I/O. No crate in its dependency
-graph may open a socket at runtime. The check is R13's, not a source grep.
+graph may open a socket at runtime. R13's resolved-graph check is a tripwire
+for known socket-capable dependency families, not proof of that runtime
+property.
 
 **R3.** All filesystem access goes through a `Vfs` port: list, stat, read,
 write, rename, remove. Writes MUST be atomic (temp file plus rename within
@@ -93,18 +96,25 @@ primary key can tie, a tiebreak is declared and tested.
 and index it owns is disposable and rebuildable from the folder plus the
 event log.
 
-**R13.** **The dependency graph is the audit surface.** Conformance to R2 and
-to ADR 0006 R9 is checked over the resolved graph, not over source text. The
-check runs against a written allowlist, and the allowlist has exactly one
-entry:
+**R13.** **The dependency graph is a review tripwire.** The resolved graph is
+checked for curated networking, UI, and platform crate families; source text
+alone cannot expose transitive dependencies. Passing this finite policy is
+not proof that no dependency can open a socket, so R2 still requires code and
+runtime review.
 
-| Crate | Why | Offline override |
-|---|---|---|
-| `ort` (and `ort-sys`) | build-time fetch of the prebuilt ONNX Runtime static library | `ORT_LIB_LOCATION` pointing at a directory holding `libonnxruntime.a` |
+The allowlist is empty by default. An exception MUST be explicitly reviewed,
+MUST be build-time only, MUST document an offline override, and MUST enumerate
+the exact policy hits below its roots. The checker rejects malformed,
+duplicate, unused, or unreviewed entries and any undocumented transitive
+policy-hit drift. The current reviewed exception is:
 
-An allowlisted crate MUST be build-time only and MUST have a documented
-override that makes a clean-checkout build succeed with no network. Adding a
-second entry is an amendment to this document.
+| Crate | Why | Expected policy hits | Offline override |
+|---|---|---|---|
+| `ort` (and `ort-sys`) | `ort-sys`'s `download-binaries` fetches the prebuilt ONNX Runtime static library at build time; `ort`'s `fetch-models` is disabled | `native-tls`, `openssl`, `openssl-sys`, `ureq`, `ureq-proto` | `CARGO_NET_OFFLINE=true` with `ORT_LIB_LOCATION` pointing at a target-matched directory holding `libonnxruntime.a` |
+
+Adding or changing an entry requires review here and in
+`conformance/graph/allowlist.toml`; the check does not infer that approval
+from the dependency graph.
 
 A source grep is not an acceptable substitute: it passes a crate that opens a
 socket from a dependency, which is how a live reverse-geocoding client
@@ -112,9 +122,9 @@ survived inside `core/` under a no-network doctrine.
 
 ## Conformance
 
-- The resolved dependency graph for `core/` contains no networking, UI, or
-  platform crate outside R13's allowlist, checked by one command over one
-  lockfile.
+- The resolved dependency graphs for both core workspaces trip on no known
+  networking, UI, or platform crate outside R13's reviewed exceptions,
+  checked by one command.
 - A clean-checkout build succeeds with the network interface down, using each
   allowlisted crate's documented override.
 - Identity vectors: a committed fixture of path→id pairs, including NFC and

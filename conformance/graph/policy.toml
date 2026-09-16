@@ -1,10 +1,11 @@
-# Crates whose presence in core/'s resolved graph is a finding unless
-# they sit behind an ADR 0002 R13 allowlist entry.
+# Known networking, UI, and platform crate families that trip review when
+# present in a core resolved graph, unless they sit behind an exact reviewed
+# build-time exception in allowlist.toml.
 #
 # Classified by purpose, not by name substring. `http` / `url` / `idna`
 # are types. `windows-sys` / `libc` / `rustix` are portable OS bindings.
-# Those are not listed. A source grep is not a substitute for this list
-# applied to the lockfile — that is the whole point of R13.
+# Those are not listed. This curated list is a dependency tripwire, not proof
+# that an unlisted crate cannot open a socket.
 
 [network]
 # HTTP clients, TLS stacks, raw sockets, RPC transports.
