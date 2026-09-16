@@ -22,6 +22,7 @@ Usage (from the monorepo root):
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import tempfile
@@ -94,6 +95,7 @@ SKIP_DIRS = frozenset(
     {
         ".git",
         ".build",
+        ".worktrees",
         "target",
         "vendor",
         "node_modules",
@@ -334,12 +336,19 @@ def gallery_source_files(root: Path) -> list[Path]:
 
 def rust_production_files(root: Path) -> list[Path]:
     files: list[Path] = []
-    for path in root.rglob("*.rs"):
-        if not path.is_file() or is_skipped(path, root):
+    for current, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            dirname
+            for dirname in dirnames
+            if dirname.lower() not in SKIP_DIRS
+            and not dirname.lower().endswith("tests")
+        ]
+        current_path = Path(current)
+        if "src" not in current_path.relative_to(root).parts:
             continue
-        if "src" not in path.relative_to(root).parts:
-            continue
-        files.append(path)
+        for filename in filenames:
+            if filename.endswith(".rs"):
+                files.append(current_path / filename)
     return sorted(files)
 
 
