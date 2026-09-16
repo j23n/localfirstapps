@@ -10,11 +10,10 @@ import os
 /// `Places/*` prefix expansion, and the `TagSuggestion` aggregation — now lives
 /// in `gallery-index`. What stays here is the two things the core cannot do:
 ///
-/// 1. **Hold the `PhotoFile`s.** The core answers in ids, because the app is
-///    already holding the structs those ids name; shipping them back across the
-///    boundary per query would double the traffic to say nothing new. So this
-///    type keeps `photoByID`, which is an object table, not an index — it has
-///    no ordering and no matching rule of its own.
+/// 1. **Resolve actions.** Grid structure is IDs and grid content arrives as
+///    bounded `GalleryMediaItem` DTOs. `photoByID` is retained only to resolve
+///    an explicit viewer/share/edit action back to the shell's file handle; it
+///    has no ordering or matching rule of its own.
 /// 2. **Keep the FFI off the main actor.** `build` runs the core call on a
 ///    detached task behind a generation counter (the horizon grouping); the
 ///    two query calls are synchronous but memoised, so a scrolling list row
@@ -64,6 +63,7 @@ final class CoreLibraryIndex {
     /// than poll — and so the *next* rebuild can wait for it before touching
     /// the core (see `build(allPhotos:)`).
     @ObservationIgnored private var pending: Task<Void, Never>?
+    @ObservationIgnored private var publishedFingerprint: LibraryFingerprint?
 
     /// Memoised `photos(forTag:)` answers, cleared when a rebuild **publishes**.
     ///
@@ -123,6 +123,7 @@ final class CoreLibraryIndex {
         // isolated to region analysis even when its type is `Sendable`, and the
         // build task resolves the core's ids through it.
         let lookup = table
+        let fingerprint = LibraryFingerprint(photos: allPhotos)
 
         let previous = pending
         previous?.cancel()
@@ -135,8 +136,15 @@ final class CoreLibraryIndex {
             let built = await Task.detached(priority: .userInitiated) { () -> Built in
                 let start = CFAbsoluteTimeGetCurrent()
                 let records = allPhotos.map(CoreScanner.record(of:))
+                let zone = Calendar.current.timeZone
+                let offsets = allPhotos.map {
+                    Int32(zone.secondsFromGMT(for: $0.dateTaken ?? Date()))
+                }
                 let marshalled = CFAbsoluteTimeGetCurrent()
-                let summary = core.build(photos: records)
+                let summary = core.buildWithTimeZoneOffsets(
+                    photos: records,
+                    photoTimeZoneOffsets: offsets
+                )
                 // The core's records never reach the main actor: they are not
                 // `Sendable` (UniFFI does not mark them) and resolving them is
                 // 20k `UUID(uuidString:)` parses plus 20k dictionary hits, which
@@ -147,6 +155,7 @@ final class CoreLibraryIndex {
                     },
                     tags: summary.tags.map(Self.suggestion(from:)),
                     people: summary.people.map(Self.suggestion(from:)),
+                    fingerprint: fingerprint,
                     marshalMillis: (marshalled - start) * 1000,
                     coreMillis: Double(summary.buildMillis)
                 )
@@ -161,6 +170,7 @@ final class CoreLibraryIndex {
             self.sortedPhotos = built.sorted
             self.allTags = built.tags
             self.peopleTags = built.people
+            self.publishedFingerprint = built.fingerprint
             self.hasEverPublished = true
             self.onRebuild?(self.allTags, self.peopleTags)
 
@@ -189,6 +199,33 @@ final class CoreLibraryIndex {
     /// stall the rebuild was moved off the main actor to remove.
     func settle() async {
         await pending?.value
+    }
+
+    func ownsScheduledPhotos(_ photos: [PhotoFile]) -> Bool {
+        guard let publishedFingerprint,
+              publishedFingerprint.ids.count == photos.count else { return false }
+        return zip(publishedFingerprint.ids, photos).allSatisfy { id, photo in
+            id == photo.id
+        }
+    }
+
+    /// Scheduled memories over the same core-owned photo generation that
+    /// backs the grid and search index.
+    ///
+    /// Production calls this after an index publish, so the 20k photo records
+    /// and capture-time offsets do not cross the FFI a second time. The only
+    /// per-horizon payload is contacts, person-link intent, clock and the
+    /// nine day-offset values.
+    func computeScheduled(
+        _ inputs: CoreMemories.Inputs,
+        hiddenMemoryIDs: Set<String>
+    ) async -> [CoreMemories.Scheduled] {
+        await pending?.value
+        return await CoreMemories.computeScheduled(
+            inputs,
+            using: core,
+            hiddenMemoryIDs: hiddenMemoryIDs
+        )
     }
 
     // MARK: Queries
@@ -255,6 +292,70 @@ final class CoreLibraryIndex {
         return resolved
     }
 
+    // MARK: Windowed display projection
+
+    /// Publish filter intent and return IDs/sections only. Content is fetched
+    /// separately through `photoWindow`; callers must carry this generation
+    /// into every bounded read.
+    func photoView(query: String, requiredTags: [TagSuggestion] = []) -> ViewStructure {
+        core.setPhotoView(
+            query: query.trimmingCharacters(in: .whitespaces),
+            requiredTagPaths: requiredTags.map(\.fullPath)
+        )
+    }
+
+    func photoIDsView(
+        id: String,
+        photoIDs: [UUID],
+        query: String,
+        requiredTags: [TagSuggestion]
+    ) -> ViewStructure {
+        core.setPhotoIdsView(
+            viewId: id,
+            photoIds: photoIDs.map(\.uuidString),
+            query: query.trimmingCharacters(in: .whitespaces),
+            requiredTagPaths: requiredTags.map(\.fullPath)
+        )
+    }
+
+    /// One display-ready range. A generation mismatch is surfaced as
+    /// `ViewError.staleGeneration` rather than silently mixing two rebuilds.
+    func photoWindow(
+        sectionID: String,
+        offset: Int,
+        limit: Int,
+        generation: UInt64
+    ) throws -> [GalleryMediaItem] {
+        try core.photoWindow(
+            sectionId: sectionID,
+            offset: UInt64(offset),
+            limit: UInt64(limit),
+            generation: generation
+        )
+    }
+
+    func tagView() -> ViewStructure {
+        core.tagStructure()
+    }
+
+    func tagWindow(
+        sectionID: String,
+        offset: Int,
+        limit: Int,
+        generation: UInt64
+    ) throws -> [GalleryTextRow] {
+        try core.tagWindow(
+            sectionId: sectionID,
+            offset: UInt64(offset),
+            limit: UInt64(limit),
+            generation: generation
+        )
+    }
+
+    func photos(withIDs ids: [UUID]) -> [PhotoFile] {
+        ids.compactMap { photoByID[$0] }
+    }
+
     // MARK: Bridging
 
     /// One rebuild's results, already in the app's own types.
@@ -268,8 +369,17 @@ final class CoreLibraryIndex {
         let sorted: [PhotoFile]
         let tags: [TagSuggestion]
         let people: [TagSuggestion]
+        let fingerprint: LibraryFingerprint
         let marshalMillis: Double
         let coreMillis: Double
+    }
+
+    private struct LibraryFingerprint: Equatable, Sendable {
+        let ids: [UUID]
+
+        init(photos: [PhotoFile]) {
+            ids = photos.map(\.id)
+        }
     }
 
     /// Core ids → the app's photo structs, dropping ids the table no longer

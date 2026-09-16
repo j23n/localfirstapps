@@ -58,6 +58,7 @@ struct AllPhotosView: View {
                 photos: store.sortedPhotos,
                 isRoot: true,
                 showSearch: true,
+                usesWindowedLibrary: true,
                 showVisibleDateRange: true,
                 initialTags: seedTags
             )

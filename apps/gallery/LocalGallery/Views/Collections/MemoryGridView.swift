@@ -11,7 +11,9 @@ struct MemoryGridView: View {
             title: memory.title,
             subtitle: memory.subtitle,
             photos: store.photos(for: memory),
-            playableMemory: memory
+            usesWindowedLibrary: true,
+            playableMemory: memory,
+            fixedPhotoIDs: memory.photoIDs
         )
     }
 }

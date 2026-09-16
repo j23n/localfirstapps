@@ -24,7 +24,9 @@ struct FolderGridView: View {
                 title: liveFolder.name,
                 subtitle: "\(photos.count) photos",
                 photos: photos,
-                showSearch: true
+                showSearch: true,
+                usesWindowedLibrary: true,
+                fixedPhotoIDs: photos.map(\.id)
             )
         } else {
             ContentUnavailableView(

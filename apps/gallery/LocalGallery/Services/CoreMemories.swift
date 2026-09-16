@@ -120,15 +120,31 @@ enum CoreMemories {
                 inputs: record(from: inputs), horizonDays: horizon, hiddenMemoryIds: hidden
             )
         }.value
-        return items.compactMap { item in
-            memory(from: item.memory).map {
-                Scheduled(
-                    memory: $0,
-                    validFrom: Date(timeIntervalSinceReferenceDate: item.validFrom),
-                    validTo: Date(timeIntervalSinceReferenceDate: item.validTo)
-                )
-            }
-        }
+        return items.compactMap(scheduled(from:))
+    }
+
+    /// Scheduled horizon over a [`LibraryIndex`] generation that already owns
+    /// the photos and their capture-time UTC offsets.
+    ///
+    /// This is the production path. The legacy overload above remains for
+    /// fixture harnesses that deliberately generate from an isolated input
+    /// table, but the app never pays a second 20k-photo FFI marshal.
+    nonisolated static func computeScheduled(
+        _ inputs: Inputs,
+        using index: LibraryIndex,
+        hiddenMemoryIDs: Set<String>
+    ) async -> [Scheduled] {
+        let hidden = Array(hiddenMemoryIDs)
+        let horizon = Int64(horizonDays)
+        let context = scheduledContext(from: inputs)
+        let items = await Task.detached(priority: .utility) {
+            index.computeScheduled(
+                context: context,
+                horizonDays: horizon,
+                hiddenMemoryIds: hidden
+            )
+        }.value
+        return items.compactMap(scheduled(from:))
     }
 
     // MARK: - Pure helpers the app still calls
@@ -264,6 +280,60 @@ enum CoreMemories {
                 MemoryDateEntry(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
             }
         )
+    }
+
+    private static func scheduledContext(from inputs: Inputs) -> ScheduledMemoryContext {
+        ScheduledMemoryContext(
+            leafFolders: inputs.leafFolders.map {
+                MemoryLeafFolder(
+                    id: $0.id.uuidString,
+                    name: $0.name,
+                    photoIds: $0.photos.map(\.id.uuidString)
+                )
+            },
+            contacts: inputs.contacts.map {
+                MemoryContact(
+                    id: $0.id,
+                    givenName: $0.givenName,
+                    familyName: $0.familyName,
+                    birthdayMonth: $0.birthday?.month.map(UInt32.init),
+                    birthdayDay: $0.birthday?.day.map(UInt32.init)
+                )
+            },
+            personContactLinks: inputs.personContactLinks.map { path, link in
+                switch link {
+                case .manual(let contactID):
+                    return MemoryPersonLink(personPath: path, contactId: contactID)
+                case .disabled:
+                    return MemoryPersonLink(personPath: path, contactId: nil)
+                }
+            },
+            birthdaysEnabled: inputs.birthdaysEnabled,
+            mePersonPath: inputs.mePersonPath,
+            hiddenPeople: Array(inputs.hiddenPeople),
+            now: inputs.now.timeIntervalSinceReferenceDate,
+            timeZoneOffsetSeconds: Int32(
+                Calendar.current.timeZone.secondsFromGMT(for: inputs.now)
+            ),
+            horizonOffsetSeconds: horizonOffsets(for: inputs.now),
+            seed: inputs.seed,
+            seenMemoryIds: inputs.seenMemoryIDs.map {
+                MemoryDateEntry(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
+            },
+            surfacedClusters: inputs.surfacedClusters.map {
+                MemoryDateEntry(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
+            }
+        )
+    }
+
+    private static func scheduled(from item: ScheduledMemoryRecord) -> Scheduled? {
+        memory(from: item.memory).map {
+            Scheduled(
+                memory: $0,
+                validFrom: Date(timeIntervalSinceReferenceDate: item.validFrom),
+                validTo: Date(timeIntervalSinceReferenceDate: item.validTo)
+            )
+        }
     }
 
     /// A core record → the app's `Memory`. `nil` only when the core handed back

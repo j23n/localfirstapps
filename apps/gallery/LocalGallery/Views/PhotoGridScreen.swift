@@ -25,6 +25,10 @@ struct PhotoGridScreen: View {
     var isRoot: Bool = false
     /// Enable search field + tag suggestions in the header.
     var showSearch: Bool = false
+    /// Use the generation-checked `gallery-ffi` structure/window projection
+    /// for grid content. The `photos` array remains available for viewer and
+    /// edit commands, but is not the rendered payload.
+    var usesWindowedLibrary: Bool = false
     /// When true, show a live "<first> – <last>" date range derived from the
     /// sections currently scrolled into view, pinned below the nav bar so it
     /// stays visible as the user scrolls. Used by the Photos tab.
@@ -36,6 +40,10 @@ struct PhotoGridScreen: View {
     /// Tags applied as the initial filter — used by widget deep-links that
     /// land on AllPhotos with a specific tag set already chosen.
     var initialTags: [TagSuggestion] = []
+    /// Non-removable filter intent supplied by a drill-in route.
+    var fixedTags: [TagSuggestion] = []
+    /// Ordered id-only drill-in structure (folder or memory).
+    var fixedPhotoIDs: [UUID]? = nil
 
     @Environment(GalleryStore.self) private var store
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -93,6 +101,8 @@ struct PhotoGridScreen: View {
     @State private var filtered: [PhotoFile] = []
     @State private var sectionsCache: [PhotoSection] = []
     @State private var yearsCache: [(year: String, sectionID: String)] = []
+    @State private var windowStructure: ViewStructure?
+    @State private var windowItems: [String: GalleryMediaItem] = [:]
 
     // Photo ids currently visible in the viewport. Stored in a reference
     // type so per-scroll mutations do NOT trigger body re-evaluation —
@@ -135,7 +145,7 @@ struct PhotoGridScreen: View {
             firstDate: photos.first?.dateTaken,
             lastDate: photos.last?.dateTaken,
             query: query.trimmingCharacters(in: .whitespaces),
-            activeTagIDs: activeTags.map(\.id),
+            activeTagIDs: (fixedTags + activeTags).map(\.id),
             epoch: store.libraryEpoch
         )
     }
@@ -144,6 +154,21 @@ struct PhotoGridScreen: View {
     /// chip — i.e. `filtered.count` no longer reflects the full input set.
     private var isFiltered: Bool {
         !activeTags.isEmpty || !query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var windowItemIDs: [String] {
+        windowStructure?.sections.flatMap(\.itemIds) ?? []
+    }
+
+    private var displayedCount: Int {
+        usesWindowedLibrary ? windowItemIDs.count : filtered.count
+    }
+
+    private var displayedPhotoIDs: [UUID] {
+        if usesWindowedLibrary {
+            return windowItemIDs.compactMap(UUID.init(uuidString:))
+        }
+        return filtered.map(\.id)
     }
 
     /// The title shown in the navigation bar — collapses to the select-mode
@@ -168,7 +193,7 @@ struct PhotoGridScreen: View {
             return liveDateRange
         }
         if isFiltered {
-            let n = filtered.count
+            let n = displayedCount
             return "\(n) \(n == 1 ? "match" : "matches")"
         }
         return subtitle
@@ -223,7 +248,7 @@ struct PhotoGridScreen: View {
     private var suggestions: [TagSuggestion] {
         let q = query.lowercased()
         guard !q.isEmpty else { return [] }
-        let activeIDs = Set(activeTags.map(\.id))
+        let activeIDs = Set((fixedTags + activeTags).map(\.id))
         return Array(store.allTags.lazy.filter {
             !activeIDs.contains($0.id) &&
             ($0.displayName.lowercased().contains(q) || $0.fullPath.lowercased().contains(q))
@@ -259,12 +284,44 @@ struct PhotoGridScreen: View {
                         }
                     }
 
-                    if filtered.isEmpty {
+                    if usesWindowedLibrary && windowStructure == nil {
+                        ProgressView()
+                            .padding(.top, 48)
+                    } else if displayedCount == 0 {
                         ContentUnavailableView(
                             "No photos match.",
                             systemImage: "photo.stack"
                         )
                         .padding(.top, 48)
+                    } else if usesWindowedLibrary, let structure = windowStructure {
+                        LazyVGrid(columns: grid.columns(for: width), spacing: 2) {
+                            ForEach(structure.sections, id: \.id) { section in
+                                Section {
+                                    ForEach(section.itemIds.indices, id: \.self) { offset in
+                                        windowedGridCell(
+                                            id: section.itemIds[offset],
+                                            sectionID: section.id,
+                                            offset: offset,
+                                            generation: structure.generation,
+                                            cellSize: cell
+                                        )
+                                    }
+                                } header: {
+                                    if structure.sections.count > 1 && !section.title.isEmpty {
+                                        Text(section.title.uppercased())
+                                            .font(.system(size: 12.5, weight: .semibold))
+                                            .tracking(0.2)
+                                            .foregroundStyle(Design.ink2)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 20)
+                                            .padding(.top, 14)
+                                            .padding(.bottom, 6)
+                                            .id(section.id)
+                                    }
+                                }
+                            }
+                        }
+                        .scrollTargetLayout()
                     } else {
                         LazyVGrid(columns: grid.columns(for: width), spacing: 2) {
                             ForEach(sectionsCache) { section in
@@ -360,6 +417,10 @@ struct PhotoGridScreen: View {
             if !initialTags.isEmpty && !hasSeededInitialTags {
                 hasSeededInitialTags = true
                 activeTags = initialTags
+                return
+            }
+            if usesWindowedLibrary {
+                refreshWindowedView()
                 return
             }
             await recomputeFilter()
@@ -523,6 +584,129 @@ struct PhotoGridScreen: View {
     // MARK: - Grid cell
 
     @ViewBuilder
+    private func windowedGridCell(
+        id: String,
+        sectionID: String,
+        offset: Int,
+        generation: UInt64,
+        cellSize: CGFloat
+    ) -> some View {
+        let photoID = UUID(uuidString: id)!
+        let item = windowItems[id]
+        let isSelected = selected.contains(photoID)
+
+        ZStack {
+            if let item {
+                ThumbnailView(
+                    url: URL(fileURLWithPath: item.thumbnailRef),
+                    size: cellSize,
+                    isVideo: item.badge == "Video",
+                    isLivePhoto: item.badge == "Live Photo",
+                    isRemote: item.badge == "In cloud"
+                )
+                .accessibilityLabel(item.label ?? "Photo")
+            } else {
+                Rectangle()
+                    .fill(Design.bgCard)
+                    .overlay { ProgressView().controlSize(.small) }
+            }
+
+            if selectMode {
+                Rectangle()
+                    .fill(isSelected ? Design.accentColor.opacity(0.18) : .clear)
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 22))
+                            .foregroundStyle(isSelected ? Design.accentColor : .white)
+                            .padding(6)
+                    }
+                }
+            }
+        }
+        .frame(width: cellSize, height: cellSize)
+        .contentShape(Rectangle())
+        .id(photoID)
+        .matchedTransitionSource(id: photoID, in: zoomNamespace)
+        .task(id: "\(generation):\(offset / 64)") {
+            loadPhotoWindow(
+                sectionID: sectionID,
+                offset: offset,
+                generation: generation
+            )
+        }
+        .onTapGesture {
+            if selectMode {
+                if selected.contains(photoID) { selected.remove(photoID) }
+                else { selected.insert(photoID) }
+            } else if let photo = store.index.photo(byID: photoID) {
+                openViewer(at: photo)
+            }
+        }
+        .contextMenu {
+            if !selectMode,
+               let photo = store.index.photo(byID: photoID) {
+                Button { openViewer(at: photo) } label: {
+                    Label("Open", systemImage: "eye")
+                }
+                PhotoShareMenu(
+                    canResize: !photo.isVideo,
+                    onSelect: { quality in
+                        shareRequest = PhotoShareRequest(photos: [photo], quality: quality)
+                    }
+                ) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        selectMode = true
+                        selected.insert(photoID)
+                    }
+                } label: {
+                    Label("Select", systemImage: "checkmark.circle")
+                }
+                if let person = featureContextPerson {
+                    Button {
+                        store.people.setFeaturedPhoto(
+                            personPath: person.fullPath,
+                            photoID: photoID
+                        )
+                    } label: {
+                        Label("Set as featured image", systemImage: "star")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Fetch one 64-item chunk. Every cell in the chunk shares the same task
+    /// id and the dictionary guard below, so a visible row crosses FFI once.
+    /// A refused/stale read refreshes structure instead of mixing content from
+    /// two generations.
+    @MainActor
+    private func loadPhotoWindow(sectionID: String, offset: Int, generation: UInt64) {
+        let chunkOffset = offset / 64 * 64
+        guard windowStructure?.generation == generation else { return }
+        let section = windowStructure?.sections.first { $0.id == sectionID }
+        guard let section, section.itemIds.indices.contains(offset) else { return }
+        let requestedID = section.itemIds[offset]
+        guard windowItems[requestedID] == nil else { return }
+        do {
+            let rows = try store.index.photoWindow(
+                sectionID: sectionID,
+                offset: chunkOffset,
+                limit: 64,
+                generation: generation
+            )
+            for row in rows { windowItems[row.id] = row }
+        } catch {
+            refreshWindowedView()
+        }
+    }
+
+    @ViewBuilder
     private func gridCell(photo: PhotoFile, cellSize: CGFloat) -> some View {
         let isSelected = selected.contains(photo.id)
         ZStack {
@@ -607,6 +791,18 @@ struct PhotoGridScreen: View {
     }
 
     private func openViewer(at photo: PhotoFile) {
+        if usesWindowedLibrary {
+            // Domain payload is materialized only for the explicit viewer
+            // action; the grid itself remains IDs + bounded display DTOs.
+            if fixedPhotoIDs != nil {
+                filtered = store.index.photos(withIDs: displayedPhotoIDs)
+            } else {
+                filtered = store.index.search(
+                    query: query,
+                    requiredTags: fixedTags + activeTags
+                )
+            }
+        }
         viewerCurrentPhotoID = photo.id
         viewerID = UUID()
         viewerPhoto = photo
@@ -670,17 +866,17 @@ struct PhotoGridScreen: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if selectMode {
                 Button {
-                    if selected.count == filtered.count {
+                    if selected.count == displayedCount {
                         selected.removeAll()
                     } else {
-                        selected = Set(filtered.map(\.id))
+                        selected = Set(displayedPhotoIDs)
                     }
                 } label: {
-                    Text(selected.count == filtered.count && !filtered.isEmpty ? "Deselect All" : "Select All")
+                    Text(selected.count == displayedCount && displayedCount > 0 ? "Deselect All" : "Select All")
                 }
                 .fontWeight(.semibold)
                 .foregroundStyle(Design.accentColor)
-                .disabled(filtered.isEmpty)
+                .disabled(displayedCount == 0)
             } else {
                 if playableMemory != nil {
                     Button {
@@ -703,7 +899,11 @@ struct PhotoGridScreen: View {
     // MARK: - Select bottom bar
 
     private var selectBottomBar: some View {
-        let selectedPhotos = filtered.filter { selected.contains($0.id) }
+        let selectedPhotos = usesWindowedLibrary
+            ? displayedPhotoIDs
+                .filter(selected.contains)
+                .compactMap { store.index.photo(byID: $0) }
+            : filtered.filter { selected.contains($0.id) }
         let canResize = !selectedPhotos.isEmpty && selectedPhotos.allSatisfy { !$0.isVideo }
 
         return HStack {
@@ -771,6 +971,36 @@ struct PhotoGridScreen: View {
     }
 
     // MARK: - Filter & sort (off-main)
+
+    @MainActor
+    private func refreshWindowedView() {
+        let structure: ViewStructure
+        if let fixedPhotoIDs {
+            structure = store.index.photoIDsView(
+                id: title,
+                photoIDs: fixedPhotoIDs,
+                query: query,
+                requiredTags: fixedTags + activeTags
+            )
+        } else {
+            structure = store.index.photoView(
+                query: query,
+                requiredTags: fixedTags + activeTags
+            )
+        }
+        guard structure.generation != windowStructure?.generation else { return }
+        windowItems.removeAll(keepingCapacity: true)
+        windowStructure = structure
+
+        // Visible-date range is metadata, not the rendered photo payload.
+        // Keep only the primitive date map needed by the toolbar.
+        var dates: [UUID: Date] = [:]
+        dates.reserveCapacity(photos.count)
+        for photo in photos {
+            if let date = photo.dateTaken { dates[photo.id] = date }
+        }
+        dateByID = dates
+    }
 
     /// Sort + filter + group the photos input off the main thread, then publish
     /// to @State. Called by `.task(id: filterKey)` — SwiftUI will cancel the

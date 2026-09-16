@@ -1080,7 +1080,7 @@ final class GalleryStore {
         let generation = widgetExportGeneration
         Task { [weak self] in
             let started = CFAbsoluteTimeGetCurrent()
-            let scheduled = await CoreMemories.computeScheduled(inputs, hiddenMemoryIDs: hidden)
+            let scheduled = await index.computeScheduled(inputs, hiddenMemoryIDs: hidden)
             // The line the horizon grouping's gate is measured from. It
             // replaces the `OnThisDay (…)` burst the deleted Swift generators
             // logged once per horizon day; the core does not log, so the one
@@ -1134,7 +1134,14 @@ final class GalleryStore {
     /// The only production caller is `exportWidgetSnapshot`, which inlines the
     /// same call so it can carry its own generation guard.
     func computeScheduledMemories(photos: [PhotoFile]) async -> [WidgetSnapshotExporter.ScheduledMemory] {
-        await CoreMemories.computeScheduled(
+        // Production reaches this with the current index already published.
+        // Fixture callers may hand in an isolated synthetic table, so publish
+        // that table once before measuring the horizon itself.
+        if !index.ownsScheduledPhotos(photos) {
+            index.build(allPhotos: photos)
+            await index.settle()
+        }
+        return await index.computeScheduled(
             scheduledInputs(photos: photos),
             hiddenMemoryIDs: memories.hiddenMemories
         ).map {
