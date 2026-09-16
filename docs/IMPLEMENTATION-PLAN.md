@@ -42,12 +42,9 @@ embedded artwork; HIG search (global, type-to-search, Ctrl+F). Rebuild
 `localmusic` on the host with `--features gstreamer-playback` for actual
 play. Details in
 [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md).
-Still open in Phase 0/1: host
-“before” PNGs when mutter can capture — do not invent
-`docs/screenshots/gtk-before/`. The four Fedora Contacts source
-screenshots (`docs/screenshots/Screenshot From 2026-09-16 14-46-27.png`,
-`…14-46-45.png`, `…14-47-02.png`, `…14-47-13.png`) are absent from this
-clean main. Ubuntu 26.04
+Contacts “before” shots live in
+[`docs/screenshots/gtk-before/`](screenshots/gtk-before/). Further
+mutter captures stay optional. Ubuntu 26.04
 (resolute) floor versus Fedora 44 is GTK 4.22.2, libadwaita 1.9.0, Pango
 1.57.0. L6 ToggleGroup / WrapBox fallbacks are not required.
 

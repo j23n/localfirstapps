@@ -7,7 +7,8 @@ lever); revised again against `main` @ `9082c72` (Phase 2 split into
 Gallery on `gallery-ffi` view windows, `chart-row`, Contacts settings
 from spec). D1: Ubuntu 26.04 archive is GTK 4.22.2 / libadwaita 1.9.0 /
 Pango 1.57.0; floor versus Fedora 44 is those versions; L6 fallbacks
-not required. Fedora Contacts source PNGs are absent on this clean main.
+not required. Fedora Contacts “before” shots are in
+`docs/screenshots/gtk-before/`.
 **Landed:** `shells/` gtk4 0.11 / libadwaita 0.9; `gen_r14.py` accent-fg
 and authored Gallery dark surfaces; `init_style` (token CSS then kit
 `data/style.css`; apps no longer ship `ADW_ACCENT`); colour-literal
@@ -28,8 +29,7 @@ passes avatar initials and letter section keys; Music L4 only). Host
 `gtk-before/` PNGs are written only when mutter actually captures a
 frame — this change does not commit placeholders.
 
-**Host review 2026-09-16** (shots `16-40-01` contact detail, `16-41-25`
-library, `16-44-39` playlist `kewed`). 2a clamp/page chrome is visible.
+**Host review 2026-09-16.** 2a clamp/page chrome is visible.
 The wide IA is still a lonely column; Settings is a fourth tab; pushed
 pages stack two headers so the back button sits under the switcher;
 contact detail is an ungrouped field dump (Note leaks raw `ITEM1.*`);
@@ -189,8 +189,6 @@ still `--features gstreamer-playback` on the host build.
   (tap → Now Playing sheet). Track lists are flush (not boxed).
   Playlist header: add + overflow. One in-content `Play All` pill.
 
-Host `gtk-before/` rename of the 16:40 shots can wait.
-
 Goal: take the design language of the iOS apps (screenshots in
 `docs/screenshots/local*-*.jpg`, also on
 <https://j23n.com/public/posts/2026/localios>) and express it in native
@@ -272,15 +270,14 @@ one-off `add_css_class` in `contacts-gtk` / `music-gtk` /
 
 ## What is wrong today (Contacts on Fedora)
 
-Screenshots: `docs/screenshots/Screenshot From 2026-09-16 14-4*.png`
-(rename in Phase 0, see below).
+Screenshots: `docs/screenshots/gtk-before/contacts-*.png`.
 
 | Shot | Symptom | Cause |
 |---|---|---|
-| 14-46-27 list, wide | Boxed list runs edge to edge, top corners rounded, bottom not; rows are title-only; no sections; 1200px-wide rows | `list_box_page()` has no `AdwClamp` or margins; `text_row` has no leading visual; no section headers |
-| 14-46-45 conflict review | Dialog collapsed to ~60px, "Resolve" clipped | `shell_kit_gtk::sheet()` sets no `content-width`/`content-height`; `AdwDialog` takes the child's tiny natural width |
-| 14-47-02 tags | No title, no back button; suffix buttons stretched to row height; "Add" visible on the Settings tab | `push_page()` puts content straight into `AdwNavigationPage` with no `AdwToolbarView`/`AdwHeaderBar`; one global header owns all actions; suffix buttons lack `valign(Center)` |
-| 14-47-13 add/edit sheet | Same collapse; a column of entry-row edit icons | same as the sheet above |
+| `contacts-list` | Boxed list runs edge to edge, top corners rounded, bottom not; rows are title-only; no sections; 1200px-wide rows | `list_box_page()` has no `AdwClamp` or margins; `text_row` has no leading visual; no section headers |
+| `contacts-conflict-sheet` | Dialog collapsed to ~60px, "Resolve" clipped | `shell_kit_gtk::sheet()` sets no `content-width`/`content-height`; `AdwDialog` takes the child's tiny natural width |
+| `contacts-tags` | No title, no back button; suffix buttons stretched to row height; "Add" visible on the Settings tab | `push_page()` puts content straight into `AdwNavigationPage` with no `AdwToolbarView`/`AdwHeaderBar`; one global header owns all actions; suffix buttons lack `valign(Center)` |
+| `contacts-settings` | Settings groups with a column of entry-row edit icons | same sheet/row chrome as above |
 
 Also found in code:
 
@@ -455,15 +452,15 @@ The base is `origin/main` @ `9082c72`: `shells/` already has
 `list_box_page` change (Contacts + Music, `shell-kit-gtk/src/screen.rs`)
 is already on the tree.
 
-Phase 0 note (2026-09-16): the four `Screenshot From 2026-09-16 14-4*.png`
-files are not in this tree or in searchable git history; `docs/screenshots/gtk-before/`
-was not created. Ubuntu 26.04 versions are confirmed (see D1). The
+Phase 0 note (2026-09-16): Fedora Contacts “before” shots are
+`docs/screenshots/gtk-before/contacts-{list,conflict-sheet,tags,settings}.png`.
+Ubuntu 26.04 versions are confirmed (see D1). The
 `shells/` crate bump (gtk4 0.11 / libadwaita 0.9) has landed; tests are
-green on those crates. Remaining Phase 0 is the snapshot harness and
-host `gtk-before/` PNGs.
+green on those crates. The snapshot harness is in; further mutter
+captures stay optional.
 
-1. Rename the Fedora screenshots to
-   `docs/screenshots/gtk-before/contacts-{list,conflict-sheet,tags,edit-sheet}.png`.
+1. **Landed.** Fedora screenshots renamed to
+   `docs/screenshots/gtk-before/contacts-{list,conflict-sheet,tags,settings}.png`.
 2. Confirm Ubuntu 26.04 versions (`apt policy libgtk-4-1 libadwaita-1-0 libpango-1.0-0`).
    Floor = the lower of 26.04 and Fedora 44. If the floor is below
    libadwaita 1.7, write the L6 fallbacks before Phase 2c uses
@@ -926,8 +923,8 @@ and is re-snapshotted in every consumer.
   Gallery UI.
 - gtk4 0.8→0.11 and libadwaita 0.6→0.9 **landed**; Phase 2a structure
   **landed**; Phase 2b typed builders **landed**; Phase 2c row polish
-  **landed**. Remaining Phase 0 is host `gtk-before/` PNGs when mutter
-  captures. Next is Phase 3 Contacts.
+  **landed**. Contacts `gtk-before/` baselines are in tree; further
+  mutter captures stay optional. Next is Phase 3 Contacts.
 - Headless mutter in CI may not be available. Snapshots stay a local
   script; unit tests must not require them.
 - `GtkSectionModel` adapters, if Music needs Flush, stay in `music-gtk`

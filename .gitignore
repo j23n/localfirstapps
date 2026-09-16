@@ -2,3 +2,4 @@ docker/.env
 .DS_Store
 .worktrees/
 build/
+docs/screenshots/Screenshot From *.png
