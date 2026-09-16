@@ -1,7 +1,8 @@
 # Graph check (ADR 0002 R13, green after localcore-geo), Milestone A
 # source greps (no FileProvider / MetricKit in production Swift/Go),
 # ADR 0007 R16 review controls, semantic debt baseline, ADR 0003 R6
-# (still red: gallery-ffi domain Records), ADR 0004 R14 generated drift, and
+# (still red: gallery-ffi domain Records), ADR 0004 R14 generated drift,
+# ADR 0004 R11 colour literals in GTK shells, and
 # shell-kit-swift's Linux-checkable package boundaries.
 name: Conformance
 
@@ -94,6 +95,21 @@ jobs:
 
       - name: Regenerating produces no diff
         run: python3 scripts/gen_r14.py --check
+
+      - name: Accent-fg contrast table
+        run: python3 scripts/test_gen_r14.py
+
+  colour:
+    name: "ADR 0004 R11 colour literals"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Checker self-test
+        run: python3 conformance/colour/check.py --self-test
+
+      - name: No #RGB / #RRGGBB in shells CSS or Rust
+        run: python3 conformance/colour/check.py
 
   shell-kit-swift:
     name: "shell-kit-swift static boundaries"

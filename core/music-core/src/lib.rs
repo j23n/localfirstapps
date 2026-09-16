@@ -24,9 +24,11 @@ pub use actions::{
     RemovePlaylistEntriesCommand, ResolveConflictCommand, SetLibraryViewCommand,
 };
 pub use display::{
-    conflict_choice_rows, conflict_rows, playlist_action_rows, playlist_entry_rows, playlist_rows,
-    settings_info_rows, ActionRole, ActionRow, ConflictRow, MediaItem, StatusRow, StatusSeverity,
-    TextRow,
+    album_art_track_id, album_rows, album_track_items, artist_art_track_id, artist_rows,
+    artist_track_items, conflict_choice_rows, conflict_rows, playlist_action_rows,
+    playlist_art_track_id, playlist_entry_rows, playlist_rows, search_hits, settings_info_rows,
+    ActionRole, ActionRow, ConflictRow, MediaItem, SearchHit, SearchKind, StatusRow,
+    StatusSeverity, TextRow,
 };
 pub use folder_log::{
     append_changed, append_created, append_deleted, append_group_resolved, log_root, read_ops,

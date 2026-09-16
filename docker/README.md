@@ -72,18 +72,10 @@ order of comfort: `pi` from npm at a pinned version, and `cursor-agent` from
 `cursor.com/install`, the only unpinned step in the image (`INSTALL_CURSOR=0`
 drops it).
 
-The package list is in **two groups**, and this matters:
+Required packages fail the build if a name is wrong. `helix`, `eza`, `btop`,
+and `EXTRA_PACKAGES` use `--skip-unavailable` so they do not.
 
-- **Required** — the build fails, naming the missing *tool*, if any is absent.
-- **Optional** — `helix`, `eza`, `btop`. Skipped with a printed note.
-
-Both groups install with `--skip-unavailable`, so **dnf never decides what is
-fatal**; a single assertion layer does. That is a direct lesson from the first
-build of this file: `zellij` is not in Fedora 44, dnf failed the transaction
-on the name, and the build died with a raw `No match for argument` instead of
-reaching the layer written to explain exactly that.
-
-`EXTRA_PACKAGES` adds to the optional group without editing the Dockerfile:
+`EXTRA_PACKAGES` adds extras without editing the Dockerfile:
 
 ```
 docker compose build --build-arg EXTRA_PACKAGES="tig bat fzf"
@@ -170,13 +162,4 @@ rather than failing obscurely later. The two you may actually hit:
   ownership, usually because it predates this compose file. The message names
   the exact `docker volume rm` or `chown` to run.
 - **`dnf: unknown option --skip-unavailable`** — your base image is on dnf4
-  rather than dnf5. Replace it with `--setopt=strict=0` in both dnf lines.
-
-## Not verified
-
-This image has never been built in the environment these files were written
-in — no Docker daemon, and the egress policy blocks the Fedora mirrors, so
-package names could not be checked against a real repository. The assertion
-layers exist because of that: they turn an unverifiable package name into a
-build failure that names the tool. `rustup` and `graphene-devel` are the two
-least confident names in the file.
+  rather than dnf5. That flag is only used on the optional extras line.

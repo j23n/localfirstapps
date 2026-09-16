@@ -72,6 +72,26 @@ fn group_prefix() {
 }
 
 #[test]
+fn apple_grouped_url_uses_x_ablabel() {
+    let c = card(
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ajay\r\nitem1.URL:http://www.facebook.com/profile.php?id=1\r\nitem1.X-ABLabel:Facebook\r\nEND:VCARD\r\n",
+    );
+    assert_eq!(c.urls.len(), 1);
+    assert_eq!(c.urls[0].label, "Facebook");
+    assert!(c.note.is_empty());
+}
+
+#[test]
+fn item_dump_in_note_becomes_a_url() {
+    let c = card(
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ajay\r\nNOTE:ITEM1.URL:http://www.facebook.com/a\\nITEM1.X-ABLABEL:Facebook\r\nEND:VCARD\r\n",
+    );
+    assert_eq!(c.urls.len(), 1);
+    assert_eq!(c.urls[0].label, "Facebook");
+    assert!(c.note.is_empty());
+}
+
+#[test]
 fn not_a_group_prefix() {
     let c = card("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nTEL;TYPE=home.work:555\r\nEND:VCARD\r\n");
     assert_eq!(c.phones.len(), 1);

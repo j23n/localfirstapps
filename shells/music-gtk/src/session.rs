@@ -2,13 +2,14 @@
 //! display rows. No playlist text is parsed or serialized here.
 
 use music_core::{
-    add_tracks_logged, conflict_choice_rows, conflict_rows, create_playlist_logged,
+    add_tracks_logged, album_art_track_id, album_rows, album_track_items, artist_art_track_id,
+    artist_rows, artist_track_items, conflict_choice_rows, conflict_rows, create_playlist_logged,
     delete_playlist_logged, media_item, move_entry_logged, playlist_action_rows,
-    playlist_entry_rows, playlist_rows, remove_entries_logged, resolve_conflict_logged,
-    set_library_view, settings_info_rows, AddTracksCommand, CreatePlaylistCommand,
-    DeletePlaylistCommand, LibraryContentState, MediaItem, MediaSource, MovePlaylistEntryCommand,
-    RemovePlaylistEntriesCommand, ResolveConflictCommand, SetLibraryViewCommand, SortOption,
-    StatusRow, Store, StoreError, TextRow, Vfs,
+    playlist_art_track_id, playlist_entry_rows, playlist_rows, remove_entries_logged,
+    resolve_conflict_logged, search_hits, set_library_view, settings_info_rows, AddTracksCommand,
+    CreatePlaylistCommand, DeletePlaylistCommand, LibraryContentState, MediaItem, MediaSource,
+    MovePlaylistEntryCommand, RemovePlaylistEntriesCommand, ResolveConflictCommand, SearchHit,
+    SetLibraryViewCommand, SortOption, StatusRow, Store, StoreError, TextRow, Vfs,
 };
 use shell_kit_gtk::{LogLevel, LogStore};
 
@@ -159,8 +160,70 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         })
     }
 
+    pub fn pending_metadata(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<music_core::MetadataRequest>, ShellError> {
+        Ok(self.store()?.metadata_requests(0, limit))
+    }
+
+    pub fn apply_metadata_batch(
+        &mut self,
+        updates: Vec<music_core::MetadataUpdate>,
+    ) -> Result<(), ShellError> {
+        self.store_mut()?.apply_metadata_batch(updates)?;
+        Ok(())
+    }
+
     pub fn playlist_rows(&self) -> Result<Vec<TextRow>, ShellError> {
         Ok(playlist_rows(self.store()?))
+    }
+
+    pub fn album_rows(&self) -> Result<Vec<TextRow>, ShellError> {
+        Ok(album_rows(self.store()?))
+    }
+
+    pub fn artist_rows(&self) -> Result<Vec<TextRow>, ShellError> {
+        Ok(artist_rows(self.store()?))
+    }
+
+    pub fn album_tracks(&self, album_id: &str) -> Result<Vec<MediaItem>, ShellError> {
+        Ok(album_track_items(self.store()?, album_id))
+    }
+
+    pub fn artist_tracks(&self, artist_id: &str) -> Result<Vec<MediaItem>, ShellError> {
+        Ok(artist_track_items(self.store()?, artist_id))
+    }
+
+    pub fn search_hits(&self, query: &str) -> Result<Vec<SearchHit>, ShellError> {
+        Ok(search_hits(self.store()?, query))
+    }
+
+    pub fn album_art_track(&self, album_id: &str) -> Option<String> {
+        album_art_track_id(self.store().ok()?, album_id)
+    }
+
+    pub fn artist_art_track(&self, artist_id: &str) -> Option<String> {
+        artist_art_track_id(self.store().ok()?, artist_id)
+    }
+
+    pub fn playlist_art_track(&self, playlist_id: &str) -> Option<String> {
+        playlist_art_track_id(self.store().ok()?, playlist_id)
+    }
+
+    pub fn track_item(&self, id: &str) -> Option<MediaItem> {
+        self.store().ok()?.track(id).map(media_item)
+    }
+
+    pub fn playlist_entry_track_id(&self, playlist_id: &str, entry_id: &str) -> Option<String> {
+        self.store()
+            .ok()?
+            .playlist(playlist_id)?
+            .entries
+            .iter()
+            .find(|entry| entry.id == entry_id)?
+            .track_id
+            .clone()
     }
 
     pub fn playlist_detail(&self, playlist_id: &str) -> Result<PlaylistDetailRows, ShellError> {
@@ -329,8 +392,42 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
     }
 
     pub fn play_track(&mut self, track_id: &str) -> Result<(), ShellError> {
-        let source = self.store()?.media_source(track_id)?;
-        self.start_queue(vec![source], 0)
+        self.play_ids_from(&[track_id.to_owned()], track_id)
+    }
+
+    pub fn play_ids_from(&mut self, ids: &[String], start_id: &str) -> Result<(), ShellError> {
+        let mut sources = Vec::new();
+        let mut index = 0;
+        for id in ids {
+            if let Ok(source) = self.store()?.media_source(id) {
+                if id == start_id {
+                    index = sources.len();
+                }
+                sources.push(source);
+            }
+        }
+        if sources.is_empty() {
+            return Err(StoreError::NotFound.into());
+        }
+        self.start_queue(sources, index)
+    }
+
+    pub fn play_album(&mut self, album_id: &str) -> Result<(), ShellError> {
+        let ids: Vec<String> = album_track_items(self.store()?, album_id)
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        let start = ids.first().cloned().unwrap_or_default();
+        self.play_ids_from(&ids, &start)
+    }
+
+    pub fn play_artist(&mut self, artist_id: &str) -> Result<(), ShellError> {
+        let ids: Vec<String> = artist_track_items(self.store()?, artist_id)
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        let start = ids.first().cloned().unwrap_or_default();
+        self.play_ids_from(&ids, &start)
     }
 
     pub fn play_playlist(&mut self, playlist_id: &str) -> Result<(), ShellError> {

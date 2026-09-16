@@ -69,7 +69,10 @@ fn enqueue_is_idempotent_and_preserves_state() {
         enqueue(&mut conn, Q, &["/a.jpg".into(), "/c.jpg".into()]).unwrap(),
         1
     );
-    assert_eq!(item(&conn, Q, "/a.jpg").unwrap().unwrap().state, WorkState::Done);
+    assert_eq!(
+        item(&conn, Q, "/a.jpg").unwrap().unwrap().state,
+        WorkState::Done
+    );
 }
 
 /// Opening a connection must not reclaim: two capabilities share a file,
@@ -179,7 +182,10 @@ fn release_only_touches_rows_this_run_claimed() {
         item(&conn, Q, "/a.jpg").unwrap().unwrap().state,
         WorkState::Pending
     );
-    assert_eq!(item(&conn, Q, "/b.jpg").unwrap().unwrap().state, WorkState::Done);
+    assert_eq!(
+        item(&conn, Q, "/b.jpg").unwrap().unwrap().state,
+        WorkState::Done
+    );
 }
 
 #[test]
@@ -241,7 +247,15 @@ fn mark_stale_only_demotes_done() {
     let mut conn = mem();
     enqueue(&mut conn, Q, &["/a.jpg".into()]).unwrap();
     begin(&conn, Q, "/a.jpg").unwrap();
-    finish_done(&conn, Q, "/a.jpg", "p", 1, Some((4096, Some(1_700_000_000)))).unwrap();
+    finish_done(
+        &conn,
+        Q,
+        "/a.jpg",
+        "p",
+        1,
+        Some((4096, Some(1_700_000_000))),
+    )
+    .unwrap();
     assert_eq!(mark_stale(&conn, Q, "/a.jpg").unwrap(), 1);
     assert_eq!(
         item(&conn, Q, "/a.jpg").unwrap().unwrap().state,

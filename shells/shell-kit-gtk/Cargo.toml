@@ -9,5 +9,5 @@ description = "GTK4 / libadwaita bindings for ADR 0004 R4"
 
 [dependencies]
 localcore-ui = { path = "../../core/localcore-ui" }
-gtk = { package = "gtk4", version = "0.8", features = ["v4_14"] }
-adw = { package = "libadwaita", version = "0.6", features = ["v1_5"] }
+gtk = { package = "gtk4", version = "0.11", features = ["v4_22"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }

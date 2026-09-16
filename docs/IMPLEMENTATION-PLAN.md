@@ -9,6 +9,48 @@ the work. Do not leave findings only in a side document. The GTK design
 language and kit sequence live in [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md);
 the inventory and sequencing consequences of that pass are recorded here.
 
+The GTK design pass is **in progress.** Phase 0 crate bump is done
+(`shells/` gtk4 0.11 / libadwaita 0.9; leftover Gallery GTK stays 0.8).
+Phase 1 generator is done (libadwaita accent-fg, authored Gallery dark
+surfaces, leftover `--accent` alias of `--accent-bg-color`). `init_style`
+is done: apps call `init_style(TOKEN_CSS)` only; kit `data/style.css`
+maps `accent_bg_color` from `--accent-bg-color` (do not treat `--accent`
+as the API) and does not clobber `accent_color`. Colour-literal check
+covers `shells/**/*.css` and
+`shells/**/*.rs`. Phase 0 screenshot harness is in
+(`shell-kit-gtk::snapshot`, debug `--route` / `--snapshot` / `--size` /
+`--folder`, `scripts/gtk-snapshots.sh`). **Phase 2a structure is
+landed:** `adaptive_shell` / `page` / `clamped` / sized `sheet`;
+Contacts and Music swapped off `apply_chrome` (Add stays on the shared
+header). **Phase 2b typed builders are landed:** `ListScreen`,
+`SettingsScreen`, `FormSheet`, `empty_state`, `selection_bar`; Contacts
+`contact-list` / `settings` / `tag-management` / `logs` / `contact-edit`
+and Music `playlist-list` / `settings` assemble through them. **Phase 2c
+row polish is landed:** `Leading` on `text_row`, dim numeric suffixes,
+status-row icons, `action_button_row`, `scope_toggle` for
+`Filter::Scope`, `header_action` / `inline_primary` / `overflow(menu)`;
+Contacts list rows pass avatar initials and letter section keys. Reuse is
+23 shared of 25 Contacts / 27 Music bindings after the Music stage
+layout (Music dropped `SplitListDetail`; Logs still uses `ListScreen`).
+
+Host review 2026-09-16 plus full GNOME HIG pass is **implemented**
+in the kit and both GTK apps: primary menu → Settings dialog;
+Contacts list\|detail split; Music 4-tab browse switcher (Songs ·
+Artists · Albums · Playlists) with Now Playing as the wide stage
+and a compact mini-player; conflict field diff; `lofty` metadata and
+embedded artwork; HIG search (global, type-to-search, Ctrl+F). Rebuild
+`localmusic` on the host with `--features gstreamer-playback` for actual
+play. Details in
+[`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md).
+Still open in Phase 0/1: host
+“before” PNGs when mutter can capture — do not invent
+`docs/screenshots/gtk-before/`. The four Fedora Contacts source
+screenshots (`docs/screenshots/Screenshot From 2026-09-16 14-46-27.png`,
+`…14-46-45.png`, `…14-47-02.png`, `…14-47-13.png`) are absent from this
+clean main. Ubuntu 26.04
+(resolute) floor versus Fedora 44 is GTK 4.22.2, libadwaita 1.9.0, Pango
+1.57.0. L6 ToggleGroup / WrapBox fallbacks are not required.
+
 ---
 
 ## 1. What changed from r1, and why it matters
@@ -428,7 +470,7 @@ fixture and a survival assertion):
 **Backlog** (left B; one register). Deferral assigns a phase —
 nothing is "whenever," optional, or release-notes-only.
 `shell-kit-gtk` began provisionally in Phase 3 (3.3). Music GTK is now
-the second consumer (17 shared of 17 Contacts / 18 Music bindings).
+the second consumer (18 shared of 18 Contacts / 19 Music bindings).
 Enum exhaustiveness was never reuse evidence; design/density is the
 remaining kit work (`docs/GTK-DESIGN-PLAN.md`). Tokens and a
 record-inventory-green contacts FFI landed in 3.2 / 3.1; serialized-vCard
@@ -450,13 +492,13 @@ block C.
 | Health web-reference curation | **done (pre-6)** | `apps/health/ui-spec/` retains screen/data contracts and deterministic fixtures; HTTP/frontend files are deleted. No Health shell or invented accent. |
 | `chart-row` R4 kind + kit sparkline | **done (pre-6)** | ADR 0004 amendment + `ChartRowData`. Domain-neutral; Health GTK is still Phase 6. |
 | `health-core` / `health-ffi` | **done (pre-6)** | Projection over `localcore-log` / `localcore-blob`; typed FFI. Go remains the writer. Apple `export.xml` is not parsed (ADR 0008). |
-| `shell-kit-gtk` (one binding per R4 kind) | **measured reuse (4)** | Contacts + Music: 17 shared of 17 / 18 bindings (`measure_reuse`). Enum exhaustiveness proves vocabulary coverage, not density. Clamp, sheet sizing, `push_page` chrome, and typed builders are the GTK design pass. |
-| Dark token palettes ×4 | **done (3.5)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery *surfaces* stayed light; the GTK design pass authors dark Gallery surfaces as an exception. Health has no catalog; not invented. |
+| `shell-kit-gtk` (one binding per R4 kind) | **measured reuse (4)** | Contacts + Music: 23 shared of 25 / 27 bindings (`measure_reuse`). HIG chrome (`PrimaryMenu`, `PreferencesDialog`, `AboutDialog`, `SearchBar`) is shared. Contacts dropped `AdaptiveShell`. Music dropped `SplitListDetail` (browse is not a list\|detail split). |
+| Dark token palettes ×4 | **done (3.5 + D4)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery dark *surfaces* are the authored D4 exception (`gallery.toml`). Health has no catalog; not invented. |
 | Milestone C review (ADR 0004) | **done (3.6)** | Contacts needed no new kind. That validates the inventory for this slice, not the family-wide UI architecture. Shared contact display/action state continues moving into `contacts-core`. |
 | `shell-kit-swift` | **4** | iOS contacts views are hand-rolled. Music is the next SwiftUI vertical. |
 | Contacts tags / logs / full GTK fields | **done (GTK)** | Routed on `contacts-gtk`. iOS tags/logs remain outside the C-loop. |
 | GTK 4.22 list viewport | **done (4)** | GTK 4.22 wraps `ScrolledWindow` children in `Viewport`. `list_box_page()` keeps the `ListBox` handle; `.child().and_downcast::<ListBox>()` panics. |
-| GTK design pass | **4 / 5** | Kit-first sequence in [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). Two-consumer rule; typed `ListScreen` / `SettingsScreen` / `FormSheet` builders. Freeze `apps/gallery/linux/src/ui`; new `shells/gallery-gtk` + `apps/gallery/ui-spec/`. Health out of scope. Do not invent a Health accent. |
+| GTK design pass | **in progress (Music stage)** | 2a–2c + HIG chrome + search + artwork; Music is Songs · Artists · Albums · Playlists with a persistent Now Playing column (mini-player when compact). Playback still needs `--features gstreamer-playback`. Reuse 23 shared of 25 Contacts / 27 Music. See [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). |
 | Music UI spec | **done (4)** | `apps/music/ui-spec/screens.toml`. |
 | Music GTK shell | **done (4)** | `music-gtk` over `music-core`. Playback is the `gstreamer-playback` feature. MPRIS and `--comet` are present. Density/polish is the design pass, not a second music rewrite. |
 | iOS contacts views parse vCard text | **debt** | Writes go through FFI, but `vcard_text` is a serialized-domain escape hatch. Replace it with explicit read/command/host-port DTOs; do not call contacts R6-complete meanwhile. |
@@ -577,13 +619,14 @@ pairs (same grammar as contacts `.vcf`).
 **Landed.** `music-core`, `music-ffi`, `apps/music/ui-spec/screens.toml`,
 and `shells/music-gtk` (kit consumer; `--comet`; MPRIS). R8–R11 on
 `.m3u` is fixture-backed. Playback is the optional `gstreamer-playback`
-feature. The kit reuse measurement is 17 shared bindings.
+feature. The kit reuse measurement after 2c is 21 shared of 22 / 23
+bindings.
 
 **Remaining in this phase.** `shell-kit-swift`. Hosts without
 `gstreamer-1.0` stay on the mock transport. Design/density is not a
 second music rewrite — it is the GTK design pass
 ([`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md)), which also owns the
-clamp / sheet / `push_page` kit bugs found while running Contacts and
+clamp / sheet / page-chrome kit bugs found while running Contacts and
 Music on Fedora 44 (GTK 4.22).
 
 Least portable logic (~750 lines) and the most views, so shell work dominates
@@ -764,10 +807,11 @@ in Phase 3, which is the cheapest app.
 loop are done.** `health-core` / `health-ffi` / `chart-row` started
 Phase 6 without a Health shell. Next engineering moves, in parallel:
 
-- **GTK design pass** — kit builders and chrome first, then Contacts /
-  Music worked examples, then a new `gallery-gtk`. See
-  [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). Keep this file current
-  when that pass changes inventory or sequence.
+- **GTK design pass** — **Music stage landed.** Primary menu,
+  preferences/about, Contacts split+detail+conflict, global search,
+  Music browse switcher + Now Playing column + cover art. Host rebuild
+  of `localmusic` still needs `--features gstreamer-playback`. See
+  [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md).
 - **Phase 4 remainder** — `shell-kit-swift`.
 - **Phase 5 remainder** — leftover Gallery GTK stays frozen; windowed
   FFI is in; Places / 20k CI / `.xmp` R8–R11 / M1–M3 still land here.

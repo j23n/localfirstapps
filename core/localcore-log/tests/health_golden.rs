@@ -19,7 +19,9 @@ fn crate_dir() -> PathBuf {
 
 /// Health Go fixture. From `tests/` that is `../../../apps/health/testdata/m0`.
 fn go_m0_root() -> PathBuf {
-    crate_dir().join("tests").join("../../../apps/health/testdata/m0")
+    crate_dir()
+        .join("tests")
+        .join("../../../apps/health/testdata/m0")
 }
 
 fn rust_m0_root() -> PathBuf {
@@ -69,7 +71,8 @@ fn go_and_rust_m0_log_files_are_byte_identical() {
     for (rel, go_bytes) in &go_files {
         let rust_bytes = rust_files.get(rel).unwrap();
         assert_eq!(
-            go_bytes, rust_bytes,
+            go_bytes,
+            rust_bytes,
             "byte drift in {rel:?} (Go {} bytes, Rust {} bytes)",
             go_bytes.len(),
             rust_bytes.len()
@@ -105,7 +108,8 @@ fn marshal_note_does_not_html_escape() {
     let line = ev.marshal_line().unwrap();
     let want = b"{\"id\":\"01900000-0000-7000-8000-0000000000aa\",\"ts\":\"2024-06-02T08:00:00.000000000Z\",\"dev\":\"manual\",\"type\":\"note\",\"body\":{\"text\":\"a<b>&c\"}}\n";
     assert_eq!(
-        line, want,
+        line,
+        want,
         "marshal drifted from Go SetEscapeHTML(false) golden:\n{}",
         String::from_utf8_lossy(&line)
     );

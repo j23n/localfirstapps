@@ -144,11 +144,10 @@ impl Store {
         self.cards.iter().find(|c| c.local_id == id)
     }
 
-    /// Substring search on display name, org, title, phones, emails.
+    /// Substring search across name, org, phones, emails, addresses, birthday.
     #[must_use]
     pub fn search(&self, query: &str) -> Vec<&Card> {
-        let q = query.to_lowercase();
-        if q.is_empty() {
+        if query.trim().is_empty() {
             let mut all: Vec<&Card> = self.cards.iter().collect();
             all.sort_by(|a, b| {
                 a.display_name()
@@ -160,13 +159,7 @@ impl Store {
         let mut hits: Vec<&Card> = self
             .cards
             .iter()
-            .filter(|c| {
-                c.display_name().to_lowercase().contains(&q)
-                    || c.organization.to_lowercase().contains(&q)
-                    || c.job_title.to_lowercase().contains(&q)
-                    || c.phones.iter().any(|p| p.value.to_lowercase().contains(&q))
-                    || c.emails.iter().any(|e| e.value.to_lowercase().contains(&q))
-            })
+            .filter(|card| crate::display::first_field_match(card, query).is_some())
             .collect();
         hits.sort_by(|a, b| {
             a.display_name()

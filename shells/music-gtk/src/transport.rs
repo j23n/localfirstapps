@@ -198,7 +198,7 @@ impl TransportPort for UnavailableTransport {
 
     fn load(&mut self, _source: &MediaSource) -> Result<(), TransportError> {
         Err(TransportError::new(
-            "Playback requires a build with GStreamer support",
+            "Playback is not available",
         ))
     }
 

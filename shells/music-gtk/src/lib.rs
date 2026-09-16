@@ -6,8 +6,9 @@
 use std::path::{Path, PathBuf};
 
 use music_core::valid_device;
-use shell_kit_gtk::BindingId;
+use shell_kit_gtk::{BindingId, MusicScreen};
 
+mod metadata;
 mod mpris;
 mod routing;
 mod session;
@@ -30,25 +31,43 @@ pub const COMPACT_WIDTH: i32 = 550;
 
 /// Public kit behavior exercised by the Music shell.
 pub const KIT_BINDINGS: &[BindingId] = &[
+    BindingId::AboutDialog,
     BindingId::ActionRow,
+    BindingId::AdaptiveShell,
     BindingId::Banner,
     BindingId::ChoiceDropdown,
     BindingId::ConfirmDialog,
     BindingId::Diagnostics,
+    BindingId::EmptyState,
     BindingId::FieldRow,
+    BindingId::FormSheet,
     BindingId::ListPage,
+    BindingId::ListScreen,
     BindingId::MediaItem,
     BindingId::NavRow,
     BindingId::NavigationView,
+    BindingId::Page,
+    BindingId::PreferencesDialog,
     BindingId::PrimaryAction,
-    BindingId::PushPage,
+    BindingId::PrimaryMenu,
+    BindingId::SearchBar,
     BindingId::SearchEntry,
     BindingId::SettingsPage,
+    BindingId::SettingsScreen,
     BindingId::Sheet,
     BindingId::StatusRow,
     BindingId::TextRow,
     BindingId::TokenCss,
 ];
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchArgs {
+    pub comet: bool,
+    pub route: Option<String>,
+    pub snapshot: Option<PathBuf>,
+    pub size: Option<(i32, i32)>,
+    pub folder: Option<PathBuf>,
+}
 
 #[must_use]
 pub fn wants_comet<I, S>(args: I) -> bool
@@ -58,6 +77,77 @@ where
 {
     args.into_iter()
         .any(|argument| argument.as_ref() == "--comet")
+}
+
+pub fn parse_size(text: &str) -> Result<(i32, i32), String> {
+    let (width, height) = text
+        .split_once('x')
+        .or_else(|| text.split_once('X'))
+        .ok_or_else(|| format!("size must be WxH, got {text}"))?;
+    let width: i32 = width
+        .parse()
+        .map_err(|_| format!("invalid width in {text}"))?;
+    let height: i32 = height
+        .parse()
+        .map_err(|_| format!("invalid height in {text}"))?;
+    if width <= 0 || height <= 0 {
+        return Err(format!("size must be positive, got {text}"));
+    }
+    Ok((width, height))
+}
+
+pub fn parse_music_route(id: &str) -> Result<MusicScreen, String> {
+    for screen in MusicScreen::ALL {
+        if screen.as_str() == id {
+            return Ok(gtk_route(*screen));
+        }
+    }
+    Err(format!("unknown music route {id}"))
+}
+
+pub fn parse_launch_args<I, S>(args: I) -> Result<LaunchArgs, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut launch = LaunchArgs::default();
+    let mut iter = args.into_iter();
+    let _argv0 = iter.next();
+    while let Some(raw) = iter.next() {
+        let argument = raw.as_ref();
+        match argument {
+            "--comet" => launch.comet = true,
+            "--route" => {
+                let value = required_value(&mut iter, "--route")?;
+                parse_music_route(&value)?;
+                launch.route = Some(value);
+            }
+            "--snapshot" => {
+                launch.snapshot = Some(PathBuf::from(required_value(&mut iter, "--snapshot")?));
+            }
+            "--size" => {
+                launch.size = Some(parse_size(&required_value(&mut iter, "--size")?)?);
+            }
+            "--folder" => {
+                launch.folder = Some(PathBuf::from(required_value(&mut iter, "--folder")?));
+            }
+            other if other.starts_with('-') => {
+                return Err(format!("unknown argument: {other}"));
+            }
+            _ => {}
+        }
+    }
+    Ok(launch)
+}
+
+fn required_value<I, S>(iter: &mut I, flag: &str) -> Result<String, String>
+where
+    I: Iterator<Item = S>,
+    S: AsRef<str>,
+{
+    iter.next()
+        .map(|value| value.as_ref().to_string())
+        .ok_or_else(|| format!("{flag} needs a value"))
 }
 
 #[must_use]
@@ -164,6 +254,28 @@ mod tests {
     }
 
     #[test]
+    fn launch_args_parse_route_and_size() {
+        let launch = parse_launch_args([
+            "localmusic",
+            "--route",
+            "library",
+            "--size",
+            "1280x800",
+            "--folder",
+            "/tmp/music",
+        ])
+        .unwrap();
+        assert_eq!(launch.route.as_deref(), Some("library"));
+        assert_eq!(launch.size, Some((1280, 800)));
+        assert_eq!(launch.folder.as_deref(), Some(Path::new("/tmp/music")));
+        assert_eq!(parse_size("540x620").unwrap(), (540, 620));
+        assert!(parse_size("0x800").is_err());
+        assert!(parse_music_route("settings").is_ok());
+        assert!(parse_music_route("not-a-screen").is_err());
+        assert!(parse_launch_args(["localmusic", "--size", "wide"]).is_err());
+    }
+
+    #[test]
     fn device_and_folder_settings_are_per_host() {
         let directory = std::env::temp_dir().join(format!(
             "music-gtk-paths-{}-{}",
@@ -188,8 +300,8 @@ mod tests {
     #[test]
     fn music_is_a_measured_second_consumer_of_the_gtk_kit() {
         let metrics = measure_reuse(contacts_gtk::KIT_BINDINGS, KIT_BINDINGS);
-        assert_eq!(metrics.first_unique, 17);
-        assert_eq!(metrics.second_unique, 18);
-        assert_eq!(metrics.shared, 17);
+        assert_eq!(metrics.first_unique, 25);
+        assert_eq!(metrics.second_unique, 27);
+        assert_eq!(metrics.shared, 23);
     }
 }

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer); 2026-09-16 (chart-row)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer); 2026-09-16 (chart-row); 2026-09-16 (GTK design pass 2a/2b reuse)
 
 ## Scope
 
@@ -225,7 +225,7 @@ The second consumer exposed three useful boundary facts:
 | Local diagnostics were duplicated shell behavior | Moved the bounded, non-persistent logger into the kit and made both products consume it. |
 | Sort/filter needed an option-bearing native control | Added a domain-neutral choice dropdown; both products consume it. |
 | The provisional media item dropped `thumbnail_ref` | The binding now carries semantic/file references and renders a native action row. Only Music currently consumes it, so cross-product reuse is not claimed. |
-| Measured common surface | `measure_reuse(contacts_gtk::KIT_BINDINGS, music_gtk::KIT_BINDINGS)` reports 17 shared of 17 Contacts and 18 Music bindings; the assertion fails on inventory drift. |
+| Measured common surface | `measure_reuse(contacts_gtk::KIT_BINDINGS, music_gtk::KIT_BINDINGS)` reports 21 shared of 22 Contacts and 23 Music bindings after the GTK design-pass 2a–2c chrome, builders, and row polish; the assertion fails on inventory drift. |
 | Native/runtime confidence | CI compiles and links GTK plus GStreamer and runs headless workflow tests. Audio output, MPRIS media-key interoperability, Flatpak folder portals, and physical Comet layout remain manual and unmeasured. |
 
 ## Rationale

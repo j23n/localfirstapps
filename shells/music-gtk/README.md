@@ -6,7 +6,8 @@ cross a shell serialization boundary.
 
 ## Requirements
 
-GTK 4.14+, libadwaita 1.5+, and Rust 1.97 are required. Production playback
+GTK 4.22+, libadwaita 1.9+, and Rust 1.97 are required (see the root
+README Linux requirements). Production playback
 also requires GStreamer 1.0 plus base/good plugins.
 
 ## Build

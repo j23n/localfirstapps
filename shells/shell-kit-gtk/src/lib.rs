@@ -13,6 +13,8 @@ pub use localcore_ui::{
 };
 
 mod affordance;
+mod builder;
+mod chrome;
 mod data;
 mod diagnostics;
 mod item;
@@ -20,7 +22,12 @@ mod nav;
 mod reuse;
 mod screen;
 
+#[cfg(debug_assertions)]
+pub mod snapshot;
+
 pub use affordance::*;
+pub use builder::*;
+pub use chrome::*;
 pub use data::*;
 pub use diagnostics::*;
 pub use item::*;
@@ -28,8 +35,23 @@ pub use nav::*;
 pub use reuse::*;
 pub use screen::*;
 
-/// Load generated token CSS onto the default display.
-pub fn apply_token_css(css: &str) {
+/// Kit stylesheet: token-driven named-colour bridge, no custom classes.
+const KIT_STYLE: &str = include_str!("../data/style.css");
+
+/// Load generated token CSS, then the kit stylesheet.
+///
+/// Each string is a separate `CssProvider` at
+/// `STYLE_PROVIDER_PRIORITY_APPLICATION`. Tokens are registered first so
+/// `data/style.css` can map libadwaita named colours onto
+/// `--accent-bg-color` / `--accent-fg-color` without touching
+/// `accent_color` / `--accent-color`.
+pub fn init_style(app_token_css: &str) {
+    apply_token_css(app_token_css);
+    apply_token_css(KIT_STYLE);
+}
+
+/// Load one CSS string onto the default display at application priority.
+fn apply_token_css(css: &str) {
     let provider = gtk::CssProvider::new();
     provider.load_from_string(css);
     gtk::style_context_add_provider_for_display(
@@ -37,6 +59,17 @@ pub fn apply_token_css(css: &str) {
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
+}
+
+#[cfg(test)]
+pub(crate) fn with_adw(test: impl FnOnce()) {
+    use std::sync::Mutex;
+    static ADW: Mutex<Option<bool>> = Mutex::new(None);
+    let mut slot = ADW.lock().expect("adw test lock");
+    let ok = *slot.get_or_insert_with(|| adw::init().is_ok() || gtk::is_initialized());
+    if ok {
+        test();
+    }
 }
 
 #[cfg(test)]
@@ -57,6 +90,14 @@ mod tests {
         for kind in NavIntent::ALL {
             let _ = bind_nav(*kind);
         }
+    }
+
+    #[test]
+    fn kit_style_bridges_accent_bg_without_clobbering_accent_text() {
+        assert!(KIT_STYLE.contains("@define-color accent_bg_color var(--accent-bg-color)"));
+        assert!(KIT_STYLE.contains("@define-color accent_fg_color var(--accent-fg-color)"));
+        assert!(!KIT_STYLE.contains("@define-color accent_color"));
+        assert!(!KIT_STYLE.contains("--accent-color:"));
     }
 
     #[test]

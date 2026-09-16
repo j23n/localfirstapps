@@ -7,7 +7,7 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::card::{Birthday, Card, Labeled, LabeledAddress, PostalAddress};
+use crate::card::{structured_name, Birthday, Card, Labeled, LabeledAddress, PostalAddress};
 use crate::vcard::write;
 
 /// One editable labeled string.
@@ -160,14 +160,24 @@ pub fn edit_draft_from_card(card: &Card) -> ContactEditDraft {
 /// Storage identity, file placement, unknown properties, and PHOTO metadata
 /// stay on the authoritative Card. Empty labeled rows are retained because an
 /// empty value is explicit editor state, not permission to drop another row.
+///
+/// A derived `FN` (empty, or equal to the previous given/middle/family
+/// composition) is rewritten when those structured parts change. A custom
+/// `FN` the editor actually changed is kept. List and detail titles read
+/// `FN`, so leaving it stale makes a persisted `N:` edit look like a no-op.
 pub fn apply_edit_draft(card: &mut Card, draft: &ContactEditDraft) {
     let photo_changed = card.photo != draft.photo;
+    let previous_structured = card.structured_name();
+    let fn_was_derived = card.full_name.is_empty() || card.full_name == previous_structured;
     card.full_name = draft.full_name.clone();
     card.family_name = draft.family_name.clone();
     card.given_name = draft.given_name.clone();
     card.middle_name = draft.middle_name.clone();
     card.name_prefix = draft.name_prefix.clone();
     card.name_suffix = draft.name_suffix.clone();
+    if draft.full_name.is_empty() || (fn_was_derived && draft.full_name == previous_structured) {
+        card.full_name = structured_name(&card.given_name, &card.middle_name, &card.family_name);
+    }
     card.organization = draft.organization.clone();
     card.job_title = draft.job_title.clone();
     card.nickname = draft.nickname.clone();
@@ -341,5 +351,65 @@ mod tests {
         assert_eq!(card.emails.len(), 2);
         assert_eq!(card.emails[0].value, "new@example.com");
         assert_eq!(card.emails[1].value, "work@example.com");
+    }
+
+    #[test]
+    fn changing_structured_name_rewrites_a_derived_full_name() {
+        let mut card = Card::new("ada.vcf");
+        card.given_name = "Ada".into();
+        card.family_name = "Lovelace".into();
+        card.full_name = "Ada Lovelace".into();
+        let mut draft = edit_draft_from_card(&card);
+        draft.given_name = "Augusta".into();
+
+        apply_edit_draft(&mut card, &draft);
+
+        assert_eq!(card.given_name, "Augusta");
+        assert_eq!(card.full_name, "Augusta Lovelace");
+        assert_eq!(card.display_name(), "Augusta Lovelace");
+    }
+
+    #[test]
+    fn custom_full_name_survives_an_unrelated_edit() {
+        let mut card = Card::new("ada.vcf");
+        card.given_name = "Ada".into();
+        card.middle_name = "M".into();
+        card.family_name = "Lovelace".into();
+        card.full_name = "Dr Ada M Lovelace".into();
+        let mut draft = edit_draft_from_card(&card);
+        draft.note = "changed".into();
+
+        apply_edit_draft(&mut card, &draft);
+
+        assert_eq!(card.full_name, "Dr Ada M Lovelace");
+        assert_eq!(card.note, "changed");
+    }
+
+    #[test]
+    fn custom_full_name_can_be_edited_directly() {
+        let mut card = Card::new("ada.vcf");
+        card.given_name = "Ada".into();
+        card.family_name = "Lovelace".into();
+        card.full_name = "Ada Lovelace".into();
+        let mut draft = edit_draft_from_card(&card);
+        draft.full_name = "Lady Lovelace".into();
+
+        apply_edit_draft(&mut card, &draft);
+
+        assert_eq!(card.full_name, "Lady Lovelace");
+        assert_eq!(card.given_name, "Ada");
+    }
+
+    #[test]
+    fn empty_full_name_is_composed_from_structured_parts() {
+        let mut card = Card::new("ada.vcf");
+        let mut draft = new_edit_draft();
+        draft.given_name = "Ada".into();
+        draft.family_name = "Lovelace".into();
+
+        apply_edit_draft(&mut card, &draft);
+
+        assert_eq!(card.full_name, "Ada Lovelace");
+        assert_eq!(card.display_name(), "Ada Lovelace");
     }
 }

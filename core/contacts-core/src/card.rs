@@ -152,24 +152,23 @@ impl Card {
         }
     }
 
+    /// Given / middle / family joined with spaces. Empty when none are set.
+    #[must_use]
+    pub fn structured_name(&self) -> String {
+        structured_name(&self.given_name, &self.middle_name, &self.family_name)
+    }
+
     /// FN, else given/middle/family, else `"No Name"`.
     #[must_use]
     pub fn display_name(&self) -> String {
         if !self.full_name.is_empty() {
             return self.full_name.clone();
         }
-        let parts: Vec<&str> = [
-            self.given_name.as_str(),
-            self.middle_name.as_str(),
-            self.family_name.as_str(),
-        ]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect();
-        if parts.is_empty() {
+        let name = self.structured_name();
+        if name.is_empty() {
             "No Name".into()
         } else {
-            parts.join(" ")
+            name
         }
     }
 
@@ -183,6 +182,16 @@ impl Card {
         self.categories.dedup();
         self.unknown_fields.sort();
     }
+}
+
+/// Given / middle / family joined with spaces. Empty when none are set.
+#[must_use]
+pub fn structured_name(given: &str, middle: &str, family: &str) -> String {
+    [given, middle, family]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// How contacts are distributed across `.vcf` files.

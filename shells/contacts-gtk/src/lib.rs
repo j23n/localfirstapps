@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use contacts_core::valid_device;
-use shell_kit_gtk::BindingId;
+use shell_kit_gtk::{BindingId, ContactsScreen};
 
 mod routing;
 mod window;
@@ -30,24 +30,47 @@ pub const COMPACT_WIDTH: i32 = 550;
 ///
 /// Music's second-consumer test intersects this inventory with its own.
 pub const KIT_BINDINGS: &[BindingId] = &[
+    BindingId::AboutDialog,
     BindingId::ActionRow,
     BindingId::Banner,
     BindingId::ChoiceDropdown,
     BindingId::ConfirmDialog,
     BindingId::Diagnostics,
+    BindingId::EmptyState,
     BindingId::FieldRow,
-    BindingId::ListPage,
+    BindingId::FormSheet,
+    BindingId::ListScreen,
     BindingId::NavRow,
-    BindingId::NavigationView,
+    BindingId::Page,
+    BindingId::PreferencesDialog,
     BindingId::PrimaryAction,
-    BindingId::PushPage,
+    BindingId::PrimaryMenu,
+    BindingId::SearchBar,
     BindingId::SearchEntry,
+    BindingId::SelectionBar,
     BindingId::SettingsPage,
+    BindingId::SettingsScreen,
     BindingId::Sheet,
+    BindingId::SplitListDetail,
     BindingId::StatusRow,
     BindingId::TextRow,
     BindingId::TokenCss,
 ];
+
+/// Flags the binary understands besides GTK's own.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchArgs {
+    /// Compact 540×620 default size.
+    pub comet: bool,
+    /// Generated [`ContactsScreen::as_str`] id.
+    pub route: Option<String>,
+    /// Debug PNG destination. Release builds ignore this.
+    pub snapshot: Option<PathBuf>,
+    /// Window default size (`--size WxH`).
+    pub size: Option<(i32, i32)>,
+    /// Contacts folder that bypasses the persisted XDG path.
+    pub folder: Option<PathBuf>,
+}
 
 /// True when `--comet` is among the process arguments.
 #[must_use]
@@ -57,6 +80,80 @@ where
     S: AsRef<str>,
 {
     args.into_iter().any(|a| a.as_ref() == "--comet")
+}
+
+/// Parse `540x620` / `1280x800` style sizes.
+pub fn parse_size(text: &str) -> Result<(i32, i32), String> {
+    let (width, height) = text
+        .split_once('x')
+        .or_else(|| text.split_once('X'))
+        .ok_or_else(|| format!("size must be WxH, got {text}"))?;
+    let width: i32 = width
+        .parse()
+        .map_err(|_| format!("invalid width in {text}"))?;
+    let height: i32 = height
+        .parse()
+        .map_err(|_| format!("invalid height in {text}"))?;
+    if width <= 0 || height <= 0 {
+        return Err(format!("size must be positive, got {text}"));
+    }
+    Ok((width, height))
+}
+
+/// Resolve a generated Contacts screen id the GTK shell can open.
+pub fn parse_contacts_route(id: &str) -> Result<ContactsScreen, String> {
+    for screen in ContactsScreen::ALL {
+        if screen.as_str() == id {
+            return gtk_route(*screen).ok_or_else(|| format!("no GTK route for {id}"));
+        }
+    }
+    Err(format!("unknown contacts route {id}"))
+}
+
+/// Parse `--comet`, `--route`, `--snapshot`, `--size`, and `--folder`.
+pub fn parse_launch_args<I, S>(args: I) -> Result<LaunchArgs, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut launch = LaunchArgs::default();
+    let mut iter = args.into_iter();
+    let _argv0 = iter.next();
+    while let Some(raw) = iter.next() {
+        let arg = raw.as_ref();
+        match arg {
+            "--comet" => launch.comet = true,
+            "--route" => {
+                let value = required_value(&mut iter, "--route")?;
+                parse_contacts_route(&value)?;
+                launch.route = Some(value);
+            }
+            "--snapshot" => {
+                launch.snapshot = Some(PathBuf::from(required_value(&mut iter, "--snapshot")?));
+            }
+            "--size" => {
+                launch.size = Some(parse_size(&required_value(&mut iter, "--size")?)?);
+            }
+            "--folder" => {
+                launch.folder = Some(PathBuf::from(required_value(&mut iter, "--folder")?));
+            }
+            other if other.starts_with('-') => {
+                return Err(format!("unknown argument: {other}"));
+            }
+            _ => {}
+        }
+    }
+    Ok(launch)
+}
+
+fn required_value<I, S>(iter: &mut I, flag: &str) -> Result<String, String>
+where
+    I: Iterator<Item = S>,
+    S: AsRef<str>,
+{
+    iter.next()
+        .map(|value| value.as_ref().to_string())
+        .ok_or_else(|| format!("{flag} needs a value"))
 }
 
 /// Keep `[A-Za-z0-9._-]`. Empty after strip becomes `host`.
@@ -167,7 +264,7 @@ mod tests {
         assign_tag_logged, bulk_delete_logged, detail_rows, list_rows_filtered, load_edit_draft,
         new_edit_draft, read_ops, remove_tag_logged, rename_tag_logged, save_contact_logged,
         tag_rows, BirthdayDraft, LabeledAddressDraft, LabeledValueDraft, MemVfs,
-        SaveContactCommand, Store, TYPE_CONTACT_SAVED,
+        SaveContactCommand, Store, Vfs, TYPE_CONTACT_SAVED,
     };
     use shell_kit_gtk::ContactsScreen;
 
@@ -175,6 +272,37 @@ mod tests {
     fn comet_flag_is_opt_in() {
         assert!(!wants_comet(["localcontacts"]));
         assert!(wants_comet(["localcontacts", "--comet"]));
+    }
+
+    #[test]
+    fn launch_args_parse_route_size_and_folder() {
+        let launch = parse_launch_args([
+            "localcontacts",
+            "--route",
+            "contact-list",
+            "--size",
+            "540x620",
+            "--folder",
+            "/tmp/contacts",
+            "--snapshot",
+            "/tmp/out.png",
+        ])
+        .unwrap();
+        assert_eq!(launch.route.as_deref(), Some("contact-list"));
+        assert_eq!(launch.size, Some((540, 620)));
+        assert_eq!(launch.folder.as_deref(), Some(Path::new("/tmp/contacts")));
+        assert_eq!(launch.snapshot.as_deref(), Some(Path::new("/tmp/out.png")));
+        assert_eq!(parse_size("1280x800").unwrap(), (1280, 800));
+        assert!(parse_size("wide").is_err());
+        assert!(parse_contacts_route("sync-conflict-group").is_ok());
+        assert!(parse_contacts_route("apple-conflict").is_err());
+        assert!(parse_contacts_route("not-a-screen").is_err());
+        assert!(parse_launch_args(["localcontacts", "--route"]).is_err());
+        assert!(
+            parse_launch_args(["localcontacts", "--comet"])
+                .unwrap()
+                .comet
+        );
     }
 
     #[test]
@@ -381,6 +509,42 @@ mod tests {
         assert_eq!(after.categories, before.categories);
         assert_eq!(after.photo, before.photo);
         assert_eq!(after.note, "Changed note");
+    }
+
+    #[test]
+    fn structured_name_edit_updates_list_title_after_reload() {
+        let vfs = MemVfs::new();
+        let mut store = Store::open(&vfs, "/lib").unwrap();
+        let mut draft = new_edit_draft();
+        draft.given_name = "Ada".into();
+        draft.family_name = "Lovelace".into();
+        let id = save_contact_logged(&vfs, &mut store, "linux-test", SaveContactCommand { draft })
+            .unwrap()
+            .id
+            .unwrap();
+
+        let mut edited = load_edit_draft(&vfs, &mut store, &id).unwrap();
+        assert_eq!(edited.full_name, "Ada Lovelace");
+        edited.given_name = "Augusta".into();
+        save_contact_logged(
+            &vfs,
+            &mut store,
+            "linux-test",
+            SaveContactCommand { draft: edited },
+        )
+        .unwrap();
+
+        let reopened = Store::open(&vfs, "/lib").unwrap();
+        let rows = list_rows_filtered(&reopened, "", None);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "Augusta Lovelace");
+        let fields = detail_rows(&reopened, &id).unwrap();
+        assert_eq!(fields[0].value, "Augusta Lovelace");
+        let file_name = reopened.get(&id).unwrap().file_name.clone();
+        let disk = vfs.read(&format!("/lib/{file_name}")).unwrap();
+        let text = String::from_utf8(disk).unwrap();
+        assert!(text.contains("FN:Augusta Lovelace"));
+        assert!(text.contains("N:Lovelace;Augusta;"));
     }
 
     #[test]

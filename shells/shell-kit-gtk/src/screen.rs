@@ -20,6 +20,18 @@ pub fn list_page() -> gtk::ScrolledWindow {
     list_box_page().0
 }
 
+/// L1 content column: clamp at 720, tighten at 480, 12px side margins.
+pub fn clamped(child: &impl IsA<gtk::Widget>) -> gtk::ScrolledWindow {
+    let clamp = adw::Clamp::builder()
+        .child(child)
+        .maximum_size(720)
+        .tightening_threshold(480)
+        .build();
+    clamp.set_margin_start(12);
+    clamp.set_margin_end(12);
+    gtk::ScrolledWindow::builder().child(&clamp).build()
+}
+
 /// Same as [`list_page`], plus the list itself.
 ///
 /// GTK 4.20+ may wrap the list in a `GtkViewport`, so
@@ -29,7 +41,19 @@ pub fn list_box_page() -> (gtk::ScrolledWindow, gtk::ListBox) {
     let list = gtk::ListBox::new();
     list.set_selection_mode(gtk::SelectionMode::None);
     list.add_css_class("boxed-list");
+    let scroll = clamped(&list);
+    (scroll, list)
+}
+
+/// Flush media list (HIG list view): large/dynamic tracks, not a boxed list.
+pub fn flush_media_list() -> (gtk::ScrolledWindow, gtk::ListBox) {
+    let list = gtk::ListBox::new();
+    list.set_selection_mode(gtk::SelectionMode::None);
+    list.set_show_separators(true);
+    list.set_hexpand(true);
     let scroll = gtk::ScrolledWindow::builder().child(&list).build();
+    scroll.set_hexpand(true);
+    scroll.set_vexpand(true);
     (scroll, list)
 }
 
@@ -70,5 +94,37 @@ pub fn screen_widget(kind: ScreenKind) -> gtk::Widget {
         ScreenKind::Form => form_page().upcast(),
         ScreenKind::Viewer => viewer_page().upcast(),
         ScreenKind::Settings => settings_page().upcast(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn find_widget<T: IsA<gtk::Widget>>(root: &gtk::Widget) -> Option<T> {
+        if let Ok(hit) = root.clone().downcast::<T>() {
+            return Some(hit);
+        }
+        let mut child = root.first_child();
+        while let Some(node) = child {
+            if let Some(hit) = find_widget::<T>(&node) {
+                return Some(hit);
+            }
+            child = node.next_sibling();
+        }
+        None
+    }
+
+    #[test]
+    fn list_box_page_is_clamped_and_returns_a_live_list() {
+        crate::with_adw(|| {
+            let (scroll, list) = list_box_page();
+            let clamp = find_widget::<adw::Clamp>(&scroll.upcast())
+                .expect("list_box_page must wrap the list in AdwClamp");
+            assert_eq!(clamp.maximum_size(), 720);
+            assert_eq!(clamp.tightening_threshold(), 480);
+            list.append(&gtk::Label::new(Some("row")));
+            assert!(list.first_child().is_some());
+        });
     }
 }

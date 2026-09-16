@@ -50,10 +50,45 @@ pub struct ConflictRow {
     pub disposition: MergeKind,
 }
 
+/// One matched field for a contact search hit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchHit {
+    /// `X-LOCALCONTACTS-ID`.
+    pub id: String,
+    /// Display name.
+    pub title: String,
+    /// Field kind shown on the second line (`Phone`, `Email`, …).
+    pub field_label: String,
+    /// Field value; the shell highlights `query` inside this string.
+    pub field_value: String,
+    /// Symbolic icon name for the matched field kind.
+    pub symbol: &'static str,
+}
+
 /// Sorted contact-list rows for `query` (core search).
 #[must_use]
 pub fn list_rows(store: &Store, query: &str) -> Vec<TextRow> {
     list_rows_filtered(store, query, None)
+}
+
+/// Search hits with the first matching field, for a live results list.
+#[must_use]
+pub fn search_hits(store: &Store, query: &str, tag: Option<&str>) -> Vec<SearchHit> {
+    store
+        .search(query)
+        .into_iter()
+        .filter(|card| tag.is_none_or(|tag| card.categories.iter().any(|value| value == tag)))
+        .filter_map(|card| {
+            let matched = first_field_match(card, query)?;
+            Some(SearchHit {
+                id: card.local_id.clone(),
+                title: card.display_name(),
+                field_label: matched.label,
+                field_value: matched.value,
+                symbol: matched.symbol,
+            })
+        })
+        .collect()
 }
 
 /// Sorted contact-list rows for `query`, optionally restricted to one tag.
@@ -233,6 +268,65 @@ pub fn conflict_rows(vfs: &dyn Vfs, store: &Store) -> Result<Vec<ConflictRow>, S
     Ok(rows)
 }
 
+/// One field that differs across copies, both sides visible.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictFieldPreview {
+    /// Stable field key.
+    pub field: String,
+    /// `(source, formatted value)` pairs.
+    pub sides: Vec<(String, String)>,
+}
+
+/// Field-level preview for a Sync Conflict sheet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictPreview {
+    /// Group id the shell hands back to [`crate::resolve_logged`].
+    pub id: String,
+    /// Surviving file name.
+    pub title: String,
+    /// Auto / choice / deleted-versus-modified.
+    pub kind: MergeKind,
+    /// Copy basenames that will be deleted on confirm.
+    pub discarded: Vec<String>,
+    /// Merged card as the user will see it if they confirm without edits.
+    pub merged_fields: Vec<FieldRow>,
+    /// Fields that differ. Empty when [`MergeKind::Auto`].
+    pub fields: Vec<ConflictFieldPreview>,
+}
+
+/// Load both sides of a group so the shell can show a diff, not a silent merge.
+pub fn conflict_preview(
+    vfs: &dyn Vfs,
+    store: &Store,
+    group_id: &str,
+) -> Result<ConflictPreview, StoreError> {
+    let group = store
+        .conflict_group(group_id)
+        .cloned()
+        .ok_or(StoreError::NotFound)?;
+    let plan = plan_merge(vfs, &store.root, &group)?;
+    let discarded = plan
+        .copy_paths
+        .iter()
+        .map(|path| path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned())
+        .collect();
+    Ok(ConflictPreview {
+        id: group_id.to_owned(),
+        title: plan.canonical_name.clone(),
+        kind: plan.kind,
+        discarded,
+        merged_fields: field_rows(&plan.merged),
+        fields: plan
+            .conflicts
+            .iter()
+            .map(|conflict| ConflictFieldPreview {
+                field: conflict.field.clone(),
+                sides: conflict.sides.clone(),
+            })
+            .collect(),
+    })
+}
+
 /// Field-choice sides for one group. `id` is `field|source`.
 pub fn choice_rows(
     vfs: &dyn Vfs,
@@ -264,6 +358,168 @@ fn copies_label(count: usize) -> String {
     } else {
         format!("{count} copies")
     }
+}
+
+/// First field that contains `query`, in HIG “broad match” order.
+#[must_use]
+pub fn first_field_match(card: &Card, query: &str) -> Option<FieldMatch> {
+    let needle = query.trim();
+    if needle.is_empty() {
+        return None;
+    }
+    let names = [
+        card.display_name(),
+        card.full_name.clone(),
+        card.given_name.clone(),
+        card.family_name.clone(),
+        card.middle_name.clone(),
+        card.nickname.clone(),
+    ];
+    if let Some(value) = names
+        .into_iter()
+        .find(|value| contains_ignore_case(value, needle))
+    {
+        return Some(FieldMatch {
+            label: "Name".into(),
+            value,
+            symbol: "contact-new-symbolic",
+        });
+    }
+    if let Some(phone) = card
+        .phones
+        .iter()
+        .find(|phone| phone_matches(&phone.value, needle))
+    {
+        return Some(FieldMatch {
+            label: "Phone".into(),
+            value: phone.value.clone(),
+            symbol: "phone-symbolic",
+        });
+    }
+    if let Some(email) = card
+        .emails
+        .iter()
+        .find(|email| contains_ignore_case(&email.value, needle))
+    {
+        return Some(FieldMatch {
+            label: "Email".into(),
+            value: email.value.clone(),
+            symbol: "mail-unread-symbolic",
+        });
+    }
+    if let Some(address) = card.addresses.iter().find(|address| {
+        contains_ignore_case(&address.value.formatted(), needle)
+            || contains_ignore_case(&address.value.street, needle)
+            || contains_ignore_case(&address.value.city, needle)
+            || contains_ignore_case(&address.value.state, needle)
+            || contains_ignore_case(&address.value.postal_code, needle)
+            || contains_ignore_case(&address.value.country, needle)
+    }) {
+        return Some(FieldMatch {
+            label: "Address".into(),
+            value: address.value.formatted(),
+            symbol: "mark-location-symbolic",
+        });
+    }
+    if let Some(birthday) = &card.birthday {
+        if birthday_strings(birthday)
+            .iter()
+            .any(|value| contains_ignore_case(value, needle))
+        {
+            return Some(FieldMatch {
+                label: "Birthday".into(),
+                value: birthday_strings(birthday)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default(),
+                symbol: "x-office-calendar-symbolic",
+            });
+        }
+    }
+    if contains_ignore_case(&card.organization, needle) {
+        return Some(FieldMatch {
+            label: "Organization".into(),
+            value: card.organization.clone(),
+            symbol: "system-users-symbolic",
+        });
+    }
+    if contains_ignore_case(&card.job_title, needle) {
+        return Some(FieldMatch {
+            label: "Job title".into(),
+            value: card.job_title.clone(),
+            symbol: "document-properties-symbolic",
+        });
+    }
+    if let Some(url) = card
+        .urls
+        .iter()
+        .find(|url| contains_ignore_case(&url.value, needle))
+    {
+        return Some(FieldMatch {
+            label: "URL".into(),
+            value: url.value.clone(),
+            symbol: "web-browser-symbolic",
+        });
+    }
+    if contains_ignore_case(&card.note, needle) {
+        return Some(FieldMatch {
+            label: "Note".into(),
+            value: card.note.clone(),
+            symbol: "text-x-generic-symbolic",
+        });
+    }
+    if let Some(tag) = card
+        .categories
+        .iter()
+        .find(|tag| contains_ignore_case(tag, needle))
+    {
+        return Some(FieldMatch {
+            label: "Tag".into(),
+            value: tag.clone(),
+            symbol: "user-bookmarks-symbolic",
+        });
+    }
+    None
+}
+
+/// Display-ready matched field used by [`search_hits`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldMatch {
+    /// Field kind.
+    pub label: String,
+    /// Raw value to highlight.
+    pub value: String,
+    /// Symbolic icon for the kind.
+    pub symbol: &'static str,
+}
+
+fn contains_ignore_case(haystack: &str, needle: &str) -> bool {
+    haystack.to_lowercase().contains(&needle.to_lowercase())
+}
+
+fn phone_matches(value: &str, needle: &str) -> bool {
+    if contains_ignore_case(value, needle) {
+        return true;
+    }
+    let digits_q: String = needle.chars().filter(|c| c.is_ascii_digit()).collect();
+    let digits_v: String = value.chars().filter(|c| c.is_ascii_digit()).collect();
+    digits_q.len() >= 3 && digits_v.contains(&digits_q)
+}
+
+fn birthday_strings(birthday: &crate::card::Birthday) -> Vec<String> {
+    let mut values = vec![
+        format!("{:02}-{:02}", birthday.month, birthday.day),
+        format!("{:02}/{:02}", birthday.month, birthday.day),
+        format!("--{:02}-{:02}", birthday.month, birthday.day),
+    ];
+    if let Some(year) = birthday.year {
+        values.push(format!(
+            "{year:04}-{:02}-{:02}",
+            birthday.month, birthday.day
+        ));
+        values.push(year.to_string());
+    }
+    values
 }
 
 fn subtitle(card: &Card) -> Option<String> {

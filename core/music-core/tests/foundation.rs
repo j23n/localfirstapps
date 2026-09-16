@@ -138,4 +138,19 @@ fn metadata_drives_core_search_sort_sections_and_display_copy() {
             .collect::<Vec<_>>(),
         ["Under 1 min", "1–3 min"]
     );
+
+    let albums = music_core::album_rows(&store);
+    assert_eq!(albums.len(), 2);
+    assert!(albums.iter().any(|row| row.title == "One"));
+    let artists = music_core::artist_rows(&store);
+    assert_eq!(artists.len(), 2);
+    assert!(artists.iter().any(|row| row.title == "Ada"));
+    assert!(artists.iter().any(|row| row.id == "artist:Zed"));
+    let hits = music_core::search_hits(&store, "ada");
+    assert!(hits
+        .iter()
+        .any(|hit| hit.kind == music_core::SearchKind::Artist));
+    assert!(hits
+        .iter()
+        .any(|hit| hit.kind == music_core::SearchKind::Track));
 }

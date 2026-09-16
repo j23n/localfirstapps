@@ -1,7 +1,7 @@
-# Gallery token table (ADR 0004 R11). Surfaces and ink are the light
-# values that were in Design.swift — no sourced dark companions exist
-# for those roles; do not invent them. Accent light/dark are the two
-# appearances in AccentColor.colorset.
+# Gallery token table (ADR 0004 R11). Accent light/dark are the two
+# appearances in AccentColor.colorset. Light surfaces/ink come from
+# Design.swift. Dark surfaces/ink are an authored exception (D4); they
+# are not sourced from an iOS catalog.
 
 app = "gallery"
 
@@ -11,24 +11,31 @@ dark = "#D4994D"
 
 [colors.bg]
 light = "#FAF7F2"
+dark = "#1A1815"
 
 [colors.bg_card]
 light = "#FFFFFF"
+dark = "#26231F"
 
 [colors.bg_grouped]
 light = "#F2EDE5"
+dark = "#131210"
 
 [colors.ink]
 light = "#1C1A16"
+dark = "#F2EDE5"
 
 [colors.ink2]
 light = "#5E574D"
+dark = "#B8AFA3"
 
 [colors.ink3]
 light = "#958D82"
+dark = "#8C8479"
 
 [colors.destructive]
 light = "#B24A3A"
+dark = "#E07A68"
 
 [colors.separator_ink]
 light = "#3C372D"

@@ -18,9 +18,10 @@ gstreamer-playback = ["dep:gstreamer"]
 [dependencies]
 shell-kit-gtk = { path = "../shell-kit-gtk" }
 music-core = { path = "../../core/music-core" }
-gtk = { package = "gtk4", version = "0.8", features = ["v4_14"] }
-adw = { package = "libadwaita", version = "0.6", features = ["v1_5"] }
+gtk = { package = "gtk4", version = "0.11", features = ["v4_22"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }
 gstreamer = { version = "0.22", optional = true }
+lofty = "0.22"
 
 [dev-dependencies]
 contacts-gtk = { path = "../contacts-gtk" }

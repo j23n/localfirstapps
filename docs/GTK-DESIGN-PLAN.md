@@ -1,11 +1,195 @@
 # GTK design pass — plan
 
-Status: plan, not started. Written 2026-09-16; revised the same day
+Status: HIG chrome pass landed (kit + Contacts + Music stage). Written 2026-09-16; revised the same day
 (kit-first sequence, two-consumer rule, builders as the derivation
 lever); revised again against `main` @ `9082c72` (Phase 2 split into
 2a/2b/2c, accent-text rule for apps without ink, filter controls,
 Gallery on `gallery-ffi` view windows, `chart-row`, Contacts settings
-from spec).
+from spec). D1: Ubuntu 26.04 archive is GTK 4.22.2 / libadwaita 1.9.0 /
+Pango 1.57.0; floor versus Fedora 44 is those versions; L6 fallbacks
+not required. Fedora Contacts source PNGs are absent on this clean main.
+**Landed:** `shells/` gtk4 0.11 / libadwaita 0.9; `gen_r14.py` accent-fg
+and authored Gallery dark surfaces; `init_style` (token CSS then kit
+`data/style.css`; apps no longer ship `ADW_ACCENT`); colour-literal
+check on `shells/**/*.css` and `shells/**/*.rs`; Phase 0 screenshot
+harness (`shell-kit-gtk::snapshot`, debug `--route` / `--snapshot` /
+`--size` / `--folder`, `scripts/gtk-snapshots.sh`); Phase 2a structure
+(`adaptive_shell`, `page`, `clamped`, sized `sheet`; Contacts and Music
+chrome swap; Add remains on the shared header); Phase 2b typed builders
+(`ListScreen`, `SettingsScreen`, `FormSheet`, `empty_state`,
+`selection_bar`; Contacts list/settings/tags/logs/edit and Music
+settings assembled through them; Music playlists are a browse push);
+Phase 2c shared row
+polish (`Leading` on `text_row`, nav-row dim suffix + chevron,
+status-row severity icons, `action_button_row`, `progress_row` as
+`AdwActionRow`, `scope_toggle` / `Filter::Scope` as `ToggleGroup`,
+`header_action` / `inline_primary` / `overflow(menu)`; Contacts list
+passes avatar initials and letter section keys; Music L4 only). Host
+`gtk-before/` PNGs are written only when mutter actually captures a
+frame — this change does not commit placeholders.
+
+**Host review 2026-09-16** (shots `16-40-01` contact detail, `16-41-25`
+library, `16-44-39` playlist `kewed`). 2a clamp/page chrome is visible.
+The wide IA is still a lonely column; Settings is a fourth tab; pushed
+pages stack two headers so the back button sits under the switcher;
+contact detail is an ungrouped field dump (Note leaks raw `ITEM1.*`);
+playlist actions are four full-bleed pills; GTK never calls
+`apply_metadata` (file-stem titles, Unknown Artist, 0:00). The release
+`localmusic` was built **without** `gstreamer-playback`.
+
+Revisions that land before / with Phase 3–4:
+
+- **L1 exception.** Settings, forms, and contact field groups stay
+  clamped. Library / playlist track lists and the Music browse column
+  use the remaining width. A 720px card on a 1400px window is the
+  empty-column feeling.
+- **HIG chrome (both apps).** Settings is **not** a `ViewStack` tab
+  and **not** a lone cog. GNOME primary menu is `open-menu-symbolic`
+  (“Main Menu”), last group Settings / Keyboard Shortcuts / About
+  {App}. Settings opens `AdwPreferencesDialog`. One header per pane;
+  back is top-start of the page that pops. Add lives on the list pane.
+
+### HIG pass — how to implement
+
+Read against [developer.gnome.org/hig](https://developer.gnome.org/hig/)
+(principles, guidelines, all four pattern groups) and libadwaita 1.9
+adaptive layouts. This supersedes the earlier “settings cog” note.
+
+**Principles.** One job per view; progressive disclosure; frequent
+actions close, rare actions in a menu; do automatically when we can
+(metadata, disjoint merge *preview*); do not interrupt (toasts for
+events, banners for ongoing states). ADR 0007 R4 still requires a
+named confirm for destructive writes — keep that, do not invent undo
+as a replacement.
+
+**Navigation (guidelines + patterns).** Prefer in-window over extra
+windows. Flat: view switcher for 3–5 *equivalent* views, sidebar for
+many or *dynamic* locations. Hierarchical: list → object, **one**
+level, back top-start. Preferences / About are secondary windows by
+convention. Do not mix those types in non-standard ways.
+
+| App | Top-level | Hierarchical | Secondary windows |
+|---|---|---|---|
+| Contacts | none (one primary view) | list \| detail via `AdwNavigationSplitView` | Settings, About, conflict sheet, edit form |
+| Music | view switcher: Songs · Artists · Albums · Playlists | Artist / album / playlist → that location’s tracks (one push, back). Now Playing is the wide stage, not a tab | Settings, About, add-tracks, conflict |
+
+Contacts must drop the bottom Contacts \| Settings bar. Music drops
+Settings **and** Now Playing from the switcher. The four tabs are
+equivalent *browse* views (HIG 3–5). Do **not** put those four in a
+sidebar, and do not put a song list in a `navigation-sidebar`.
+
+Now Playing is the persistent right-hand stage on wide windows. Compact
+hides it behind a mini-player (tap the track to open the player sheet).
+
+**Adaptiveness.** Same functions at 360×294 (phone) through large
+desktops. Start from compact. Breakpoints we already have: compact
+`max-width: 550sp` (bottom switcher). Split collapse: `max-width:
+860sp` (existing L12 wide). Libadwaita examples collapse nearer
+`400sp`; 860sp is right for a contact/playlist list that must stay
+readable. `AdwHeaderBar` inside a split hides middle window buttons
+and, when collapsed, draws the back button.
+
+**Clamp.** HIG large-size rule: boxed lists and text get a max width.
+Library / playlist *track* lists and split content panes do not sit in
+a 720px card. Settings, forms, contact field groups stay `AdwClamp`.
+
+**Chrome widgets (kit).**
+
+- `primary_menu`: `GtkMenuButton` `open-menu-symbolic`, `primary=true`,
+  tooltip and a11y “Main Menu”. Last section always Settings,
+  Keyboard Shortcuts (if we ship a map), About {App}. Extra items
+  (Reload, Choose Folder…) go above that group. F10. No Close / Quit.
+  On a split, pack this on the **sidebar** header (HIG: menu above
+  the sidebar list). On hierarchical push, hide it (HIG: primary menu
+  only on the top-level view); object actions use a secondary menu
+  (`view-more-symbolic`, tooltip “Menu” / “Contact Menu”).
+- `preferences_dialog`: present `SettingsScreen` inside
+  `AdwPreferencesDialog` (not a stack page). Label remains
+  **Settings** (ADR 0007 R1). `Ctrl+,`.
+- `about_dialog`: `AdwAboutDialog`.
+- `split_list_detail`: `AdwNavigationSplitView` + two
+  `AdwNavigationPage`s, each `AdwToolbarView` + `AdwHeaderBar`.
+  Sidebar controls that affect the list live on the sidebar header.
+  Content header updates with the object (Edit, overflow).
+- `adaptive_shell`: Music only, **four** browse roots (Songs · Artists
+  · Albums · Playlists). Contacts stops using it. Kill the double
+  header: a shared shell `HeaderBar` plus `page()`’s inner bar is why
+  Back sits under the switcher. Music roots use the shell header;
+  artist / album / playlist tracks *push* and hide the shell header
+  (HIG hierarchical: back on the object page). Compact: browse is
+  full width, mini-player + bottom `ViewSwitcherBar`.
+- Search: `GtkSearchBar` under the list-pane header. Activate with
+  type-to-search, `Ctrl+F`, header `loupe-symbolic`. Library may keep
+  a permanent entry (HIG allows that when search is central). Live
+  filter; empty → symbolic `AdwStatusPage` “No Results”.
+- Selection (Contacts): `.selection-mode` header (Cancel + “N
+  selected”) + bottom `GtkActionBar`. HIG wants ≥3 bulk actions;
+  today we have Assign Tag and Delete — add Export as the third or
+  keep two and document the exception.
+- Edit mode (playlists): HIG’s own example. Header Edit → inline
+  remove / reorder; Done to exit. Not four stacked pills.
+- One suggested **or** destructive control per view. Playlist body:
+  one `pill` “Play All”. Delete lives in the secondary menu and
+  still confirms (R4).
+- Dialogs: `AdwDialog` / `AdwAlertDialog`. Cancel before affirmative.
+  Affirmative is a verb (Save, Delete, Keep). Never surprise-modal.
+- Placeholders: illustration `AdwStatusPage` only for first-run no
+  folder; symbolic for empty folder / empty playlist / no results.
+- Banner = ongoing (Sync Conflict). Toast = event. Header-bar
+  buttons on the primary window all get tooltips.
+
+**Copy (writing style).** Header capitalization on buttons, menus,
+titles. Sentence capitalization on field labels. No trailing period
+on single-line toasts/headings. Ellipsis when more input is required
+(`Delete Contact…`, `Choose Folder…`). ADR 0007 words stay exact:
+Folder, Reload, Sync Conflict, Settings.
+
+**Keyboard.** `Ctrl+,` Settings; `Ctrl+F` search; `Ctrl+N` new
+contact / playlist; `Ctrl+R` Reload; `Alt+Left` back; `F10` menu;
+Space play/pause on Now Playing. `Ctrl+W` / `Ctrl+Q` are already
+application defaults. Shortcuts dialog if we ship more than a handful.
+
+**Do not use `AdwSidebar` for the contact list.** That widget is a
+short list of locations. Contacts is a long sectioned content list
+in the sidebar *pane* (`navigation-sidebar` rows). Playlists *can*
+use `AdwSidebar` (dynamic locations) or the same list binding;
+prefer the existing list until a second sidebar-of-locations exists.
+
+**Spec.** `contact-list` already says Settings is chrome, not a row.
+Music `settings` stays a screen kind; GTK presents it as a dialog.
+No new R4 kind. Playlist `actions` section is assembled as header +
+one pill, not `action-row`s in the scroll.
+
+**Landed in this pass.** Kit: `primary_menu`, `about_dialog`,
+`preferences_dialog`, `split_list_detail`, `pill_primary`,
+`search_chrome`. Contacts drops the view switcher for a list|detail
+split; Settings is a preferences dialog; detail is hero + groups;
+conflicts show a field diff. Search is a HIG `GtkSearchBar` under the
+header (loupe, type-to-search, Ctrl+F), not an inline entry next to
+Select / tags. Results name the matching field and bold the hit
+(`Phone: **650**…`) with a symbolic type icon. Music is a 4-tab
+browse switcher (Songs · Artists · Albums · Playlists); Now Playing
+is the wide stage (mini-player when compact). Artist / album /
+playlist open as one hierarchical push of that location’s tracks.
+Playlist body is one Play All pill + header actions. `lofty` drains
+metadata **and** embedded artwork after folder open. Playback is
+still `--features gstreamer-playback` on the host build.
+- **Contacts wide.** `AdwNavigationSplitView`: sidebar list
+  (`navigation-sidebar`) + styled detail (avatar 96, `title-2`,
+  groups). Empty content: "Select a contact".
+- **Conflict.** Field-level diff (both sides), editable surviving
+  values, confirm that names what is deleted. No silent "Resolve".
+- **Music metadata.** Host port in `music-gtk` using `lofty` (no
+  GStreamer required). Drain `metadata_requests` → `apply_metadata`.
+- **Music playback.** Rebuild `--features gstreamer-playback` when
+  `gstreamer-1.0` devel is on the machine. Do not invent a second
+  engine.
+- **Music wide.** Browse column (unclamped flush lists) + persistent
+  Now Playing column. Compact: browse full width + mini-player
+  (tap → Now Playing sheet). Track lists are flush (not boxed).
+  Playlist header: add + overflow. One in-content `Play All` pill.
+
+Host `gtk-before/` rename of the 16:40 shots can wait.
 
 Goal: take the design language of the iOS apps (screenshots in
 `docs/screenshots/local*-*.jpg`, also on
@@ -40,7 +224,7 @@ It has no GTK app consumer yet, so it is audited in 2c but not redesigned.
 
 | # | Decision |
 |---|---|
-| D1 | Platform baseline is **Ubuntu 26.04 and Fedora 44** (GNOME 50 stack: GTK 4.22, libadwaita 1.9, Pango 1.57). Fedora 44 verified locally: GTK 4.22.4, libadwaita 1.9.3, Pango 1.57.1. Confirm the 26.04 package versions in Phase 0 before bumping. |
+| D1 | Platform baseline is **Ubuntu 26.04 and Fedora 44** (GNOME 50 stack: GTK 4.22, libadwaita 1.9, Pango 1.57). Fedora 44 verified locally: GTK 4.22.4, libadwaita 1.9.3, Pango 1.57.1. Ubuntu 26.04 (resolute) archive: libgtk-4-1 / libgtk-4-dev 4.22.2, libadwaita-1-0 / libadwaita-1-dev 1.9.0, libpango-1.0-0 1.57.0 (26.04.1 desktop images have GTK 4.22.4 / libadwaita 1.9.1). Floor is GTK 4.22.2, libadwaita 1.9.0, Pango 1.57.0. L6 fallbacks are not required (libadwaita ≥ 1.7). |
 | D2 | **No large in-content titles.** Page titles live in the header bar. |
 | D3 | **Gallery moves onto `shell-kit-gtk`** as a new `shells/gallery-gtk` crate. The hand-built UI in `apps/gallery/linux/src/ui` stays buildable, frozen, as a reference. |
 | D4 | **Music accent is red** (`#C0392B` / `#D14738`, as tokenised). The orange in the iOS screenshots is not the target. **Gallery gets light and dark** surface tokens. Dark Gallery surfaces are an **authored exception** to the current “sourced companions only” token rule; Phase 1 must update `design/tokens/README.md` to say so. |
@@ -104,7 +288,7 @@ Also found in code:
   `@define-color accent_color var(--accent)`. That overrides libadwaita's
   contrast-derived accent *text* colour with the raw background accent.
 - Chrome switches through a width notify (`apply_chrome`), not
-  `AdwBreakpoint`.
+  `AdwBreakpoint`. **2a:** both apps use `adaptive_shell` breakpoints.
 - Empty state is a `status_row` inside the list, not an `AdwStatusPage`
   with ADR 0007 R3's three cases.
 - Selection mode check boxes are `insensitive`.
@@ -267,10 +451,16 @@ until their phase.
 Work on `main` (the repository keeps no other branches or worktrees).
 The base is `origin/main` @ `9082c72`: `shells/` already has
 `shell-kit-gtk`, `contacts-gtk` and `music-gtk`, and the kit has
-`choice_dropdown`, diagnostics, and `chart_row`. Commit the pending
+`choice_dropdown`, diagnostics, and `chart_row`. The
 `list_box_page` change (Contacts + Music, `shell-kit-gtk/src/screen.rs`)
-together with the README / implementation-plan updates before starting
-Phase 0 proper.
+is already on the tree.
+
+Phase 0 note (2026-09-16): the four `Screenshot From 2026-09-16 14-4*.png`
+files are not in this tree or in searchable git history; `docs/screenshots/gtk-before/`
+was not created. Ubuntu 26.04 versions are confirmed (see D1). The
+`shells/` crate bump (gtk4 0.11 / libadwaita 0.9) has landed; tests are
+green on those crates. Remaining Phase 0 is the snapshot harness and
+host `gtk-before/` PNGs.
 
 1. Rename the Fedora screenshots to
    `docs/screenshots/gtk-before/contacts-{list,conflict-sheet,tags,edit-sheet}.png`.
@@ -278,38 +468,42 @@ Phase 0 proper.
    Floor = the lower of 26.04 and Fedora 44. If the floor is below
    libadwaita 1.7, write the L6 fallbacks before Phase 2c uses
    `ToggleGroup`, and before Phase 5 uses `WrapBox`.
-3. Bump the `shells/` workspace crates (this is the schedule risk):
+3. **Landed.** Bump the `shells/` workspace crates:
    - `gtk4` 0.8 → 0.11 (feature `v4_22`)
    - `libadwaita` 0.6 → 0.9 (feature `v1_9`)
    - `glib` / `gio` to match
    - `pango` only if something in 0–4 needs it; the Newsreader
      `FontMap::add_font_file` pin waits for Phase 5
 
-   Fix API drift. `apps/gallery/linux` keeps its own lockfile and stays on
-   0.8 (frozen reference).
+   API drift is fixed. `apps/gallery/linux` keeps its own lockfile and stays
+   on 0.8 (frozen reference). `cargo test --workspace` in `shells/` is
+   green on 0.11 / 0.9.
 4. Update README "Linux requirements" (GTK 4.22+, libadwaita 1.9+, Fedora
    44 / Ubuntu 26.04) and the `apt`/`dnf` lines.
-5. **Screenshot harness** in `shell-kit-gtk` (`snapshot` module, debug-only):
+5. **Screenshot harness — landed.** `shell-kit-gtk` (`snapshot` module, debug-only):
    - Launch with `--route <screen-id> --snapshot <out.png> --size WxH`.
    - After the first frame, render the window through
-     `gtk::WidgetPaintable` → `GskRenderer::render_texture` →
-     `Texture::save_to_png`, then quit.
+     `gtk::WidgetPaintable` → `gtk::Snapshot` →
+     `GskRenderer::render_texture` → `Texture::save_to_png`, then quit.
    - Routes come from the generated screen ids (`ContactsScreen`,
      `MusicScreen`, later `GalleryScreen`).
    - Force the scheme with `ADW_DEBUG_COLOR_SCHEME=prefer-dark|prefer-light`.
-   - Script: `scripts/gtk-snapshots.sh <app>` runs every route × 2 sizes × 2
-     schemes under `mutter --headless --wayland --no-x11 --virtual-monitor 1280x800`
-     when mutter is present. Fixture folders come from existing
-     conformance fixtures, or a small `shells/fixtures/<app>/` if none
-     fit.
-   - Commit baselines under `docs/screenshots/gtk-before/`.
+   - Script: `scripts/gtk-snapshots.sh <app>` runs every implemented
+     route × 2 sizes × 2 schemes under headless mutter
+     (`--headless --wayland --virtual-monitor 1280x800`, plus `--no-x11`
+     when that flag exists) when mutter is present. Fixture folders:
+     Contacts `core/contacts-core/fixtures/r8/disjoint/`; Music
+     `shells/fixtures/music/` (silent note; music-core r8 is playlists
+     only). Without mutter the script prints a skip and exits 0.
+   - Write baselines under `docs/screenshots/gtk-before/` **only when a
+     capture succeeds**. Do not commit empty or invented PNGs.
    - **CI does not run mutter.** Unit tests must not require a display
      beyond what `cargo test` already does in `shells/`.
 
-Exit: `contacts-gtk` and `music-gtk` build and test on the new crates;
-baseline PNGs exist for the four Contacts “wrong today” routes (full
-route matrix can grow in later phases). Gallery linux still builds on
-0.8.
+Exit: `contacts-gtk` and `music-gtk` build and test on gtk4 0.11 /
+libadwaita 0.9; the snapshot harness is in both apps (**landed**).
+Baseline PNGs exist only after a successful mutter capture — they are
+not claimed here. Gallery linux still builds on 0.8.
 
 ### Phase 1 — Tokens and theming (not the font)
 
@@ -331,16 +525,20 @@ route matrix can grow in later phases). Gallery linux still builds on
      | Music | light | `#C0392B` | 5.44 | 3.86 | — | white |
      | Music | dark | `#D14738` | **4.497** (fails) | 4.67 | — | black |
      | Gallery | light | `#C48A3E` | 2.98 | 7.05 | 5.83 (`#1C1A16`) | black |
-     | Gallery | dark | `#D4994D` | 2.48 | 8.46 | 7.00 (`#1C1A16`) | black |
+     | Gallery | dark | `#D4994D` | 2.48 | 8.46 | 7.00 (`#1C1A16`, light-ink candidate) | black |
 
-     Black text on a red accent in dark mode is what libadwaita itself
-     does for light system accents. Review Music dark in the Phase 1
-     snapshots; if the owner rejects it, the options are a sourced dark
-     accent change on both platforms, or accepting white at 4.497
-     (AA-large only) as a recorded exception. The generator must not
-     round 4.497 up to pass.
+     Gallery dark `#1C1A16` at 7.00 is the *light-ink candidate*, not
+     the authored dark ink `#F2EDE5`. Black text on a red accent in dark
+     mode is what libadwaita itself does for light system accents. Review
+     Music dark in the Phase 1 snapshots; if the owner rejects it, the
+     options are a sourced dark accent change on both platforms, or
+     accepting white at 4.497 (AA-large only) as a recorded exception.
+     The generator must not round 4.497 up to pass.
    - Do **not** set `--accent-color`; libadwaita derives a readable text
      accent.
+   - Keep emitting `--accent` as a leftover alias of `--accent-bg-color`
+     (same hex). The kit maps `accent_bg_color` from `--accent-bg-color`;
+     do not treat `--accent` as the API.
    - Optional surface roles map to `--window-bg-color`, `--view-bg-color`,
      `--headerbar-bg-color`, `--card-bg-color`, `--dialog-bg-color`,
      `--popover-bg-color`, `--window-fg-color`/`--view-fg-color`/`--card-fg-color`,
@@ -392,12 +590,15 @@ is not in this exit.**
 Three sub-phases, each with its own exit. 2a is the quick visible win
 and must not wait for the builders.
 
-**2a. Structure (do first; fixes the screenshot bugs).**
+**2a. Structure (landed; fixes the screenshot bugs).**
 
 - `adaptive_shell(app_title, pages: &[RootPage]) -> AdaptiveShell`.
   `RootPage` = id, title, icon, `NavigationView`. It builds
   `AdwToolbarView` + `AdwViewStack` + `AdwViewSwitcherBar` and both
-  breakpoints (L12). This replaces `Window::apply_chrome` in every app.
+  breakpoints (L12). Compact `title-widget` uses a typed null GValue
+  (`Some(&None::<gtk::Widget>.to_value())`); a skipped `None` is a NULL
+  `GValue*` and libadwaita drops the setter. This replaces
+  `Window::apply_chrome` in every app.
 - `page(title, content, PageChrome { start, end, root: bool }) -> adw::NavigationPage`
   → `AdwToolbarView` + `AdwHeaderBar` (switcher as title widget when
   `root`). Replaces `push_page`.
@@ -405,22 +606,23 @@ and must not wait for the builders.
   clamped inset list (keep returning the `ListBox` handle; GTK 4.22 may
   wrap it in a viewport).
 - `sheet(title, content, SheetSize::{Form, Picker, Alert})`: `AdwDialog`
-  with `content-width`/`content-height` (Form 480×720, Picker 420×560),
-  its own toolbar view/header, and `follows-content-size` false.
+  with `content-width`/`content-height` (Form 480×720, Picker 420×560,
+  Alert 360×240), its own toolbar view/header, and
+  `follows-content-size` false.
 
 Tests: sheet has a content width, page has a header bar, list page is
 clamped. No mutter.
 
-**2a exit (kit-only column):** Contacts and Music swapped onto
+**2a exit (kit-only column) — landed:** Contacts and Music swapped onto
 `adaptive_shell` / `page` / `list_box_page` / `sheet`. This is a
 mechanical swap of existing call sites with **no new row data and no
-builders**. Re-snapshot Contacts. These four “wrong today” symptoms
-must be gone: edge-to-edge list, collapsed conflict sheet, missing
-pushed-page title/back, collapsed edit sheet. Accent contrast from
-Phase 1 is visible. Leading avatars, letter sections, and moving Add
-are **not** in this exit.
+builders**. Re-snapshot Contacts when mutter can capture. These four
+“wrong today” symptoms must be gone: edge-to-edge list, collapsed
+conflict sheet, missing pushed-page title/back, collapsed edit sheet.
+Accent contrast from Phase 1 is visible. Leading avatars, letter
+sections, and moving Add are **not** in this exit.
 
-**2b. Typed builders (the derivation lever).** The app fills a struct;
+**2b. Typed builders (landed; the derivation lever).** The app fills a struct;
 the kit lays it out. Moving a screen onto a builder is a real rewrite of
 that screen's assembly, which is why this is separate from 2a.
 
@@ -438,12 +640,16 @@ that screen's assembly, which is why this is separate from 2a.
 Tests: builders populate the expected children (search present iff
 requested, one boxed list per section, empty state replaces the list).
 
-**2b exit:** Contacts `contact-list`, `settings`, `tag-management`,
+**2b exit (landed):** Contacts `contact-list`, `settings`, `tag-management`,
 `logs`, and `contact-edit`, plus Music `playlist-list` and `settings`,
 are assembled through builders, each with **the rows it has today**.
-Re-snapshot. No new row data yet.
+Re-snapshot when mutter can capture. No new row data yet. Scope filters
+reuse `choice_dropdown` (no `AdwToggleGroup`). Contacts settings pass
+today’s rows as folder first / diagnostics / info last (spec still has
+`info` before `diagnostics`; Phase 3 edits `screens.toml`). Titles stay
+“Contacts Folder” / “About” until Phase 3.
 
-**2c. Shared row polish (L3 avatars/symbols, L4, L6–L8, L10).** No
+**2c. Shared row polish (landed; L3 avatars/symbols, L4, L6–L8, L10).** No
 thumbnails, chips, tiles, or flush lists; see the two-consumer table.
 
 | Binding | Change |
@@ -479,10 +685,11 @@ exists (from Phase 1) and holds only token-driven overrides.
 Tests: data → widget (leading/trailing present, status icon per
 severity, chart trailing is dim). No mutter.
 
-**2c exit:** Contacts can pass `leading` / section keys / empty-state
-kind without writing layout. Re-snapshot. The middle-column wiring
-(avatars, letter sections, Add on the page) may start here and finish
-in Phase 3. That is app data, not kit scope creep.
+**2c exit (landed):** Contacts passes `leading` (initials from the
+contact title), letter section keys derived from that title, and
+empty-state kind through the existing builders. Re-snapshot when mutter
+can capture. Add-on-the-page and one-boxed-list-per-letter remain
+Phase 3 (app data, not kit scope creep). `media_item` is unchanged.
 
 ### Phase 3 — Contacts
 
@@ -498,7 +705,7 @@ to the kit and get re-snapshotted.
 | settings | `SettingsScreen`, groups **exactly from the spec's `settings` sections**, rows only for facts and actions the core exposes today. Do not add iOS-only rows such as Storage Layout or Last Synced. On `main` the spec lists `folder, sync, tags, info, diagnostics`; see the notes after this table | clamped |
 | tag-management | `page("Tags")`, Inset list, row = tag + dim count + flat circular rename/remove centred; `empty_state` when none | same |
 | logs | `page("Logs")`, header search toggle, level filter as `scope_toggle` (small fixed set), **Inset** list (not Flush), `monospace` message, dim timestamp | same |
-| sync-conflict-group | `sheet(Picker)`: intro text, Inset list of versions with radio check prefixes and summary subtitles, destructive "Resolve" → confirm naming what is lost (ADR 0007 R4) | same |
+| sync-conflict-group | `sheet(Picker)` **field diff**, not a silent merge. Intro names the contact. Per-field rows: label + both values (Local / Incoming), radio or editable surviving value. Auto-mergeable fields pre-selected but still visible. Confirm names every discarded value (ADR 0007 R4). No "Resolve" that writes without a preview | same |
 
 Contacts settings notes. These are spec fixes; they apply to both
 platforms and land in `apps/contacts/ui-spec/screens.toml` first:
@@ -536,11 +743,11 @@ rule as Contacts: no rows the core doesn't expose.
 | Screen | Compact | Wide |
 |---|---|---|
 | folder-picker | as contacts, `folder-music-symbolic` | — |
-| library | `ListScreen` root; sort as `choice_dropdown` (as today). Search, dim `caption-heading` count, scan `progress_row` while scanning. Start **Inset**; promote to Flush `GtkListView` in this crate if scroll measurement requires it. in-app media row (48 art, title, artist dim, duration dim `numeric`). Activate plays | clamp widens to 960 |
-| mini-player | Music chrome, not a new R4 kind. Bottom bar in the outer toolbar view above the switcher bar, hidden on now-playing: 40 art, title/artist (ellipsized), play/pause, next. Click → Now Playing tab | same, shown on Library/Playlists |
-| now-playing | Per-app composition. Lyrics card or large rounded art; title `title-2`; `GtkScale`; transport. `.lyrics` stays in `music-gtk` | two columns in clamp 1100 |
-| playlist-list | `ListScreen` root; end: add. Inset: cover `thumb` 48, name, track count dim, chevron. Delete via row overflow → confirm | same |
-| playlist-detail | `page(name)`, end: add tracks, Edit. `inline_primary` "Play All" + secondary "Shuffle", count caption, rows. Edit: drag handles + remove, `selection_bar`. Missing files as `status_row` warning | same |
+| library (Songs) | Flush track list; sort on the shell header. Activate plays from that row through the rest of the visible list | Same list in the browse column; Now Playing stays on the right |
+| artists / albums / playlists | Location list (art + name + count). Activate pushes that location’s tracks with back + Play All | Same, still one push in the browse column — not a second sidebar |
+| mini-player | Music chrome, not a new R4 kind. Bottom bar above the view switcher: 40 art, title/artist, play/pause, next. Click the track → Now Playing sheet | Hidden; the Now Playing column is the stage |
+| now-playing | Sheet from the mini-player. Large rounded art; title; transport | Persistent right column (~400px). Not a switcher tab |
+| playlist-detail | Header: back, title, add tracks, overflow (delete). One in-content `Play All` pill. Count caption. Flush track rows. Edit sheet for remove / reorder | Same pushed page in the browse column |
 | add-tracks | `FormSheet` Cancel / "Add (n)", search, rows with check prefixes | — |
 | settings / logs / sync-conflict-group | kit builders from Phase 3 | — |
 
@@ -706,9 +913,9 @@ and is re-snapshotted in every consumer.
 
 ## Open risks
 
-- Ubuntu 26.04 may ship a different libadwaita minor than Fedora 44 (D1
-  check in Phase 0). If it is below 1.7, the L6 fallbacks are needed:
-  `AdwToggleGroup` before 2c, `AdwWrapBox` before Phase 5.
+- Ubuntu 26.04 D1 check (2026-09-16): resolute archive is libadwaita
+  1.9.0 (26.04.1 images 1.9.1), not below 1.7. L6 fallbacks for
+  `AdwToggleGroup` / `AdwWrapBox` are not required before Phase 2c / 5.
 - Music dark accent text: best candidate is black at 4.67:1. The owner
   reviews it in Phase 1 snapshots (see Phase 1 table).
 - Gallery screens without a `gallery-ffi` window (folders, collections,
@@ -717,9 +924,10 @@ and is re-snapshotted in every consumer.
 - Dependency resolution of `apps/gallery/core` under the `shells/`
   lockfile (pins, `gallery-ffi` crate types). Checked before any
   Gallery UI.
-- gtk4 0.8→0.11 and libadwaita 0.6→0.9 will take real time (API drift).
-  That is expected; do not start 2a until `cargo test --workspace` in
-  `shells/` is green on the new crates.
+- gtk4 0.8→0.11 and libadwaita 0.6→0.9 **landed**; Phase 2a structure
+  **landed**; Phase 2b typed builders **landed**; Phase 2c row polish
+  **landed**. Remaining Phase 0 is host `gtk-before/` PNGs when mutter
+  captures. Next is Phase 3 Contacts.
 - Headless mutter in CI may not be available. Snapshots stay a local
   script; unit tests must not require them.
 - `GtkSectionModel` adapters, if Music needs Flush, stay in `music-gtk`

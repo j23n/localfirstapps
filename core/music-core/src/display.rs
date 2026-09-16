@@ -92,6 +92,273 @@ pub struct ConflictRow {
     pub disposition: ConflictDisposition,
 }
 
+/// Kind of a global music search hit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchKind {
+    /// One track.
+    Track,
+    /// An album location.
+    Album,
+    /// An artist location.
+    Artist,
+    /// A playlist.
+    Playlist,
+}
+
+/// One global search result. Shells pick an icon from [`Self::kind`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchHit {
+    /// Track id, `album:{name}`, `artist:{name}`, or playlist id.
+    pub id: String,
+    /// Result kind.
+    pub kind: SearchKind,
+    /// Primary label.
+    pub title: String,
+    /// Secondary label.
+    pub subtitle: Option<String>,
+}
+
+impl SearchKind {
+    /// Symbolic icon for this kind (HIG: symbolic style in lists).
+    #[must_use]
+    pub const fn symbol(self) -> &'static str {
+        match self {
+            Self::Track => "audio-x-generic-symbolic",
+            Self::Album => "media-optical-symbolic",
+            Self::Artist => "system-users-symbolic",
+            Self::Playlist => "view-list-symbolic",
+        }
+    }
+}
+
+/// Album locations for the Albums browse view. Grouped by album title.
+#[must_use]
+pub fn album_rows(store: &Store) -> Vec<TextRow> {
+    let mut groups = std::collections::BTreeMap::<String, AlbumGroup>::new();
+    for track in store.tracks() {
+        let key = track.album.to_lowercase();
+        let group = groups.entry(key).or_insert_with(|| AlbumGroup {
+            title: track.album.clone(),
+            artists: std::collections::BTreeSet::new(),
+            count: 0,
+        });
+        group.artists.insert(track.artist.clone());
+        group.count += 1;
+    }
+    groups
+        .into_values()
+        .map(|group| {
+            let subtitle = if group.artists.len() == 1 {
+                group.artists.into_iter().next()
+            } else {
+                Some("Various Artists".into())
+            };
+            TextRow {
+                id: format!("album:{}", group.title),
+                title: group.title,
+                subtitle,
+                trailing: Some(crate::projection::count_label(group.count, "track")),
+            }
+        })
+        .collect()
+}
+
+/// Track whose embedded art stands in for an album location.
+#[must_use]
+pub fn album_art_track_id(store: &Store, album_id: &str) -> Option<String> {
+    album_track_items(store, album_id)
+        .into_iter()
+        .find(|item| item.thumbnail_ref.starts_with("artwork:"))
+        .map(|item| item.id)
+}
+
+/// Tracks in one album, already display-ready.
+#[must_use]
+pub fn album_track_items(store: &Store, album_id: &str) -> Vec<MediaItem> {
+    let Some(album) = album_id.strip_prefix("album:") else {
+        return Vec::new();
+    };
+    let mut items: Vec<MediaItem> = store
+        .tracks()
+        .iter()
+        .filter(|track| track.album == album)
+        .map(crate::projection::media_item)
+        .collect();
+    items.sort_by(|left, right| {
+        left.label
+            .as_deref()
+            .unwrap_or_default()
+            .to_lowercase()
+            .cmp(&right.label.as_deref().unwrap_or_default().to_lowercase())
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    items
+}
+
+/// Artist locations for the Artists browse view.
+#[must_use]
+pub fn artist_rows(store: &Store) -> Vec<TextRow> {
+    let mut groups = std::collections::BTreeMap::<String, ArtistGroup>::new();
+    for track in store.tracks() {
+        let key = track.artist.to_lowercase();
+        let group = groups.entry(key).or_insert_with(|| ArtistGroup {
+            title: track.artist.clone(),
+            albums: std::collections::BTreeSet::new(),
+            count: 0,
+        });
+        group.albums.insert(track.album.clone());
+        group.count += 1;
+    }
+    groups
+        .into_values()
+        .map(|group| TextRow {
+            id: format!("artist:{}", group.title),
+            title: group.title,
+            subtitle: Some(crate::projection::count_label(group.albums.len(), "album")),
+            trailing: Some(crate::projection::count_label(group.count, "track")),
+        })
+        .collect()
+}
+
+/// Track whose embedded art stands in for an artist location.
+#[must_use]
+pub fn artist_art_track_id(store: &Store, artist_id: &str) -> Option<String> {
+    artist_track_items(store, artist_id)
+        .into_iter()
+        .find(|item| item.thumbnail_ref.starts_with("artwork:"))
+        .map(|item| item.id)
+}
+
+/// Tracks by one artist, already display-ready.
+#[must_use]
+pub fn artist_track_items(store: &Store, artist_id: &str) -> Vec<MediaItem> {
+    let Some(artist) = artist_id.strip_prefix("artist:") else {
+        return Vec::new();
+    };
+    let mut items: Vec<MediaItem> = store
+        .tracks()
+        .iter()
+        .filter(|track| track.artist == artist)
+        .map(crate::projection::media_item)
+        .collect();
+    items.sort_by(|left, right| {
+        left.label
+            .as_deref()
+            .unwrap_or_default()
+            .to_lowercase()
+            .cmp(&right.label.as_deref().unwrap_or_default().to_lowercase())
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    items
+}
+
+/// First artwork-bearing track in a playlist, else the first playable track.
+#[must_use]
+pub fn playlist_art_track_id(store: &Store, playlist_id: &str) -> Option<String> {
+    let playlist = store.playlist(playlist_id)?;
+    let mut first = None;
+    for entry in &playlist.entries {
+        let Some(track_id) = &entry.track_id else {
+            continue;
+        };
+        if first.is_none() {
+            first = Some(track_id.clone());
+        }
+        if store.track(track_id).is_some_and(|track| track.has_artwork) {
+            return Some(track_id.clone());
+        }
+    }
+    first
+}
+
+/// Global search across tracks, albums, artists, and playlists.
+#[must_use]
+pub fn search_hits(store: &Store, query: &str) -> Vec<SearchHit> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let mut hits = Vec::new();
+    for track in store.tracks() {
+        if corpus_contains(track, &needle) {
+            hits.push(SearchHit {
+                id: track.id.clone(),
+                kind: SearchKind::Track,
+                title: track.title.clone(),
+                subtitle: Some(format!("{} · {}", track.artist, track.album)),
+            });
+        }
+    }
+    let mut albums = std::collections::BTreeSet::new();
+    let mut artists = std::collections::BTreeSet::new();
+    for track in store.tracks() {
+        if track.album.to_lowercase().contains(&needle) {
+            albums.insert(track.album.clone());
+        }
+        if track.artist.to_lowercase().contains(&needle) {
+            artists.insert(track.artist.clone());
+        }
+    }
+    for album in albums {
+        let count = store
+            .tracks()
+            .iter()
+            .filter(|track| track.album == album)
+            .count();
+        hits.push(SearchHit {
+            id: format!("album:{album}"),
+            kind: SearchKind::Album,
+            title: album,
+            subtitle: Some(crate::projection::count_label(count, "track")),
+        });
+    }
+    for artist in artists {
+        let count = store
+            .tracks()
+            .iter()
+            .filter(|track| track.artist == artist)
+            .count();
+        hits.push(SearchHit {
+            id: format!("artist:{artist}"),
+            kind: SearchKind::Artist,
+            title: artist,
+            subtitle: Some(crate::projection::count_label(count, "track")),
+        });
+    }
+    for playlist in store.playlists() {
+        if playlist.name.to_lowercase().contains(&needle) {
+            hits.push(SearchHit {
+                id: playlist.id.clone(),
+                kind: SearchKind::Playlist,
+                title: playlist.name.clone(),
+                subtitle: Some(crate::projection::count_label(
+                    playlist.entries.len(),
+                    "track",
+                )),
+            });
+        }
+    }
+    hits
+}
+
+fn corpus_contains(track: &crate::model::Track, needle: &str) -> bool {
+    track.title.to_lowercase().contains(needle)
+        || track.artist.to_lowercase().contains(needle)
+        || track.album.to_lowercase().contains(needle)
+}
+
+struct AlbumGroup {
+    title: String,
+    artists: std::collections::BTreeSet<String>,
+    count: usize,
+}
+
+struct ArtistGroup {
+    title: String,
+    albums: std::collections::BTreeSet<String>,
+    count: usize,
+}
+
 /// Sorted playlist rows.
 #[must_use]
 pub fn playlist_rows(store: &Store) -> Vec<TextRow> {

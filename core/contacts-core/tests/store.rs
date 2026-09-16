@@ -40,6 +40,38 @@ fn walk_excludes_conflict_copies() {
 }
 
 #[test]
+fn search_matches_phone_address_and_birthday() {
+    let vfs = MemVfs::new();
+    let mut peter = Card::new("peter.vcf");
+    peter.local_id = "peter-1".into();
+    peter.full_name = "Peter Smith".into();
+    peter.phones.push(contacts_core::Labeled {
+        label: "cell".into(),
+        value: "650-555-2718".into(),
+    });
+    peter.addresses.push(contacts_core::LabeledAddress {
+        label: "home".into(),
+        value: contacts_core::PostalAddress {
+            street: "1 Market St".into(),
+            city: "San Francisco".into(),
+            ..contacts_core::PostalAddress::default()
+        },
+    });
+    peter.birthday = Some(contacts_core::Birthday {
+        year: Some(1984),
+        month: 3,
+        day: 21,
+    });
+    vfs.insert("/lib/peter.vcf", write(&peter).into_bytes());
+    let store = Store::open(&vfs, "/lib").unwrap();
+    assert_eq!(store.search("650").len(), 1);
+    assert_eq!(store.search("francisco").len(), 1);
+    assert_eq!(store.search("03-21").len(), 1);
+    let hits = contacts_core::search_hits(&store, "650", None);
+    assert_eq!(hits[0].field_label, "Phone");
+    assert!(hits[0].field_value.contains("650"));
+}
+
 fn search_and_layout() {
     let vfs = MemVfs::new();
     vfs.insert("/lib/alice.vcf", alice().into_bytes());

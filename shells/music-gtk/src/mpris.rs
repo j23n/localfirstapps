@@ -155,10 +155,9 @@ fn register_interfaces(
         return;
     };
     let root_command = command.clone();
-    let _ = connection.register_object(
-        OBJECT_PATH,
-        &root,
-        move |_, _, _, _, method, _, invocation| {
+    let _ = connection
+        .register_object(OBJECT_PATH, &root)
+        .method_call(move |_, _, _, _, method, _, invocation| {
             let remote = match method {
                 "Raise" => Some(RemoteCommand::Raise),
                 "Quit" => Some(RemoteCommand::Quit),
@@ -173,10 +172,10 @@ fn register_interfaces(
                     "Unsupported root command",
                 );
             }
-        },
-        move |_, _, _, _, property| root_property(property),
-        |_, _, _, _, _, _| false,
-    );
+        })
+        .property(move |_, _, _, _, property| root_property(property))
+        .set_property(|_, _, _, _, _, _| false)
+        .build();
 
     let Some(player) = node.lookup_interface(PLAYER_INTERFACE) else {
         return;
@@ -184,10 +183,9 @@ fn register_interfaces(
     let method_command = command.clone();
     let property_state = state.clone();
     let set_command = command;
-    let _ = connection.register_object(
-        OBJECT_PATH,
-        &player,
-        move |_, _, _, _, method, parameters, invocation| {
+    let _ = connection
+        .register_object(OBJECT_PATH, &player)
+        .method_call(move |_, _, _, _, method, parameters, invocation| {
             let remote = match method {
                 "Next" => Some(RemoteCommand::Next),
                 "Previous" => Some(RemoteCommand::Previous),
@@ -216,9 +214,9 @@ fn register_interfaces(
                     "Opening arbitrary URIs is not supported",
                 );
             }
-        },
-        move |_, _, _, _, property| player_property(property, &(property_state)()),
-        move |_, _, _, _, property, value| {
+        })
+        .property(move |_, _, _, _, property| player_property(property, &(property_state)()))
+        .set_property(move |_, _, _, _, property, value| {
             if property == "Volume" {
                 if let Some(volume) = value.get::<f64>() {
                     set_command(RemoteCommand::SetVolume(volume));
@@ -226,8 +224,8 @@ fn register_interfaces(
                 }
             }
             false
-        },
-    );
+        })
+        .build();
 }
 
 fn root_property(name: &str) -> glib::Variant {

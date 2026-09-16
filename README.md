@@ -20,11 +20,14 @@ they need a Mac and Xcode.
 ## Linux requirements
 
 - Rust **1.97.1** (`rustup install 1.97.1`; use `cargo +1.97.1` below)
-- GTK 4.14+ and libadwaita 1.5+
+- GTK 4.22+ and libadwaita 1.9+
+- Platform baseline Fedora 44 / Ubuntu 26.04 (GNOME 50)
 - A C compiler (`gcc`)
 - Go 1.25+ only for the Health CLI (`CGO_ENABLED=1`)
 - GStreamer 1.0 plus base/good plugins for Music **playback**
 - OpenSSL headers only if you enable Gallery ML (`--features ml`)
+
+Ubuntu 24.04 ships GTK 4.14 and libadwaita 1.5 and is below this floor.
 
 Fedora:
 
@@ -34,7 +37,7 @@ sudo dnf install gtk4-devel libadwaita-devel pkgconf-pkg-config gcc \
   openssl-devel golang
 ```
 
-Debian / Ubuntu 24.04:
+Debian / Ubuntu 26.04:
 
 ```bash
 sudo apt install build-essential pkg-config libgtk-4-dev libadwaita-1-dev \
@@ -43,6 +46,46 @@ sudo apt install build-essential pkg-config libgtk-4-dev libadwaita-1-dev \
 ```
 
 Need a graphical session to *run* the GTK apps. `cargo test` does not.
+
+Debug builds of the GTK shells accept `--route <screen-id> --snapshot out.png --size WxH` and optional `--folder`. `scripts/gtk-snapshots.sh contacts` (or `music`) runs the implemented route matrix under headless mutter when it is installed; without mutter the script skips and exits 0. PNGs land in `docs/screenshots/gtk-before/` only when a capture actually writes a file. `cargo test` / CI do not run mutter.
+
+## Host release binaries
+
+From the repo root (this tree is bind-mounted as `~/dev/public/localfirst`
+on the laptop):
+
+```bash
+cd shells
+cargo +1.97.1 test --locked --workspace --all-targets
+cargo +1.97.1 build --release --locked -p contacts-gtk
+# Playback needs GStreamer devel on the machine (no extra packages if
+# `pkg-config --exists gstreamer-1.0` already prints nothing and exits 0):
+pkg-config --exists gstreamer-1.0 && echo gst-ok
+cargo +1.97.1 build --release --locked -p music-gtk --features gstreamer-playback
+```
+
+Binaries: `shells/target/release/localcontacts` and
+`shells/target/release/localmusic`. Copy them next to the ones you already
+run if you keep a `build/` folder.
+
+`build/localmusic` copied from this environment is **not** a GStreamer
+build (the agent image has no `gstreamer-1.0.pc`). Play on the laptop
+needs a host rebuild after devel packages are installed:
+
+```bash
+pkg-config --exists gstreamer-1.0 && echo gst-ok
+cd ~/dev/public/localfirst/shells
+cargo +1.97.1 build --release --locked -p music-gtk --features gstreamer-playback
+cp -f target/release/localmusic ../build/localmusic
+```
+
+If `pkg-config` fails, install `gstreamer1-devel` and
+`gstreamer1-plugins-base-devel` (needs admin). Plugins (`good`, `libav`)
+are the runtime codecs. Song titles/artists/durations come from `lofty`
+and do **not** need GStreamer.
+
+Fedora (admin once): `gstreamer1-devel gstreamer1-plugins-base-devel`
+plus `gstreamer1-plugins-good` and a codec set for typical MP3/M4A.
 
 ## LocalContacts
 
@@ -71,9 +114,10 @@ cargo +1.97.1 run --locked -p music-gtk --features gstreamer-playback -- --comet
 
 Binary: `shells/target/debug/localmusic`.
 
-Open a folder of local audio. Without `gstreamer-playback` the UI still
-builds and runs; transport is a mock so you can exercise lists and
-playlists without GStreamer headers. Host settings are
+Open a folder of local audio. Tags are read with `lofty` after the
+folder opens. Without `gstreamer-playback` the UI still builds and
+runs; transport is a mock so you can exercise lists and playlists
+without GStreamer headers. Host settings are
 `$XDG_CONFIG_HOME/localmusic/`. Playlists stay in the chosen folder.
 
 ## LocalGallery

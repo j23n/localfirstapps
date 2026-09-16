@@ -169,6 +169,7 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
     if assign_default_id {
         card.local_id = Uuid::new_v4().to_string();
     }
+    let mut groups = std::collections::HashMap::<String, GroupTarget>::new();
     for line in unfolded.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -178,7 +179,7 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
         if upper == "BEGIN:VCARD" || upper == "END:VCARD" || upper.starts_with("VERSION:") {
             continue;
         }
-        let Some((field, params, value)) = parse_line(trimmed) else {
+        let Some((group, field, params, value)) = parse_line(trimmed) else {
             card.unknown_fields.push(trimmed.to_owned());
             continue;
         };
@@ -192,14 +193,24 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
                 card.name_prefix = unescape(parts.get(3).copied().unwrap_or(""));
                 card.name_suffix = unescape(parts.get(4).copied().unwrap_or(""));
             }
-            "TEL" => card.phones.push(Labeled {
-                label: extract_type_label(&params, "mobile"),
-                value: unescape(&value),
-            }),
-            "EMAIL" => card.emails.push(Labeled {
-                label: extract_type_label(&params, "home"),
-                value: unescape(&value),
-            }),
+            "TEL" => {
+                card.phones.push(Labeled {
+                    label: extract_type_label(&params, "mobile"),
+                    value: unescape(&value),
+                });
+                if let Some(group) = group {
+                    groups.insert(group, GroupTarget::Phone(card.phones.len() - 1));
+                }
+            }
+            "EMAIL" => {
+                card.emails.push(Labeled {
+                    label: extract_type_label(&params, "home"),
+                    value: unescape(&value),
+                });
+                if let Some(group) = group {
+                    groups.insert(group, GroupTarget::Email(card.emails.len() - 1));
+                }
+            }
             "ADR" => {
                 let parts = split_escaped(&value, ';');
                 card.addresses.push(LabeledAddress {
@@ -219,10 +230,24 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
             }
             "TITLE" => card.job_title = unescape(&value),
             "NICKNAME" => card.nickname = unescape(&value),
-            "URL" => card.urls.push(Labeled {
-                label: extract_type_label(&params, "homepage"),
-                value: unescape(&value),
-            }),
+            "URL" => {
+                card.urls.push(Labeled {
+                    label: extract_type_label(&params, "homepage"),
+                    value: unescape(&value),
+                });
+                if let Some(group) = group {
+                    groups.insert(group, GroupTarget::Url(card.urls.len() - 1));
+                }
+            }
+            "X-ABLABEL" => {
+                let label = unescape(&value);
+                let applied = group.as_ref().is_some_and(|name| groups.contains_key(name));
+                if applied {
+                    apply_group_label(&mut card, &groups, group.as_deref().unwrap_or(""), &label);
+                } else {
+                    card.unknown_fields.push(trimmed.to_owned());
+                }
+            }
             "BDAY" => card.birthday = parse_birthday(&value),
             "PHOTO" => match parse_photo(&value, &params) {
                 Some(bytes) => {
@@ -243,14 +268,128 @@ fn parse_str(text: &str, file_name: &str, assign_default_id: bool) -> Option<Car
             _ => card.unknown_fields.push(trimmed.to_owned()),
         }
     }
+    lift_item_dump_from_note(&mut card);
     Some(card)
 }
 
-fn parse_line(line: &str) -> Option<(String, Vec<String>, String)> {
+enum GroupTarget {
+    Url(usize),
+    Phone(usize),
+    Email(usize),
+}
+
+fn apply_group_label(
+    card: &mut Card,
+    groups: &std::collections::HashMap<String, GroupTarget>,
+    group: &str,
+    label: &str,
+) {
+    let label = label.trim();
+    if label.is_empty() {
+        return;
+    }
+    match groups.get(group) {
+        Some(GroupTarget::Url(index)) => {
+            if let Some(url) = card.urls.get_mut(*index) {
+                url.label = label.to_owned();
+            }
+        }
+        Some(GroupTarget::Phone(index)) => {
+            if let Some(phone) = card.phones.get_mut(*index) {
+                phone.label = label.to_owned();
+            }
+        }
+        Some(GroupTarget::Email(index)) => {
+            if let Some(email) = card.emails.get_mut(*index) {
+                email.label = label.to_owned();
+            }
+        }
+        None => {}
+    }
+}
+
+/// Apple Contacts sometimes dumps grouped URL/label pairs into NOTE.
+fn lift_item_dump_from_note(card: &mut Card) {
+    if card.note.is_empty() {
+        return;
+    }
+    let mut kept = Vec::new();
+    let mut dumped = String::new();
+    for line in card.note.lines() {
+        let trimmed = line.trim();
+        let upper = trimmed.to_ascii_uppercase();
+        let looks_like_item = upper.contains("ITEM")
+            && (upper.contains(".URL:")
+                || upper.contains(".X-ABLABEL:")
+                || upper.contains("URL:")
+                || upper.contains("X-ABLABEL:"));
+        if looks_like_item {
+            dumped.push_str(trimmed);
+            dumped.push('\n');
+        } else if !trimmed.is_empty() {
+            kept.push(trimmed.to_owned());
+        }
+    }
+    if dumped.is_empty() {
+        return;
+    }
+    let wrapped = format!("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:_\r\n{dumped}END:VCARD\r\n");
+    let Some(partial) = parse_without_note_lift(wrapped.as_bytes(), "note.vcf") else {
+        return;
+    };
+    for url in partial.urls {
+        if !card.urls.iter().any(|existing| existing.value == url.value) {
+            card.urls.push(url);
+        }
+    }
+    card.note = kept.join("\n");
+}
+
+fn parse_without_note_lift(bytes: &[u8], file_name: &str) -> Option<Card> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let unfolded = unfold(text);
+    let mut card = Card::new(file_name);
+    let mut groups = std::collections::HashMap::<String, GroupTarget>::new();
+    for line in unfolded.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let upper = trimmed.to_ascii_uppercase();
+        if upper == "BEGIN:VCARD" || upper == "END:VCARD" || upper.starts_with("VERSION:") {
+            continue;
+        }
+        let Some((group, field, params, value)) = parse_line(trimmed) else {
+            continue;
+        };
+        match field.to_ascii_uppercase().as_str() {
+            "URL" => {
+                card.urls.push(Labeled {
+                    label: extract_type_label(&params, "homepage"),
+                    value: unescape(&value),
+                });
+                if let Some(group) = group {
+                    groups.insert(group, GroupTarget::Url(card.urls.len() - 1));
+                }
+            }
+            "X-ABLABEL" => {
+                if let Some(group) = group {
+                    apply_group_label(&mut card, &groups, &group, &unescape(&value));
+                }
+            }
+            _ => {}
+        }
+    }
+    Some(card)
+}
+
+fn parse_line(line: &str) -> Option<(Option<String>, String, Vec<String>, String)> {
     let mut working = line.to_owned();
+    let mut group = None;
     if let Some(dot) = working.find('.') {
         if let Some(colon) = working.find(':') {
             if dot < colon && !working[..dot].contains(';') {
+                group = Some(working[..dot].to_owned());
                 working = working[dot + 1..].to_owned();
             }
         }
@@ -261,7 +400,7 @@ fn parse_line(line: &str) -> Option<(String, Vec<String>, String)> {
     let mut parts = field_and_params.split(';');
     let field = parts.next()?.to_owned();
     let params = parts.map(str::to_owned).collect();
-    Some((field, params, value))
+    Some((group, field, params, value))
 }
 
 fn unfold(text: &str) -> String {

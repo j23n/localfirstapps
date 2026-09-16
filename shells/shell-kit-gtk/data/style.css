@@ -1,0 +1,7 @@
+/* Token-driven libadwaita named-colour bridge (Phase 1).
+   No custom classes. No colour hex literals.
+   Do not set accent_color / --accent-color; libadwaita derives
+   readable accent text. */
+
+@define-color accent_bg_color var(--accent-bg-color);
+@define-color accent_fg_color var(--accent-fg-color);

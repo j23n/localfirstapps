@@ -24,7 +24,7 @@ does not request downloads or materialise placeholders.
 - Xcode 15+
 - iOS 17.0+
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-- Linux: GTK 4.14+, libadwaita 1.5+, GStreamer 1.0, and Rust 1.97
+- Linux: GTK 4.22+, libadwaita 1.9+, GStreamer 1.0, and Rust 1.97 (see the root README)
 
 ## Build
 

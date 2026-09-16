@@ -29,10 +29,11 @@ pub use actions::{
     assign_tag_logged, bulk_delete_logged, delete_logged, export_vcard_text, load_edit_draft,
     remove_tag_logged, rename_tag_logged, resolve_logged, save_contact_logged, save_logged,
 };
-pub use card::{Birthday, Card, Labeled, LabeledAddress, Layout, PostalAddress};
+pub use card::{structured_name, Birthday, Card, Labeled, LabeledAddress, Layout, PostalAddress};
 pub use display::{
-    choice_rows, conflict_rows, detail_rows, field_rows, list_rows, list_rows_filtered,
-    merge_trailing, tag_rows, ConflictRow, FieldRow, TextRow,
+    choice_rows, conflict_preview, conflict_rows, detail_rows, field_rows, list_rows,
+    list_rows_filtered, merge_trailing, search_hits, tag_rows, ConflictFieldPreview,
+    ConflictPreview, ConflictRow, FieldMatch, FieldRow, SearchHit, TextRow,
 };
 pub use draft::{
     apply_draft, apply_edit_draft, content_token, draft_from_card, edit_draft_from_card,
