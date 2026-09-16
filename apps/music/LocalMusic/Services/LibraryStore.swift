@@ -380,7 +380,7 @@ final class LibraryStore {
     func replacePlaylistSelection(playlistID: String, selectedTrackIDs: Set<String>) async {
         guard let playlist = playlist(id: playlistID) else { return }
         let existing = Set(playlist.entries.compactMap(\.trackID))
-        let removeIDs = playlist.entries.compactMap { entry in
+        let removeIDs: [String] = playlist.entries.compactMap { entry in
             guard let trackID = entry.trackID, !selectedTrackIDs.contains(trackID) else {
                 return nil
             }
