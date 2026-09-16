@@ -4,6 +4,7 @@ members = [
     "contacts-core",
     "contacts-ffi",
     "health-core",
+    "health-ffi",
     "localcore-blob",
     "localcore-conflict",
     "localcore-id",

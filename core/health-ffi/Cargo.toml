@@ -1,0 +1,19 @@
+[package]
+name = "health-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "R6-clean UniFFI surface for health-core"
+
+[lib]
+name = "health_ffi"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[dependencies]
+health-core = { path = "../health-core" }
+uniffi = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

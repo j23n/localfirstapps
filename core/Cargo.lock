@@ -264,6 +264,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "health-ffi"
+version = "0.1.0"
+dependencies = [
+ "health-core",
+ "tempfile",
+ "uniffi",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
