@@ -1,0 +1,125 @@
+# localhealth screens curated from the retired loopback web UI.
+# Semantic only (ADR 0004 R2): legacy_routes record the old information
+# architecture, not routes that a native shell must reproduce.
+# r4_gaps name content the closed vocabulary cannot express yet. They are
+# documentation, not additions to docs/spec/ui/vocabulary.toml.
+
+app = "health"
+
+[[screens]]
+id = "today"
+kind = "list"
+title = "Today"
+legacy_routes = ["/", "/day (redirect)"]
+affordances = ["filter", "banner"]
+item_nav = { intent = "push", destination = "kind-detail" }
+# Filter: local calendar day. Banner: archive gaps.
+sections = [
+    { id = "day", item = "status-row" },
+    { id = "gaps", item = "status-row" },
+    { id = "workouts", item = "nav-row" },
+]
+r4_gaps = ["metric-card"]
+
+[[screens]]
+id = "medicine"
+kind = "list"
+title = "Medicine"
+legacy_routes = ["/medicine"]
+item_nav = { intent = "push", destination = "kind-detail" }
+sections = [
+    { id = "kinds", item = "nav-row" },
+]
+r4_gaps = ["metric-card"]
+
+[[screens]]
+id = "lifestyle"
+kind = "list"
+title = "Lifestyle"
+legacy_routes = ["/lifestyle"]
+item_nav = { intent = "push", destination = "kind-detail" }
+sections = [
+    { id = "kinds", item = "nav-row" },
+]
+r4_gaps = ["metric-card"]
+
+[[screens]]
+id = "sports"
+kind = "list"
+title = "Sports"
+legacy_routes = ["/sports"]
+item_nav = { intent = "push", destination = "kind-detail" }
+sections = [
+    { id = "kinds", item = "nav-row" },
+]
+r4_gaps = ["metric-card"]
+
+[[screens]]
+id = "all-kinds"
+kind = "list"
+title = "All"
+legacy_routes = ["/all", "/kinds (redirect)"]
+item_nav = { intent = "push", destination = "kind-detail" }
+# Includes unclassified Apple kinds.
+sections = [
+    { id = "kinds", item = "nav-row" },
+]
+r4_gaps = ["metric-card"]
+
+[[screens]]
+id = "kind-detail"
+kind = "detail"
+title = "Health metric"
+legacy_routes = [
+    "/medicine/{slug}",
+    "/lifestyle/{slug}",
+    "/sports/{slug}",
+    "/all/{slug}",
+    "/kind?k={kind}",
+    "/timeline?kind={kind} (redirect)",
+]
+affordances = ["filter"]
+# Filters: range, window end, and source when sources overlap on a local day.
+item_nav = { intent = "push", destination = "workout-session" }
+sections = [
+    { id = "summary", item = "status-row" },
+    { id = "recent-values", item = "text-row" },
+    { id = "sessions", item = "nav-row" },
+]
+r4_gaps = ["chart", "metric-card"]
+
+[[screens]]
+id = "workout-session"
+kind = "detail"
+title = "Workout"
+legacy_routes = ["/sports/{slug}/{id}", "/all/{slug}/{id}"]
+sections = [
+    { id = "summary", item = "field-row" },
+    { id = "splits", item = "field-row" },
+    { id = "source", item = "text-row" },
+]
+r4_gaps = ["chart", "route-map", "pause-strip"]
+
+[[screens]]
+id = "gaps"
+kind = "list"
+title = "Gaps"
+legacy_routes = ["/gaps"]
+affordances = ["filter", "banner"]
+# Filter: observation kind. Missing days navigate to Today.
+item_nav = { intent = "push", destination = "today" }
+sections = [
+    { id = "summary", item = "status-row" },
+    { id = "per-kind", item = "status-row" },
+    { id = "missing-days", item = "nav-row" },
+]
+
+[[screens]]
+id = "source-files"
+kind = "list"
+title = "Files"
+legacy_routes = ["/blobs"]
+# Imported source files are listed without a preview.
+sections = [
+    { id = "imports", item = "text-row" },
+]

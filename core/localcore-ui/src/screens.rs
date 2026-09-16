@@ -59,6 +59,61 @@ impl ContactsScreen {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HealthScreen {
+    Today,
+    Medicine,
+    Lifestyle,
+    Sports,
+    AllKinds,
+    KindDetail,
+    WorkoutSession,
+    Gaps,
+    SourceFiles,
+}
+
+impl HealthScreen {
+    pub const ALL: &'static [Self] = &[
+        Self::Today,
+        Self::Medicine,
+        Self::Lifestyle,
+        Self::Sports,
+        Self::AllKinds,
+        Self::KindDetail,
+        Self::WorkoutSession,
+        Self::Gaps,
+        Self::SourceFiles,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Today => "today",
+            Self::Medicine => "medicine",
+            Self::Lifestyle => "lifestyle",
+            Self::Sports => "sports",
+            Self::AllKinds => "all-kinds",
+            Self::KindDetail => "kind-detail",
+            Self::WorkoutSession => "workout-session",
+            Self::Gaps => "gaps",
+            Self::SourceFiles => "source-files",
+        }
+    }
+
+    pub fn kind(self) -> ScreenKind {
+        match self {
+            Self::Today => ScreenKind::List,
+            Self::Medicine => ScreenKind::List,
+            Self::Lifestyle => ScreenKind::List,
+            Self::Sports => ScreenKind::List,
+            Self::AllKinds => ScreenKind::List,
+            Self::KindDetail => ScreenKind::Detail,
+            Self::WorkoutSession => ScreenKind::Detail,
+            Self::Gaps => ScreenKind::List,
+            Self::SourceFiles => ScreenKind::List,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MusicScreen {
     FolderPicker,
     Library,

@@ -1,0 +1,130 @@
+{
+  "contract": "health-metric-series-v1",
+  "displayLocation": "UTC",
+  "cases": [
+    {
+      "name": "mean keeps empty days and sample range",
+      "aggregate": "mean",
+      "range": "month",
+      "from": "2026-08-23",
+      "to": "2026-08-25",
+      "input": [
+        {
+          "start": "2026-08-24T08:00:00Z",
+          "value": 12,
+          "unit": "count/min",
+          "source": "Apple Watch"
+        },
+        {
+          "start": "2026-08-24T20:00:00Z",
+          "value": 18,
+          "unit": "count/min",
+          "source": "Apple Watch"
+        }
+      ],
+      "expected": {
+        "grain": "day",
+        "beginAtZero": false,
+        "caption": "One bar per day (min–max). Empty days stay blank.",
+        "points": [
+          {"label": "23 Aug", "value": null},
+          {
+            "label": "24 Aug",
+            "value": 15,
+            "minimum": 12,
+            "maximum": 18,
+            "unit": "count/min",
+            "sources": ["Apple Watch"]
+          },
+          {"label": "25 Aug", "value": null}
+        ]
+      }
+    },
+    {
+      "name": "sum starts at zero and absence is not zero",
+      "aggregate": "sum",
+      "range": "month",
+      "from": "2026-08-23",
+      "to": "2026-08-25",
+      "input": [
+        {
+          "start": "2026-08-24T08:00:00Z",
+          "value": 200,
+          "unit": "count",
+          "source": "iPhone"
+        },
+        {
+          "start": "2026-08-24T20:00:00Z",
+          "value": 264,
+          "unit": "count",
+          "source": "iPhone"
+        }
+      ],
+      "expected": {
+        "grain": "day",
+        "beginAtZero": true,
+        "caption": "One bar per day. Empty days stay blank.",
+        "points": [
+          {"label": "23 Aug", "value": null},
+          {
+            "label": "24 Aug",
+            "value": 464,
+            "unit": "count",
+            "sources": ["iPhone"]
+          },
+          {"label": "25 Aug", "value": null}
+        ]
+      }
+    },
+    {
+      "name": "HealthKit fraction displays as percent points",
+      "aggregate": "mean",
+      "range": "1d",
+      "from": "2026-08-24",
+      "to": "2026-08-24",
+      "input": [
+        {
+          "start": "2026-08-24T15:10:00Z",
+          "value": 0.312,
+          "unit": "%",
+          "source": "iPhone"
+        }
+      ],
+      "expected": {
+        "grain": "hour",
+        "filledPoint": {
+          "label": "24 Aug 15:00",
+          "value": 31.2,
+          "minimum": 31.2,
+          "maximum": 31.2,
+          "unit": "%",
+          "sources": ["iPhone"]
+        },
+        "emptyPointCount": 23
+      }
+    },
+    {
+      "name": "episodes never use hourly buckets",
+      "series": "episodes",
+      "range": "7d",
+      "from": "2026-08-18",
+      "to": "2026-08-24",
+      "inputByDay": {
+        "2026-08-24": 2
+      },
+      "expected": {
+        "grain": "day",
+        "beginAtZero": true,
+        "points": [
+          {"label": "18 Aug", "value": null},
+          {"label": "19 Aug", "value": null},
+          {"label": "20 Aug", "value": null},
+          {"label": "21 Aug", "value": null},
+          {"label": "22 Aug", "value": null},
+          {"label": "23 Aug", "value": null},
+          {"label": "24 Aug", "value": 2, "unit": "sessions"}
+        ]
+      }
+    }
+  ]
+}

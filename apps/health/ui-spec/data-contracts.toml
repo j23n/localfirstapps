@@ -1,0 +1,157 @@
+# Static data behavior curated from the retired Go web reference.
+# This is a porting contract, not runtime configuration.
+
+version = 1
+calendar = "Bucket boundaries and labels use the configured display location."
+input_order_observations = ["start_ts", "dedup_key", "n"]
+input_order_episodes = ["start_ts", "dedup_key"]
+empty_bucket = "Emit the bucket with a null value; never turn absence into zero."
+
+[today]
+favourites = [
+    "workout",
+    "HKQuantityTypeIdentifierStepCount",
+    "HKQuantityTypeIdentifierHeartRate",
+    "HKCategoryTypeIdentifierSleepAnalysis",
+    "HKQuantityTypeIdentifierRestingHeartRate",
+]
+workout = "The workout token means every HKWorkoutActivityType* session."
+
+[[ranges]]
+id = "1d"
+window = "selected local day"
+grain = "hour"
+pager_step = "1 day"
+
+[[ranges]]
+id = "7d"
+window = "selected local day and the preceding 6 local days"
+grain = "hour"
+pager_step = "7 days"
+
+[[ranges]]
+id = "month"
+window = "calendar month containing the selected local day"
+grain = "day"
+pager_step = "1 calendar month"
+
+[[ranges]]
+id = "year"
+window = "calendar year containing the selected local day"
+grain = "month"
+pager_step = "1 calendar year"
+
+[[ranges]]
+id = "all"
+window = "first through last selected sample"
+grain = "hour when end-start <= 8 days; day when <= 35 days; week when <= 100 days; month otherwise"
+pager_step = "none"
+
+[grain]
+hour = "One bucket per wall-clock hour."
+day = "One bucket per local calendar day."
+week = "One bucket per Monday-based week."
+month = "One bucket per local calendar month."
+episodes_minimum = "day"
+
+[[aggregates]]
+id = "count"
+value = "number of selected rows, including rows with non-numeric values"
+range = "none"
+begin_at_zero = true
+
+[[aggregates]]
+id = "sum"
+value = "sum of numeric values; empty when no numeric value exists"
+range = "none"
+begin_at_zero = true
+
+[[aggregates]]
+id = "mean"
+value = "arithmetic mean of numeric values; empty when no numeric value exists"
+range = "minimum and maximum numeric sample in the bucket"
+begin_at_zero = false
+
+[[aggregates]]
+id = "min"
+value = "minimum numeric value; empty when no numeric value exists"
+range = "minimum and maximum numeric sample in the bucket"
+begin_at_zero = false
+
+[[aggregates]]
+id = "max"
+value = "maximum numeric value; empty when no numeric value exists"
+range = "minimum and maximum numeric sample in the bucket"
+begin_at_zero = false
+
+[[aggregates]]
+id = "latest"
+value = "last numeric value in deterministic observation input order"
+range = "minimum and maximum numeric sample in the bucket"
+begin_at_zero = false
+
+[display]
+decimal_precision = 2
+integer_decimal_part = "omit"
+healthkit_percent = "For unit %, values in the inclusive range 0..1 are multiplied by 100; other values are unchanged."
+metric_chart = "bar"
+non_zero_range_bar = "Render min-max with the aggregate value retained as the center."
+row_limit = 20
+spark_calendar_days = 14
+
+[source_selection]
+overlap = "Two or more sources record the same kind on the same local day."
+source_filter = "Offer an explicit source only when overlap is true."
+locked = "Keep only rows from the requested source."
+automatic = "For each local day, use the ranked preferred source when present; keep the sole source otherwise; if several remain without a preferred source, choose the lexically first source."
+cross_source_sum = "forbidden"
+non_overlapping = "Union days from complementary sources."
+
+[provenance]
+sample_fields = ["source", "blob_sha256", "event_id"]
+headline = "Name the source selected for the displayed local-day value."
+aggregate = "Retain the ordered unique contributing sources and source record identities. A multi-day aggregate can contain complementary sources and must not be labelled as if one source produced the whole value."
+workout = "Retain episode source, blob_sha256, event_id, and route member path."
+legacy_limit = "The retired web code exposed only the last contributing source on a multi-day plotted row; that lossy label is not a portable contract."
+
+[baseline]
+window = "90 local days before the selected day; selected day excluded"
+minimum_days = 30
+percentile = "100 * count(history values strictly below current) / history count"
+below = "percentile < 10: Lower than usual for you"
+above = "percentile > 90: Higher than usual for you"
+otherwise = "no annotation"
+medical_judgement = "Never substitute abnormal, concerning, good, or bad."
+
+[workout_summary]
+fields = ["moving_time", "elapsed_time", "pause_count", "distance", "moving_pace_per_km", "active_energy", "heart_rate_average", "heart_rate_maximum", "ascent", "descent"]
+elapsed_fallback = "episode end minus start"
+moving_fallback = "elapsed time"
+paused = "max(0, elapsed minus moving)"
+pace = "moving seconds divided by distance in kilometres"
+
+[workout_heart_rate]
+source = "Only heart-rate observations from the episode source and [episode start, episode end)."
+moving_axis = "Exclude paused samples and subtract completed pause durations from elapsed offsets."
+elapsed_axis = "Keep paused samples on elapsed offsets."
+minimum_points = 2
+maximum_points = 160
+downsample = "Endpoint-preserving deterministic index sampling."
+
+[workout_elevation]
+x = "Cumulative equirectangular distance in kilometres."
+y = "GPX elevation in metres; omit track points without elevation."
+minimum_points = 2
+maximum_points = 160
+
+[workout_pace]
+x = "Cumulative equirectangular distance in kilometres."
+y = "Seconds per kilometre over a trailing approximately 200 metre window, displayed as min/km."
+valid_window = "At least 20 metres and positive elapsed time; discard pace below 1:00/km or above 30:00/km."
+minimum_points = 2
+maximum_points = 160
+
+[workout_route]
+shape = "Projected polyline segments with distinct start and end markers."
+empty = "If a route member exists but no projected polyline does, state that rebuild is required; otherwise omit the route."
+caption = "Distance, segment count, and simplified point count."

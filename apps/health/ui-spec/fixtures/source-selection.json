@@ -1,0 +1,93 @@
+{
+  "contract": "health-source-selection-v1",
+  "displayLocation": "+02:00",
+  "cases": [
+    {
+      "name": "preferred source wins a local-day collision",
+      "preferredSource": "Apple Watch",
+      "input": [
+        {
+          "start": "2026-06-06T07:25:00Z",
+          "value": 826,
+          "unit": "count",
+          "source": "Apple Watch",
+          "blobSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "eventId": "01974a70-0000-7000-8000-000000000001"
+        },
+        {
+          "start": "2026-06-06T08:00:00Z",
+          "value": 837,
+          "unit": "count",
+          "source": "iPhone",
+          "blobSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "eventId": "01974a70-0000-7000-8000-000000000002"
+        }
+      ],
+      "expected": {
+        "overlap": true,
+        "showSourceFilter": true,
+        "automaticDays": [
+          {
+            "day": "2026-06-06",
+            "value": 826,
+            "unit": "count",
+            "sources": ["Apple Watch"],
+            "eventIds": ["01974a70-0000-7000-8000-000000000001"]
+          }
+        ],
+        "lockedSource": "iPhone",
+        "lockedDays": [
+          {
+            "day": "2026-06-06",
+            "value": 837,
+            "unit": "count",
+            "sources": ["iPhone"],
+            "eventIds": ["01974a70-0000-7000-8000-000000000002"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "complementary source days form a union",
+      "preferredSource": "Apple Watch",
+      "input": [
+        {
+          "start": "2026-06-06T07:25:00Z",
+          "value": 826,
+          "unit": "count",
+          "source": "Apple Watch",
+          "blobSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "eventId": "01974a70-0000-7000-8000-000000000001"
+        },
+        {
+          "start": "2026-08-24T05:52:47Z",
+          "value": 232,
+          "unit": "count",
+          "source": "iPhone",
+          "blobSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "eventId": "0198d1d0-0000-7000-8000-000000000002"
+        }
+      ],
+      "expected": {
+        "overlap": false,
+        "showSourceFilter": false,
+        "automaticDays": [
+          {
+            "day": "2026-06-06",
+            "value": 826,
+            "unit": "count",
+            "sources": ["Apple Watch"],
+            "eventIds": ["01974a70-0000-7000-8000-000000000001"]
+          },
+          {
+            "day": "2026-08-24",
+            "value": 232,
+            "unit": "count",
+            "sources": ["iPhone"],
+            "eventIds": ["0198d1d0-0000-7000-8000-000000000002"]
+          }
+        ]
+      }
+    }
+  ]
+}
