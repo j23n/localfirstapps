@@ -129,7 +129,9 @@ ITEM_RE = re.compile(
 )
 IMPL_RE = re.compile(r"^impl(?:\s*<[^>]+>)?\s+(?P<name>\w+)\s*[{]")
 FIELD_RE = re.compile(r"^pub(?:\([^)]*\))?\s+(?P<name>\w+)\s*:\s*(?P<typ>.+?)\s*,?\s*$")
-DTO_ROLE_RE = re.compile(r"\bR6\s+role:\s*(command|host-port)\s+DTO\b")
+DTO_ROLE_RE = re.compile(
+    r"\bR6\s+role:\s*(command|host-port|structure)\s+DTO\b"
+)
 
 
 @dataclass(frozen=True)
@@ -396,6 +398,7 @@ def classify(
     record_names = {r.name for r in records}
     clean: dict[str, str] = {}
     violations: list[Violation] = []
+    roles = {record.name: record.dto_role for record in records}
     for rec in records:
         if rec.dto_role:
             unknown = {
@@ -404,15 +407,29 @@ def classify(
                 if innermost_named(field.typ)
                 not in (PRIMITIVES | enums | record_names)
             }
-            if not unknown:
+            nested_content = set()
+            if rec.dto_role == "structure":
+                nested_content = {
+                    innermost_named(field.typ)
+                    for field in rec.fields
+                    if innermost_named(field.typ) in record_names
+                    and roles[innermost_named(field.typ)] != "structure"
+                }
+            if not unknown and not nested_content:
                 clean[rec.name] = f"{rec.dto_role}-dto"
                 continue
+            if nested_content:
+                reason = "structure DTO carries content " + ", ".join(
+                    sorted(nested_content)
+                )
+            else:
+                reason = "DTO carries " + ", ".join(sorted(unknown))
             violations.append(
                 Violation(
                     rec.name,
                     rec.path,
                     rec.line,
-                    "DTO carries " + ", ".join(sorted(unknown)),
+                    reason,
                 )
             )
             continue
@@ -561,6 +578,19 @@ pub struct EditCommand {
     pub values: Vec<EditValue>,
 }
 
+/// R6 role: structure DTO.
+#[derive(uniffi::Record)]
+pub struct ViewSection {
+    pub id: String,
+    pub item_ids: Vec<String>,
+}
+
+/// R6 role: structure DTO.
+#[derive(uniffi::Record)]
+pub struct BadStructure {
+    pub items: Vec<MediaCard>,
+}
+
 #[derive(uniffi::Object)]
 pub struct LibraryIndex {}
 
@@ -586,6 +616,8 @@ pub enum ScanError {
         "MediaCard",
         "EditValue",
         "EditCommand",
+        "ViewSection",
+        "BadStructure",
     ], names
     by_kind = {}
     for e in exports:
@@ -611,12 +643,14 @@ pub enum ScanError {
         "MediaCard": "media-item",
         "EditValue": "command-dto",
         "EditCommand": "command-dto",
+        "ViewSection": "structure-dto",
     }, clean
     vnames = [v.name for v in violations]
-    assert vnames == ["ScanPhoto", "ScanTag"], vnames
+    assert vnames == ["ScanPhoto", "ScanTag", "BadStructure"], vnames
     reasons = {v.name: v.reason for v in violations}
     assert reasons["ScanPhoto"] == "carries ScanTag", reasons
     assert reasons["ScanTag"] == "not a display record for one ADR 0004 slot kind"
+    assert reasons["BadStructure"] == "structure DTO carries content MediaCard"
 
     # A comment must not invent a Record, and Object is not a Record.
     quiet = parse_ffi_source(
@@ -635,7 +669,7 @@ pub enum ScanError {
     assert slot_kind_for({"title", "path"}) is None
     assert slot_kind_for({"label"}) is None  # toggle/progress need a state field
 
-    expected = ["ScanPhoto", "ScanTag"]
+    expected = ["ScanPhoto", "ScanTag", "BadStructure"]
     assert [v.name for v in violations] == expected
 
     # CLI: --expect-violations pins the set; a new Record cannot hide.

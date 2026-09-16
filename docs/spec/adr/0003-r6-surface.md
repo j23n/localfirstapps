@@ -2,7 +2,7 @@
 
 - Status: Accepted (design; gallery FFI is not rewritten here)
 - Date: 2026-09-12
-- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`); 2026-09-16 (typed Contacts drafts replace serialized vCard reads and writes)
+- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`); 2026-09-16 (typed Contacts drafts replace serialized vCard reads and writes; Gallery generation-scoped structure DTOs)
 - Parent: [0003-app-core.md](0003-app-core.md) R6, [0004-ui-spec-and-shells.md](0004-ui-spec-and-shells.md) R4
 
 ## Scope
@@ -33,15 +33,18 @@ Only these values cross to a shell:
 - **lists of those**
 - **display records** — structs whose every field is a display-ready
   value for *exactly one* item kind in ADR 0004 R4
+- **structure DTOs** — generation-scoped section ids, ordered item ids, and
+  action availability; never item content
 - **command DTOs** — explicit editable fields or action arguments sent back
   to the core
 - **host-port DTOs** — the minimum structured values needed by a platform
   service such as Contacts or media playback
 
 A bare `Vec<String>` of ids is structure (ADR 0003 R4) and is allowed.
-A struct that *contains* a list is not a display record: no ADR 0004
-item kind carries a list. Lists of formatted rows are the collection
-R4 forbids marshaling in one shot.
+A struct that contains a list is not a display record: no ADR 0004 item kind
+carries a list. A structure DTO may contain lists of section/action metadata
+and item ids, but never formatted item rows. Lists of formatted rows are the
+collection R4 forbids marshaling in one shot.
 
 **No domain entity crosses**, under any name or serialization. A type an app
 core keys domain logic on — a photo, contact/card, folder, memory, face,
@@ -83,12 +86,13 @@ slot. `MemoryRecord` having a `title` does not make it a `text-row`.
 Enums may cross. Objects (`LibraryIndex`, `ScannerSession`) are
 handles, not records. Errors are ADR 0003 R8, not this taxonomy.
 
-Command and host-port records carry an explicit `R6 role: command DTO` or
+Structure, command, and host-port records carry an explicit
+`R6 role: structure DTO`, `R6 role: command DTO`, or
 `R6 role: host-port DTO` documentation marker. The checker permits primitive,
 enum, list, and nested exported DTO fields for those roles while continuing
-to reject an unmarked record that is not one display slot. The marker states
-purpose; semantic review still verifies that the DTO is not a renamed domain
-entity.
+to reject an unmarked record that is not one display slot. Structure DTO
+lists are ids/metadata only, never display records. The marker states purpose;
+semantic review still verifies that the DTO is not a renamed domain entity.
 
 ## Known-red inventory — `gallery-ffi`
 

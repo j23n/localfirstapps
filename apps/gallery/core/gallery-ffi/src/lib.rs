@@ -33,6 +33,7 @@ pub mod places;
 pub mod scanner;
 mod support;
 pub mod tagging;
+pub mod view;
 
 pub use faces::{
     face_merge_direction, ClusterState, ClusterSummary, FaceAssignKind, FaceAssignmentRecord,
@@ -45,7 +46,8 @@ pub use library::{
     compute_scheduled_memories, generate_memories, memory_cluster_key, memory_country_name,
     scheduled_memory_horizon_days, LibraryIndex, LibraryIndexSummary, LibraryTagSuggestions,
     MemoryContact, MemoryDateEntry, MemoryGenerationInputs, MemoryGenerator, MemoryKind,
-    MemoryLeafFolder, MemoryPersonLink, MemoryRecord, ScheduledMemoryRecord, TagSuggestionRecord,
+    MemoryLeafFolder, MemoryPersonLink, MemoryRecord, ScheduledMemoryContext,
+    ScheduledMemoryRecord, TagSuggestionRecord,
 };
 pub use person_log::{
     person_log_append, person_log_migrate_from_snapshot, person_log_project, person_log_read,
@@ -66,6 +68,10 @@ pub use tagging::{
     inspect_model_pack, resolve_model_pack, ModelPackInfo, PackResolution, PackSource,
     TaggingError, TaggingFailure, TaggingProgressListener, TaggingRunSummary, TaggingSession,
     TaggingStats,
+};
+pub use view::{
+    GalleryMediaItem, GalleryTextRow, ViewAction, ViewContentState, ViewError, ViewSection,
+    ViewSlotKind, ViewStructure,
 };
 
 /// Version of the Rust core, for logging and "is the framework I linked the

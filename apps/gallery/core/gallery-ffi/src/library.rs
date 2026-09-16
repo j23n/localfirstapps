@@ -44,6 +44,10 @@ use gallery_memories::{
 use gallery_model::{AppleDate, HierarchicalTag, PhotoFile, StableId};
 
 use crate::scanner::{photo_from_record, ScanPhoto};
+use crate::view::{
+    checked_window, GalleryMediaItem, GalleryTextRow, ViewAction, ViewContentState, ViewError,
+    ViewSection, ViewSlotKind, ViewStructure,
+};
 
 // ---------------------------------------------------------------------------
 // Shared wire records
@@ -133,6 +137,17 @@ struct Indexed {
     /// it here removes the way to get it wrong.
     tags: Vec<TagSuggestion>,
     people: Vec<TagSuggestion>,
+    /// Generation of every id list derived from this table.
+    generation: u64,
+    /// The current Photos-screen projection. Structure returns these ids;
+    /// content windows index the same vector after checking `generation`.
+    visible_photo_ids: Vec<StableId>,
+    /// Search/filter intent that produced `visible_photo_ids`.
+    visible_key: String,
+    /// Platform-resolved UTC offset for each photo at capture time. Parallel
+    /// to the index photo table and populated once with the library build so a
+    /// scheduled-memory run does not marshal 20,000 offsets again.
+    photo_time_zone_offsets: Vec<i32>,
 }
 
 impl Default for LibraryIndex {
@@ -142,6 +157,10 @@ impl Default for LibraryIndex {
                 index: CoreIndex::build(Vec::new()),
                 tags: Vec::new(),
                 people: Vec::new(),
+                generation: 0,
+                visible_photo_ids: Vec::new(),
+                visible_key: String::new(),
+                photo_time_zone_offsets: Vec::new(),
             }),
         }
     }
@@ -163,6 +182,54 @@ impl LibraryIndex {
     /// Takes the photos by value: they become the index's photo table, so
     /// nothing is copied after the boundary crossing itself.
     pub fn build(&self, photos: Vec<ScanPhoto>) -> LibraryIndexSummary {
+        self.rebuild(photos, Vec::new())
+    }
+
+    /// Rebuild and retain the platform's per-photo UTC offsets.
+    ///
+    /// The offsets are supplied on the same once-per-library crossing as the
+    /// photos. Scheduled memories then reuse both tables instead of rebuilding
+    /// and re-marshalling a second 20,000-photo generation snapshot.
+    pub fn build_with_time_zone_offsets(
+        &self,
+        photos: Vec<ScanPhoto>,
+        photo_time_zone_offsets: Vec<i32>,
+    ) -> LibraryIndexSummary {
+        self.rebuild(photos, photo_time_zone_offsets)
+    }
+
+    /// Compute the widget's scheduled horizon over the library table already
+    /// retained by this index.
+    ///
+    /// Only the small platform context crosses per run. Photo records and
+    /// capture-time offsets crossed once, at build.
+    pub fn compute_scheduled(
+        &self,
+        context: ScheduledMemoryContext,
+        horizon_days: i64,
+        hidden_memory_ids: Vec<String>,
+    ) -> Vec<ScheduledMemoryRecord> {
+        let guard = read(&self.inner);
+        let hidden: HashSet<String> = hidden_memory_ids.into_iter().collect();
+        let inputs = scheduled_inputs(&guard, context);
+        compute_scheduled(&inputs, horizon_days, &hidden)
+            .iter()
+            .map(scheduled_record)
+            .collect()
+    }
+
+    /// Number of photos the scheduled-horizon reuse path currently owns.
+    pub fn scheduled_photo_count(&self) -> u32 {
+        read(&self.inner).index.photos().len() as u32
+    }
+
+    /// Rebuild every index from `photos` and return the results the app needs
+    /// straight away.
+    fn rebuild(
+        &self,
+        photos: Vec<ScanPhoto>,
+        photo_time_zone_offsets: Vec<i32>,
+    ) -> LibraryIndexSummary {
         let started = std::time::Instant::now();
         let photos: Vec<PhotoFile> = photos.into_iter().map(photo_from_record).collect();
         let index = CoreIndex::build(photos);
@@ -174,10 +241,180 @@ impl LibraryIndex {
             build_millis: started.elapsed().as_millis() as u64,
         };
         let mut guard = write(&self.inner);
+        guard.generation = guard.generation.saturating_add(1);
+        guard.visible_photo_ids = index.sorted_photo_ids();
+        guard.visible_key.clear();
         guard.index = index;
         guard.tags = tags;
         guard.people = people;
+        guard.photo_time_zone_offsets = photo_time_zone_offsets;
         summary
+    }
+
+    /// Apply Photos-screen search/tag intent and return cheap structure.
+    ///
+    /// The whole ordered id list is structure by ADR 0003 R4. The records
+    /// behind those ids are fetched only through [`Self::photo_window`].
+    pub fn set_photo_view(&self, query: String, required_tag_paths: Vec<String>) -> ViewStructure {
+        let key = format!("{query}\u{0}{}", required_tag_paths.join("\u{0}"));
+        let mut guard = write(&self.inner);
+        if guard.visible_key != key {
+            let required: Vec<TagSuggestion> = required_tag_paths
+                .iter()
+                .map(|path| suggestion_for_path(path))
+                .collect();
+            guard.visible_photo_ids = guard
+                .index
+                .search(&query, &required, &guard.tags)
+                .into_iter()
+                .map(|photo| photo.id)
+                .collect();
+            guard.visible_key = key;
+            guard.generation = guard.generation.saturating_add(1);
+        }
+        photo_structure(&guard)
+    }
+
+    /// Apply an id-only drill-in intent (folder, memory, or saved selection).
+    ///
+    /// The shell supplies structure ids, never photo records. Unknown/removed
+    /// ids are dropped and the caller's order is preserved.
+    pub fn set_photo_ids_view(
+        &self,
+        view_id: String,
+        photo_ids: Vec<String>,
+        query: String,
+        required_tag_paths: Vec<String>,
+    ) -> ViewStructure {
+        let key = format!(
+            "ids\u{0}{view_id}\u{0}{query}\u{0}{}\u{0}{}",
+            required_tag_paths.join("\u{0}"),
+            photo_ids.join("\u{0}"),
+        );
+        let mut guard = write(&self.inner);
+        if guard.visible_key != key {
+            let matches: Option<HashSet<StableId>> =
+                (!query.is_empty() || !required_tag_paths.is_empty()).then(|| {
+                    let required: Vec<TagSuggestion> = required_tag_paths
+                        .iter()
+                        .map(|path| suggestion_for_path(path))
+                        .collect();
+                    guard
+                        .index
+                        .search(&query, &required, &guard.tags)
+                        .into_iter()
+                        .map(|photo| photo.id)
+                        .collect()
+                });
+            let visible_photo_ids = photo_ids
+                .into_iter()
+                .map(|id| parse_id(&id))
+                .filter(|id| {
+                    guard.index.photo(*id).is_some()
+                        && matches
+                            .as_ref()
+                            .is_none_or(|matching| matching.contains(id))
+                })
+                .collect();
+            guard.visible_photo_ids = visible_photo_ids;
+            guard.visible_key = key;
+            guard.generation = guard.generation.saturating_add(1);
+        }
+        photo_structure(&guard)
+    }
+
+    /// Current Photos-screen structure without changing search intent.
+    pub fn photo_structure(&self) -> ViewStructure {
+        photo_structure(&read(&self.inner))
+    }
+
+    /// Display-ready photos for one visible window.
+    pub fn photo_window(
+        &self,
+        section_id: String,
+        offset: u64,
+        limit: u64,
+        generation: u64,
+    ) -> Result<Vec<GalleryMediaItem>, ViewError> {
+        if section_id != "photos" {
+            return Err(ViewError::SectionNotFound {
+                section_id,
+                message: "That Gallery photo section no longer exists.".into(),
+                user_actionable: true,
+            });
+        }
+        let guard = read(&self.inner);
+        let range = checked_window(
+            generation,
+            guard.generation,
+            offset,
+            limit,
+            guard.visible_photo_ids.len(),
+        )?;
+        let mut rows = Vec::with_capacity(range.len());
+        for id in &guard.visible_photo_ids[range] {
+            if let Some(photo) = guard.index.photo(*id) {
+                rows.push(photo_media_item(photo));
+            }
+        }
+        Ok(rows)
+    }
+
+    /// Tag-picker structure. The list is ids only; labels and counts are
+    /// returned by [`Self::tag_window`].
+    pub fn tag_structure(&self) -> ViewStructure {
+        let guard = read(&self.inner);
+        let ids = guard.tags.iter().map(|tag| tag.id.clone()).collect();
+        ViewStructure {
+            state: content_state(guard.tags.len()),
+            sections: vec![ViewSection {
+                id: "tags".into(),
+                title: "Tags".into(),
+                slot_kind: ViewSlotKind::TextRow,
+                item_ids: ids,
+            }],
+            actions: Vec::new(),
+            generation: guard.generation,
+        }
+    }
+
+    /// Display-ready tag rows for one visible window.
+    pub fn tag_window(
+        &self,
+        section_id: String,
+        offset: u64,
+        limit: u64,
+        generation: u64,
+    ) -> Result<Vec<GalleryTextRow>, ViewError> {
+        if section_id != "tags" {
+            return Err(ViewError::SectionNotFound {
+                section_id,
+                message: "That Gallery tag section no longer exists.".into(),
+                user_actionable: true,
+            });
+        }
+        let guard = read(&self.inner);
+        let range = checked_window(
+            generation,
+            guard.generation,
+            offset,
+            limit,
+            guard.tags.len(),
+        )?;
+        Ok(guard.tags[range]
+            .iter()
+            .map(|tag| GalleryTextRow {
+                id: tag.id.clone(),
+                title: tag.display_name.clone(),
+                subtitle: Some(tag.full_path.replace('/', " › ")),
+                trailing: Some(photo_count_label(tag.count)),
+            })
+            .collect())
+    }
+
+    /// Generation currently guarding every library window.
+    pub fn view_generation(&self) -> u64 {
+        read(&self.inner).generation
     }
 
     /// The date-descending photo order. Backs `store.sortedPhotos`.
@@ -236,6 +473,70 @@ impl LibraryIndex {
     /// "did the rebuild I am waiting on actually land" assertions and by tests.
     pub fn photo_count(&self) -> u32 {
         read(&self.inner).index.photos().len() as u32
+    }
+}
+
+fn photo_structure(indexed: &Indexed) -> ViewStructure {
+    ViewStructure {
+        state: content_state(indexed.visible_photo_ids.len()),
+        sections: vec![ViewSection {
+            id: "photos".into(),
+            title: "Photos".into(),
+            slot_kind: ViewSlotKind::MediaItem,
+            item_ids: indexed
+                .visible_photo_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+        }],
+        actions: vec![
+            ViewAction {
+                id: "search".into(),
+                enabled: true,
+                disabled_reason: None,
+            },
+            ViewAction {
+                id: "select".into(),
+                enabled: !indexed.visible_photo_ids.is_empty(),
+                disabled_reason: indexed
+                    .visible_photo_ids
+                    .is_empty()
+                    .then(|| "There are no photos to select.".into()),
+            },
+        ],
+        generation: indexed.generation,
+    }
+}
+
+fn content_state(count: usize) -> ViewContentState {
+    if count == 0 {
+        ViewContentState::Empty
+    } else {
+        ViewContentState::Content
+    }
+}
+
+fn photo_media_item(photo: &PhotoFile) -> GalleryMediaItem {
+    let badge = if photo.is_video {
+        Some("Video".into())
+    } else if photo.live_photo_video_url.is_some() {
+        Some("Live Photo".into())
+    } else {
+        None
+    };
+    GalleryMediaItem {
+        id: photo.id.to_string(),
+        thumbnail_ref: photo.url.path().to_string(),
+        label: Some(photo.filename.clone()),
+        badge,
+    }
+}
+
+fn photo_count_label(count: usize) -> String {
+    if count == 1 {
+        "1 photo".into()
+    } else {
+        format!("{count} photos")
     }
 }
 
@@ -402,6 +703,31 @@ pub struct MemoryDateEntry {
     pub date: f64,
 }
 
+/// Small platform context for the scheduled-memory horizon.
+///
+/// Photo content is deliberately absent: [`LibraryIndex::compute_scheduled`]
+/// reuses the index's retained table and capture-time UTC offsets. Contacts,
+/// clock and horizon offsets are the minimum platform-owned values the pure
+/// core cannot discover itself.
+///
+/// R6 role: host-port DTO.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ScheduledMemoryContext {
+    pub leaf_folders: Vec<MemoryLeafFolder>,
+    pub contacts: Vec<MemoryContact>,
+    pub person_contact_links: Vec<MemoryPersonLink>,
+    pub birthdays_enabled: bool,
+    pub me_person_path: String,
+    pub hidden_people: Vec<String>,
+    /// "Now", reference-date seconds.
+    pub now: f64,
+    pub time_zone_offset_seconds: i32,
+    pub horizon_offset_seconds: Vec<i32>,
+    pub seed: String,
+    pub seen_memory_ids: Vec<MemoryDateEntry>,
+    pub surfaced_clusters: Vec<MemoryDateEntry>,
+}
+
 /// `MemoryCoordinator.GenerationInputs` plus the clock, zone, seed and the
 /// seen/cool-down state — everything the engine reads.
 ///
@@ -520,6 +846,104 @@ impl MemoryGenerationInputs {
     }
 }
 
+fn scheduled_inputs(indexed: &Indexed, context: ScheduledMemoryContext) -> GenerationInputs {
+    let mut offsets = Vec::with_capacity(indexed.index.photos().len());
+    let photos: Vec<PhotoFile> = indexed
+        .index
+        .photos()
+        .iter()
+        .enumerate()
+        .map(|(position, photo)| {
+            offsets.push(
+                indexed
+                    .photo_time_zone_offsets
+                    .get(position)
+                    .copied()
+                    .unwrap_or(context.time_zone_offset_seconds),
+            );
+            photo.clone()
+        })
+        .collect();
+    let ladder_photo_count = photos.len();
+    GenerationInputs {
+        photos,
+        ladder_photo_count,
+        photo_time_zone_offsets: offsets,
+        horizon_time_zone_offsets: context.horizon_offset_seconds,
+        leaf_folders: context
+            .leaf_folders
+            .into_iter()
+            .map(|folder| LeafFolder {
+                id: parse_id(&folder.id),
+                name: folder.name,
+                photo_ids: folder
+                    .photo_ids
+                    .into_iter()
+                    .map(|id| parse_id(&id))
+                    .collect(),
+            })
+            .collect(),
+        contacts: context
+            .contacts
+            .into_iter()
+            .map(|contact| Contact {
+                id: contact.id,
+                given_name: contact.given_name,
+                family_name: contact.family_name,
+                birthday_month: contact.birthday_month,
+                birthday_day: contact.birthday_day,
+            })
+            .collect(),
+        person_contact_links: context
+            .person_contact_links
+            .into_iter()
+            .map(|link| {
+                let value = match link.contact_id {
+                    Some(id) => PersonLink::Manual(id),
+                    None => PersonLink::Disabled,
+                };
+                (link.person_path, value)
+            })
+            .collect(),
+        birthdays_enabled: context.birthdays_enabled,
+        me_person_path: context.me_person_path,
+        hidden_people: context.hidden_people.into_iter().collect(),
+        now: AppleDate(context.now),
+        time_zone: UtcOffset(context.time_zone_offset_seconds),
+        seed: context.seed,
+        seen_memory_ids: date_map(context.seen_memory_ids),
+        surfaced_clusters: date_map(context.surfaced_clusters),
+    }
+}
+
+/// Splice the two per-photo offset tables into one parallel to the combined
+/// photo table.
+///
+/// Either side may be empty — that is the documented "no calendar available"
+/// input, and both empty means no table at all (the pre-per-photo-offset
+/// behaviour). A short or over-long table is padded/truncated with the `now`
+/// offset rather than trusted, because the alternative is either a panic inside
+/// a background task or a silent slide of every later photo onto the wrong
+/// offset. Padding with `now` degrades exactly to what a caller that sent no
+/// table would have got.
+fn concat_offsets(
+    ladder: Vec<i32>,
+    extra: Vec<i32>,
+    ladder_count: usize,
+    total: usize,
+    now_offset: i32,
+) -> Vec<i32> {
+    if ladder.is_empty() && extra.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(total);
+    out.extend(ladder.into_iter().take(ladder_count));
+    out.resize(ladder_count, now_offset);
+    out.extend(extra);
+    out.resize(total, now_offset);
+    out
+}
+
 fn date_map(entries: Vec<MemoryDateEntry>) -> HashMap<String, AppleDate> {
     entries
         .into_iter()
@@ -617,12 +1041,16 @@ pub fn compute_scheduled_memories(
     let hidden: HashSet<String> = hidden_memory_ids.into_iter().collect();
     compute_scheduled(&inputs.into_engine_inputs(), horizon_days, &hidden)
         .iter()
-        .map(|s| ScheduledMemoryRecord {
-            memory: MemoryRecord::of(&s.memory),
-            valid_from: s.valid_from.0,
-            valid_to: s.valid_to.0,
-        })
+        .map(scheduled_record)
         .collect()
+}
+
+fn scheduled_record(s: &gallery_memories::ScheduledMemory) -> ScheduledMemoryRecord {
+    ScheduledMemoryRecord {
+        memory: MemoryRecord::of(&s.memory),
+        valid_from: s.valid_from.0,
+        valid_to: s.valid_to.0,
+    }
 }
 
 /// How far ahead calendar-tied memories are pre-published.
@@ -753,6 +1181,110 @@ mod tests {
         assert_eq!(summary.people.len(), 1);
         assert_eq!(summary.people[0].full_path, "People/Alice");
         assert_eq!(index.photo_count(), 3);
+    }
+
+    #[test]
+    fn photo_windows_refuse_stale_generations() {
+        let index = LibraryIndex::default();
+        index.build(vec![
+            photo("/lib/a.jpg", Some(300.0), &[]),
+            photo("/lib/b.jpg", Some(200.0), &[]),
+        ]);
+        let first = index.photo_structure();
+        assert_eq!(first.sections[0].item_ids.len(), 2);
+        index.build(vec![photo("/lib/new.jpg", Some(400.0), &[])]);
+
+        assert!(matches!(
+            index.photo_window("photos".into(), 0, 20, first.generation),
+            Err(ViewError::StaleGeneration {
+                requested,
+                current,
+                ..
+            }) if requested == first.generation && current > requested
+        ));
+    }
+
+    #[test]
+    fn photo_and_tag_windows_are_bounded_before_rows_are_allocated() {
+        let index = LibraryIndex::default();
+        index.build(
+            (0..20_000)
+                .map(|i| {
+                    photo(
+                        &format!("/lib/{i:05}.jpg"),
+                        Some(i as f64),
+                        &["Scenes/Beach"],
+                    )
+                })
+                .collect(),
+        );
+        let structure = index.photo_structure();
+        assert_eq!(structure.sections[0].item_ids.len(), 20_000);
+        let rows = index
+            .photo_window("photos".into(), 19_900, 100, structure.generation)
+            .unwrap();
+        assert_eq!(rows.len(), 100);
+        assert!(matches!(
+            index.photo_window(
+                "photos".into(),
+                0,
+                crate::view::MAX_VIEW_WINDOW as u64 + 1,
+                structure.generation
+            ),
+            Err(ViewError::WindowTooLarge { .. })
+        ));
+
+        let tags = index.tag_structure();
+        let tag_rows = index
+            .tag_window("tags".into(), 0, 10, tags.generation)
+            .unwrap();
+        assert_eq!(tag_rows.len(), 1, "one indexed leaf tag");
+        assert!(tag_rows.iter().all(|row| row.trailing.is_some()));
+    }
+
+    #[test]
+    fn changing_filter_intent_invalidates_an_old_window() {
+        let index = LibraryIndex::default();
+        index.build(vec![
+            photo("/lib/rome.jpg", Some(300.0), &["Places/Italy/Rome"]),
+            photo("/lib/paris.jpg", Some(200.0), &["Places/France/Paris"]),
+        ]);
+        let all = index.set_photo_view(String::new(), Vec::new());
+        let rome = index.set_photo_view("rome".into(), Vec::new());
+        assert_eq!(rome.sections[0].item_ids.len(), 1);
+        assert!(matches!(
+            index.photo_window("photos".into(), 0, 20, all.generation),
+            Err(ViewError::StaleGeneration { .. })
+        ));
+        assert_eq!(
+            index
+                .photo_window("photos".into(), 0, 20, rome.generation)
+                .unwrap()[0]
+                .label
+                .as_deref(),
+            Some("rome")
+        );
+
+        let paris_id = all.sections[0].item_ids[1].clone();
+        let drill_in = index.set_photo_ids_view(
+            "memory-1".into(),
+            vec!["not-a-uuid".into(), paris_id.clone()],
+            String::new(),
+            Vec::new(),
+        );
+        assert_eq!(drill_in.sections[0].item_ids, vec![paris_id]);
+        assert!(matches!(
+            index.photo_window("photos".into(), 0, 20, rome.generation),
+            Err(ViewError::StaleGeneration { .. })
+        ));
+        assert_eq!(
+            index
+                .photo_window("photos".into(), 0, 20, drill_in.generation)
+                .unwrap()[0]
+                .label
+                .as_deref(),
+            Some("paris")
+        );
     }
 
     /// The failure this API shape exists to make impossible: search must take
@@ -887,6 +1419,34 @@ mod tests {
         assert!(scheduled
             .iter()
             .any(|s| s.memory.id == "onThisDay-2024-06-11"));
+    }
+
+    #[test]
+    fn scheduled_horizon_reuses_the_library_generation() {
+        let photos = on_this_day_library(12);
+        let index = LibraryIndex::default();
+        index.build_with_time_zone_offsets(photos.clone(), vec![0; photos.len()]);
+        let context = ScheduledMemoryContext {
+            leaf_folders: Vec::new(),
+            contacts: Vec::new(),
+            person_contact_links: Vec::new(),
+            birthdays_enabled: true,
+            me_person_path: String::new(),
+            hidden_people: Vec::new(),
+            now: 739_540_800.0,
+            time_zone_offset_seconds: 0,
+            horizon_offset_seconds: Vec::new(),
+            seed: String::new(),
+            seen_memory_ids: Vec::new(),
+            surfaced_clusters: Vec::new(),
+        };
+        let reused = index.compute_scheduled(context, 7, Vec::new());
+
+        let mut legacy = empty_inputs(739_540_800.0);
+        legacy.photos = photos;
+        legacy.photo_time_zone_offsets = vec![0; 12];
+        assert_eq!(reused, compute_scheduled_memories(legacy, 7, Vec::new()));
+        assert_eq!(index.scheduled_photo_count(), 12);
     }
 
     #[test]
