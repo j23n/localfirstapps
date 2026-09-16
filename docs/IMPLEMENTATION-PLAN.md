@@ -3,6 +3,12 @@
 Four apps, three platforms, one engineer with an agent fleet, evenings and
 weekends. Written against the specification in `docs/spec/`.
 
+This file is the living backlog. When a review or design pass changes what
+is true, update the coverage table, the register, and the phase that owns
+the work. Do not leave findings only in a side document. The GTK design
+language and kit sequence live in [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md);
+the inventory and sequencing consequences of that pass are recorded here.
+
 ---
 
 ## 1. What changed from r1, and why it matters
@@ -29,14 +35,15 @@ light-only literal palette; libadwaita follows the system dark preference).
 
 ## 2. The shape of the problem
 
-Coverage today — 4.5 of 12 cells:
+Coverage today — 7 of 12 cells (Linux Music and Contacts are kit
+shells; Gallery GTK is the leftover hand-built UI, not a kit consumer):
 
 | | iOS | Fedora | Comet |
 |---|---|---|---|
-| localgallery | 40.5k Swift | 6.3k GTK | `--comet` |
-| localcontacts | 7.2k Swift | contacts-gtk | `--comet` |
-| localmusic | 7.1k Swift | — | — |
-| localhealth | — | Go CLI; static Phase 6 UI contracts at `ui-spec/`, no shell | — |
+| localgallery | 40.5k Swift | leftover GTK in `apps/gallery/linux` | `--comet` |
+| localcontacts | 7.2k Swift | `contacts-gtk` (kit) | `--comet` |
+| localmusic | 7.1k Swift | `music-gtk` (kit; playback needs `gstreamer-playback`) | `--comet` |
+| localhealth | — | Go CLI + `health-core` / `health-ffi`; no shell | — |
 
 Honest Swift classification, production only (test targets excluded):
 
@@ -100,7 +107,7 @@ that you hold **one** mental model of the codebase, not two.
 |---|---|---|---|
 | **A** | **Service retirement** — monorepo, named cloud/diagnostic services removed, spec in tree, harness established | the ADRs themselves against real directories, including semantic leftovers | the old codebase, smaller but not semantically clean |
 | **B** | **`localcore` is real** — extracted, gallery running on it unchanged, headless harness green | the new architecture, against working code | the new core. The old shape is gone from `core/`. |
-| **C** | **First shell vertical** — contacts core loop on iOS, Fedora and Comet | ADR 0004's vocabulary against one product slice; `shell-kit` remains provisional until a second app | one app, end to end |
+| **C** | **First shell vertical** — contacts core loop on iOS, Fedora and Comet | ADR 0004's vocabulary against one product slice. `shell-kit-gtk` was provisional at C; Music GTK is now the second consumer (measured reuse). Design/density remain a later pass. | one app, end to end |
 | **D** | **Per app** — music, gallery, health core loops | the gap list, with a working app in hand | one app at a time |
 
 **A remains an important review point, but its original “clean slate” label
@@ -157,19 +164,20 @@ performed here. The concrete in-tree guidance is each app README naming its
 canonical `apps/<name>` location and the root workflows that supersede
 nested standalone workflows.
 
-Current tree (`core/` is extracted; `shells/` has the kit and contacts-gtk):
+Current tree (`core/` is extracted; `shells/` has the kit plus Contacts and Music GTK):
 
 ```
 .agents/            agent instructions and work-item routing
 docs/               index.html style.css                (Pages source)
   spec/             the eight ADRs + spike evidence notes
   IMPLEMENTATION-PLAN.md
+  GTK-DESIGN-PLAN.md
 docker/
 mac/                bootstrap.sh — Xcode CLT, rustup pin, XcodeGen
 conformance/        graph check (ADR 0002 R13) is green; R6 is expected-red
 core/               localcore-{vfs,walk,id,conflict,queue,log,blob,geo,ui}
                     + contacts-core / contacts-ffi
-shells/             shell-kit-gtk + contacts-gtk (`--comet`)
+shells/             shell-kit-gtk + contacts-gtk + music-gtk (`--comet`)
 design/tokens/      per-app tables; sourced dark accents (3.5)
 docs/spec/ui/       R4 vocabulary.toml
 apps/contacts/ui-spec/  real contacts screens
@@ -231,8 +239,8 @@ package — `ort` → `ureq` → `native-tls` on the host build.
 The current reviewed build-time exception is `ort` / `ort-sys`, with
 `ORT_LIB_LOCATION` as the offline override. The graph was red through
 Milestone A; Phase 2 deleted `gallery-geo`, and the current check is
-**green**. R6 stays expected-red (`conformance/r6/expected.txt`) until
-gallery-ffi is rewritten.
+**green**. Gallery FFI windowing later emptied
+`conformance/r6/expected.txt`; the 20k GitHub job is still Phase 5.
 
 **0.6 Three spikes — documented.** Evidence notes live in `docs/spec/spikes/`;
 their evidence is not equally complete.
@@ -274,8 +282,8 @@ Recorded before the cut (2026-09-12):
   at Phase 1 (ADR 0006 R9). The useful screen, chart-data, provenance, and
   deterministic fixture contracts are now curated at `apps/health/ui-spec/`;
   the non-building server, templates, rendered goldens, Chart.js, and font are
-  deleted. ADR 0004 still has no `chart` / metric-card kind; that is an R4
-  amendment when health gets shells, not a one-off widget.
+  deleted. ADR 0004 R4 later gained `chart-row` (native kit sparkline). That
+  is not a Health shell and is not a Health accent.
 
 | Delete / move | Makes true |
 |---|---|
@@ -419,7 +427,10 @@ fixture and a survival assertion):
 
 **Backlog** (left B; one register). Deferral assigns a phase —
 nothing is "whenever," optional, or release-notes-only.
-`shell-kit` began provisionally in Phase 3 (3.3). Tokens and a
+`shell-kit-gtk` began provisionally in Phase 3 (3.3). Music GTK is now
+the second consumer (17 shared of 17 Contacts / 18 Music bindings).
+Enum exhaustiveness was never reuse evidence; design/density is the
+remaining kit work (`docs/GTK-DESIGN-PLAN.md`). Tokens and a
 record-inventory-green contacts FFI landed in 3.2 / 3.1; serialized-vCard
 boundary debt remains. Rows marked 4/5/6 may start once
 gallery iOS is green; they still land in that phase and do not
@@ -436,15 +447,21 @@ block C.
 | Do not copy PeopleStore dual-write | **done (3.1)** | Held. vCards on disk are the authority. |
 | Token tables + R14 vocab / token codegen | **done (3.2)** | Tables + generator. Dark companions landed in 3.5. |
 | Contacts UI spec + screen-id codegen | **done (3.3)** | `apps/contacts/ui-spec/screens.toml` is a semantic inventory. Generated ids do not assemble or prove screens. |
-| Health web-reference curation | **done (pre-6)** | `apps/health/ui-spec/` retains screen/data contracts and deterministic fixtures; HTTP/frontend files are deleted. No chart kind, shell, or accent was added. |
-| `shell-kit-gtk` (one binding per R4 kind) | **provisional (3.3)** | `shells/` workspace. Enum exhaustiveness proves vocabulary coverage, not production-quality reusable behavior; music is the second-consumer test. |
-| Dark token palettes ×4 | **done (3.5)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery surfaces stay light (unsourced). Health has no catalog; not invented. |
+| Health web-reference curation | **done (pre-6)** | `apps/health/ui-spec/` retains screen/data contracts and deterministic fixtures; HTTP/frontend files are deleted. No Health shell or invented accent. |
+| `chart-row` R4 kind + kit sparkline | **done (pre-6)** | ADR 0004 amendment + `ChartRowData`. Domain-neutral; Health GTK is still Phase 6. |
+| `health-core` / `health-ffi` | **done (pre-6)** | Projection over `localcore-log` / `localcore-blob`; typed FFI. Go remains the writer. Apple `export.xml` is not parsed (ADR 0008). |
+| `shell-kit-gtk` (one binding per R4 kind) | **measured reuse (4)** | Contacts + Music: 17 shared of 17 / 18 bindings (`measure_reuse`). Enum exhaustiveness proves vocabulary coverage, not density. Clamp, sheet sizing, `push_page` chrome, and typed builders are the GTK design pass. |
+| Dark token palettes ×4 | **done (3.5)** | Sourced dark accents from each iOS `AccentColor.colorset` (contacts, gallery, music). Gallery *surfaces* stayed light; the GTK design pass authors dark Gallery surfaces as an exception. Health has no catalog; not invented. |
 | Milestone C review (ADR 0004) | **done (3.6)** | Contacts needed no new kind. That validates the inventory for this slice, not the family-wide UI architecture. Shared contact display/action state continues moving into `contacts-core`. |
 | `shell-kit-swift` | **4** | iOS contacts views are hand-rolled. Music is the next SwiftUI vertical. |
-| Contacts tags / logs / full GTK fields | **later / 4+** | Specified; not the C-loop. |
+| Contacts tags / logs / full GTK fields | **done (GTK)** | Routed on `contacts-gtk`. iOS tags/logs remain outside the C-loop. |
+| GTK 4.22 list viewport | **done (4)** | GTK 4.22 wraps `ScrolledWindow` children in `Viewport`. `list_box_page()` keeps the `ListBox` handle; `.child().and_downcast::<ListBox>()` panics. |
+| GTK design pass | **4 / 5** | Kit-first sequence in [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). Two-consumer rule; typed `ListScreen` / `SettingsScreen` / `FormSheet` builders. Freeze `apps/gallery/linux/src/ui`; new `shells/gallery-gtk` + `apps/gallery/ui-spec/`. Health out of scope. Do not invent a Health accent. |
+| Music UI spec | **done (4)** | `apps/music/ui-spec/screens.toml`. |
+| Music GTK shell | **done (4)** | `music-gtk` over `music-core`. Playback is the `gstreamer-playback` feature. MPRIS and `--comet` are present. Density/polish is the design pass, not a second music rewrite. |
 | iOS contacts views parse vCard text | **debt** | Writes go through FFI, but `vcard_text` is a serialized-domain escape hatch. Replace it with explicit read/command/host-port DTOs; do not call contacts R6-complete meanwhile. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
-| R8–R11 for music `.m3u` | **4** | Playlist write through `localcore-vfs`. |
+| R8–R11 for music `.m3u` | **done (4)** | `music-core` + `fixtures/r8/`. Playlist write through `localcore-vfs`. |
 | Unify iOS onto `run_places` | **5** | Two orchestrators. Pack is shipped; collapse the Swift loop. |
 | M2 UserDefaults cutover | **5** | After gallery iOS is green. Do not copy the dual-write into 3.1. |
 | M1 thumb / widget / `library_cache` rewrite | **5** | Path-keyed leftovers. Rewrite them; do not leave orphans as the plan. |
@@ -452,8 +469,9 @@ block C.
 | M3 candidate validation / possible pack swap | **5** | Measure SFace + YuNet alignment, representative clustering and target-device cost first. Keep `PACK_VARIANT` unless evidence supports the swap. |
 | `ImageIOHeicDecoder` | **5** | Decoder seam with the gallery core loop. |
 | R8–R11 for gallery `.xmp` | **5** | Same conflict grammar as contacts, on sidecars. |
-| gallery-ffi R6 rewrite (45 Records) | **5** | ADR 0003 R4 windowing. |
+| gallery-ffi R6 rewrite (45 Records) | **in progress (5)** | Windowed `ViewStructure` landed; `conformance/r6/expected.txt` is empty. Remaining Phase 5 is the Linux kit shell (not the leftover GTK), Places unification, and the 20k CI job. |
 | 20k-tree as a CI gate | **5** | Local `e2e_20k.sh` exists now (`#[ignore]`, structural golden under `e2e_baselines/`). The GitHub job lands with the gallery vertical. |
+| HealthKit ingest / FIT / native Health shells | **6** | iOS HealthKit + Linux FIT watch. Do not port Apple `export.xml`. Do not invent a Health accent. |
 | Health Go `internal/log` / `internal/blobs` delete | **6** | After the Rust projection reproduces a real archive. |
 
 Size: L. All Linux-container work.
@@ -505,12 +523,14 @@ workload before drawing shells).
    `design/tokens/`. `scripts/gen_r14.py` emits R4 kinds and tokens.
    Gallery `Design.swift` aliases `GalleryTokens`. Dark companions
    landed in 3.5.
-4. **3.3 `shell-kit-gtk`** — **provisional.** `shells/` workspace.
-   It names one libadwaita binding per R4 kind and depends on no app
-   core or `localcore`. Exhaustive enums prove vocabulary inventory,
-   not that every binding is reusable or complete. The contacts UI
-   spec lists semantic screens and R14 emits `ContactsScreen`; neither
-   view tree consumes those ids. Music is the second-consumer test.
+4. **3.3 `shell-kit-gtk`** — **provisional at C; second consumer later.**
+   `shells/` workspace. It names one libadwaita binding per R4 kind and
+   depends on no app core or `localcore`. Exhaustive enums prove
+   vocabulary inventory, not that every binding is reusable or complete.
+   The contacts UI spec lists semantic screens and R14 emits
+   `ContactsScreen`; neither view tree consumes those ids. Music GTK
+   later became the second consumer (measured reuse). Design/density
+   remains the GTK design pass.
 5. **3.4 iOS shell over the core.** **done.** Views remain and still
    parse vCard text. `ContactsStore` load/save/delete go through
    `ContactsSession`. `CNSyncService` stays a port. Apple CN sheet
@@ -537,10 +557,11 @@ workload before drawing shells).
 > a **Syncthing `.vcf` group** (R8–R11). Apple Contacts sync remains
 > iOS-only. ADR 0004 was reviewed against both shells.
 > `contacts-ffi` is syntax-green for the record checker but remains
-> semantic R6 debt while iOS reparses `vcard_text`; `gallery-ffi`
-> stays expected-red.
-> Gaps that do not reopen C: Swift `shell-kit` (Phase 4); tags / logs /
-> full GTK edit fields; iOS still parses vCard text in views.
+> semantic R6 debt while iOS reparses `vcard_text`. Gallery FFI
+> windowing later emptied `conformance/r6/expected.txt`.
+> Gaps that do not reopen C: Swift `shell-kit` (Phase 4); iOS tags /
+> logs; iOS still parses vCard text in views. GTK tags / logs / full
+> edit fields landed after C.
 
 Size: L. 3.1 was Linux-container. 3.4 needs `macos-26`.
 
@@ -553,16 +574,36 @@ gstreamer), MPRIS on Linux (ADR 0007 R15), playlist writing through
 `localcore-vfs`'s atomic write, and **R8–R11** on Syncthing `.m3u`
 pairs (same grammar as contacts `.vcf`).
 
+**Landed.** `music-core`, `music-ffi`, `apps/music/ui-spec/screens.toml`,
+and `shells/music-gtk` (kit consumer; `--comet`; MPRIS). R8–R11 on
+`.m3u` is fixture-backed. Playback is the optional `gstreamer-playback`
+feature. The kit reuse measurement is 17 shared bindings.
+
+**Remaining in this phase.** `shell-kit-swift`. Hosts without
+`gstreamer-1.0` stay on the mock transport. Design/density is not a
+second music rewrite — it is the GTK design pass
+([`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md)), which also owns the
+clamp / sheet / `push_page` kit bugs found while running Contacts and
+Music on Fedora 44 (GTK 4.22).
+
 Least portable logic (~750 lines) and the most views, so shell work dominates
-— which is exactly what `shell-kit` should now be absorbing. If Phase 4's GTK
-shell is not markedly cheaper than Phase 3's, `shell-kit` is not working and
-that is the signal to fix it before gallery.
+— which is exactly what `shell-kit` should now be absorbing. Music GTK
+was cheaper than Contacts as a *behaviour* shell; it was not cheaper as
+a *designed* shell. That is the signal the design pass is answering
+before a new Gallery kit app.
 
 Size: M.
 
 ---
 
 ### Phase 5 — localgallery
+
+**Two Linux UIs.** `apps/gallery/linux` is the leftover hand-built GTK
+app (own lockfile, no `ui-spec`, no `shell-kit-gtk`). Keep it buildable
+and frozen as a reference. The Phase 5 GTK destination is a new
+`shells/gallery-gtk` over the kit plus `apps/gallery/ui-spec/screens.toml`.
+Do not keep investing design in `apps/gallery/linux/src/ui`. Sequence
+and two-consumer rules: [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md).
 
 **Core loop, not full parity** — with a numbered gap list in the spec.
 
@@ -599,8 +640,15 @@ Size: L–XL. Per-screen agent tasks against the slot vocabulary.
 Full Rust port, both shells — and **materially smaller than r1**, because
 ADR 0008 retires the riskiest component instead of porting it.
 
+**Started.** `health-core` (disposable SQLite projection, portable-v1,
+no `export.xml` parser) and `health-ffi` exist. `chart-row` is in the
+vocabulary and the GTK kit. The Go `archive` CLI remains the writer.
+There is no Health shell and no Health accent — do not invent one so
+the GTK design pass has a fourth color.
+
 1. `health-core` over `localcore-log` / `localcore-blob` (Phase 2).
-   Projection to SQLite.
+   Projection to SQLite. **Done as a crate**; cutover still waits on
+   reproducing a real archive.
 2. **HealthKit ingestion in the iOS shell** (ADR 0008 R2–R7): anchored query,
    canonical NDJSON blob per batch, one `blob_import` event, `retract` on
    deletion, dedup on the source identifier. The 1,754-line streaming XML
@@ -613,9 +661,10 @@ ADR 0008 retires the riskiest component instead of porting it.
 5. Gaps report carries ADR 0008 R8's wording: HealthKit cannot report a
    denied read, so "none seen" never means "complete".
 6. Two shells, **core loop only**: ingest, browse, one chart, gaps report.
-   The static IA and data-contract brief is `apps/health/ui-spec/`. A chart /
-   metric-card is an ADR 0004 R4 amendment (one native binding per platform),
-   not a port of the retired Chart.js renderer.
+   The static IA and data-contract brief is `apps/health/ui-spec/`.
+   `chart-row` is the R4 amendment (native kit sparkline, not a Chart.js
+   port). Health GTK/iOS shells are still this phase. The GTK design pass
+   does not include them.
 7. Go tree deleted once the projection reproduces a real archive. The
    curated static UI reference stays until that amendment is written.
 
@@ -670,8 +719,11 @@ review question (ADR 0007 R16) and you read the diff.
    stutters through UniFFI, the fallback is the current arrangement — shell
    holds the structs — which costs ADR 0003 R6 and with it the only structural
    enforcement of ADR 0001 R4.
-3. **The slot vocabulary not surviving a second toolkit.** Phase 3 is where it
-   holds or gets revised. Budget the revision.
+3. **The slot vocabulary not surviving a second toolkit.** Phase 3 held for
+   Contacts GTK. Music GTK reused the same kinds without a new one.
+   SwiftUI `shell-kit` is still unproven. The GTK design pass is a
+   density/chrome problem, not a missing-kind problem — do not grow R4
+   to paper over clamp and header-bar bugs.
 4. **Review capacity.** The honest one. See below.
 
 ---
@@ -708,9 +760,19 @@ in Phase 3, which is the cheapest app.
 
 ## 9. What I would do first
 
-**A, B, and Phase 3 (through 3.6 / Milestone C) are done.** Next
-engineering move is Phase 4 (localmusic over `shell-kit`, and
-`shell-kit-swift` if that vertical is to share iOS bindings).
+**A, B, Phase 3 (through 3.6 / Milestone C), and the Music GTK core
+loop are done.** `health-core` / `health-ffi` / `chart-row` started
+Phase 6 without a Health shell. Next engineering moves, in parallel:
+
+- **GTK design pass** — kit builders and chrome first, then Contacts /
+  Music worked examples, then a new `gallery-gtk`. See
+  [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). Keep this file current
+  when that pass changes inventory or sequence.
+- **Phase 4 remainder** — `shell-kit-swift`.
+- **Phase 5 remainder** — leftover Gallery GTK stays frozen; windowed
+  FFI is in; Places / 20k CI / `.xmp` R8–R11 / M1–M3 still land here.
+- **Phase 6 remainder** — HealthKit, FIT, native shells, retire Go.
+  Do not invent a Health accent.
 
 **You, now**
 
@@ -721,3 +783,6 @@ engineering move is Phase 4 (localmusic over `shell-kit`, and
    **Phase 5**.
 3. Phase 4/5/6 backlog may run in parallel; it does not block C.
    The gazetteer pack is `allCountries` class `P`.
+4. When a review or host run changes what is true (leftover vs kit
+   Gallery, GTK 4.22 viewport, two-consumer reuse, chart-row, …),
+   edit this file in the same change as the finding.
