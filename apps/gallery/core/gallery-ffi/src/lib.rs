@@ -36,22 +36,24 @@ pub mod tagging;
 pub mod view;
 
 pub use faces::{
-    face_merge_direction, ClusterState, ClusterSummary, FaceAssignKind, FaceAssignmentRecord,
-    FaceError, FaceFailure, FaceLibraryStats, FaceMergeCandidate, FaceMergeDecision,
-    FacePhotoRecord, FaceProgressListener, FaceRef, FaceRunSummary, FaceSession, FaceStats,
-    ReclusterSummary, SidecarWriteReport,
+    face_merge_direction, ClusterState, FaceAssignKind, FaceAssignmentCommandResult,
+    FaceClusterHostRow, FaceCropHostItem, FaceError, FaceFailure, FaceLibraryCommandResult,
+    FaceMergeCommand, FaceMergeCommandSide, FaceMergeStructure, FacePhotoCommandResult,
+    FaceProgressListener, FaceQueueCommandResult, FaceReclusterCommandResult, FaceRunCommandResult,
+    FaceSession, FaceSplitCommandResult, SidecarWriteCommandResult,
 };
-pub use heic::{HeicDecodeError, HeicDecoder, HeicPixels};
+pub use heic::{HeicDecodeError, HeicDecoder, HostDecodedImage};
 pub use library::{
     compute_scheduled_memories, generate_memories, memory_cluster_key, memory_country_name,
-    scheduled_memory_horizon_days, LibraryIndex, LibraryIndexSummary, LibraryTagSuggestions,
-    MemoryContact, MemoryDateEntry, MemoryGenerationInputs, MemoryGenerator, MemoryKind,
-    MemoryLeafFolder, MemoryPersonLink, MemoryRecord, ScheduledMemoryContext,
-    ScheduledMemoryRecord, TagSuggestionRecord,
+    scheduled_memory_horizon_days, GenerateMemoriesCommand, LibraryBuildStructure, LibraryIndex,
+    MemoryContactCommandItem, MemoryDateCommandItem, MemoryFolderCommandItem, MemoryGenerator,
+    MemoryKind, MemoryPersonCommandItem, MemoryStructure, ScheduledMemoryContext,
+    ScheduledMemoryStructure, TagStructureItem, TagStructures,
 };
 pub use person_log::{
-    person_log_append, person_log_migrate_from_snapshot, person_log_project, person_log_read,
-    PersonKeyedString, PersonLogError, PersonStateRecord, GALLERY_STATE_DIR,
+    person_log_append, person_log_migrate_from_snapshot, person_log_project,
+    person_log_project_report, person_log_read, PersonLogError, PersonProjectionRecord,
+    PersonStatePair, PersonStateStructure, PersonTornTailRecord, GALLERY_STATE_DIR,
 };
 pub use places::{
     library_watch_refresh_interval_ms, places_candidate, PlacesProgressListener,
@@ -60,14 +62,15 @@ pub use places::{
 pub use scanner::{
     load_snapshot, named_people_without_box, parse_xmp_bytes, probe_snapshot_version,
     read_image_metadata, read_sidecar, read_video_date, save_snapshot, snapshot_version,
-    ImageMetadataRecord, ScanContentVersion, ScanError, ScanFolderNode, ScanOutcomeRecord,
-    ScanPhoto, ScanProgressListener, ScanRegion, ScanRequest, ScanSidecarRow, ScanTag, ScanTimings,
-    ScannerSession, SidecarParseRecord, SidecarViewRecord, SnapshotRecord, WallClock,
+    HostContentVersion, HostFaceRegion, HostImageMetadata, HostTagValue, HostWallClock,
+    ParsedSidecarHost, ScanCatalogHost, ScanCommand, ScanError, ScanMetrics, ScanProgressListener,
+    ScannedFolderHost, ScannedMediaHost, ScannedSidecarHost, ScannerSession, SidecarHostView,
+    SnapshotHostDocument,
 };
 pub use tagging::{
-    inspect_model_pack, resolve_model_pack, ModelPackInfo, PackResolution, PackSource,
-    TaggingError, TaggingFailure, TaggingProgressListener, TaggingRunSummary, TaggingSession,
-    TaggingStats,
+    inspect_model_pack, resolve_model_pack, ModelPackHostInfo, ModelPackHostResolution, PackSource,
+    TaggingError, TaggingFailure, TaggingProgressListener, TaggingQueueCommandResult,
+    TaggingRunCommandResult, TaggingSession,
 };
 pub use view::{
     GalleryMediaItem, GalleryTextRow, ViewAction, ViewContentState, ViewError, ViewSection,

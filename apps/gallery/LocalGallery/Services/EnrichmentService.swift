@@ -40,7 +40,7 @@ enum EnrichmentService {
     /// back the civil fields and the resolution happens here. Gregorian and
     /// POSIX-locale for the same reason the formatter was: a device set to a
     /// Buddhist or Japanese calendar would otherwise resolve the wrong year.
-    static func resolve(_ wallClock: WallClock) -> Date? {
+    static func resolve(_ wallClock: HostWallClock) -> Date? {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "en_US_POSIX")
         calendar.timeZone = TimeZone.current

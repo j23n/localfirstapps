@@ -14,7 +14,7 @@ final class ImageIOHeicDecoder: HeicDecoder, @unchecked Sendable {
     /// Long-side cap. Matches the size Photos uses for on-device analysis.
     static let maxPixelSize = 2048
 
-    func decode(path: String) throws -> HeicPixels {
+    func decode(path: String) throws -> HostDecodedImage {
         let url = URL(fileURLWithPath: path)
         let openOpts: [CFString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, openOpts as CFDictionary) else {
@@ -38,13 +38,13 @@ final class ImageIOHeicDecoder: HeicDecoder, @unchecked Sendable {
         return try Self.packedRGB(cg)
     }
 
-    private static func packedRGB(_ image: CGImage) throws -> HeicPixels {
+    private static func packedRGB(_ image: CGImage) throws -> HostDecodedImage {
         let width = image.width
         let height = image.height
         // 24-bit RGB when the context will take it — one buffer, not RGBA +
         // a copy-out. Some pixel formats refuse a 3-byte row; fall back.
         if let rgb = packRGB24(image, width: width, height: height) {
-            return HeicPixels(width: UInt32(width), height: UInt32(height), rgb: rgb)
+            return HostDecodedImage(width: UInt32(width), height: UInt32(height), rgb: rgb)
         }
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
         let ok = rgba.withUnsafeMutableBytes { raw -> Bool in
@@ -70,7 +70,7 @@ final class ImageIOHeicDecoder: HeicDecoder, @unchecked Sendable {
             rgb[i * 3 + 2] = rgba[i * 4 + 2]
         }
         rgba = []
-        return HeicPixels(width: UInt32(width), height: UInt32(height), rgb: Data(rgb))
+        return HostDecodedImage(width: UInt32(width), height: UInt32(height), rgb: Data(rgb))
     }
 
     private static func packRGB24(_ image: CGImage, width: Int, height: Int) -> Data? {

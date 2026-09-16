@@ -147,8 +147,10 @@ pub trait ScanProgressListener: Send + Sync {
 // ---------------------------------------------------------------------------
 
 /// One `digiKam:TagsList` entry.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct ScanTag {
+pub struct HostTagValue {
     /// Raw `/`-separated path.
     pub full_path: String,
     /// First segment, or `None` for a flat tag.
@@ -158,8 +160,10 @@ pub struct ScanTag {
 }
 
 /// One MWG region, normalised 0…1.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct ScanRegion {
+pub struct HostFaceRegion {
     /// `mwg-rs:Name`, absent for unnamed rectangles.
     pub name: Option<String>,
     /// Centre x.
@@ -181,8 +185,10 @@ pub struct ScanRegion {
 /// `sidecarStatus` is deliberately absent. It is runtime state the scanner
 /// never sets and the Store re-derives from `SidecarCacheStore` in
 /// `mergeCachedSidecars`, on the same pass, before anything is published.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct ScanPhoto {
+pub struct ScannedMediaHost {
     /// `StableUUID.derive(path)`, uppercase hyphenated.
     pub id: String,
     /// Absolute filesystem path — *not* a `file://` URL. The URL spelling is
@@ -201,7 +207,7 @@ pub struct ScanPhoto {
     /// The paired live-photo movie beside it.
     pub live_photo_video_path: Option<String>,
     /// Tags from `digiKam:TagsList`.
-    pub hierarchical_tags: Vec<ScanTag>,
+    pub hierarchical_tags: Vec<HostTagValue>,
     /// Uppercase ISO 3166-1 alpha-2.
     pub country_code: Option<String>,
     /// The file's mtime as of the last successful enrichment.
@@ -213,13 +219,15 @@ pub struct ScanPhoto {
     /// Longitude, sign already applied.
     pub gps_longitude: Option<f64>,
     /// MWG regions.
-    pub face_regions: Vec<ScanRegion>,
+    pub face_regions: Vec<HostFaceRegion>,
 }
 
 /// One folder, flattened. See the module docs for why the tree is not
 /// recursive on the wire.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct ScanFolderNode {
+pub struct ScannedFolderHost {
     /// `StableUUID.derive("folder:" + path)`, uppercase hyphenated.
     pub id: String,
     /// Absolute path.
@@ -245,8 +253,10 @@ pub struct ScanFolderNode {
 }
 
 /// A file's identity without reading it.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, Default, PartialEq, uniffi::Record)]
-pub struct ScanContentVersion {
+pub struct HostContentVersion {
     /// Modification date, reference-date seconds.
     pub modification_date: Option<f64>,
     /// Size in bytes.
@@ -254,20 +264,24 @@ pub struct ScanContentVersion {
 }
 
 /// One sidecar manifest row.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct ScanSidecarRow {
+pub struct ScannedSidecarHost {
     /// The photo the `.xmp` belongs to.
     pub photo_id: String,
     /// Absolute path of the `.xmp`.
     pub sidecar_path: String,
     /// Its identity at scan time.
-    pub current_version: ScanContentVersion,
+    pub current_version: HostContentVersion,
 }
 
 /// Where a pass spent its time. Feeds the `Scan totals:` log line the
 /// performance gates are measured from.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, uniffi::Record)]
-pub struct ScanTimings {
+pub struct ScanMetrics {
     /// Whole pass, inside the core.
     pub total_millis: u64,
     /// Directory listings.
@@ -281,17 +295,19 @@ pub struct ScanTimings {
 }
 
 /// Everything one pass produces.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct ScanOutcomeRecord {
+pub struct ScanCatalogHost {
     /// Every photo, in traversal order. Folder membership is expressed as
     /// slices of this array.
-    pub flat_photos: Vec<ScanPhoto>,
+    pub flat_photos: Vec<ScannedMediaHost>,
     /// The tree, flattened; empty when the root itself could not be visited.
-    pub folders: Vec<ScanFolderNode>,
+    pub folders: Vec<ScannedFolderHost>,
     /// Whether anything needs an enrichment pass.
     pub needs_enrichment: bool,
     /// One row per image that has a `<basename>.xmp` beside it.
-    pub sidecar_manifest: Vec<ScanSidecarRow>,
+    pub sidecar_manifest: Vec<ScannedSidecarHost>,
     /// Paths seen now and absent from the cache.
     pub added_paths: Vec<String>,
     /// Paths in the cache and not seen now, excluding anything under a failed
@@ -302,31 +318,48 @@ pub struct ScanOutcomeRecord {
     /// Decomposed paths of directories whose listing failed.
     pub failed_directory_paths: Vec<String>,
     /// Timings and counters.
-    pub timings: ScanTimings,
+    pub timings: ScanMetrics,
 }
 
 /// The cache a pass is allowed to reuse.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, uniffi::Record)]
-pub struct ScanRequest {
+pub struct ScanCommand {
     /// Reuse cached photos for unchanged paths — the light scan.
     pub reuse_cached: bool,
     /// Last pass's photos. Carries EXIF, tags and GPS forward.
-    pub cached_photos: Vec<ScanPhoto>,
+    pub cached_photos: Vec<ScannedMediaHost>,
     /// Last pass's sidecar rows. A hit here is what lets a light scan skip
     /// rebuilding an `.xmp` row when the listing still matches.
-    pub cached_sidecar_manifest: Vec<ScanSidecarRow>,
+    pub cached_sidecar_manifest: Vec<ScannedSidecarHost>,
 }
 
 /// A persisted library, as the core sees it.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct SnapshotRecord {
+pub struct SnapshotHostDocument {
     /// Every photo, flat.
-    pub all_photos: Vec<ScanPhoto>,
+    pub all_photos: Vec<ScannedMediaHost>,
     /// The tree, flattened the same way [`ScanOutcomeRecord`] flattens it.
-    pub folders: Vec<ScanFolderNode>,
+    pub folders: Vec<ScannedFolderHost>,
     /// The sidecar manifest from the same scan, when the file carries one.
-    pub sidecar_manifest: Option<Vec<ScanSidecarRow>>,
+    pub sidecar_manifest: Option<Vec<ScannedSidecarHost>>,
 }
+
+// Core-internal compatibility names. These aliases are deliberately not FFI
+// records; exported signatures below use the explicit boundary-role names.
+pub type ScanTag = HostTagValue;
+pub type ScanRegion = HostFaceRegion;
+pub type ScanPhoto = ScannedMediaHost;
+pub type ScanFolderNode = ScannedFolderHost;
+pub type ScanContentVersion = HostContentVersion;
+pub type ScanSidecarRow = ScannedSidecarHost;
+pub type ScanTimings = ScanMetrics;
+pub type ScanOutcomeRecord = ScanCatalogHost;
+pub type ScanRequest = ScanCommand;
+pub type SnapshotRecord = SnapshotHostDocument;
 
 // ---------------------------------------------------------------------------
 // The session
@@ -404,9 +437,9 @@ impl ScannerSession {
     pub fn scan(
         &self,
         root: String,
-        request: ScanRequest,
+        request: ScanCommand,
         progress: Option<Arc<dyn ScanProgressListener>>,
-    ) -> Result<ScanOutcomeRecord, ScanError> {
+    ) -> Result<ScanCatalogHost, ScanError> {
         let generation = self.next_generation.fetch_add(1, Ordering::AcqRel);
         self.running_generation.store(generation, Ordering::Release);
         let _guard = RunGuard {
@@ -501,7 +534,7 @@ pub fn probe_snapshot_version(path: String) -> Result<i64, ScanError> {
 /// lists but the tree does not hold is appended after it — in file order, so
 /// nothing is lost and nothing is misaddressed.
 #[uniffi::export]
-pub fn load_snapshot(path: String) -> Result<SnapshotRecord, ScanError> {
+pub fn load_snapshot(path: String) -> Result<SnapshotHostDocument, ScanError> {
     let bytes = read_file(&path)?;
     let snapshot = snapshot::load(&bytes)?;
     let mut folders = Vec::new();
@@ -532,7 +565,7 @@ pub fn load_snapshot(path: String) -> Result<SnapshotRecord, ScanError> {
 /// The app persists through `JSONDiskCache` — this exists so a test can prove
 /// the two encoders agree at runtime, not only against a committed fixture.
 #[uniffi::export]
-pub fn save_snapshot(path: String, snapshot: SnapshotRecord) -> Result<(), ScanError> {
+pub fn save_snapshot(path: String, snapshot: SnapshotHostDocument) -> Result<(), ScanError> {
     let (root, photos) = rebuild_tree(&snapshot.folders, &snapshot.all_photos);
     let Some(root_folder) = root else {
         return Err(ScanError::SnapshotPayload {
@@ -571,8 +604,10 @@ fn read_file(path: &str) -> Result<Vec<u8>, ScanError> {
 /// `MetadataReader.exifDateFormatter` did by having no `timeZone` at all.
 /// Handing back an instant here would bake this machine's zone into a value
 /// the app is supposed to read in the user's.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct WallClock {
+pub struct HostWallClock {
     /// Year.
     pub year: i32,
     /// 1-12.
@@ -588,12 +623,14 @@ pub struct WallClock {
 }
 
 /// What one photo contributes to a `PhotoFile`.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, Default, PartialEq, uniffi::Record)]
-pub struct ImageMetadataRecord {
+pub struct HostImageMetadata {
     /// EXIF capture date, zone-less.
-    pub capture_wall_clock: Option<WallClock>,
+    pub capture_wall_clock: Option<HostWallClock>,
     /// Sidecar tags, deduplicated.
-    pub hierarchical_tags: Vec<ScanTag>,
+    pub hierarchical_tags: Vec<HostTagValue>,
     /// Uppercase country code.
     pub country_code: Option<String>,
     /// Signed latitude.
@@ -601,18 +638,20 @@ pub struct ImageMetadataRecord {
     /// Signed longitude.
     pub gps_longitude: Option<f64>,
     /// Face regions from the sidecar.
-    pub face_regions: Vec<ScanRegion>,
+    pub face_regions: Vec<HostFaceRegion>,
 }
 
 /// The three things a `.xmp` contributes, plus photo-tools stamps.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, Default, PartialEq, uniffi::Record)]
-pub struct SidecarParseRecord {
+pub struct ParsedSidecarHost {
     /// Raw `digiKam:TagsList` entries, in packet order, undeduplicated.
     pub raw_tags: Vec<String>,
     /// Uppercase `photo-tools:CountryCode`.
     pub country_code: Option<String>,
     /// MWG regions.
-    pub face_regions: Vec<ScanRegion>,
+    pub face_regions: Vec<HostFaceRegion>,
     /// `TaggerVersion`, else `CoreModelPack`.
     pub tagger_version: Option<String>,
     /// `TaggedAt`, else `CoreTaggedAt`.
@@ -632,10 +671,10 @@ pub struct SidecarParseRecord {
 /// The precedence table between the two sources lives at the merge site in
 /// `gallery_meta::media`, which is now its only copy.
 #[uniffi::export]
-pub fn read_image_metadata(path: String) -> ImageMetadataRecord {
+pub fn read_image_metadata(path: String) -> HostImageMetadata {
     let meta = gallery_meta::media::read_image_metadata(&StdVfs::new(), &path);
-    ImageMetadataRecord {
-        capture_wall_clock: meta.capture_wall_clock.map(|c| WallClock {
+    HostImageMetadata {
+        capture_wall_clock: meta.capture_wall_clock.map(|c| HostWallClock {
             year: c.year,
             month: c.month,
             day: c.day,
@@ -687,8 +726,10 @@ pub fn scanner_video_extensions() -> Vec<String> {
 }
 
 /// One sidecar on disk, cheap-parsed. Tags, regions, and photo-tools stamps.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, Default, PartialEq, uniffi::Record)]
-pub struct SidecarViewRecord {
+pub struct SidecarHostView {
     /// A `.xmp` exists next to the image.
     pub exists: bool,
     /// Path that was read, when `exists`.
@@ -698,7 +739,7 @@ pub struct SidecarViewRecord {
     /// Uppercase country code.
     pub country_code: Option<String>,
     /// MWG regions.
-    pub face_regions: Vec<ScanRegion>,
+    pub face_regions: Vec<HostFaceRegion>,
     /// `TaggerVersion`, else `CoreModelPack`.
     pub tagger_version: Option<String>,
     /// `TaggedAt`, else `CoreTaggedAt`.
@@ -717,9 +758,14 @@ pub struct SidecarViewRecord {
     pub named_without_box: Vec<String>,
 }
 
+pub type WallClock = HostWallClock;
+pub type ImageMetadataRecord = HostImageMetadata;
+pub type SidecarParseRecord = ParsedSidecarHost;
+pub type SidecarViewRecord = SidecarHostView;
+
 /// Read `{image}.xmp` (then the Lightroom alt) and project it.
 #[uniffi::export]
-pub fn read_sidecar(image_path: String) -> Result<SidecarViewRecord, ScanError> {
+pub fn read_sidecar(image_path: String) -> Result<SidecarHostView, ScanError> {
     read_sidecar_from(&StdVfs::new(), &image_path)
 }
 
@@ -762,7 +808,7 @@ fn sidecar_view_from_parse(path: &str, bytes: &[u8]) -> SidecarViewRecord {
 /// Parse XMP bytes the caller already holds — the coordinated sidecar-read
 /// path never asks Rust to open the file again.
 #[uniffi::export]
-pub fn parse_xmp_bytes(bytes: Vec<u8>) -> SidecarParseRecord {
+pub fn parse_xmp_bytes(bytes: Vec<u8>) -> ParsedSidecarHost {
     sidecar_parse_from(gallery_meta::media::parse_xmp_bytes(&bytes))
 }
 

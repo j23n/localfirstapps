@@ -292,8 +292,10 @@ impl From<&FaceError> for FaceFailure {
 // ---------------------------------------------------------------------------
 
 /// Face-queue counts. Cheap enough to poll.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct FaceStats {
+pub struct FaceQueueCommandResult {
     /// Rows waiting to be processed (including stale and retryable failures).
     pub pending: u64,
     /// Rows scanned under the current face models.
@@ -307,8 +309,10 @@ pub struct FaceStats {
 }
 
 /// What the face tables hold — the numbers behind Settings' faces status line.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct FaceLibraryStats {
+pub struct FaceLibraryCommandResult {
     /// Stored face rows.
     pub faces: u64,
     /// Faces that belong to a cluster.
@@ -329,8 +333,10 @@ pub struct FaceLibraryStats {
 /// What one run did. Mirrors [`gallery_ml::face::FaceRunSummary`] with a
 /// `failure` field for the run-level-error case, since `onFinished` fires
 /// either way.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct FaceRunSummary {
+pub struct FaceRunCommandResult {
     /// Photos carried to a terminal state.
     pub processed: u32,
     /// Photos that contain at least one face.
@@ -362,9 +368,9 @@ pub struct FaceRunSummary {
     pub failure: Option<FaceFailure>,
 }
 
-impl From<CoreFaceRunSummary> for FaceRunSummary {
+impl From<CoreFaceRunSummary> for FaceRunCommandResult {
     fn from(s: CoreFaceRunSummary) -> Self {
-        FaceRunSummary {
+        FaceRunCommandResult {
             processed: s.processed as u32,
             photos_with_faces: s.photos_with_faces as u32,
             faces_found: s.faces_found as u32,
@@ -382,10 +388,10 @@ impl From<CoreFaceRunSummary> for FaceRunSummary {
     }
 }
 
-impl FaceRunSummary {
+impl FaceRunCommandResult {
     /// The summary a run reports when it never produced one of its own.
-    fn failed_with(failure: FaceFailure, cancelled: bool) -> FaceRunSummary {
-        FaceRunSummary {
+    fn failed_with(failure: FaceFailure, cancelled: bool) -> FaceRunCommandResult {
+        FaceRunCommandResult {
             processed: 0,
             photos_with_faces: 0,
             faces_found: 0,
@@ -433,8 +439,10 @@ impl From<CoreClusterState> for ClusterState {
 /// origin — because that is exactly what the app's `FaceRegion` already is, so
 /// the existing cover-crop renderer takes one of these unchanged. Pixel corners
 /// would have made every consumer re-derive the same division.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FaceRef {
+pub struct FaceCropHostItem {
     /// Absolute path of a photo containing this face. One of possibly several:
     /// detections are keyed by content hash and a library can hold the same
     /// bytes twice.
@@ -460,8 +468,13 @@ pub struct FaceRef {
 }
 
 /// One cluster, as the review grid renders it.
+///
+/// `exemplars` is capped at [`MAX_EXEMPLARS`], so one row has a fixed content
+/// ceiling even when a cluster contains thousands of faces.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct ClusterSummary {
+pub struct FaceClusterHostRow {
     /// Stable for a **named** cluster forever. An *unlabeled* cluster's id does
     /// not survive a `recluster()` — that pass produces a partition, not a
     /// diff — which is why naming a stale id answers
@@ -474,12 +487,14 @@ pub struct ClusterSummary {
     /// The person's name, when `state` is [`ClusterState::Named`].
     pub name: Option<String>,
     /// Up to [`MAX_EXEMPLARS`] faces to show on the card. See [`exemplars`].
-    pub exemplars: Vec<FaceRef>,
+    pub exemplars: Vec<FaceCropHostItem>,
 }
 
 /// One side of a merge-direction decision. Ids and sizes only — no pixels.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct FaceMergeCandidate {
+pub struct FaceMergeCommandSide {
     /// Cluster id.
     pub id: i64,
     /// Person name when the cluster is named.
@@ -489,8 +504,10 @@ pub struct FaceMergeCandidate {
 }
 
 /// Which of two clusters survives a merge.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct FaceMergeDecision {
+pub struct FaceMergeCommand {
     /// Keeps its id and name.
     pub survivor_id: i64,
     /// Disappears.
@@ -500,9 +517,9 @@ pub struct FaceMergeDecision {
 /// Named beats unnamed, then size, then the lower id. `None` for a self-merge.
 #[uniffi::export]
 pub fn face_merge_direction(
-    a: FaceMergeCandidate,
-    b: FaceMergeCandidate,
-) -> Option<FaceMergeDecision> {
+    a: FaceMergeCommandSide,
+    b: FaceMergeCommandSide,
+) -> Option<FaceMergeCommand> {
     gallery_ml::cluster_merge_direction(
         a.id,
         a.name.as_deref(),
@@ -511,7 +528,7 @@ pub fn face_merge_direction(
         b.name.as_deref(),
         b.size,
     )
-    .map(|d| FaceMergeDecision {
+    .map(|d| FaceMergeCommand {
         survivor_id: d.survivor_id,
         absorbed_id: d.absorbed_id,
     })
@@ -523,8 +540,10 @@ pub fn face_merge_direction(
 /// the failures carry their paths: `written` is a count because the app's
 /// response to it is "rescan", not "look at these files", and a 5 000-photo
 /// rename would otherwise hand the main actor a 5 000-element array it drops.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct SidecarWriteReport {
+pub struct SidecarWriteCommandResult {
     /// Photos whose sidecar bytes changed.
     pub written: u32,
     /// Photos whose sidecar already said exactly this.
@@ -537,9 +556,9 @@ pub struct SidecarWriteReport {
     pub failed_paths: Vec<String>,
 }
 
-impl From<SidecarWritePlan> for SidecarWriteReport {
+impl From<SidecarWritePlan> for SidecarWriteCommandResult {
     fn from(plan: SidecarWritePlan) -> Self {
-        SidecarWriteReport {
+        SidecarWriteCommandResult {
             written: plan.written.len() as u32,
             unchanged: plan.unchanged.len() as u32,
             skipped: plan.skipped.len() as u32,
@@ -558,8 +577,10 @@ impl From<SidecarWritePlan> for SidecarWriteReport {
 /// Advisory in both directions: nothing merges on its own, and a proposal is
 /// only as fresh as the centroids it was computed from — a merge invalidates
 /// every proposal touching either end, and the next run recomputes them.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, Copy, PartialEq, uniffi::Record)]
-pub struct MergeProposal {
+pub struct FaceMergeStructure {
     /// The lower of the two cluster ids.
     pub a: i64,
     /// The higher.
@@ -569,8 +590,10 @@ pub struct MergeProposal {
 }
 
 /// What one `split_cluster()` did.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct SplitResult {
+pub struct FaceSplitCommandResult {
     /// The cluster the selected faces moved into. Unlabeled and pinned.
     pub new_cluster_id: i64,
     /// Selected keys that named no face of the source cluster.
@@ -579,12 +602,14 @@ pub struct SplitResult {
     /// under it — which is worth a log line and is not a failure.
     pub ignored_keys: u32,
     /// The sidecars the split rewrote.
-    pub report: SidecarWriteReport,
+    pub report: SidecarWriteCommandResult,
 }
 
 /// What one `recluster()` did.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct ReclusterSummary {
+pub struct FaceReclusterCommandResult {
     /// Unlabeled clusters that existed before the pass.
     pub clusters_before: u32,
     /// Unlabeled clusters after it.
@@ -595,9 +620,9 @@ pub struct ReclusterSummary {
     pub proposals: u32,
 }
 
-impl From<CoreReclusterSummary> for ReclusterSummary {
+impl From<CoreReclusterSummary> for FaceReclusterCommandResult {
     fn from(s: CoreReclusterSummary) -> Self {
-        ReclusterSummary {
+        FaceReclusterCommandResult {
             clusters_before: s.clusters_before as u32,
             clusters_after: s.clusters_after as u32,
             faces: s.faces as u32,
@@ -616,8 +641,10 @@ pub enum FaceAssignKind {
 }
 
 /// One detection as the last run assigned it. SQLite, not the sidecar.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FaceAssignmentRecord {
+pub struct FaceAssignmentCommandResult {
     /// Detector confidence.
     pub score: f32,
     /// Composite quality (score × size × frontality).
@@ -630,9 +657,9 @@ pub struct FaceAssignmentRecord {
     pub label: Option<String>,
 }
 
-impl From<CoreFaceAssignmentRecord> for FaceAssignmentRecord {
+impl From<CoreFaceAssignmentRecord> for FaceAssignmentCommandResult {
     fn from(f: CoreFaceAssignmentRecord) -> Self {
-        FaceAssignmentRecord {
+        FaceAssignmentCommandResult {
             score: f.score,
             quality: f.quality,
             cluster_id: f.cluster_id,
@@ -649,22 +676,24 @@ impl From<CoreFaceAssignmentRecord> for FaceAssignmentRecord {
 }
 
 /// Per-photo assign result of the last finished run.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct FacePhotoRecord {
+pub struct FacePhotoCommandResult {
     /// Absolute path the queue row used.
     pub path: String,
     /// Detections in detection order.
-    pub faces: Vec<FaceAssignmentRecord>,
+    pub faces: Vec<FaceAssignmentCommandResult>,
 }
 
-impl From<CoreFacePhotoRecord> for FacePhotoRecord {
+impl From<CoreFacePhotoRecord> for FacePhotoCommandResult {
     fn from(p: CoreFacePhotoRecord) -> Self {
-        FacePhotoRecord {
+        FacePhotoCommandResult {
             path: p.path,
             faces: p
                 .faces
                 .into_iter()
-                .map(FaceAssignmentRecord::from)
+                .map(FaceAssignmentCommandResult::from)
                 .collect(),
         }
     }
@@ -698,7 +727,7 @@ pub trait FaceProgressListener: Send + Sync {
 
     /// Exactly once per `start`, whether the run finished, was cancelled, or
     /// failed. Fires after the session has released its run lock.
-    fn on_finished(&self, summary: FaceRunSummary);
+    fn on_finished(&self, summary: FaceRunCommandResult);
 }
 
 /// Bridges [`FaceProgress`] (engine-side, `&[String]`) to
@@ -748,7 +777,7 @@ const EXEMPLAR_POOL: usize = 16;
 /// nothing about whether the cluster is coherent. Taking the best face from
 /// each distinct photo first, then backfilling from the remainder, shows the
 /// person across the library while still leading with the crop that looks best.
-fn exemplars(thumbs: Vec<FaceThumb>) -> Vec<FaceRef> {
+fn exemplars(thumbs: Vec<FaceThumb>) -> Vec<FaceCropHostItem> {
     let mut seen: Vec<&str> = Vec::with_capacity(MAX_EXEMPLARS);
     let mut chosen: Vec<&FaceThumb> = Vec::with_capacity(MAX_EXEMPLARS);
     // `thumbs` arrives sorted by quality descending, so first-wins is
@@ -780,12 +809,12 @@ fn exemplars(thumbs: Vec<FaceThumb>) -> Vec<FaceRef> {
 /// really there, and an uncropped thumbnail is a better answer than a missing
 /// card. (The sidecar writer makes the same call in the other direction: it
 /// keeps the name and drops the region.)
-fn face_ref(thumb: &FaceThumb) -> FaceRef {
+fn face_ref(thumb: &FaceThumb) -> FaceCropHostItem {
     let face_key = encode_face_key(&thumb.content_hash, thumb.face_idx);
     let (w, h) = (f64::from(thumb.image_w), f64::from(thumb.image_h));
     let [x0, y0, x1, y1] = thumb.bbox.map(f64::from);
     if w <= 0.0 || h <= 0.0 || x1 <= x0 || y1 <= y0 {
-        return FaceRef {
+        return FaceCropHostItem {
             path: thumb.path.clone(),
             face_key,
             center_x: 0.5,
@@ -796,7 +825,7 @@ fn face_ref(thumb: &FaceThumb) -> FaceRef {
         };
     }
     let clamp = |v: f64| v.clamp(0.0, 1.0);
-    FaceRef {
+    FaceCropHostItem {
         path: thumb.path.clone(),
         face_key,
         center_x: clamp((x0 + x1) / 2.0 / w),
@@ -911,15 +940,14 @@ impl FaceSession {
 
         let spawned = self.run.start("gallery-faces", move |cancel, running| {
             let reporter = Arc::clone(&listener);
-            let mut guard =
-                FinishGuard::new(running, move |summary| {
-                    // `None` means the run thread unwound. The engine's guarantees
-                    // say nothing about a panic, so it is reported as a failure
-                    // rather than as a quiet zero-item success.
-                    reporter.on_finished(summary.unwrap_or_else(|| {
-                        FaceRunSummary::failed_with(FaceFailure::Inference, false)
-                    }));
-                });
+            let mut guard = FinishGuard::new(running, move |summary| {
+                // `None` means the run thread unwound. The engine's guarantees
+                // say nothing about a panic, so it is reported as a failure
+                // rather than as a quiet zero-item success.
+                reporter.on_finished(summary.unwrap_or_else(|| {
+                    FaceRunCommandResult::failed_with(FaceFailure::Inference, false)
+                }));
+            });
             let adapter = ProgressAdapter {
                 inner: Arc::clone(&listener),
             };
@@ -937,10 +965,10 @@ impl FaceSession {
             };
             let outcome = engine.run_with_options(&adapter, &cancel, &opts);
             guard.summary = Some(match outcome {
-                Ok(s) => FaceRunSummary::from(s),
+                Ok(s) => FaceRunCommandResult::from(s),
                 Err(e) => {
                     let err = FaceError::from(e);
-                    FaceRunSummary::failed_with(
+                    FaceRunCommandResult::failed_with(
                         FaceFailure::from(&err),
                         cancel.load(Ordering::Acquire),
                     )
@@ -971,12 +999,11 @@ impl FaceSession {
         let listener = Arc::clone(&progress);
         let spawned = self.run.start("gallery-faces", move |cancel, running| {
             let reporter = Arc::clone(&listener);
-            let mut guard =
-                FinishGuard::new(running, move |summary| {
-                    reporter.on_finished(summary.unwrap_or_else(|| {
-                        FaceRunSummary::failed_with(FaceFailure::Inference, false)
-                    }));
-                });
+            let mut guard = FinishGuard::new(running, move |summary| {
+                reporter.on_finished(summary.unwrap_or_else(|| {
+                    FaceRunCommandResult::failed_with(FaceFailure::Inference, false)
+                }));
+            });
             let adapter = ProgressAdapter {
                 inner: Arc::clone(&listener),
             };
@@ -989,10 +1016,10 @@ impl FaceSession {
             };
             let outcome = engine.run_with_options(&adapter, &cancel, &opts);
             guard.summary = Some(match outcome {
-                Ok(s) => FaceRunSummary::from(s),
+                Ok(s) => FaceRunCommandResult::from(s),
                 Err(e) => {
                     let err = FaceError::from(e);
-                    FaceRunSummary::failed_with(
+                    FaceRunCommandResult::failed_with(
                         FaceFailure::from(&err),
                         cancel.load(Ordering::Acquire),
                     )
@@ -1022,9 +1049,9 @@ impl FaceSession {
     }
 
     /// Face-queue counts.
-    pub fn stats(&self) -> Result<FaceStats, FaceError> {
+    pub fn stats(&self) -> Result<FaceQueueCommandResult, FaceError> {
         let s = self.engine.stats()?;
-        Ok(FaceStats {
+        Ok(FaceQueueCommandResult {
             pending: s.pending,
             done: s.done,
             failed: s.failed,
@@ -1034,9 +1061,9 @@ impl FaceSession {
     }
 
     /// Face-table counts.
-    pub fn library_stats(&self) -> Result<FaceLibraryStats, FaceError> {
+    pub fn library_stats(&self) -> Result<FaceLibraryCommandResult, FaceError> {
         let s = self.engine.library_stats()?;
-        Ok(FaceLibraryStats {
+        Ok(FaceLibraryCommandResult {
             faces: s.faces,
             assigned: s.assigned,
             unlabeled_clusters: s.unlabeled_clusters,
@@ -1062,7 +1089,7 @@ impl FaceSession {
     /// Allowed during a run: it is a read, and a review screen that went blank
     /// for the length of a scan would be worse than one showing a partition
     /// that is about to grow.
-    pub fn clusters(&self) -> Result<Vec<ClusterSummary>, FaceError> {
+    pub fn clusters(&self) -> Result<Vec<FaceClusterHostRow>, FaceError> {
         let rows = self.engine.clusters()?;
         let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
         let mut thumbs = self
@@ -1071,7 +1098,7 @@ impl FaceSession {
             .cluster_face_thumbs_for(&ids, EXEMPLAR_POOL)?;
         let mut out = Vec::with_capacity(rows.len());
         for row in rows {
-            out.push(ClusterSummary {
+            out.push(FaceClusterHostRow {
                 id: row.id,
                 size: row.size,
                 state: row.state.into(),
@@ -1087,7 +1114,7 @@ impl FaceSession {
     /// Unpaged: a cluster is a person, and the largest a person's cluster gets
     /// in a personal library is thousands of small records — cheaper to hand
     /// over once than to page across the boundary.
-    pub fn cluster_faces(&self, cluster_id: i64) -> Result<Vec<FaceRef>, FaceError> {
+    pub fn cluster_faces(&self, cluster_id: i64) -> Result<Vec<FaceCropHostItem>, FaceError> {
         // Existence first. A re-cluster pass rebuilds the unlabeled partition,
         // so a screen holding an id from before it is holding a dead one — and
         // "no faces" is indistinguishable from "an empty cluster", which sends
@@ -1119,7 +1146,7 @@ impl FaceSession {
         cluster_id: i64,
         name: String,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self
             .engine
@@ -1138,7 +1165,7 @@ impl FaceSession {
         &self,
         cluster_id: i64,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self
             .engine
@@ -1153,7 +1180,7 @@ impl FaceSession {
         &self,
         cluster_id: i64,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self
             .engine
@@ -1168,7 +1195,7 @@ impl FaceSession {
         &self,
         cluster_id: i64,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self
             .engine
@@ -1186,7 +1213,7 @@ impl FaceSession {
         old: String,
         new: String,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self
             .engine
@@ -1211,7 +1238,7 @@ impl FaceSession {
         into: i64,
         from: i64,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         self.merge_clusters_many(into, vec![from], root_prefix)
     }
 
@@ -1225,7 +1252,7 @@ impl FaceSession {
         into: i64,
         from: Vec<i64>,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self
             .engine
@@ -1253,7 +1280,7 @@ impl FaceSession {
         cluster_id: i64,
         face_keys: Vec<String>,
         root_prefix: Option<String>,
-    ) -> Result<SplitResult, FaceError> {
+    ) -> Result<FaceSplitCommandResult, FaceError> {
         let _guard = self.mutating()?;
         let keys = face_keys
             .iter()
@@ -1265,7 +1292,7 @@ impl FaceSession {
             Some(&iso8601_utc_now()),
             root_prefix.as_deref(),
         )?;
-        Ok(SplitResult {
+        Ok(FaceSplitCommandResult {
             new_cluster_id: outcome.new_cluster_id,
             ignored_keys: outcome.ignored_keys as u32,
             report: outcome.plan.into(),
@@ -1278,12 +1305,12 @@ impl FaceSession {
     /// review screen that emptied for the length of a scan would be worse than
     /// one showing a suggestion that is about to be recomputed. Proposals
     /// naming a cluster that no longer exists are dropped here.
-    pub fn merge_proposals(&self) -> Result<Vec<MergeProposal>, FaceError> {
+    pub fn merge_proposals(&self) -> Result<Vec<FaceMergeStructure>, FaceError> {
         Ok(self
             .engine
             .merge_proposals()?
             .into_iter()
-            .map(|(a, b, similarity)| MergeProposal { a, b, similarity })
+            .map(|(a, b, similarity)| FaceMergeStructure { a, b, similarity })
             .collect())
     }
 
@@ -1306,7 +1333,7 @@ impl FaceSession {
     pub fn resync_named_keywords_once(
         &self,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self
             .engine
@@ -1322,7 +1349,7 @@ impl FaceSession {
     pub fn resync_face_decisions_once(
         &self,
         root_prefix: Option<String>,
-    ) -> Result<SidecarWriteReport, FaceError> {
+    ) -> Result<SidecarWriteCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self
             .engine
@@ -1336,7 +1363,7 @@ impl FaceSession {
     /// Other unlabeled cluster **ids do not survive this call** — the pass
     /// produces a partition, not a diff — so the app must re-read `clusters()`
     /// afterwards.
-    pub fn recluster(&self) -> Result<ReclusterSummary, FaceError> {
+    pub fn recluster(&self) -> Result<FaceReclusterCommandResult, FaceError> {
         let _guard = self.mutating()?;
         Ok(self.engine.recluster()?.into())
     }
@@ -1344,11 +1371,11 @@ impl FaceSession {
     /// Per-photo detections of the last finished run: score, quality,
     /// cluster, Joined vs Seeded. Consumes the journal. Not a sidecar write
     /// and not a listener callback — pull this after `onFinished`.
-    pub fn take_last_run_photos(&self) -> Vec<FacePhotoRecord> {
+    pub fn take_last_run_photos(&self) -> Vec<FacePhotoCommandResult> {
         self.engine
             .take_last_run_photos()
             .into_iter()
-            .map(FacePhotoRecord::from)
+            .map(FacePhotoCommandResult::from)
             .collect()
     }
 }

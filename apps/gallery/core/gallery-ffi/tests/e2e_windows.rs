@@ -7,7 +7,7 @@
 use std::env;
 use std::time::Instant;
 
-use gallery_ffi::{LibraryIndex, ScanRequest, ScannerSession, ScheduledMemoryContext, ViewError};
+use gallery_ffi::{LibraryIndex, ScanCommand, ScannerSession, ScheduledMemoryContext, ViewError};
 
 #[test]
 #[ignore = "e2e: needs LOCALGALLERY_E2E_LIBRARY"]
@@ -23,7 +23,7 @@ fn generated_library_ffi_windows_are_bounded_and_generation_checked() {
     let scanned = scanner
         .scan(
             root,
-            ScanRequest {
+            ScanCommand {
                 reuse_cached: false,
                 cached_photos: Vec::new(),
                 cached_sidecar_manifest: Vec::new(),

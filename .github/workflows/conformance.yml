@@ -77,8 +77,8 @@ jobs:
       - name: Self-test
         run: python3 conformance/r6/check.py --self-test
 
-      - name: Display-record check (expected red)
-        run: python3 conformance/r6/check.py --expect-violations
+      - name: Gallery Record inventory is green
+        run: python3 conformance/r6/check.py
 
       - name: contacts-ffi Record inventory is green
         run: python3 conformance/r6/check.py --src core/contacts-ffi/src

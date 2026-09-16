@@ -1,8 +1,8 @@
 # ADR 0003 R6 — shell boundary surface
 
-- Status: Accepted (design; gallery FFI is not rewritten here)
+- Status: Accepted
 - Date: 2026-09-12
-- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`); 2026-09-16 (typed Contacts drafts replace serialized vCard reads and writes; Gallery generation-scoped structure DTOs)
+- Revised: 2026-09-13 (`contacts-ffi` record inventory is green); 2026-09-14 (Milestone C: rows produced in `contacts-core`); 2026-09-16 (typed Contacts drafts replace serialized vCard reads and writes; Gallery generation-scoped structures, explicit host ports, and typed commands)
 - Parent: [0003-app-core.md](0003-app-core.md) R6, [0004-ui-spec-and-shells.md](0004-ui-spec-and-shells.md) R4
 
 ## Scope
@@ -11,10 +11,9 @@ What may cross from an app core to a shell, and how a `uniffi::Record`
 is judged. This is the type-system guard in ADR 0003 R6. It is written
 now so every later vertical designs against it.
 
-It is **not** a gallery FFI rewrite. `gallery-ffi` stays as it is. The
-conformance check starts red and pins that red so a new Record cannot
-hide behind the known ones. `contacts-ffi` is green for display records and
-explicit command DTOs. `TextRow`, `FieldRow`, and typed `ConflictRow` are
+`gallery-ffi` and `contacts-ffi` are green for display records, explicit
+structure, typed commands, and narrowly scoped host ports. `TextRow`,
+`FieldRow`, and typed `ConflictRow` are
 produced in `contacts-core`; full `ContactEditDraft` and
 `SaveContactCommand` values carry only editable intent. Normal reads and
 writes no longer cross as serialized vCards. `export_vcard_text` remains an
@@ -35,10 +34,11 @@ Only these values cross to a shell:
   value for *exactly one* item kind in ADR 0004 R4
 - **structure DTOs** — generation-scoped section ids, ordered item ids, and
   action availability; never item content
-- **command DTOs** — explicit editable fields or action arguments sent back
-  to the core
+- **command DTOs** — explicit editable fields, action arguments, or compact
+  scalar outcomes of one named command
 - **host-port DTOs** — the minimum structured values needed by a platform
-  service such as Contacts or media playback
+  service such as Contacts, filesystem scan/metadata, persistence, image
+  decode, or media playback
 
 A bare `Vec<String>` of ids is structure (ADR 0003 R4) and is allowed.
 A struct that contains a list is not a display record: no ADR 0004 item kind
@@ -46,12 +46,13 @@ carries a list. A structure DTO may contain lists of section/action metadata
 and item ids, but never formatted item rows. Lists of formatted rows are the
 collection R4 forbids marshaling in one shot.
 
-**No domain entity crosses**, under any name or serialization. A type an app
-core keys domain logic on — a photo, contact/card, folder, memory, face,
-cluster, sidecar, scan outcome, or generation-inputs snapshot — does not
-appear in the exported surface as a Record, JSON string, vCard string, or
-other whole-domain payload. Explicit DTOs are preferable to opaque
-serialization because their purpose and fields are reviewable.
+**No core domain entity crosses**, under any name or serialization. A host
+descriptor may carry the minimum filesystem, metadata, pixel, or persistence
+values a platform service owns, but it is not a domain object and cannot
+carry core behavior. In particular, a full library/generation snapshot does
+not cross merely to call another core subsystem; those calls reuse an opaque
+retained handle. Explicit DTOs are preferable to opaque serialization because
+their purpose and fields are reviewable.
 
 ## Display-record taxonomy
 
@@ -94,53 +95,34 @@ to reject an unmarked record that is not one display slot. Structure DTO
 lists are ids/metadata only, never display records. The marker states purpose;
 semantic review still verifies that the DTO is not a renamed domain entity.
 
-## Known-red inventory — `gallery-ffi`
+## Gallery inventory
 
-Every current `#[derive(uniffi::Record)]` in
-`apps/gallery/core/gallery-ffi/src/**/*.rs` fails the test. The
-mechanical pin is `conformance/r6/expected.txt`. Grouped by why they
-exist, not by how close they are to green:
+The legacy Gallery record names are no longer exported. The replacement
+surface names its boundary role:
 
-**Scan / photo domain.** `ScanPhoto` is the photo record the rest of
-the surface is built around. `ScanTag`, `ScanRegion`, `ScanLocality`
-(the enum is allowed; the records that carry it are not),
-`ScanFolderNode`, `ScanContentVersion`, `ScanSidecarRow`,
-`ScanTimings`, `ScanOutcomeRecord`, `ScanRequest`, `SnapshotRecord`,
-`WallClock`, `ImageMetadataRecord`,
-`SidecarParseRecord`, `SidecarViewRecord`.
+- `Scanned*Host`, `Host*`, `SidecarHostView`, and
+  `SnapshotHostDocument` are filesystem/media host-port values.
+- `*Command*` values are typed action inputs or compact outcomes.
+- `*Structure`, `ViewStructure`, and `ViewSection` carry opaque ids,
+  generations, section metadata, and action availability.
+- `GalleryMediaItem` and `GalleryTextRow` are bounded display content.
 
-**Library / memory domain.** `MemoryGenerationInputs` ships the
-library into the engine. `MemoryRecord`, `ScheduledMemoryRecord`,
-`MemoryLeafFolder`, `MemoryContact`, `MemoryPersonLink`,
-`MemoryDateEntry`, `TagSuggestionRecord`, `LibraryIndexSummary`,
-`LibraryTagSuggestions`. M2 person-log projection: `PersonStateRecord`,
-`PersonKeyedString`.
-
-**Face / cluster domain.** `FaceRef`, `ClusterSummary`,
-`FaceAssignmentRecord`, `FacePhotoRecord`, `FaceMergeCandidate`,
-`FaceMergeDecision`, `MergeProposal`, `SplitResult`, `FaceRunSummary`,
-`FaceStats`, `FaceLibraryStats`, `ReclusterSummary`,
-`SidecarWriteReport`.
-
-**Places, pixels, packs, tagging counters.** `PlaceWrite`,
-`HeicPixels`, `ModelPackInfo`, `PackResolution`, `TaggingStats`,
-`TaggingRunSummary`.
-
-That is the honest state. A later commit that deletes or reshapes a
-row updates `expected.txt`. A later commit that adds a Record updates
-`expected.txt` too, unless the new type is a genuine display record
-for one slot kind — then it is green and must not be listed.
+Normal memory generation no longer accepts `MemoryGenerationInputs`: it takes
+an opaque `LibraryIndex` handle plus bounded platform context and reuses the
+retained photo table. Photo/tag grids read structure first and content only
+through generation-checked windows. `conformance/r6/expected.txt` therefore
+contains no Gallery record.
 
 ## Conformance
 
 `conformance/r6/check.py` enumerates `uniffi::Record` and other
-exported types. The default gallery-ffi run is red while any listed
-Record remains. `--expect-violations` succeeds only when the
+exported types. The default Gallery run is strict green.
+`--expect-violations` succeeds only when the
 violation set equals `expected.txt`, so a new domain Record cannot
 hide. `--self-test` exercises the parser and the slot taxonomy.
 `contacts-ffi` is a second `--src` and its display/command inventory must stay
 green. Semantic review additionally checks exported string payloads and
 command/host DTO purpose; the parser cannot establish those properties.
 
-The check going green is the gallery (and then each later app) FFI
-rewrite, not this document.
+Any new Gallery violation must fail strict CI rather than enter a permanent
+expected-red inventory.

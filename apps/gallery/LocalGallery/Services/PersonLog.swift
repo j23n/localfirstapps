@@ -167,7 +167,7 @@ enum PersonLog {
             hidden.isEmpty && featured.isEmpty && me.isEmpty && featuredPhoto.isEmpty && links.isEmpty
         }
 
-        init(_ record: PersonStateRecord) {
+        init(_ record: PersonStateStructure) {
             hidden = Set(record.hidden)
             featured = record.featured
             me = record.me

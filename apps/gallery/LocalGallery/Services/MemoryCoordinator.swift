@@ -335,9 +335,9 @@ final class MemoryCoordinator {
 
         CoreMemories.logInputSummary(allPhotos: inputs.photos)
 
-        // The whole snapshot crosses to a detached task inside `generate`, so
-        // nothing below this line reads the Store or the coordinator until the
-        // await returns. `contactsByLowerName` is not passed: the core derives
+        // Only the bounded platform context crosses inside `generate`; the
+        // photo table stays retained by `LibraryIndex`. `contactsByLowerName`
+        // is not passed: the core derives
         // it from `contacts` exactly as `ContactLinker.index` does (lowercased
         // full name, first write wins), and shipping both would let the two
         // disagree across the boundary.
@@ -353,7 +353,7 @@ final class MemoryCoordinator {
             seed: seed,
             seenMemoryIDs: seenMemoryIDs,
             surfacedClusters: surfacedClusters
-        ))
+        ), using: index.retainedLibrary())
 
         #if DEBUG
         if let stall = testStallBeforePublish {

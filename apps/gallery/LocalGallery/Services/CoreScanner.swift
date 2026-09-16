@@ -3,7 +3,7 @@ import os
 import os.lock
 
 /// The app's side of the Rust scanner: owns the core's `ScannerSession` and
-/// the bridge that turns a `ScanOutcomeRecord` into the app's own
+/// the bridge that turns a `ScanCatalogHost` into the app's own
 /// `PhotoFile` / `PhotoFolder` values.
 ///
 /// Replaces `FolderScanner`. Scan *policy* — light/full/auto resolution, the
@@ -127,14 +127,14 @@ final class CoreScanner: Sendable {
     ) async -> Result {
         return await Task.detached(priority: .userInitiated) {
             let startedAt = CFAbsoluteTimeGetCurrent()
-            let request = ScanRequest(
+            let request = ScanCommand(
                 reuseCached: reuseCached,
                 cachedPhotos: cachedPhotos.values.map(Self.record(of:)),
                 cachedSidecarManifest: cachedSidecarManifest.values.map(Self.row(of:))
             )
             let marshalledAt = CFAbsoluteTimeGetCurrent()
 
-            let outcome: ScanOutcomeRecord
+            let outcome: ScanCatalogHost
             do {
                 outcome = try session.scan(
                     root: rootURL.path,
@@ -211,7 +211,7 @@ final class CoreScanner: Sendable {
 
     // MARK: - Bridging out
 
-    private static func bridge(_ outcome: ScanOutcomeRecord) -> Result {
+    private static func bridge(_ outcome: ScanCatalogHost) -> Result {
         let photos = outcome.flatPhotos.map(photo(from:))
         return Result(
             rootFolder: folderTree(outcome.folders, photos: photos),
@@ -243,7 +243,7 @@ final class CoreScanner: Sendable {
         return url
     }
 
-    private static func photo(from record: ScanPhoto) -> PhotoFile {
+    private static func photo(from record: ScannedMediaHost) -> PhotoFile {
         PhotoFile(
             id: UUID(uuidString: record.id) ?? PhotoFile.stableID(for: fileURL(record.path)),
             url: fileURL(record.path),
@@ -275,7 +275,7 @@ final class CoreScanner: Sendable {
     /// owns its photos by value and shipping both shapes would put every photo
     /// on the wire twice. Nodes always precede their children, so one reverse
     /// pass assembles the tree with no repeated work.
-    private static func folderTree(_ nodes: [ScanFolderNode], photos: [PhotoFile]) -> PhotoFolder? {
+    private static func folderTree(_ nodes: [ScannedFolderHost], photos: [PhotoFile]) -> PhotoFolder? {
         guard !nodes.isEmpty else { return nil }
         var childrenByParent: [Int: [Int]] = [:]
         for (index, node) in nodes.enumerated() {
@@ -302,7 +302,7 @@ final class CoreScanner: Sendable {
         return built[0]
     }
 
-    private static func candidate(from row: ScanSidecarRow) -> SidecarCandidate {
+    private static func candidate(from row: ScannedSidecarHost) -> SidecarCandidate {
         SidecarCandidate(
             photoID: UUID(uuidString: row.photoId) ?? PhotoFile.stableID(
                 for: fileURL(String(row.sidecarPath.dropLast(".xmp".count)))
@@ -318,8 +318,8 @@ final class CoreScanner: Sendable {
 
     // MARK: - Bridging in
 
-    static func record(of photo: PhotoFile) -> ScanPhoto {
-        ScanPhoto(
+    static func record(of photo: PhotoFile) -> ScannedMediaHost {
+        ScannedMediaHost(
             id: photo.id.uuidString,
             path: photo.url.path,
             filename: photo.filename,
@@ -329,7 +329,7 @@ final class CoreScanner: Sendable {
             isVideo: photo.isVideo,
             livePhotoVideoPath: photo.livePhotoVideoURL?.path,
             hierarchicalTags: photo.hierarchicalTags.map {
-                ScanTag(fullPath: $0.fullPath, namespace: $0.namespace, displayName: $0.displayName)
+                HostTagValue(fullPath: $0.fullPath, namespace: $0.namespace, displayName: $0.displayName)
             },
             countryCode: photo.countryCode,
             enrichedFileDate: photo.enrichedFileDate?.timeIntervalSinceReferenceDate,
@@ -337,17 +337,17 @@ final class CoreScanner: Sendable {
             gpsLatitude: photo.gpsLatitude,
             gpsLongitude: photo.gpsLongitude,
             faceRegions: photo.faceRegions.map {
-                ScanRegion(name: $0.name, centerX: $0.centerX, centerY: $0.centerY,
+                HostFaceRegion(name: $0.name, centerX: $0.centerX, centerY: $0.centerY,
                            width: $0.width, height: $0.height)
             }
         )
     }
 
-    static func row(of candidate: SidecarCandidate) -> ScanSidecarRow {
-        ScanSidecarRow(
+    static func row(of candidate: SidecarCandidate) -> ScannedSidecarHost {
+        ScannedSidecarHost(
             photoId: candidate.photoID.uuidString,
             sidecarPath: candidate.sidecarURL.path,
-            currentVersion: ScanContentVersion(
+            currentVersion: HostContentVersion(
                 modificationDate: candidate.currentVersion.modificationDate?
                     .timeIntervalSinceReferenceDate,
                 size: candidate.currentVersion.size

@@ -90,8 +90,10 @@ impl From<localcore_log::Error> for PersonLogError {
 }
 
 /// One path-keyed string in a projected person-state map.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct PersonKeyedString {
+pub struct PersonStatePair {
     pub path: String,
     pub value: String,
 }
@@ -100,17 +102,21 @@ pub struct PersonKeyedString {
 ///
 /// `me` is empty when unset. `links` values: a contact id, or empty for
 /// `PersonLink.disabled`.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct PersonStateRecord {
+pub struct PersonStateStructure {
     pub hidden: Vec<String>,
     pub featured: Vec<String>,
     pub me: String,
-    pub featured_photo: Vec<PersonKeyedString>,
-    pub links: Vec<PersonKeyedString>,
+    pub featured_photo: Vec<PersonStatePair>,
+    pub links: Vec<PersonStatePair>,
 }
 
 /// One recovered torn final line. Complete events before this offset were
 /// projected and remain authoritative.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PersonTornTailRecord {
     pub path: String,
@@ -119,13 +125,15 @@ pub struct PersonTornTailRecord {
 }
 
 /// Projected state plus non-fatal append-only-log diagnostics.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PersonProjectionRecord {
-    pub state: PersonStateRecord,
+    pub state: PersonStateStructure,
     pub torn_tails: Vec<PersonTornTailRecord>,
 }
 
-impl From<PeopleState> for PersonStateRecord {
+impl From<PeopleState> for PersonStateStructure {
     fn from(state: PeopleState) -> Self {
         Self {
             hidden: state.hidden.into_iter().collect(),
@@ -134,16 +142,19 @@ impl From<PeopleState> for PersonStateRecord {
             featured_photo: state
                 .featured_photo
                 .into_iter()
-                .map(|(path, value)| PersonKeyedString { path, value })
+                .map(|(path, value)| PersonStatePair { path, value })
                 .collect(),
             links: state
                 .links
                 .into_iter()
-                .map(|(path, value)| PersonKeyedString { path, value })
+                .map(|(path, value)| PersonStatePair { path, value })
                 .collect(),
         }
     }
 }
+
+pub type PersonKeyedString = PersonStatePair;
+pub type PersonStateRecord = PersonStateStructure;
 
 /// Append one person-state operation. `body_json` is a JSON object.
 #[uniffi::export]
@@ -158,8 +169,8 @@ pub fn person_log_append(
 
 /// Replay every device file under `{root}/.gallery/log`.
 #[uniffi::export]
-pub fn person_log_project(root: String) -> Result<PersonStateRecord, PersonLogError> {
-    Ok(PersonStateRecord::from(
+pub fn person_log_project(root: String) -> Result<PersonStateStructure, PersonLogError> {
+    Ok(PersonStateStructure::from(
         project_people_at(log_root(&root)).map_err(PersonLogError::from)?,
     ))
 }

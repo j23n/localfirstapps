@@ -43,7 +43,7 @@ struct SidecarDocument: Equatable, Sendable {
         namedPeopleWithoutBox(regionNames: faceRegions.map(\.name), decisions: decisions)
     }
 
-    private static func from(_ view: SidecarViewRecord) -> SidecarDocument {
+    private static func from(_ view: SidecarHostView) -> SidecarDocument {
         SidecarDocument(
             url: view.sidecarPath.map { URL(fileURLWithPath: $0) },
             exists: view.exists,
@@ -55,7 +55,7 @@ struct SidecarDocument: Equatable, Sendable {
         )
     }
 
-    private static func from(_ parsed: SidecarParseRecord, url: URL?, exists: Bool) -> SidecarDocument {
+    private static func from(_ parsed: ParsedSidecarHost, url: URL?, exists: Bool) -> SidecarDocument {
         SidecarDocument(
             url: url,
             exists: exists,
@@ -74,7 +74,7 @@ struct SidecarDocument: Equatable, Sendable {
         )
     }
 
-    private static func tools(from view: SidecarViewRecord) -> PhotoToolsMetadata {
+    private static func tools(from view: SidecarHostView) -> PhotoToolsMetadata {
         PhotoToolsMetadata(
             taggerVersion: view.taggerVersion,
             taggedAt: view.taggedAt,
@@ -85,7 +85,7 @@ struct SidecarDocument: Equatable, Sendable {
         )
     }
 
-    private static func region(_ r: ScanRegion) -> FaceRegion {
+    private static func region(_ r: HostFaceRegion) -> FaceRegion {
         FaceRegion(
             name: r.name,
             centerX: r.centerX,

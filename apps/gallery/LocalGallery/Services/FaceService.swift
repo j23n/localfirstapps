@@ -57,7 +57,7 @@ final class FaceService {
     }
 
     /// What a finished run did. An app-facing restatement of the FFI's
-    /// `FaceRunSummary`, carrying `FaceServiceError` rather than `FaceFailure`
+    /// `FaceRunCommandResult`, carrying `FaceServiceError` rather than `FaceFailure`
     /// so Settings has one error type to render.
     struct Summary: Equatable, Sendable {
         var processed = 0
@@ -839,7 +839,7 @@ final class FaceService {
     /// it meant would try to write sidecars outside the app's security scope.
     private func mutate(
         _ what: String,
-        _ body: @escaping @Sendable (FaceSession, String?) throws -> SidecarWriteReport,
+        _ body: @escaping @Sendable (FaceSession, String?) throws -> SidecarWriteCommandResult,
         afterWrite: (@MainActor () -> Void)? = nil
     ) async -> Bool {
         guard !isCoreBusy else {
@@ -854,7 +854,7 @@ final class FaceService {
         do {
             let session = try await openSession(packDirectory: pack.directory)
             let report = try await Task.detached(priority: .userInitiated) {
-                () -> Result<SidecarWriteReport, FaceServiceError> in
+                () -> Result<SidecarWriteCommandResult, FaceServiceError> in
                 do {
                     return .success(try body(session, rootPrefix))
                 } catch {
@@ -1022,7 +1022,7 @@ final class FaceService {
 // MARK: - FFI value conversion
 
 extension FaceService.Face {
-    init(_ ref: FaceRef) {
+    init(_ ref: FaceCropHostItem) {
         self.init(
             url: CoreScanner.fileURL(ref.path),
             // The core hands back MWG geometry precisely so this is a
@@ -1042,13 +1042,13 @@ extension FaceService.Face {
 }
 
 extension FaceService.Proposal {
-    init(_ proposal: MergeProposal) {
+    init(_ proposal: FaceMergeStructure) {
         self.init(a: proposal.a, b: proposal.b, similarity: Double(proposal.similarity))
     }
 }
 
 extension FaceService.Cluster {
-    init(_ summary: ClusterSummary) {
+    init(_ summary: FaceClusterHostRow) {
         self.init(
             id: summary.id,
             size: Int(summary.size),
@@ -1095,7 +1095,7 @@ private final class FaceProgressBridge: FaceProgressListener, Sendable {
         sidecarsHandler(paths)
     }
 
-    func onFinished(summary: FaceRunSummary) {
+    func onFinished(summary: FaceRunCommandResult) {
         finishedHandler(FaceService.Summary(
             processed: Int(summary.processed),
             photosWithFaces: Int(summary.photosWithFaces),

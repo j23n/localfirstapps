@@ -33,8 +33,8 @@ struct MergeDirection: Equatable {
     /// button that cannot work should not be drawn.
     init?(_ a: FaceService.Cluster, _ b: FaceService.Cluster) {
         guard let decided = faceMergeDirection(
-            a: FaceMergeCandidate(id: a.id, name: a.name, size: UInt32(clamping: a.size)),
-            b: FaceMergeCandidate(id: b.id, name: b.name, size: UInt32(clamping: b.size))
+            a: FaceMergeCommandSide(id: a.id, name: a.name, size: UInt32(clamping: a.size)),
+            b: FaceMergeCommandSide(id: b.id, name: b.name, size: UInt32(clamping: b.size))
         ) else { return nil }
         let survivor = decided.survivorId == a.id ? a : b
         let absorbed = decided.absorbedId == a.id ? a : b

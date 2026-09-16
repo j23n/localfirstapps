@@ -55,6 +55,10 @@ final class CoreLibraryIndex {
     // MARK: Wiring
 
     @ObservationIgnored private let core = LibraryIndex()
+
+    /// Opaque retained-library handle for core services such as memory
+    /// generation. No photo payload is reconstructed or re-marshalled.
+    func retainedLibrary() -> LibraryIndex { core }
     /// Cancels a stale rebuild's publish. Same shape as the old
     /// `tagBuildGeneration`, now covering the whole rebuild rather than just
     /// the tag half.
@@ -93,7 +97,7 @@ final class CoreLibraryIndex {
     /// `photo(byID:)` is correct the instant `apply(_:)` returns. The sort, the
     /// corpus and the tag aggregation — the parts that were 0.25–0.3 s of main
     /// thread on a 20k library — go to the core on a detached task, and so does
-    /// everything around them: marshalling 20k `PhotoFile`s into `ScanPhoto`
+    /// everything around them: marshalling 20k `PhotoFile`s into `ScannedMediaHost`
     /// records (14–22 ms) and resolving 20k ids back through `table`
     /// (`UUID(uuidString:)` per id plus a dictionary hit) are both work the main
     /// actor has no reason to do. Only the assignment of the finished arrays
@@ -361,7 +365,7 @@ final class CoreLibraryIndex {
     /// One rebuild's results, already in the app's own types.
     ///
     /// Exists so the detached task can return something `Sendable`: the core's
-    /// `LibraryIndexSummary` is not, and making it the hop's payload would have
+    /// `LibraryBuildStructure` is not, and making it the hop's payload would have
     /// forced the id resolution and the suggestion mapping back onto the main
     /// actor — the two costs measured at 14–22 ms and a 20k-entry
     /// dictionary walk.
@@ -390,7 +394,7 @@ final class CoreLibraryIndex {
 
     /// `nonisolated` because it runs inside the detached build task — it is a
     /// pure field-for-field copy and has no business hopping back.
-    nonisolated private static func suggestion(from record: TagSuggestionRecord) -> TagSuggestion {
+    nonisolated private static func suggestion(from record: TagStructureItem) -> TagSuggestion {
         TagSuggestion(
             id: record.id,
             displayName: record.displayName,

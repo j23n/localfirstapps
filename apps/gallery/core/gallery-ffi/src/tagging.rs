@@ -230,8 +230,10 @@ impl From<&TaggingError> for TaggingFailure {
 // ---------------------------------------------------------------------------
 
 /// Queue counts. Cheap enough to poll.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct TaggingStats {
+pub struct TaggingQueueCommandResult {
     /// Rows waiting to be processed (including stale and retryable failures).
     pub pending: u64,
     /// Rows tagged under the current pack.
@@ -246,8 +248,10 @@ pub struct TaggingStats {
 
 /// What one run did. Mirrors [`gallery_ml::RunSummary`] with a `failure` field
 /// for the run-level-error case, since `onFinished` fires either way.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
-pub struct TaggingRunSummary {
+pub struct TaggingRunCommandResult {
     /// Items carried to a terminal state.
     pub processed: u32,
     /// Items that ended up with at least one tag.
@@ -266,9 +270,9 @@ pub struct TaggingRunSummary {
     pub failure: Option<TaggingFailure>,
 }
 
-impl From<RunSummary> for TaggingRunSummary {
+impl From<RunSummary> for TaggingRunCommandResult {
     fn from(s: RunSummary) -> Self {
-        TaggingRunSummary {
+        TaggingRunCommandResult {
             processed: s.processed as u32,
             tagged: s.tagged as u32,
             sidecars_written: s.sidecars_written as u32,
@@ -282,8 +286,10 @@ impl From<RunSummary> for TaggingRunSummary {
 }
 
 /// Identity and shape of the loaded model pack, for the Settings status line.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct ModelPackInfo {
+pub struct ModelPackHostInfo {
     /// `manifest.pack_version` — the string written into every sidecar.
     pub version: String,
     /// How many taxonomy leaves the pack can emit.
@@ -300,6 +306,10 @@ pub struct ModelPackInfo {
     /// only hashed when a [`crate::faces::FaceSession`] actually opens.
     pub has_faces: bool,
 }
+
+pub type TaggingStats = TaggingQueueCommandResult;
+pub type TaggingRunSummary = TaggingRunCommandResult;
+pub type ModelPackInfo = ModelPackHostInfo;
 
 // ---------------------------------------------------------------------------
 // Progress
@@ -324,7 +334,7 @@ pub trait TaggingProgressListener: Send + Sync {
 
     /// Exactly once per `start`, whether the run finished, was cancelled, or
     /// failed. Fires after the session has released its run lock.
-    fn on_finished(&self, summary: TaggingRunSummary);
+    fn on_finished(&self, summary: TaggingRunCommandResult);
 }
 
 /// Bridges [`TaggingProgress`] (engine-side, `&[String]`) to
@@ -553,7 +563,7 @@ impl TaggingSession {
     }
 
     /// Queue counts.
-    pub fn stats(&self) -> Result<TaggingStats, TaggingError> {
+    pub fn stats(&self) -> Result<TaggingQueueCommandResult, TaggingError> {
         let s = self.engine.stats()?;
         Ok(TaggingStats {
             pending: s.pending,
@@ -576,7 +586,7 @@ impl TaggingSession {
     }
 
     /// The loaded pack's identity and shape.
-    pub fn model_pack_info(&self) -> ModelPackInfo {
+    pub fn model_pack_info(&self) -> ModelPackHostInfo {
         pack_info(self.engine.pack())
     }
 }
@@ -612,8 +622,10 @@ pub enum PackSource {
 }
 
 /// The pack the host should load. `name` is the directory's last component.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct PackResolution {
+pub struct ModelPackHostResolution {
     /// Directory name (the version string).
     pub name: String,
     /// Which root it was found in.
@@ -625,8 +637,11 @@ pub struct PackResolution {
 /// The host enumerates the two roots and passes directory *names*. Numeric
 /// compare so `…-v1.10` beats `…-v1.9`.
 #[uniffi::export]
-pub fn resolve_model_pack(bundled: Vec<String>, imported: Vec<String>) -> Option<PackResolution> {
-    gallery_ml::resolve_model_pack(&bundled, &imported).map(|r| PackResolution {
+pub fn resolve_model_pack(
+    bundled: Vec<String>,
+    imported: Vec<String>,
+) -> Option<ModelPackHostResolution> {
+    gallery_ml::resolve_model_pack(&bundled, &imported).map(|r| ModelPackHostResolution {
         name: r.name,
         source: match r.source {
             gallery_ml::PackSource::Bundled => PackSource::Bundled,
@@ -642,13 +657,13 @@ pub fn resolve_model_pack(bundled: Vec<String>, imported: Vec<String>) -> Option
 /// [`TaggingSession::new`] does, so an invalid pack is rejected at discovery
 /// time rather than at the first Scan Photos.
 #[uniffi::export]
-pub fn inspect_model_pack(model_pack_dir: String) -> Result<ModelPackInfo, TaggingError> {
+pub fn inspect_model_pack(model_pack_dir: String) -> Result<ModelPackHostInfo, TaggingError> {
     let pack = gallery_ml::ModelPack::load(&model_pack_dir)?;
     Ok(pack_info(&pack))
 }
 
-fn pack_info(pack: &gallery_ml::ModelPack) -> ModelPackInfo {
-    ModelPackInfo {
+fn pack_info(pack: &gallery_ml::ModelPack) -> ModelPackHostInfo {
+    ModelPackHostInfo {
         version: pack.version().to_string(),
         label_count: pack.labels.len() as u32,
         embedding_dim: pack.manifest.model.embedding_dim as u32,

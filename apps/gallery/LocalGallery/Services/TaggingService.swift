@@ -46,7 +46,7 @@ final class TaggingService {
 
     /// What a finished run did.
     ///
-    /// A small app-facing restatement of the FFI's `TaggingRunSummary` (which
+    /// A small app-facing restatement of the FFI's `TaggingRunCommandResult` (which
     /// is itself `Sendable`): this one carries `TaggingServiceError` rather
     /// than `TaggingFailure`, so Settings has a single error type to render.
     struct Summary: Equatable, Sendable {
@@ -726,7 +726,7 @@ private final class ProgressBridge: TaggingProgressListener, Sendable {
         taggedHandler(paths)
     }
 
-    func onFinished(summary: TaggingRunSummary) {
+    func onFinished(summary: TaggingRunCommandResult) {
         finishedHandler(TaggingService.Summary(
             processed: Int(summary.processed),
             tagged: Int(summary.tagged),

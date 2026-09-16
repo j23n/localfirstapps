@@ -43,7 +43,7 @@ use gallery_memories::{
 };
 use gallery_model::{AppleDate, CivilDateTime, HierarchicalTag, PhotoFile, StableId};
 
-use crate::scanner::{photo_from_record, ScanPhoto};
+use crate::scanner::{photo_from_record, ScanPhoto, ScannedMediaHost};
 use crate::view::{
     checked_window, GalleryMediaItem, GalleryTextRow, ViewAction, ViewContentState, ViewError,
     ViewSection, ViewSlotKind, ViewStructure,
@@ -54,8 +54,10 @@ use crate::view::{
 // ---------------------------------------------------------------------------
 
 /// `TagSuggestion.swift` — one tag bucket, flattened for the UI.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct TagSuggestionRecord {
+pub struct TagStructureItem {
     /// `full_path` lowercased and NFC-folded. The bucket key, and the Swift
     /// `TagSuggestion.id`.
     pub id: String,
@@ -73,9 +75,9 @@ pub struct TagSuggestionRecord {
     pub latest_photo_date: Option<f64>,
 }
 
-impl TagSuggestionRecord {
+impl TagStructureItem {
     fn of(s: &TagSuggestion) -> Self {
-        TagSuggestionRecord {
+        TagStructureItem {
             id: s.id.clone(),
             display_name: s.display_name.clone(),
             full_path: s.full_path.clone(),
@@ -93,15 +95,17 @@ impl TagSuggestionRecord {
 /// to fetch them would be pure overhead. It is also what lets the whole rebuild
 /// be one `await` on the Swift side, which is what makes the generation guard
 /// around it checkable.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct LibraryIndexSummary {
+pub struct LibraryBuildStructure {
     /// Photo ids, date descending with the `url.path` tiebreak. **This order is
     /// the grid.**
     pub sorted_photo_ids: Vec<String>,
     /// One suggestion per tag bucket, `(count desc, id asc)`.
-    pub tags: Vec<TagSuggestionRecord>,
+    pub tags: Vec<TagStructureItem>,
     /// The `People/…` subset, each carrying its most recent photo date.
-    pub people: Vec<TagSuggestionRecord>,
+    pub people: Vec<TagStructureItem>,
     /// Time spent inside the core, for the `Built:` log line the performance
     /// gates are read from.
     pub build_millis: u64,
@@ -189,7 +193,7 @@ impl LibraryIndex {
     ///
     /// Takes the photos by value: they become the index's photo table, so
     /// nothing is copied after the boundary crossing itself.
-    pub fn build(&self, photos: Vec<ScanPhoto>) -> LibraryIndexSummary {
+    pub fn build(&self, photos: Vec<crate::scanner::ScannedMediaHost>) -> LibraryBuildStructure {
         self.rebuild(photos, Vec::new())
     }
 
@@ -200,9 +204,9 @@ impl LibraryIndex {
     /// and re-marshalling a second 20,000-photo generation snapshot.
     pub fn build_with_time_zone_offsets(
         &self,
-        photos: Vec<ScanPhoto>,
+        photos: Vec<crate::scanner::ScannedMediaHost>,
         photo_time_zone_offsets: Vec<i32>,
-    ) -> LibraryIndexSummary {
+    ) -> LibraryBuildStructure {
         self.rebuild(photos, photo_time_zone_offsets)
     }
 
@@ -216,7 +220,7 @@ impl LibraryIndex {
         context: ScheduledMemoryContext,
         horizon_days: i64,
         hidden_memory_ids: Vec<String>,
-    ) -> Vec<ScheduledMemoryRecord> {
+    ) -> Vec<ScheduledMemoryStructure> {
         let guard = read(&self.inner);
         let hidden: HashSet<String> = hidden_memory_ids.into_iter().collect();
         let inputs = scheduled_inputs(&guard, context);
@@ -491,9 +495,9 @@ impl LibraryIndex {
 
     /// The aggregated tag list and the `People/…` subset — the same pair
     /// [`Self::build`] returned, for a caller that has lost it.
-    pub fn tag_suggestions(&self) -> LibraryTagSuggestions {
+    pub fn tag_suggestions(&self) -> TagStructures {
         let guard = read(&self.inner);
-        LibraryTagSuggestions {
+        TagStructures {
             tags: guard.tags.iter().map(TagSuggestionRecord::of).collect(),
             people: guard.people.iter().map(TagSuggestionRecord::of).collect(),
         }
@@ -643,10 +647,12 @@ fn photo_count_label(count: usize) -> String {
 }
 
 /// [`LibraryIndex::tag_suggestions`]' pair.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct LibraryTagSuggestions {
-    pub tags: Vec<TagSuggestionRecord>,
-    pub people: Vec<TagSuggestionRecord>,
+pub struct TagStructures {
+    pub tags: Vec<TagStructureItem>,
+    pub people: Vec<TagStructureItem>,
 }
 
 /// A `TagSuggestion` carrying only what `search` reads off one.
@@ -714,8 +720,10 @@ impl MemoryKind {
 /// `date_range` is two optional fields rather than one optional pair because
 /// UniFFI has no tuple: both are `Some` or both are `None`, and
 /// [`MemoryRecord::of`] is the only thing that constructs them.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct MemoryRecord {
+pub struct MemoryStructure {
     pub id: String,
     pub kind: MemoryKind,
     pub title: String,
@@ -733,9 +741,9 @@ pub struct MemoryRecord {
     pub person_name: Option<String>,
 }
 
-impl MemoryRecord {
+impl MemoryStructure {
     fn of(m: &Memory) -> Self {
-        MemoryRecord {
+        MemoryStructure {
             id: m.id.clone(),
             kind: MemoryKind::of(m.kind),
             title: m.title.clone(),
@@ -752,9 +760,11 @@ impl MemoryRecord {
 }
 
 /// A memory pre-published for a future day, with the window it is valid in.
+///
+/// R6 role: structure DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct ScheduledMemoryRecord {
-    pub memory: MemoryRecord,
+pub struct ScheduledMemoryStructure {
+    pub memory: MemoryStructure,
     /// Local midnight of the day it is about, reference-date seconds.
     pub valid_from: f64,
     /// Local midnight of the following day.
@@ -766,8 +776,10 @@ pub struct ScheduledMemoryRecord {
 // ---------------------------------------------------------------------------
 
 /// A leaf `PhotoFolder`, by reference into the photo list rather than by value.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct MemoryLeafFolder {
+pub struct MemoryFolderCommandItem {
     /// `PhotoFolder.id`. The memory id is `"folder-<this>"`.
     pub id: String,
     pub name: String,
@@ -777,8 +789,10 @@ pub struct MemoryLeafFolder {
 
 /// `ContactInfo`, reduced to the fields the engine reads. `birthday.year` is
 /// routinely absent in address-book data and is never consulted.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct MemoryContact {
+pub struct MemoryContactCommandItem {
     pub id: String,
     pub given_name: String,
     pub family_name: String,
@@ -791,19 +805,33 @@ pub struct MemoryContact {
 ///
 /// `contact_id == None` is `PersonLink.disabled` — "this tag is not a person in
 /// the address book", which suppresses the memory entirely.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct MemoryPersonLink {
+pub struct MemoryPersonCommandItem {
     pub person_path: String,
     pub contact_id: Option<String>,
 }
 
 /// A `[String: Date]` entry — seen memories, surfaced clusters.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
-pub struct MemoryDateEntry {
+pub struct MemoryDateCommandItem {
     pub key: String,
     /// Reference-date seconds.
     pub date: f64,
 }
+
+pub type TagSuggestionRecord = TagStructureItem;
+pub type LibraryIndexSummary = LibraryBuildStructure;
+pub type LibraryTagSuggestions = TagStructures;
+pub type MemoryRecord = MemoryStructure;
+pub type ScheduledMemoryRecord = ScheduledMemoryStructure;
+pub type MemoryLeafFolder = MemoryFolderCommandItem;
+pub type MemoryContact = MemoryContactCommandItem;
+pub type MemoryPersonLink = MemoryPersonCommandItem;
+pub type MemoryDateEntry = MemoryDateCommandItem;
 
 /// Small platform context for the scheduled-memory horizon.
 ///
@@ -815,9 +843,9 @@ pub struct MemoryDateEntry {
 /// R6 role: host-port DTO.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct ScheduledMemoryContext {
-    pub leaf_folders: Vec<MemoryLeafFolder>,
-    pub contacts: Vec<MemoryContact>,
-    pub person_contact_links: Vec<MemoryPersonLink>,
+    pub leaf_folders: Vec<MemoryFolderCommandItem>,
+    pub contacts: Vec<MemoryContactCommandItem>,
+    pub person_contact_links: Vec<MemoryPersonCommandItem>,
     pub birthdays_enabled: bool,
     pub me_person_path: String,
     pub hidden_people: Vec<String>,
@@ -826,16 +854,18 @@ pub struct ScheduledMemoryContext {
     pub time_zone_offset_seconds: i32,
     pub horizon_offset_seconds: Vec<i32>,
     pub seed: String,
-    pub seen_memory_ids: Vec<MemoryDateEntry>,
-    pub surfaced_clusters: Vec<MemoryDateEntry>,
+    pub seen_memory_ids: Vec<MemoryDateCommandItem>,
+    pub surfaced_clusters: Vec<MemoryDateCommandItem>,
 }
 
-/// `MemoryCoordinator.GenerationInputs` plus the clock, zone, seed and the
-/// seen/cool-down state — everything the engine reads.
+/// Rust-only fixture shape for direct engine tests.
 ///
-#[derive(Debug, Clone, uniffi::Record)]
-pub struct MemoryGenerationInputs {
-    pub photos: Vec<ScanPhoto>,
+/// Production generation receives only [`ScheduledMemoryContext`] and reuses
+/// [`LibraryIndex`]'s retained media table. This full-library snapshot is not a
+/// UniFFI record and cannot cross to a shell.
+#[derive(Debug, Clone)]
+pub struct GenerateMemoriesCommand {
+    pub photos: Vec<ScannedMediaHost>,
     /// `Calendar.current.timeZone.secondsFromGMT(for: photo.dateTaken)`, one
     /// per entry of `photos`, in the same order.
     ///
@@ -847,9 +877,9 @@ pub struct MemoryGenerationInputs {
     /// twice a year, so the cool-down and seen penalties stop matching the
     /// history the user's own taps wrote.
     pub photo_time_zone_offsets: Vec<i32>,
-    pub leaf_folders: Vec<MemoryLeafFolder>,
-    pub contacts: Vec<MemoryContact>,
-    pub person_contact_links: Vec<MemoryPersonLink>,
+    pub leaf_folders: Vec<MemoryFolderCommandItem>,
+    pub contacts: Vec<MemoryContactCommandItem>,
+    pub person_contact_links: Vec<MemoryPersonCommandItem>,
     pub birthdays_enabled: bool,
     /// The user's own `People/…` tag, dropped from trip titles. Empty = unset.
     pub me_person_path: String,
@@ -886,12 +916,14 @@ pub struct MemoryGenerationInputs {
     /// value for force-regenerate.
     pub seed: String,
     /// Memory id → when the user last opened it. −30 within ~6 months.
-    pub seen_memory_ids: Vec<MemoryDateEntry>,
+    pub seen_memory_ids: Vec<MemoryDateCommandItem>,
     /// Cluster key → when the cluster last surfaced. −25 within 3 days.
-    pub surfaced_clusters: Vec<MemoryDateEntry>,
+    pub surfaced_clusters: Vec<MemoryDateCommandItem>,
 }
 
-impl MemoryGenerationInputs {
+pub type MemoryGenerationInputs = GenerateMemoriesCommand;
+
+impl GenerateMemoriesCommand {
     fn into_engine_inputs(self) -> GenerationInputs {
         let contacts: Vec<Contact> = self
             .contacts
@@ -966,10 +998,8 @@ fn scheduled_inputs(indexed: &Indexed, context: ScheduledMemoryContext) -> Gener
             photo.clone()
         })
         .collect();
-    let ladder_photo_count = photos.len();
     GenerationInputs {
         photos,
-        ladder_photo_count,
         photo_time_zone_offsets: offsets,
         horizon_time_zone_offsets: context.horizon_offset_seconds,
         leaf_folders: context
@@ -1016,34 +1046,6 @@ fn scheduled_inputs(indexed: &Indexed, context: ScheduledMemoryContext) -> Gener
         seen_memory_ids: date_map(context.seen_memory_ids),
         surfaced_clusters: date_map(context.surfaced_clusters),
     }
-}
-
-/// Splice the two per-photo offset tables into one parallel to the combined
-/// photo table.
-///
-/// Either side may be empty — that is the documented "no calendar available"
-/// input, and both empty means no table at all (the pre-per-photo-offset
-/// behaviour). A short or over-long table is padded/truncated with the `now`
-/// offset rather than trusted, because the alternative is either a panic inside
-/// a background task or a silent slide of every later photo onto the wrong
-/// offset. Padding with `now` degrades exactly to what a caller that sent no
-/// table would have got.
-fn concat_offsets(
-    ladder: Vec<i32>,
-    extra: Vec<i32>,
-    ladder_count: usize,
-    total: usize,
-    now_offset: i32,
-) -> Vec<i32> {
-    if ladder.is_empty() && extra.is_empty() {
-        return Vec::new();
-    }
-    let mut out = Vec::with_capacity(total);
-    out.extend(ladder.into_iter().take(ladder_count));
-    out.resize(ladder_count, now_offset);
-    out.extend(extra);
-    out.resize(total, now_offset);
-    out
 }
 
 fn date_map(entries: Vec<MemoryDateEntry>) -> HashMap<String, AppleDate> {
@@ -1100,10 +1102,15 @@ impl MemoryGenerator {
         Arc::new(MemoryGenerator::default())
     }
 
-    /// Run the ladder. Returns the selected top-10, or an empty list if the run
-    /// was cancelled.
-    pub fn generate(&self, inputs: MemoryGenerationInputs) -> Vec<MemoryRecord> {
-        let inputs = inputs.into_engine_inputs();
+    /// Run the ladder over the library retained by `index`. Returns the
+    /// selected top-10, or an empty list if the run was cancelled.
+    pub fn generate(
+        &self,
+        index: Arc<LibraryIndex>,
+        context: ScheduledMemoryContext,
+    ) -> Vec<MemoryStructure> {
+        let guard = read(&index.inner);
+        let inputs = scheduled_inputs(&guard, context);
         let memories = generate_cancellable(&inputs, &|| self.cancelled.load(Ordering::Acquire));
         memories.iter().map(MemoryRecord::of).collect()
     }
@@ -1120,8 +1127,7 @@ impl MemoryGenerator {
 
 /// `MemoryEngine.generate`, uncancellable — for callers that do not have a
 /// cancellation to forward (tests, and the conformance harness).
-#[uniffi::export]
-pub fn generate_memories(inputs: MemoryGenerationInputs) -> Vec<MemoryRecord> {
+pub fn generate_memories(inputs: GenerateMemoriesCommand) -> Vec<MemoryStructure> {
     gallery_memories::generate(&inputs.into_engine_inputs())
         .iter()
         .map(MemoryRecord::of)
@@ -1134,12 +1140,11 @@ pub fn generate_memories(inputs: MemoryGenerationInputs) -> Vec<MemoryRecord> {
 /// `hidden_memory_ids` is `MemoryCoordinator.hiddenMemories`, which stays in
 /// Swift; it is passed separately because it is coordinator state rather than
 /// engine input, and `generate` does not read it at all.
-#[uniffi::export]
 pub fn compute_scheduled_memories(
-    inputs: MemoryGenerationInputs,
+    inputs: GenerateMemoriesCommand,
     horizon_days: i64,
     hidden_memory_ids: Vec<String>,
-) -> Vec<ScheduledMemoryRecord> {
+) -> Vec<ScheduledMemoryStructure> {
     let hidden: HashSet<String> = hidden_memory_ids.into_iter().collect();
     compute_scheduled(&inputs.into_engine_inputs(), horizon_days, &hidden)
         .iter()
@@ -1240,6 +1245,28 @@ mod tests {
             seen_memory_ids: Vec::new(),
             surfaced_clusters: Vec::new(),
         }
+    }
+
+    fn retained_generation(
+        inputs: MemoryGenerationInputs,
+    ) -> (Arc<LibraryIndex>, ScheduledMemoryContext) {
+        let index = LibraryIndex::new();
+        index.build_with_time_zone_offsets(inputs.photos, inputs.photo_time_zone_offsets);
+        let context = ScheduledMemoryContext {
+            leaf_folders: inputs.leaf_folders,
+            contacts: inputs.contacts,
+            person_contact_links: inputs.person_contact_links,
+            birthdays_enabled: inputs.birthdays_enabled,
+            me_person_path: inputs.me_person_path,
+            hidden_people: inputs.hidden_people,
+            now: inputs.now,
+            time_zone_offset_seconds: inputs.time_zone_offset_seconds,
+            horizon_offset_seconds: inputs.horizon_offset_seconds,
+            seed: inputs.seed,
+            seen_memory_ids: inputs.seen_memory_ids,
+            surfaced_clusters: inputs.surfaced_clusters,
+        };
+        (index, context)
     }
 
     /// 2019-06-11 12:00 UTC + i minutes, in reference-date seconds.
@@ -1520,7 +1547,8 @@ mod tests {
         let generator = MemoryGenerator::default();
         generator.cancel();
         assert!(generator.is_cancelled());
-        assert!(generator.generate(inputs).is_empty());
+        let (index, context) = retained_generation(inputs);
+        assert!(generator.generate(index, context).is_empty());
     }
 
     #[test]
@@ -1528,10 +1556,9 @@ mod tests {
         let mut inputs = empty_inputs(739_800_000.0);
         inputs.photos = on_this_day_library(12);
         let generator = MemoryGenerator::default();
-        assert_eq!(
-            generator.generate(inputs.clone()),
-            generate_memories(inputs)
-        );
+        let expected = generate_memories(inputs.clone());
+        let (index, context) = retained_generation(inputs);
+        assert_eq!(generator.generate(index, context), expected);
     }
 
     #[test]

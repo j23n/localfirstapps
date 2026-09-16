@@ -85,23 +85,36 @@ enum CoreMemories {
     /// empty list, exactly as the Swift engine's `Task.isCancelled` checks did.
     /// The caller is expected to check `Task.isCancelled` afterwards rather than
     /// publish that empty list over a good cached one.
-    nonisolated static func generate(_ inputs: Inputs) async -> [Memory] {
+    nonisolated static func generate(
+        _ inputs: Inputs,
+        using index: LibraryIndex
+    ) async -> [Memory] {
         // One generator per run: `cancel()` is sticky by design, so a
         // cancellation that lands before the core call starts is still seen.
         let generator = MemoryGenerator()
         let results = await withTaskCancellationHandler {
             await Task.detached(priority: .utility) {
-                // Marshalling is inside the detached task, not before it: it
-                // walks every photo twice (once into a `ScanPhoto`, once for
-                // its UTC offset) and the caller is `MemoryCoordinator`, which
-                // is `@MainActor`.
-                generator.generate(inputs: record(from: inputs))
+                generator.generate(index: index, context: scheduledContext(from: inputs))
             }.value
         } onCancel: {
             generator.cancel()
         }
         return results.compactMap(memory(from:))
     }
+
+    #if DEBUG
+    /// Test-only convenience for fixtures that do not own a `GalleryStore`.
+    /// Production always supplies `CoreLibraryIndex.retainedLibrary()`.
+    nonisolated static func generate(_ inputs: Inputs) async -> [Memory] {
+        let index = LibraryIndex()
+        let photos = inputs.photos
+        _ = index.buildWithTimeZoneOffsets(
+            photos: photos.map(CoreScanner.record(of:)),
+            photoTimeZoneOffsets: offsets(for: photos, fallback: inputs.now)
+        )
+        return await generate(inputs, using: index)
+    }
+    #endif
 
     /// Pre-compute the next `horizonDays` days of calendar-tied memories
     /// (onThisDay, yearsAgo, birthdays) for the widget. Day 0 is excluded — it
@@ -113,14 +126,12 @@ enum CoreMemories {
         _ inputs: Inputs,
         hiddenMemoryIDs: Set<String>
     ) async -> [Scheduled] {
-        let hidden = Array(hiddenMemoryIDs)
-        let horizon = Int64(horizonDays)
-        let items = await Task.detached(priority: .utility) {
-            computeScheduledMemories(
-                inputs: record(from: inputs), horizonDays: horizon, hiddenMemoryIds: hidden
-            )
-        }.value
-        return items.compactMap(scheduled(from:))
+        let index = LibraryIndex()
+        _ = index.buildWithTimeZoneOffsets(
+            photos: inputs.photos.map(CoreScanner.record(of:)),
+            photoTimeZoneOffsets: offsets(for: inputs.photos, fallback: inputs.now)
+        )
+        return await computeScheduled(inputs, using: index, hiddenMemoryIDs: hiddenMemoryIDs)
     }
 
     /// Scheduled horizon over a [`LibraryIndex`] generation that already owns
@@ -224,75 +235,17 @@ enum CoreMemories {
         }
     }
 
-    private static func record(from inputs: Inputs) -> MemoryGenerationInputs {
-        MemoryGenerationInputs(
-            photos: inputs.photos.map(CoreScanner.record(of:)),
-            photoTimeZoneOffsets: offsets(for: inputs.photos, fallback: inputs.now),
-            leafFolders: inputs.leafFolders.map {
-                MemoryLeafFolder(
-                    id: $0.id.uuidString,
-                    name: $0.name,
-                    photoIds: $0.photos.map(\.id.uuidString)
-                )
-            },
-            contacts: inputs.contacts.map {
-                MemoryContact(
-                    id: $0.id,
-                    givenName: $0.givenName,
-                    familyName: $0.familyName,
-                    birthdayMonth: $0.birthday?.month.map(UInt32.init),
-                    birthdayDay: $0.birthday?.day.map(UInt32.init)
-                )
-            },
-            personContactLinks: inputs.personContactLinks.map { path, link in
-                switch link {
-                case .manual(let contactID):
-                    return MemoryPersonLink(personPath: path, contactId: contactID)
-                case .disabled:
-                    // No contact id *is* `.disabled` on the wire.
-                    return MemoryPersonLink(personPath: path, contactId: nil)
-                }
-            },
-            birthdaysEnabled: inputs.birthdaysEnabled,
-            mePersonPath: inputs.mePersonPath,
-            hiddenPeople: Array(inputs.hiddenPeople),
-            now: inputs.now.timeIntervalSinceReferenceDate,
-            // The offset at `now`, which is what today, the horizon and the two
-            // penalty windows are computed in. Each *photo* carries its own
-            // (see `offsets(for:fallback:)`), so this one is never applied to
-            // history.
-            //
-            // Read off `Calendar.current.timeZone`, **not** `TimeZone.current`,
-            // and that is load-bearing: `TimeZone.current` is cached and does
-            // not track an `NSTimeZone.default` override, so it answers GMT in
-            // exactly the situation the non-UTC conformance scenario creates —
-            // and would answer a stale zone on a device whose zone changed
-            // while the app was running. `Calendar.current.timeZone` resolves
-            // through the current calendar every time, which is what the
-            // deleted engine read.
-            timeZoneOffsetSeconds: Int32(Calendar.current.timeZone.secondsFromGMT(for: inputs.now)),
-            horizonOffsetSeconds: horizonOffsets(for: inputs.now),
-            seed: inputs.seed,
-            seenMemoryIds: inputs.seenMemoryIDs.map {
-                MemoryDateEntry(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
-            },
-            surfacedClusters: inputs.surfacedClusters.map {
-                MemoryDateEntry(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
-            }
-        )
-    }
-
     private static func scheduledContext(from inputs: Inputs) -> ScheduledMemoryContext {
         ScheduledMemoryContext(
             leafFolders: inputs.leafFolders.map {
-                MemoryLeafFolder(
+                MemoryFolderCommandItem(
                     id: $0.id.uuidString,
                     name: $0.name,
                     photoIds: $0.photos.map(\.id.uuidString)
                 )
             },
             contacts: inputs.contacts.map {
-                MemoryContact(
+                MemoryContactCommandItem(
                     id: $0.id,
                     givenName: $0.givenName,
                     familyName: $0.familyName,
@@ -303,9 +256,9 @@ enum CoreMemories {
             personContactLinks: inputs.personContactLinks.map { path, link in
                 switch link {
                 case .manual(let contactID):
-                    return MemoryPersonLink(personPath: path, contactId: contactID)
+                    return MemoryPersonCommandItem(personPath: path, contactId: contactID)
                 case .disabled:
-                    return MemoryPersonLink(personPath: path, contactId: nil)
+                    return MemoryPersonCommandItem(personPath: path, contactId: nil)
                 }
             },
             birthdaysEnabled: inputs.birthdaysEnabled,
@@ -318,15 +271,15 @@ enum CoreMemories {
             horizonOffsetSeconds: horizonOffsets(for: inputs.now),
             seed: inputs.seed,
             seenMemoryIds: inputs.seenMemoryIDs.map {
-                MemoryDateEntry(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
+                MemoryDateCommandItem(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
             },
             surfacedClusters: inputs.surfacedClusters.map {
-                MemoryDateEntry(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
+                MemoryDateCommandItem(key: $0.key, date: $0.value.timeIntervalSinceReferenceDate)
             }
         )
     }
 
-    private static func scheduled(from item: ScheduledMemoryRecord) -> Scheduled? {
+    private static func scheduled(from item: ScheduledMemoryStructure) -> Scheduled? {
         memory(from: item.memory).map {
             Scheduled(
                 memory: $0,
@@ -339,7 +292,7 @@ enum CoreMemories {
     /// A core record → the app's `Memory`. `nil` only when the core handed back
     /// ids that are not UUIDs, which it cannot do — the `compactMap` is there so
     /// a future wire change fails as a missing memory rather than a crash.
-    private static func memory(from record: MemoryRecord) -> Memory? {
+    private static func memory(from record: MemoryStructure) -> Memory? {
         guard let cover = UUID(uuidString: record.coverPhotoId) else { return nil }
         let range: ClosedRange<Date>? = {
             guard let start = record.dateRangeStart, let end = record.dateRangeEnd else { return nil }

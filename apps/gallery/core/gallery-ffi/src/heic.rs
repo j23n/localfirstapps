@@ -28,8 +28,13 @@ impl std::fmt::Display for HeicDecodeError {
 impl std::error::Error for HeicDecodeError {}
 
 /// Packed RGB8 pixels from a host decoder.
+///
+/// The adapter rejects dimensions above 4096×4096 before constructing a core
+/// image, so this host-port payload has a deterministic 48 MiB ceiling.
+///
+/// R6 role: host-port DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct HeicPixels {
+pub struct HostDecodedImage {
     /// Pixel width.
     pub width: u32,
     /// Pixel height.
@@ -43,7 +48,7 @@ pub struct HeicPixels {
 pub trait HeicDecoder: Send + Sync {
     /// Decode `path` to oriented RGB. The implementation opens the file
     /// itself — do not call back into the core.
-    fn decode(&self, path: String) -> Result<HeicPixels, HeicDecodeError>;
+    fn decode(&self, path: String) -> Result<HostDecodedImage, HeicDecodeError>;
 }
 
 /// Adapts a UniFFI foreign trait onto [`HostHeicDecoder`].
@@ -61,6 +66,16 @@ impl HostHeicDecoder for HeicDecoderAdapter {
                 detail,
             }
         })?;
+        if pixels.width > 4096 || pixels.height > 4096 {
+            return Err(MlError::Preprocess {
+                path: path.to_string(),
+                code: ErrorCode::Decode,
+                detail: format!(
+                    "host HEIC dimensions {}x{} exceed 4096x4096",
+                    pixels.width, pixels.height
+                ),
+            });
+        }
         match rgb_from_packed(pixels.width, pixels.height, pixels.rgb) {
             Ok(img) => Ok(img),
             Err(MlError::Preprocess { code, detail, .. }) => Err(MlError::Preprocess {
@@ -70,5 +85,40 @@ impl HostHeicDecoder for HeicDecoderAdapter {
             }),
             Err(e) => Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FixedDecoder(HostDecodedImage);
+
+    impl HeicDecoder for FixedDecoder {
+        fn decode(&self, _path: String) -> Result<HostDecodedImage, HeicDecodeError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[test]
+    fn host_decode_dimensions_are_refused_before_pixel_allocation() {
+        let adapter = HeicDecoderAdapter(Arc::new(FixedDecoder(HostDecodedImage {
+            width: 4097,
+            height: 1,
+            rgb: Vec::new(),
+        })));
+        let err = HostHeicDecoder::decode(&adapter, "/oversized.heic").unwrap_err();
+        assert!(err.to_string().contains("exceed 4096x4096"));
+    }
+
+    #[test]
+    fn bounded_host_decode_reaches_the_core_image() {
+        let adapter = HeicDecoderAdapter(Arc::new(FixedDecoder(HostDecodedImage {
+            width: 1,
+            height: 1,
+            rgb: vec![1, 2, 3],
+        })));
+        let image = HostHeicDecoder::decode(&adapter, "/small.heic").unwrap();
+        assert_eq!((image.width(), image.height()), (1, 1));
     }
 }

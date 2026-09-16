@@ -28,6 +28,8 @@ pub enum PlacesRecordOutcome {
 }
 
 /// One photo processed by a Places run.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PlacesRunRecord {
     /// Image path.
@@ -39,6 +41,8 @@ pub struct PlacesRunRecord {
 }
 
 /// Display and refresh data from one Places run.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Record)]
 pub struct PlacesRunSummary {
     /// Photos that reached a terminal result.

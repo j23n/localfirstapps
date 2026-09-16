@@ -682,7 +682,7 @@ void uniffi_gallery_ffi_fn_method_memorygenerator_cancel(uint64_t ptr, RustCallS
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_MEMORYGENERATOR_GENERATE
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_MEMORYGENERATOR_GENERATE
-RustBuffer uniffi_gallery_ffi_fn_method_memorygenerator_generate(uint64_t ptr, RustBuffer inputs, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_gallery_ffi_fn_method_memorygenerator_generate(uint64_t ptr, uint64_t index, RustBuffer context, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_MEMORYGENERATOR_IS_CANCELLED
@@ -891,16 +891,6 @@ RustBuffer uniffi_gallery_ffi_fn_func_stable_uuid(RustBuffer input, RustCallStat
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_FACE_MERGE_DIRECTION
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_FACE_MERGE_DIRECTION
 RustBuffer uniffi_gallery_ffi_fn_func_face_merge_direction(RustBuffer a, RustBuffer b, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_COMPUTE_SCHEDULED_MEMORIES
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_COMPUTE_SCHEDULED_MEMORIES
-RustBuffer uniffi_gallery_ffi_fn_func_compute_scheduled_memories(RustBuffer inputs, int64_t horizon_days, RustBuffer hidden_memory_ids, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_GENERATE_MEMORIES
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_GENERATE_MEMORIES
-RustBuffer uniffi_gallery_ffi_fn_func_generate_memories(RustBuffer inputs, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_CLUSTER_KEY
@@ -1298,18 +1288,6 @@ uint16_t uniffi_gallery_ffi_checksum_func_stable_uuid(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_FACE_MERGE_DIRECTION
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_FACE_MERGE_DIRECTION
 uint16_t uniffi_gallery_ffi_checksum_func_face_merge_direction(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_COMPUTE_SCHEDULED_MEMORIES
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_COMPUTE_SCHEDULED_MEMORIES
-uint16_t uniffi_gallery_ffi_checksum_func_compute_scheduled_memories(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_GENERATE_MEMORIES
-#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_GENERATE_MEMORIES
-uint16_t uniffi_gallery_ffi_checksum_func_generate_memories(void
     
 );
 #endif

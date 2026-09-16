@@ -689,7 +689,7 @@ public protocol FaceProgressListener: AnyObject, Sendable {
      * Exactly once per `start`, whether the run finished, was cancelled, or
      * failed. Fires after the session has released its run lock.
      */
-    func onFinished(summary: FaceRunSummary) 
+    func onFinished(summary: FaceRunCommandResult) 
     
 }
 /**
@@ -799,11 +799,11 @@ open func onSidecarsWritten(paths: [String])  {try! rustCall() {
      * Exactly once per `start`, whether the run finished, was cancelled, or
      * failed. Fires after the session has released its run lock.
      */
-open func onFinished(summary: FaceRunSummary)  {try! rustCall() {
+open func onFinished(summary: FaceRunCommandResult)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_faceprogresslistener_on_finished(
             self.uniffiCloneHandle(),
-        FfiConverterTypeFaceRunSummary_lower(summary),uniffiCallStatus
+        FfiConverterTypeFaceRunCommandResult_lower(summary),uniffiCallStatus
     )
 }
 }
@@ -922,7 +922,7 @@ fileprivate struct UniffiCallbackInterfaceFaceProgressListener {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
                 return uniffiObj.onFinished(
-                     summary: try FfiConverterTypeFaceRunSummary_lift(summary)
+                     summary: try FfiConverterTypeFaceRunCommandResult_lift(summary)
                 )
             }
 
@@ -1038,7 +1038,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * in a personal library is thousands of small records — cheaper to hand
      * over once than to page across the boundary.
      */
-    func clusterFaces(clusterId: Int64) throws  -> [FaceRef]
+    func clusterFaces(clusterId: Int64) throws  -> [FaceCropHostItem]
     
     /**
      * Every cluster, in id order, each with up to [`MAX_EXEMPLARS`] crops.
@@ -1047,7 +1047,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * for the length of a scan would be worse than one showing a partition
      * that is about to grow.
      */
-    func clusters() throws  -> [ClusterSummary]
+    func clusters() throws  -> [FaceClusterHostRow]
     
     /**
      * Forget one proposal — the user said these two are not the same person.
@@ -1071,7 +1071,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * Kept rather than deleted, so those faces do not come back as a fresh
      * cluster on the next pass.
      */
-    func ignoreCluster(clusterId: Int64, rootPrefix: String?) throws  -> SidecarWriteReport
+    func ignoreCluster(clusterId: Int64, rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
     /**
      * Whether a run is in flight.
@@ -1081,7 +1081,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
     /**
      * Face-table counts.
      */
-    func libraryStats() throws  -> FaceLibraryStats
+    func libraryStats() throws  -> FaceLibraryCommandResult
     
     /**
      * Fold one cluster into another: `into` survives, `from` disappears.
@@ -1097,7 +1097,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      *
      * Refused while a run is in flight — see the module docs.
      */
-    func mergeClusters(into: Int64, from: Int64, rootPrefix: String?) throws  -> SidecarWriteReport
+    func mergeClusters(into: Int64, from: Int64, rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
     /**
      * Fold every cluster in `from` into `into` in one pass.
@@ -1106,7 +1106,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * move, one centroid, one sidecar rewrite. An empty `from` is a no-op.
      * Refused while a run is in flight — see the module docs.
      */
-    func mergeClustersMany(into: Int64, from: [Int64], rootPrefix: String?) throws  -> SidecarWriteReport
+    func mergeClustersMany(into: Int64, from: [Int64], rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
     /**
      * Pairs of clusters the core thinks are the same person, strongest first.
@@ -1116,7 +1116,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * one showing a suggestion that is about to be recomputed. Proposals
      * naming a cluster that no longer exists are dropped here.
      */
-    func mergeProposals() throws  -> [MergeProposal]
+    func mergeProposals() throws  -> [FaceMergeStructure]
     
     /**
      * Attach a person's name to a cluster and write it into every affected
@@ -1130,7 +1130,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * scope; paths outside it are skipped. Refused while a run is in flight —
      * see the module docs.
      */
-    func nameCluster(clusterId: Int64, name: String, rootPrefix: String?) throws  -> SidecarWriteReport
+    func nameCluster(clusterId: Int64, name: String, rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
     /**
      * Rebuild the partition of every unlabeled face from scratch.
@@ -1140,14 +1140,14 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * produces a partition, not a diff — so the app must re-read `clusters()`
      * afterwards.
      */
-    func recluster() throws  -> ReclusterSummary
+    func recluster() throws  -> FaceReclusterCommandResult
     
     /**
      * Reject a cluster ("not a person" / "not a face") and retract anything
      * it had written. Kept rather than deleted, so the detections do not
      * come back as a fresh cluster on the next pass.
      */
-    func rejectCluster(clusterId: Int64, rootPrefix: String?) throws  -> SidecarWriteReport
+    func rejectCluster(clusterId: Int64, rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
     /**
      * Rename a person everywhere: every cluster carrying `old`, and every
@@ -1156,7 +1156,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * More than one cluster can carry a name, so this is not "rename cluster
      * N". A name nobody carries produces an empty report rather than an error.
      */
-    func renamePerson(old: String, new: String, rootPrefix: String?) throws  -> SidecarWriteReport
+    func renamePerson(old: String, new: String, rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
     /**
      * Forget every face-queue row (detections and clusters survive), so the
@@ -1173,7 +1173,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * A successful pass is a no-op afterwards. Refused while a run is in
      * flight — same lock as the other writers.
      */
-    func resyncFaceDecisionsOnce(rootPrefix: String?) throws  -> SidecarWriteReport
+    func resyncFaceDecisionsOnce(rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
     /**
      * REMOVE AFTER: named-keyword-resync. Delete this method with that module.
@@ -1182,7 +1182,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * A successful pass is a no-op afterwards. Refused while a run is in
      * flight — same lock as the other writers.
      */
-    func resyncNamedKeywordsOnce(rootPrefix: String?) throws  -> SidecarWriteReport
+    func resyncNamedKeywordsOnce(rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
     /**
      * Move the named faces out of a cluster and into a new one.
@@ -1196,7 +1196,7 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
      * The faces that leave do **not** keep the cluster's name: the gesture
      * means "this is not that person". Both groups end up pinned.
      */
-    func splitCluster(clusterId: Int64, faceKeys: [String], rootPrefix: String?) throws  -> SplitResult
+    func splitCluster(clusterId: Int64, faceKeys: [String], rootPrefix: String?) throws  -> FaceSplitCommandResult
     
     /**
      * Start processing the face queue on a core-owned thread and return at
@@ -1220,20 +1220,20 @@ public protocol FaceSessionProtocol: AnyObject, Sendable {
     /**
      * Face-queue counts.
      */
-    func stats() throws  -> FaceStats
+    func stats() throws  -> FaceQueueCommandResult
     
     /**
      * Per-photo detections of the last finished run: score, quality,
      * cluster, Joined vs Seeded. Consumes the journal. Not a sidecar write
      * and not a listener callback — pull this after `onFinished`.
      */
-    func takeLastRunPhotos()  -> [FacePhotoRecord]
+    func takeLastRunPhotos()  -> [FacePhotoCommandResult]
     
     /**
      * Take a cluster's name off and retract it from every affected sidecar.
      * The cluster goes back to unlabeled, so the review queue shows it again.
      */
-    func unnameCluster(clusterId: Int64, rootPrefix: String?) throws  -> SidecarWriteReport
+    func unnameCluster(clusterId: Int64, rootPrefix: String?) throws  -> SidecarWriteCommandResult
     
 }
 /**
@@ -1351,8 +1351,8 @@ open func cancel()  {try! rustCall() {
      * in a personal library is thousands of small records — cheaper to hand
      * over once than to page across the boundary.
      */
-open func clusterFaces(clusterId: Int64)throws  -> [FaceRef]  {
-    return try  FfiConverterSequenceTypeFaceRef.lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func clusterFaces(clusterId: Int64)throws  -> [FaceCropHostItem]  {
+    return try  FfiConverterSequenceTypeFaceCropHostItem.lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_cluster_faces(
             self.uniffiCloneHandle(),
@@ -1368,8 +1368,8 @@ open func clusterFaces(clusterId: Int64)throws  -> [FaceRef]  {
      * for the length of a scan would be worse than one showing a partition
      * that is about to grow.
      */
-open func clusters()throws  -> [ClusterSummary]  {
-    return try  FfiConverterSequenceTypeClusterSummary.lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func clusters()throws  -> [FaceClusterHostRow]  {
+    return try  FfiConverterSequenceTypeFaceClusterHostRow.lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_clusters(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -1415,8 +1415,8 @@ open func enqueue(paths: [String])throws  -> UInt32  {
      * Kept rather than deleted, so those faces do not come back as a fresh
      * cluster on the next pass.
      */
-open func ignoreCluster(clusterId: Int64, rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func ignoreCluster(clusterId: Int64, rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_ignore_cluster(
             self.uniffiCloneHandle(),
@@ -1441,8 +1441,8 @@ open func isRunning() -> Bool  {
     /**
      * Face-table counts.
      */
-open func libraryStats()throws  -> FaceLibraryStats  {
-    return try  FfiConverterTypeFaceLibraryStats_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func libraryStats()throws  -> FaceLibraryCommandResult  {
+    return try  FfiConverterTypeFaceLibraryCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_library_stats(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -1464,8 +1464,8 @@ open func libraryStats()throws  -> FaceLibraryStats  {
      *
      * Refused while a run is in flight — see the module docs.
      */
-open func mergeClusters(into: Int64, from: Int64, rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func mergeClusters(into: Int64, from: Int64, rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_merge_clusters(
             self.uniffiCloneHandle(),
@@ -1483,8 +1483,8 @@ open func mergeClusters(into: Int64, from: Int64, rootPrefix: String?)throws  ->
      * move, one centroid, one sidecar rewrite. An empty `from` is a no-op.
      * Refused while a run is in flight — see the module docs.
      */
-open func mergeClustersMany(into: Int64, from: [Int64], rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func mergeClustersMany(into: Int64, from: [Int64], rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_merge_clusters_many(
             self.uniffiCloneHandle(),
@@ -1503,8 +1503,8 @@ open func mergeClustersMany(into: Int64, from: [Int64], rootPrefix: String?)thro
      * one showing a suggestion that is about to be recomputed. Proposals
      * naming a cluster that no longer exists are dropped here.
      */
-open func mergeProposals()throws  -> [MergeProposal]  {
-    return try  FfiConverterSequenceTypeMergeProposal.lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func mergeProposals()throws  -> [FaceMergeStructure]  {
+    return try  FfiConverterSequenceTypeFaceMergeStructure.lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_merge_proposals(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -1524,8 +1524,8 @@ open func mergeProposals()throws  -> [MergeProposal]  {
      * scope; paths outside it are skipped. Refused while a run is in flight —
      * see the module docs.
      */
-open func nameCluster(clusterId: Int64, name: String, rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func nameCluster(clusterId: Int64, name: String, rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_name_cluster(
             self.uniffiCloneHandle(),
@@ -1544,8 +1544,8 @@ open func nameCluster(clusterId: Int64, name: String, rootPrefix: String?)throws
      * produces a partition, not a diff — so the app must re-read `clusters()`
      * afterwards.
      */
-open func recluster()throws  -> ReclusterSummary  {
-    return try  FfiConverterTypeReclusterSummary_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func recluster()throws  -> FaceReclusterCommandResult  {
+    return try  FfiConverterTypeFaceReclusterCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_recluster(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -1558,8 +1558,8 @@ open func recluster()throws  -> ReclusterSummary  {
      * it had written. Kept rather than deleted, so the detections do not
      * come back as a fresh cluster on the next pass.
      */
-open func rejectCluster(clusterId: Int64, rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func rejectCluster(clusterId: Int64, rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_reject_cluster(
             self.uniffiCloneHandle(),
@@ -1576,8 +1576,8 @@ open func rejectCluster(clusterId: Int64, rootPrefix: String?)throws  -> Sidecar
      * More than one cluster can carry a name, so this is not "rename cluster
      * N". A name nobody carries produces an empty report rather than an error.
      */
-open func renamePerson(old: String, new: String, rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func renamePerson(old: String, new: String, rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_rename_person(
             self.uniffiCloneHandle(),
@@ -1609,8 +1609,8 @@ open func resetQueue()throws   {try rustCallWithError(FfiConverterTypeFaceError_
      * A successful pass is a no-op afterwards. Refused while a run is in
      * flight — same lock as the other writers.
      */
-open func resyncFaceDecisionsOnce(rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func resyncFaceDecisionsOnce(rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_resync_face_decisions_once(
             self.uniffiCloneHandle(),
@@ -1626,8 +1626,8 @@ open func resyncFaceDecisionsOnce(rootPrefix: String?)throws  -> SidecarWriteRep
      * A successful pass is a no-op afterwards. Refused while a run is in
      * flight — same lock as the other writers.
      */
-open func resyncNamedKeywordsOnce(rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func resyncNamedKeywordsOnce(rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_resync_named_keywords_once(
             self.uniffiCloneHandle(),
@@ -1648,8 +1648,8 @@ open func resyncNamedKeywordsOnce(rootPrefix: String?)throws  -> SidecarWriteRep
      * The faces that leave do **not** keep the cluster's name: the gesture
      * means "this is not that person". Both groups end up pinned.
      */
-open func splitCluster(clusterId: Int64, faceKeys: [String], rootPrefix: String?)throws  -> SplitResult  {
-    return try  FfiConverterTypeSplitResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func splitCluster(clusterId: Int64, faceKeys: [String], rootPrefix: String?)throws  -> FaceSplitCommandResult  {
+    return try  FfiConverterTypeFaceSplitCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_split_cluster(
             self.uniffiCloneHandle(),
@@ -1699,8 +1699,8 @@ open func startOne(progress: FaceProgressListener, path: String, rootPrefix: Str
     /**
      * Face-queue counts.
      */
-open func stats()throws  -> FaceStats  {
-    return try  FfiConverterTypeFaceStats_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func stats()throws  -> FaceQueueCommandResult  {
+    return try  FfiConverterTypeFaceQueueCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_stats(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -1713,8 +1713,8 @@ open func stats()throws  -> FaceStats  {
      * cluster, Joined vs Seeded. Consumes the journal. Not a sidecar write
      * and not a listener callback — pull this after `onFinished`.
      */
-open func takeLastRunPhotos() -> [FacePhotoRecord]  {
-    return try!  FfiConverterSequenceTypeFacePhotoRecord.lift(try! rustCall() {
+open func takeLastRunPhotos() -> [FacePhotoCommandResult]  {
+    return try!  FfiConverterSequenceTypeFacePhotoCommandResult.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_take_last_run_photos(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -1726,8 +1726,8 @@ open func takeLastRunPhotos() -> [FacePhotoRecord]  {
      * Take a cluster's name off and retract it from every affected sidecar.
      * The cluster goes back to unlabeled, so the review queue shows it again.
      */
-open func unnameCluster(clusterId: Int64, rootPrefix: String?)throws  -> SidecarWriteReport  {
-    return try  FfiConverterTypeSidecarWriteReport_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
+open func unnameCluster(clusterId: Int64, rootPrefix: String?)throws  -> SidecarWriteCommandResult  {
+    return try  FfiConverterTypeSidecarWriteCommandResult_lift(try rustCallWithError(FfiConverterTypeFaceError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_facesession_unname_cluster(
             self.uniffiCloneHandle(),
@@ -1796,7 +1796,7 @@ public protocol HeicDecoder: AnyObject, Sendable {
      * Decode `path` to oriented RGB. The implementation opens the file
      * itself — do not call back into the core.
      */
-    func decode(path: String) throws  -> HeicPixels
+    func decode(path: String) throws  -> HostDecodedImage
     
 }
 /**
@@ -1859,8 +1859,8 @@ open class HeicDecoderImpl: HeicDecoder, @unchecked Sendable {
      * Decode `path` to oriented RGB. The implementation opens the file
      * itself — do not call back into the core.
      */
-open func decode(path: String)throws  -> HeicPixels  {
-    return try  FfiConverterTypeHeicPixels_lift(try rustCallWithError(FfiConverterTypeHeicDecodeError_lift) {
+open func decode(path: String)throws  -> HostDecodedImage  {
+    return try  FfiConverterTypeHostDecodedImage_lift(try rustCallWithError(FfiConverterTypeHeicDecodeError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_heicdecoder_decode(
             self.uniffiCloneHandle(),
@@ -1904,7 +1904,7 @@ fileprivate struct UniffiCallbackInterfaceHeicDecoder {
             uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
         ) in
             let makeCall = {
-                () throws -> HeicPixels in
+                () throws -> HostDecodedImage in
                 guard let uniffiObj = try? FfiConverterTypeHeicDecoder.handleMap.get(handle: uniffiHandle) else {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
@@ -1914,7 +1914,7 @@ fileprivate struct UniffiCallbackInterfaceHeicDecoder {
             }
 
             
-            let writeReturn = { uniffiOutReturn.pointee = FfiConverterTypeHeicPixels_lower($0) }
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterTypeHostDecodedImage_lower($0) }
             uniffiTraitInterfaceCallWithError(
                 callStatus: uniffiCallStatus,
                 makeCall: makeCall,
@@ -2018,7 +2018,7 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * Takes the photos by value: they become the index's photo table, so
      * nothing is copied after the boundary crossing itself.
      */
-    func build(photos: [ScanPhoto])  -> LibraryIndexSummary
+    func build(photos: [ScannedMediaHost])  -> LibraryBuildStructure
     
     /**
      * Rebuild and retain the platform's per-photo UTC offsets.
@@ -2027,7 +2027,7 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * photos. Scheduled memories then reuse both tables instead of rebuilding
      * and re-marshalling a second 20,000-photo generation snapshot.
      */
-    func buildWithTimeZoneOffsets(photos: [ScanPhoto], photoTimeZoneOffsets: [Int32])  -> LibraryIndexSummary
+    func buildWithTimeZoneOffsets(photos: [ScannedMediaHost], photoTimeZoneOffsets: [Int32])  -> LibraryBuildStructure
     
     /**
      * Compute the widget's scheduled horizon over the library table already
@@ -2036,7 +2036,7 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * Only the small platform context crosses per run. Photo records and
      * capture-time offsets crossed once, at build.
      */
-    func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, hiddenMemoryIds: [String])  -> [ScheduledMemoryRecord]
+    func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, hiddenMemoryIds: [String])  -> [ScheduledMemoryStructure]
     
     /**
      * How many photos the index currently holds. Cheap; used by the app's
@@ -2064,7 +2064,7 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * Rebuild every index from `photos` and return the results the app needs
      * straight away.
      */
-    func rebuild(photos: [ScanPhoto], photoTimeZoneOffsets: [Int32])  -> LibraryIndexSummary
+    func rebuild(photos: [ScannedMediaHost], photoTimeZoneOffsets: [Int32])  -> LibraryBuildStructure
     
     /**
      * Number of photos the scheduled-horizon reuse path currently owns.
@@ -2113,7 +2113,7 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * The aggregated tag list and the `People/…` subset — the same pair
      * [`Self::build`] returned, for a caller that has lost it.
      */
-    func tagSuggestions()  -> LibraryTagSuggestions
+    func tagSuggestions()  -> TagStructures
     
     /**
      * Display-ready tag rows for one visible window.
@@ -2207,12 +2207,12 @@ public convenience init() {
      * Takes the photos by value: they become the index's photo table, so
      * nothing is copied after the boundary crossing itself.
      */
-open func build(photos: [ScanPhoto]) -> LibraryIndexSummary  {
-    return try!  FfiConverterTypeLibraryIndexSummary_lift(try! rustCall() {
+open func build(photos: [ScannedMediaHost]) -> LibraryBuildStructure  {
+    return try!  FfiConverterTypeLibraryBuildStructure_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_libraryindex_build(
             self.uniffiCloneHandle(),
-        FfiConverterSequenceTypeScanPhoto.lower(photos),uniffiCallStatus
+        FfiConverterSequenceTypeScannedMediaHost.lower(photos),uniffiCallStatus
     )
 })
 }
@@ -2224,12 +2224,12 @@ open func build(photos: [ScanPhoto]) -> LibraryIndexSummary  {
      * photos. Scheduled memories then reuse both tables instead of rebuilding
      * and re-marshalling a second 20,000-photo generation snapshot.
      */
-open func buildWithTimeZoneOffsets(photos: [ScanPhoto], photoTimeZoneOffsets: [Int32]) -> LibraryIndexSummary  {
-    return try!  FfiConverterTypeLibraryIndexSummary_lift(try! rustCall() {
+open func buildWithTimeZoneOffsets(photos: [ScannedMediaHost], photoTimeZoneOffsets: [Int32]) -> LibraryBuildStructure  {
+    return try!  FfiConverterTypeLibraryBuildStructure_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_libraryindex_build_with_time_zone_offsets(
             self.uniffiCloneHandle(),
-        FfiConverterSequenceTypeScanPhoto.lower(photos),
+        FfiConverterSequenceTypeScannedMediaHost.lower(photos),
         FfiConverterSequenceInt32.lower(photoTimeZoneOffsets),uniffiCallStatus
     )
 })
@@ -2242,8 +2242,8 @@ open func buildWithTimeZoneOffsets(photos: [ScanPhoto], photoTimeZoneOffsets: [I
      * Only the small platform context crosses per run. Photo records and
      * capture-time offsets crossed once, at build.
      */
-open func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, hiddenMemoryIds: [String]) -> [ScheduledMemoryRecord]  {
-    return try!  FfiConverterSequenceTypeScheduledMemoryRecord.lift(try! rustCall() {
+open func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, hiddenMemoryIds: [String]) -> [ScheduledMemoryStructure]  {
+    return try!  FfiConverterSequenceTypeScheduledMemoryStructure.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_libraryindex_compute_scheduled(
             self.uniffiCloneHandle(),
@@ -2313,12 +2313,12 @@ open func photoWindow(sectionId: String, offset: UInt64, limit: UInt64, generati
      * Rebuild every index from `photos` and return the results the app needs
      * straight away.
      */
-open func rebuild(photos: [ScanPhoto], photoTimeZoneOffsets: [Int32]) -> LibraryIndexSummary  {
-    return try!  FfiConverterTypeLibraryIndexSummary_lift(try! rustCall() {
+open func rebuild(photos: [ScannedMediaHost], photoTimeZoneOffsets: [Int32]) -> LibraryBuildStructure  {
+    return try!  FfiConverterTypeLibraryBuildStructure_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_libraryindex_rebuild(
             self.uniffiCloneHandle(),
-        FfiConverterSequenceTypeScanPhoto.lower(photos),
+        FfiConverterSequenceTypeScannedMediaHost.lower(photos),
         FfiConverterSequenceInt32.lower(photoTimeZoneOffsets),uniffiCallStatus
     )
 })
@@ -2421,8 +2421,8 @@ open func tagStructure() -> ViewStructure  {
      * The aggregated tag list and the `People/…` subset — the same pair
      * [`Self::build`] returned, for a caller that has lost it.
      */
-open func tagSuggestions() -> LibraryTagSuggestions  {
-    return try!  FfiConverterTypeLibraryTagSuggestions_lift(try! rustCall() {
+open func tagSuggestions() -> TagStructures  {
+    return try!  FfiConverterTypeTagStructures_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_libraryindex_tag_suggestions(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -2532,10 +2532,10 @@ public protocol MemoryGeneratorProtocol: AnyObject, Sendable {
     func cancel() 
     
     /**
-     * Run the ladder. Returns the selected top-10, or an empty list if the run
-     * was cancelled.
+     * Run the ladder over the library retained by `index`. Returns the
+     * selected top-10, or an empty list if the run was cancelled.
      */
-    func generate(inputs: MemoryGenerationInputs)  -> [MemoryRecord]
+    func generate(index: LibraryIndex, context: ScheduledMemoryContext)  -> [MemoryStructure]
     
     func isCancelled()  -> Bool
     
@@ -2629,15 +2629,16 @@ open func cancel()  {try! rustCall() {
 }
     
     /**
-     * Run the ladder. Returns the selected top-10, or an empty list if the run
-     * was cancelled.
+     * Run the ladder over the library retained by `index`. Returns the
+     * selected top-10, or an empty list if the run was cancelled.
      */
-open func generate(inputs: MemoryGenerationInputs) -> [MemoryRecord]  {
-    return try!  FfiConverterSequenceTypeMemoryRecord.lift(try! rustCall() {
+open func generate(index: LibraryIndex, context: ScheduledMemoryContext) -> [MemoryStructure]  {
+    return try!  FfiConverterSequenceTypeMemoryStructure.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_memorygenerator_generate(
             self.uniffiCloneHandle(),
-        FfiConverterTypeMemoryGenerationInputs_lower(inputs),uniffiCallStatus
+        FfiConverterTypeLibraryIndex_lower(index),
+        FfiConverterTypeScheduledMemoryContext_lower(context),uniffiCallStatus
     )
 })
 }
@@ -2935,7 +2936,7 @@ public protocol PlacesSessionProtocol: AnyObject, Sendable {
     /**
      * Run eligibility, cache lookup, gazetteer lookup, and sidecar writes.
      */
-    func run(photos: [ScanPhoto], cachePath: String, force: Bool, progress: PlacesProgressListener?)  -> PlacesRunSummary
+    func run(photos: [ScannedMediaHost], cachePath: String, force: Bool, progress: PlacesProgressListener?)  -> PlacesRunSummary
     
 }
 /**
@@ -3033,12 +3034,12 @@ open func prepare()  {try! rustCall() {
     /**
      * Run eligibility, cache lookup, gazetteer lookup, and sidecar writes.
      */
-open func run(photos: [ScanPhoto], cachePath: String, force: Bool, progress: PlacesProgressListener?) -> PlacesRunSummary  {
+open func run(photos: [ScannedMediaHost], cachePath: String, force: Bool, progress: PlacesProgressListener?) -> PlacesRunSummary  {
     return try!  FfiConverterTypePlacesRunSummary_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_placessession_run(
             self.uniffiCloneHandle(),
-        FfiConverterSequenceTypeScanPhoto.lower(photos),
+        FfiConverterSequenceTypeScannedMediaHost.lower(photos),
         FfiConverterString.lower(cachePath),
         FfiConverterBool.lower(force),
         FfiConverterOptionTypePlacesProgressListener.lower(progress),uniffiCallStatus
@@ -3353,7 +3354,7 @@ public protocol ScannerSessionProtocol: AnyObject, Sendable {
      * main actor; the core does not spawn for it, because the whole point of
      * the call is the answer. Progress fires on this thread.
      */
-    func scan(root: String, request: ScanRequest, progress: ScanProgressListener?) throws  -> ScanOutcomeRecord
+    func scan(root: String, request: ScanCommand, progress: ScanProgressListener?) throws  -> ScanCatalogHost
     
 }
 /**
@@ -3465,13 +3466,13 @@ open func cancel()  {try! rustCall() {
      * main actor; the core does not spawn for it, because the whole point of
      * the call is the answer. Progress fires on this thread.
      */
-open func scan(root: String, request: ScanRequest, progress: ScanProgressListener?)throws  -> ScanOutcomeRecord  {
-    return try  FfiConverterTypeScanOutcomeRecord_lift(try rustCallWithError(FfiConverterTypeScanError_lift) {
+open func scan(root: String, request: ScanCommand, progress: ScanProgressListener?)throws  -> ScanCatalogHost  {
+    return try  FfiConverterTypeScanCatalogHost_lift(try rustCallWithError(FfiConverterTypeScanError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_scannersession_scan(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(root),
-        FfiConverterTypeScanRequest_lower(request),
+        FfiConverterTypeScanCommand_lower(request),
         FfiConverterOptionTypeScanProgressListener.lower(progress),uniffiCallStatus
     )
 })
@@ -3554,7 +3555,7 @@ public protocol TaggingProgressListener: AnyObject, Sendable {
      * Exactly once per `start`, whether the run finished, was cancelled, or
      * failed. Fires after the session has released its run lock.
      */
-    func onFinished(summary: TaggingRunSummary) 
+    func onFinished(summary: TaggingRunCommandResult) 
     
 }
 /**
@@ -3650,11 +3651,11 @@ open func onPhotosTagged(paths: [String])  {try! rustCall() {
      * Exactly once per `start`, whether the run finished, was cancelled, or
      * failed. Fires after the session has released its run lock.
      */
-open func onFinished(summary: TaggingRunSummary)  {try! rustCall() {
+open func onFinished(summary: TaggingRunCommandResult)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_taggingprogresslistener_on_finished(
             self.uniffiCloneHandle(),
-        FfiConverterTypeTaggingRunSummary_lower(summary),uniffiCallStatus
+        FfiConverterTypeTaggingRunCommandResult_lower(summary),uniffiCallStatus
     )
 }
 }
@@ -3749,7 +3750,7 @@ fileprivate struct UniffiCallbackInterfaceTaggingProgressListener {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
                 return uniffiObj.onFinished(
-                     summary: try FfiConverterTypeTaggingRunSummary_lift(summary)
+                     summary: try FfiConverterTypeTaggingRunCommandResult_lift(summary)
                 )
             }
 
@@ -3873,7 +3874,7 @@ public protocol TaggingSessionProtocol: AnyObject, Sendable {
     /**
      * The loaded pack's identity and shape.
      */
-    func modelPackInfo()  -> ModelPackInfo
+    func modelPackInfo()  -> ModelPackHostInfo
     
     /**
      * Forget every queue row (cached embeddings survive), so the next run
@@ -3903,7 +3904,7 @@ public protocol TaggingSessionProtocol: AnyObject, Sendable {
     /**
      * Queue counts.
      */
-    func stats() throws  -> TaggingStats
+    func stats() throws  -> TaggingQueueCommandResult
     
 }
 /**
@@ -4045,8 +4046,8 @@ open func isRunning() -> Bool  {
     /**
      * The loaded pack's identity and shape.
      */
-open func modelPackInfo() -> ModelPackInfo  {
-    return try!  FfiConverterTypeModelPackInfo_lift(try! rustCall() {
+open func modelPackInfo() -> ModelPackHostInfo  {
+    return try!  FfiConverterTypeModelPackHostInfo_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_taggingsession_model_pack_info(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -4105,8 +4106,8 @@ open func startOne(progress: TaggingProgressListener, path: String, rootPrefix: 
     /**
      * Queue counts.
      */
-open func stats()throws  -> TaggingStats  {
-    return try  FfiConverterTypeTaggingStats_lift(try rustCallWithError(FfiConverterTypeTaggingError_lift) {
+open func stats()throws  -> TaggingQueueCommandResult  {
+    return try  FfiConverterTypeTaggingQueueCommandResult_lift(try rustCallWithError(FfiConverterTypeTaggingError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_taggingsession_stats(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -4163,114 +4164,11 @@ public func FfiConverterTypeTaggingSession_lower(_ value: TaggingSession) -> UIn
 
 
 /**
- * One cluster, as the review grid renders it.
- */
-public struct ClusterSummary: Equatable, Hashable {
-    /**
-     * Stable for a **named** cluster forever. An *unlabeled* cluster's id does
-     * not survive a `recluster()` — that pass produces a partition, not a
-     * diff — which is why naming a stale id answers
-     * [`FaceError::ClusterNotFound`] rather than guessing.
-     */
-    public var id: Int64
-    /**
-     * Member count.
-     */
-    public var size: UInt32
-    /**
-     * Unlabeled / named / ignored.
-     */
-    public var state: ClusterState
-    /**
-     * The person's name, when `state` is [`ClusterState::Named`].
-     */
-    public var name: String?
-    /**
-     * Up to [`MAX_EXEMPLARS`] faces to show on the card. See [`exemplars`].
-     */
-    public var exemplars: [FaceRef]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Stable for a **named** cluster forever. An *unlabeled* cluster's id does
-         * not survive a `recluster()` — that pass produces a partition, not a
-         * diff — which is why naming a stale id answers
-         * [`FaceError::ClusterNotFound`] rather than guessing.
-         */id: Int64, 
-        /**
-         * Member count.
-         */size: UInt32, 
-        /**
-         * Unlabeled / named / ignored.
-         */state: ClusterState, 
-        /**
-         * The person's name, when `state` is [`ClusterState::Named`].
-         */name: String?, 
-        /**
-         * Up to [`MAX_EXEMPLARS`] faces to show on the card. See [`exemplars`].
-         */exemplars: [FaceRef]) {
-        self.id = id
-        self.size = size
-        self.state = state
-        self.name = name
-        self.exemplars = exemplars
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension ClusterSummary: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeClusterSummary: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ClusterSummary {
-        return
-            try ClusterSummary(
-                id: FfiConverterInt64.read(from: &buf), 
-                size: FfiConverterUInt32.read(from: &buf), 
-                state: FfiConverterTypeClusterState.read(from: &buf), 
-                name: FfiConverterOptionString.read(from: &buf), 
-                exemplars: FfiConverterSequenceTypeFaceRef.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ClusterSummary, into buf: inout [UInt8]) {
-        FfiConverterInt64.write(value.id, into: &buf)
-        FfiConverterUInt32.write(value.size, into: &buf)
-        FfiConverterTypeClusterState.write(value.state, into: &buf)
-        FfiConverterOptionString.write(value.name, into: &buf)
-        FfiConverterSequenceTypeFaceRef.write(value.exemplars, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeClusterSummary_lift(_ buf: RustBuffer) throws -> ClusterSummary {
-    return try FfiConverterTypeClusterSummary.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeClusterSummary_lower(_ value: ClusterSummary) -> RustBuffer {
-    return FfiConverterTypeClusterSummary.lower(value)
-}
-
-
-/**
  * One detection as the last run assigned it. SQLite, not the sidecar.
+ *
+ * R6 role: command DTO.
  */
-public struct FaceAssignmentRecord: Equatable, Hashable {
+public struct FaceAssignmentCommandResult: Equatable, Hashable {
     /**
      * Detector confidence.
      */
@@ -4323,16 +4221,16 @@ public struct FaceAssignmentRecord: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension FaceAssignmentRecord: Sendable {}
+extension FaceAssignmentCommandResult: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeFaceAssignmentRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceAssignmentRecord {
+public struct FfiConverterTypeFaceAssignmentCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceAssignmentCommandResult {
         return
-            try FaceAssignmentRecord(
+            try FaceAssignmentCommandResult(
                 score: FfiConverterFloat.read(from: &buf), 
                 quality: FfiConverterFloat.read(from: &buf), 
                 clusterId: FfiConverterOptionInt64.read(from: &buf), 
@@ -4341,7 +4239,7 @@ public struct FfiConverterTypeFaceAssignmentRecord: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: FaceAssignmentRecord, into buf: inout [UInt8]) {
+    public static func write(_ value: FaceAssignmentCommandResult, into buf: inout [UInt8]) {
         FfiConverterFloat.write(value.score, into: &buf)
         FfiConverterFloat.write(value.quality, into: &buf)
         FfiConverterOptionInt64.write(value.clusterId, into: &buf)
@@ -4354,171 +4252,77 @@ public struct FfiConverterTypeFaceAssignmentRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceAssignmentRecord_lift(_ buf: RustBuffer) throws -> FaceAssignmentRecord {
-    return try FfiConverterTypeFaceAssignmentRecord.lift(buf)
+public func FfiConverterTypeFaceAssignmentCommandResult_lift(_ buf: RustBuffer) throws -> FaceAssignmentCommandResult {
+    return try FfiConverterTypeFaceAssignmentCommandResult.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceAssignmentRecord_lower(_ value: FaceAssignmentRecord) -> RustBuffer {
-    return FfiConverterTypeFaceAssignmentRecord.lower(value)
+public func FfiConverterTypeFaceAssignmentCommandResult_lower(_ value: FaceAssignmentCommandResult) -> RustBuffer {
+    return FfiConverterTypeFaceAssignmentCommandResult.lower(value)
 }
 
 
 /**
- * What the face tables hold — the numbers behind Settings' faces status line.
+ * One cluster, as the review grid renders it.
+ *
+ * `exemplars` is capped at [`MAX_EXEMPLARS`], so one row has a fixed content
+ * ceiling even when a cluster contains thousands of faces.
+ *
+ * R6 role: host-port DTO.
  */
-public struct FaceLibraryStats: Equatable, Hashable {
+public struct FaceClusterHostRow: Equatable, Hashable {
     /**
-     * Stored face rows.
-     */
-    public var faces: UInt64
-    /**
-     * Faces that belong to a cluster.
-     */
-    public var assigned: UInt64
-    /**
-     * Clusters nobody has looked at.
-     */
-    public var unlabeledClusters: UInt64
-    /**
-     * Clusters a person's name is attached to.
-     */
-    public var namedClusters: UInt64
-    /**
-     * Clusters the user ignored (passer-by).
-     */
-    public var ignoredClusters: UInt64
-    /**
-     * Clusters the user rejected (not a person / not a face).
-     */
-    public var rejectedClusters: UInt64
-    /**
-     * Outstanding merge proposals. Applying one is a separate call
-     * (`merge_clusters` / `dismiss_merge_proposal`); this count is advisory.
-     */
-    public var mergeProposals: UInt64
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Stored face rows.
-         */faces: UInt64, 
-        /**
-         * Faces that belong to a cluster.
-         */assigned: UInt64, 
-        /**
-         * Clusters nobody has looked at.
-         */unlabeledClusters: UInt64, 
-        /**
-         * Clusters a person's name is attached to.
-         */namedClusters: UInt64, 
-        /**
-         * Clusters the user ignored (passer-by).
-         */ignoredClusters: UInt64, 
-        /**
-         * Clusters the user rejected (not a person / not a face).
-         */rejectedClusters: UInt64, 
-        /**
-         * Outstanding merge proposals. Applying one is a separate call
-         * (`merge_clusters` / `dismiss_merge_proposal`); this count is advisory.
-         */mergeProposals: UInt64) {
-        self.faces = faces
-        self.assigned = assigned
-        self.unlabeledClusters = unlabeledClusters
-        self.namedClusters = namedClusters
-        self.ignoredClusters = ignoredClusters
-        self.rejectedClusters = rejectedClusters
-        self.mergeProposals = mergeProposals
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension FaceLibraryStats: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeFaceLibraryStats: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceLibraryStats {
-        return
-            try FaceLibraryStats(
-                faces: FfiConverterUInt64.read(from: &buf), 
-                assigned: FfiConverterUInt64.read(from: &buf), 
-                unlabeledClusters: FfiConverterUInt64.read(from: &buf), 
-                namedClusters: FfiConverterUInt64.read(from: &buf), 
-                ignoredClusters: FfiConverterUInt64.read(from: &buf), 
-                rejectedClusters: FfiConverterUInt64.read(from: &buf), 
-                mergeProposals: FfiConverterUInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: FaceLibraryStats, into buf: inout [UInt8]) {
-        FfiConverterUInt64.write(value.faces, into: &buf)
-        FfiConverterUInt64.write(value.assigned, into: &buf)
-        FfiConverterUInt64.write(value.unlabeledClusters, into: &buf)
-        FfiConverterUInt64.write(value.namedClusters, into: &buf)
-        FfiConverterUInt64.write(value.ignoredClusters, into: &buf)
-        FfiConverterUInt64.write(value.rejectedClusters, into: &buf)
-        FfiConverterUInt64.write(value.mergeProposals, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeFaceLibraryStats_lift(_ buf: RustBuffer) throws -> FaceLibraryStats {
-    return try FfiConverterTypeFaceLibraryStats.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeFaceLibraryStats_lower(_ value: FaceLibraryStats) -> RustBuffer {
-    return FfiConverterTypeFaceLibraryStats.lower(value)
-}
-
-
-/**
- * One side of a merge-direction decision. Ids and sizes only — no pixels.
- */
-public struct FaceMergeCandidate: Equatable, Hashable {
-    /**
-     * Cluster id.
+     * Stable for a **named** cluster forever. An *unlabeled* cluster's id does
+     * not survive a `recluster()` — that pass produces a partition, not a
+     * diff — which is why naming a stale id answers
+     * [`FaceError::ClusterNotFound`] rather than guessing.
      */
     public var id: Int64
-    /**
-     * Person name when the cluster is named.
-     */
-    public var name: String?
     /**
      * Member count.
      */
     public var size: UInt32
+    /**
+     * Unlabeled / named / ignored.
+     */
+    public var state: ClusterState
+    /**
+     * The person's name, when `state` is [`ClusterState::Named`].
+     */
+    public var name: String?
+    /**
+     * Up to [`MAX_EXEMPLARS`] faces to show on the card. See [`exemplars`].
+     */
+    public var exemplars: [FaceCropHostItem]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
-         * Cluster id.
+         * Stable for a **named** cluster forever. An *unlabeled* cluster's id does
+         * not survive a `recluster()` — that pass produces a partition, not a
+         * diff — which is why naming a stale id answers
+         * [`FaceError::ClusterNotFound`] rather than guessing.
          */id: Int64, 
         /**
-         * Person name when the cluster is named.
+         * Member count.
+         */size: UInt32, 
+        /**
+         * Unlabeled / named / ignored.
+         */state: ClusterState, 
+        /**
+         * The person's name, when `state` is [`ClusterState::Named`].
          */name: String?, 
         /**
-         * Member count.
-         */size: UInt32) {
+         * Up to [`MAX_EXEMPLARS`] faces to show on the card. See [`exemplars`].
+         */exemplars: [FaceCropHostItem]) {
         self.id = id
-        self.name = name
         self.size = size
+        self.state = state
+        self.name = name
+        self.exemplars = exemplars
     }
 
     
@@ -4527,26 +4331,30 @@ public struct FaceMergeCandidate: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension FaceMergeCandidate: Sendable {}
+extension FaceClusterHostRow: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeFaceMergeCandidate: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceMergeCandidate {
+public struct FfiConverterTypeFaceClusterHostRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceClusterHostRow {
         return
-            try FaceMergeCandidate(
+            try FaceClusterHostRow(
                 id: FfiConverterInt64.read(from: &buf), 
+                size: FfiConverterUInt32.read(from: &buf), 
+                state: FfiConverterTypeClusterState.read(from: &buf), 
                 name: FfiConverterOptionString.read(from: &buf), 
-                size: FfiConverterUInt32.read(from: &buf)
+                exemplars: FfiConverterSequenceTypeFaceCropHostItem.read(from: &buf)
         )
     }
 
-    public static func write(_ value: FaceMergeCandidate, into buf: inout [UInt8]) {
+    public static func write(_ value: FaceClusterHostRow, into buf: inout [UInt8]) {
         FfiConverterInt64.write(value.id, into: &buf)
-        FfiConverterOptionString.write(value.name, into: &buf)
         FfiConverterUInt32.write(value.size, into: &buf)
+        FfiConverterTypeClusterState.write(value.state, into: &buf)
+        FfiConverterOptionString.write(value.name, into: &buf)
+        FfiConverterSequenceTypeFaceCropHostItem.write(value.exemplars, into: &buf)
     }
 }
 
@@ -4554,153 +4362,15 @@ public struct FfiConverterTypeFaceMergeCandidate: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceMergeCandidate_lift(_ buf: RustBuffer) throws -> FaceMergeCandidate {
-    return try FfiConverterTypeFaceMergeCandidate.lift(buf)
+public func FfiConverterTypeFaceClusterHostRow_lift(_ buf: RustBuffer) throws -> FaceClusterHostRow {
+    return try FfiConverterTypeFaceClusterHostRow.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceMergeCandidate_lower(_ value: FaceMergeCandidate) -> RustBuffer {
-    return FfiConverterTypeFaceMergeCandidate.lower(value)
-}
-
-
-/**
- * Which of two clusters survives a merge.
- */
-public struct FaceMergeDecision: Equatable, Hashable {
-    /**
-     * Keeps its id and name.
-     */
-    public var survivorId: Int64
-    /**
-     * Disappears.
-     */
-    public var absorbedId: Int64
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Keeps its id and name.
-         */survivorId: Int64, 
-        /**
-         * Disappears.
-         */absorbedId: Int64) {
-        self.survivorId = survivorId
-        self.absorbedId = absorbedId
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension FaceMergeDecision: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeFaceMergeDecision: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceMergeDecision {
-        return
-            try FaceMergeDecision(
-                survivorId: FfiConverterInt64.read(from: &buf), 
-                absorbedId: FfiConverterInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: FaceMergeDecision, into buf: inout [UInt8]) {
-        FfiConverterInt64.write(value.survivorId, into: &buf)
-        FfiConverterInt64.write(value.absorbedId, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeFaceMergeDecision_lift(_ buf: RustBuffer) throws -> FaceMergeDecision {
-    return try FfiConverterTypeFaceMergeDecision.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeFaceMergeDecision_lower(_ value: FaceMergeDecision) -> RustBuffer {
-    return FfiConverterTypeFaceMergeDecision.lower(value)
-}
-
-
-/**
- * Per-photo assign result of the last finished run.
- */
-public struct FacePhotoRecord: Equatable, Hashable {
-    /**
-     * Absolute path the queue row used.
-     */
-    public var path: String
-    /**
-     * Detections in detection order.
-     */
-    public var faces: [FaceAssignmentRecord]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Absolute path the queue row used.
-         */path: String, 
-        /**
-         * Detections in detection order.
-         */faces: [FaceAssignmentRecord]) {
-        self.path = path
-        self.faces = faces
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension FacePhotoRecord: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeFacePhotoRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FacePhotoRecord {
-        return
-            try FacePhotoRecord(
-                path: FfiConverterString.read(from: &buf), 
-                faces: FfiConverterSequenceTypeFaceAssignmentRecord.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: FacePhotoRecord, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.path, into: &buf)
-        FfiConverterSequenceTypeFaceAssignmentRecord.write(value.faces, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeFacePhotoRecord_lift(_ buf: RustBuffer) throws -> FacePhotoRecord {
-    return try FfiConverterTypeFacePhotoRecord.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeFacePhotoRecord_lower(_ value: FacePhotoRecord) -> RustBuffer {
-    return FfiConverterTypeFacePhotoRecord.lower(value)
+public func FfiConverterTypeFaceClusterHostRow_lower(_ value: FaceClusterHostRow) -> RustBuffer {
+    return FfiConverterTypeFaceClusterHostRow.lower(value)
 }
 
 
@@ -4711,8 +4381,10 @@ public func FfiConverterTypeFacePhotoRecord_lower(_ value: FacePhotoRecord) -> R
  * origin — because that is exactly what the app's `FaceRegion` already is, so
  * the existing cover-crop renderer takes one of these unchanged. Pixel corners
  * would have made every consumer re-derive the same division.
+ *
+ * R6 role: host-port DTO.
  */
-public struct FaceRef: Equatable, Hashable {
+public struct FaceCropHostItem: Equatable, Hashable {
     /**
      * Absolute path of a photo containing this face. One of possibly several:
      * detections are keyed by content hash and a library can hold the same
@@ -4797,16 +4469,16 @@ public struct FaceRef: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension FaceRef: Sendable {}
+extension FaceCropHostItem: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeFaceRef: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceRef {
+public struct FfiConverterTypeFaceCropHostItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceCropHostItem {
         return
-            try FaceRef(
+            try FaceCropHostItem(
                 path: FfiConverterString.read(from: &buf), 
                 faceKey: FfiConverterString.read(from: &buf), 
                 centerX: FfiConverterDouble.read(from: &buf), 
@@ -4817,7 +4489,7 @@ public struct FfiConverterTypeFaceRef: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: FaceRef, into buf: inout [UInt8]) {
+    public static func write(_ value: FaceCropHostItem, into buf: inout [UInt8]) {
         FfiConverterString.write(value.path, into: &buf)
         FfiConverterString.write(value.faceKey, into: &buf)
         FfiConverterDouble.write(value.centerX, into: &buf)
@@ -4832,15 +4504,642 @@ public struct FfiConverterTypeFaceRef: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceRef_lift(_ buf: RustBuffer) throws -> FaceRef {
-    return try FfiConverterTypeFaceRef.lift(buf)
+public func FfiConverterTypeFaceCropHostItem_lift(_ buf: RustBuffer) throws -> FaceCropHostItem {
+    return try FfiConverterTypeFaceCropHostItem.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceRef_lower(_ value: FaceRef) -> RustBuffer {
-    return FfiConverterTypeFaceRef.lower(value)
+public func FfiConverterTypeFaceCropHostItem_lower(_ value: FaceCropHostItem) -> RustBuffer {
+    return FfiConverterTypeFaceCropHostItem.lower(value)
+}
+
+
+/**
+ * What the face tables hold — the numbers behind Settings' faces status line.
+ *
+ * R6 role: command DTO.
+ */
+public struct FaceLibraryCommandResult: Equatable, Hashable {
+    /**
+     * Stored face rows.
+     */
+    public var faces: UInt64
+    /**
+     * Faces that belong to a cluster.
+     */
+    public var assigned: UInt64
+    /**
+     * Clusters nobody has looked at.
+     */
+    public var unlabeledClusters: UInt64
+    /**
+     * Clusters a person's name is attached to.
+     */
+    public var namedClusters: UInt64
+    /**
+     * Clusters the user ignored (passer-by).
+     */
+    public var ignoredClusters: UInt64
+    /**
+     * Clusters the user rejected (not a person / not a face).
+     */
+    public var rejectedClusters: UInt64
+    /**
+     * Outstanding merge proposals. Applying one is a separate call
+     * (`merge_clusters` / `dismiss_merge_proposal`); this count is advisory.
+     */
+    public var mergeProposals: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Stored face rows.
+         */faces: UInt64, 
+        /**
+         * Faces that belong to a cluster.
+         */assigned: UInt64, 
+        /**
+         * Clusters nobody has looked at.
+         */unlabeledClusters: UInt64, 
+        /**
+         * Clusters a person's name is attached to.
+         */namedClusters: UInt64, 
+        /**
+         * Clusters the user ignored (passer-by).
+         */ignoredClusters: UInt64, 
+        /**
+         * Clusters the user rejected (not a person / not a face).
+         */rejectedClusters: UInt64, 
+        /**
+         * Outstanding merge proposals. Applying one is a separate call
+         * (`merge_clusters` / `dismiss_merge_proposal`); this count is advisory.
+         */mergeProposals: UInt64) {
+        self.faces = faces
+        self.assigned = assigned
+        self.unlabeledClusters = unlabeledClusters
+        self.namedClusters = namedClusters
+        self.ignoredClusters = ignoredClusters
+        self.rejectedClusters = rejectedClusters
+        self.mergeProposals = mergeProposals
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FaceLibraryCommandResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFaceLibraryCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceLibraryCommandResult {
+        return
+            try FaceLibraryCommandResult(
+                faces: FfiConverterUInt64.read(from: &buf), 
+                assigned: FfiConverterUInt64.read(from: &buf), 
+                unlabeledClusters: FfiConverterUInt64.read(from: &buf), 
+                namedClusters: FfiConverterUInt64.read(from: &buf), 
+                ignoredClusters: FfiConverterUInt64.read(from: &buf), 
+                rejectedClusters: FfiConverterUInt64.read(from: &buf), 
+                mergeProposals: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FaceLibraryCommandResult, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.faces, into: &buf)
+        FfiConverterUInt64.write(value.assigned, into: &buf)
+        FfiConverterUInt64.write(value.unlabeledClusters, into: &buf)
+        FfiConverterUInt64.write(value.namedClusters, into: &buf)
+        FfiConverterUInt64.write(value.ignoredClusters, into: &buf)
+        FfiConverterUInt64.write(value.rejectedClusters, into: &buf)
+        FfiConverterUInt64.write(value.mergeProposals, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceLibraryCommandResult_lift(_ buf: RustBuffer) throws -> FaceLibraryCommandResult {
+    return try FfiConverterTypeFaceLibraryCommandResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceLibraryCommandResult_lower(_ value: FaceLibraryCommandResult) -> RustBuffer {
+    return FfiConverterTypeFaceLibraryCommandResult.lower(value)
+}
+
+
+/**
+ * Which of two clusters survives a merge.
+ *
+ * R6 role: command DTO.
+ */
+public struct FaceMergeCommand: Equatable, Hashable {
+    /**
+     * Keeps its id and name.
+     */
+    public var survivorId: Int64
+    /**
+     * Disappears.
+     */
+    public var absorbedId: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Keeps its id and name.
+         */survivorId: Int64, 
+        /**
+         * Disappears.
+         */absorbedId: Int64) {
+        self.survivorId = survivorId
+        self.absorbedId = absorbedId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FaceMergeCommand: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFaceMergeCommand: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceMergeCommand {
+        return
+            try FaceMergeCommand(
+                survivorId: FfiConverterInt64.read(from: &buf), 
+                absorbedId: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FaceMergeCommand, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.survivorId, into: &buf)
+        FfiConverterInt64.write(value.absorbedId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceMergeCommand_lift(_ buf: RustBuffer) throws -> FaceMergeCommand {
+    return try FfiConverterTypeFaceMergeCommand.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceMergeCommand_lower(_ value: FaceMergeCommand) -> RustBuffer {
+    return FfiConverterTypeFaceMergeCommand.lower(value)
+}
+
+
+/**
+ * One side of a merge-direction decision. Ids and sizes only — no pixels.
+ *
+ * R6 role: command DTO.
+ */
+public struct FaceMergeCommandSide: Equatable, Hashable {
+    /**
+     * Cluster id.
+     */
+    public var id: Int64
+    /**
+     * Person name when the cluster is named.
+     */
+    public var name: String?
+    /**
+     * Member count.
+     */
+    public var size: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Cluster id.
+         */id: Int64, 
+        /**
+         * Person name when the cluster is named.
+         */name: String?, 
+        /**
+         * Member count.
+         */size: UInt32) {
+        self.id = id
+        self.name = name
+        self.size = size
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FaceMergeCommandSide: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFaceMergeCommandSide: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceMergeCommandSide {
+        return
+            try FaceMergeCommandSide(
+                id: FfiConverterInt64.read(from: &buf), 
+                name: FfiConverterOptionString.read(from: &buf), 
+                size: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FaceMergeCommandSide, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.name, into: &buf)
+        FfiConverterUInt32.write(value.size, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceMergeCommandSide_lift(_ buf: RustBuffer) throws -> FaceMergeCommandSide {
+    return try FfiConverterTypeFaceMergeCommandSide.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceMergeCommandSide_lower(_ value: FaceMergeCommandSide) -> RustBuffer {
+    return FfiConverterTypeFaceMergeCommandSide.lower(value)
+}
+
+
+/**
+ * Two clusters the core thinks are the same person.
+ *
+ * Ids only. The app already holds `clusters()` and joins locally, and a
+ * library with a chain of similar groups would otherwise ship the same
+ * exemplars several times over.
+ *
+ * Advisory in both directions: nothing merges on its own, and a proposal is
+ * only as fresh as the centroids it was computed from — a merge invalidates
+ * every proposal touching either end, and the next run recomputes them.
+ *
+ * R6 role: structure DTO.
+ */
+public struct FaceMergeStructure: Equatable, Hashable {
+    /**
+     * The lower of the two cluster ids.
+     */
+    public var a: Int64
+    /**
+     * The higher.
+     */
+    public var b: Int64
+    /**
+     * Cosine similarity of the two centroids, 0…1.
+     */
+    public var similarity: Float
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The lower of the two cluster ids.
+         */a: Int64, 
+        /**
+         * The higher.
+         */b: Int64, 
+        /**
+         * Cosine similarity of the two centroids, 0…1.
+         */similarity: Float) {
+        self.a = a
+        self.b = b
+        self.similarity = similarity
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FaceMergeStructure: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFaceMergeStructure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceMergeStructure {
+        return
+            try FaceMergeStructure(
+                a: FfiConverterInt64.read(from: &buf), 
+                b: FfiConverterInt64.read(from: &buf), 
+                similarity: FfiConverterFloat.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FaceMergeStructure, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.a, into: &buf)
+        FfiConverterInt64.write(value.b, into: &buf)
+        FfiConverterFloat.write(value.similarity, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceMergeStructure_lift(_ buf: RustBuffer) throws -> FaceMergeStructure {
+    return try FfiConverterTypeFaceMergeStructure.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceMergeStructure_lower(_ value: FaceMergeStructure) -> RustBuffer {
+    return FfiConverterTypeFaceMergeStructure.lower(value)
+}
+
+
+/**
+ * Per-photo assign result of the last finished run.
+ *
+ * R6 role: command DTO.
+ */
+public struct FacePhotoCommandResult: Equatable, Hashable {
+    /**
+     * Absolute path the queue row used.
+     */
+    public var path: String
+    /**
+     * Detections in detection order.
+     */
+    public var faces: [FaceAssignmentCommandResult]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Absolute path the queue row used.
+         */path: String, 
+        /**
+         * Detections in detection order.
+         */faces: [FaceAssignmentCommandResult]) {
+        self.path = path
+        self.faces = faces
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FacePhotoCommandResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFacePhotoCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FacePhotoCommandResult {
+        return
+            try FacePhotoCommandResult(
+                path: FfiConverterString.read(from: &buf), 
+                faces: FfiConverterSequenceTypeFaceAssignmentCommandResult.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FacePhotoCommandResult, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterSequenceTypeFaceAssignmentCommandResult.write(value.faces, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFacePhotoCommandResult_lift(_ buf: RustBuffer) throws -> FacePhotoCommandResult {
+    return try FfiConverterTypeFacePhotoCommandResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFacePhotoCommandResult_lower(_ value: FacePhotoCommandResult) -> RustBuffer {
+    return FfiConverterTypeFacePhotoCommandResult.lower(value)
+}
+
+
+/**
+ * Face-queue counts. Cheap enough to poll.
+ *
+ * R6 role: command DTO.
+ */
+public struct FaceQueueCommandResult: Equatable, Hashable {
+    /**
+     * Rows waiting to be processed (including stale and retryable failures).
+     */
+    public var pending: UInt64
+    /**
+     * Rows scanned under the current face models.
+     */
+    public var done: UInt64
+    /**
+     * Rows that failed and are out of retries.
+     */
+    public var failed: UInt64
+    /**
+     * Rows skipped as an unsupported format.
+     */
+    public var skipped: UInt64
+    /**
+     * Rows that turned out to contain at least one face.
+     */
+    public var withFaces: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Rows waiting to be processed (including stale and retryable failures).
+         */pending: UInt64, 
+        /**
+         * Rows scanned under the current face models.
+         */done: UInt64, 
+        /**
+         * Rows that failed and are out of retries.
+         */failed: UInt64, 
+        /**
+         * Rows skipped as an unsupported format.
+         */skipped: UInt64, 
+        /**
+         * Rows that turned out to contain at least one face.
+         */withFaces: UInt64) {
+        self.pending = pending
+        self.done = done
+        self.failed = failed
+        self.skipped = skipped
+        self.withFaces = withFaces
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FaceQueueCommandResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFaceQueueCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceQueueCommandResult {
+        return
+            try FaceQueueCommandResult(
+                pending: FfiConverterUInt64.read(from: &buf), 
+                done: FfiConverterUInt64.read(from: &buf), 
+                failed: FfiConverterUInt64.read(from: &buf), 
+                skipped: FfiConverterUInt64.read(from: &buf), 
+                withFaces: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FaceQueueCommandResult, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.pending, into: &buf)
+        FfiConverterUInt64.write(value.done, into: &buf)
+        FfiConverterUInt64.write(value.failed, into: &buf)
+        FfiConverterUInt64.write(value.skipped, into: &buf)
+        FfiConverterUInt64.write(value.withFaces, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceQueueCommandResult_lift(_ buf: RustBuffer) throws -> FaceQueueCommandResult {
+    return try FfiConverterTypeFaceQueueCommandResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceQueueCommandResult_lower(_ value: FaceQueueCommandResult) -> RustBuffer {
+    return FfiConverterTypeFaceQueueCommandResult.lower(value)
+}
+
+
+/**
+ * What one `recluster()` did.
+ *
+ * R6 role: command DTO.
+ */
+public struct FaceReclusterCommandResult: Equatable, Hashable {
+    /**
+     * Unlabeled clusters that existed before the pass.
+     */
+    public var clustersBefore: UInt32
+    /**
+     * Unlabeled clusters after it.
+     */
+    public var clustersAfter: UInt32
+    /**
+     * Faces the pass re-partitioned.
+     */
+    public var faces: UInt32
+    /**
+     * Merge proposals standing afterwards.
+     */
+    public var proposals: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Unlabeled clusters that existed before the pass.
+         */clustersBefore: UInt32, 
+        /**
+         * Unlabeled clusters after it.
+         */clustersAfter: UInt32, 
+        /**
+         * Faces the pass re-partitioned.
+         */faces: UInt32, 
+        /**
+         * Merge proposals standing afterwards.
+         */proposals: UInt32) {
+        self.clustersBefore = clustersBefore
+        self.clustersAfter = clustersAfter
+        self.faces = faces
+        self.proposals = proposals
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FaceReclusterCommandResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFaceReclusterCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceReclusterCommandResult {
+        return
+            try FaceReclusterCommandResult(
+                clustersBefore: FfiConverterUInt32.read(from: &buf), 
+                clustersAfter: FfiConverterUInt32.read(from: &buf), 
+                faces: FfiConverterUInt32.read(from: &buf), 
+                proposals: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FaceReclusterCommandResult, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.clustersBefore, into: &buf)
+        FfiConverterUInt32.write(value.clustersAfter, into: &buf)
+        FfiConverterUInt32.write(value.faces, into: &buf)
+        FfiConverterUInt32.write(value.proposals, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceReclusterCommandResult_lift(_ buf: RustBuffer) throws -> FaceReclusterCommandResult {
+    return try FfiConverterTypeFaceReclusterCommandResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceReclusterCommandResult_lower(_ value: FaceReclusterCommandResult) -> RustBuffer {
+    return FfiConverterTypeFaceReclusterCommandResult.lower(value)
 }
 
 
@@ -4848,8 +5147,10 @@ public func FfiConverterTypeFaceRef_lower(_ value: FaceRef) -> RustBuffer {
  * What one run did. Mirrors [`gallery_ml::face::FaceRunSummary`] with a
  * `failure` field for the run-level-error case, since `onFinished` fires
  * either way.
+ *
+ * R6 role: command DTO.
  */
-public struct FaceRunSummary: Equatable, Hashable {
+public struct FaceRunCommandResult: Equatable, Hashable {
     /**
      * Photos carried to a terminal state.
      */
@@ -4972,16 +5273,16 @@ public struct FaceRunSummary: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension FaceRunSummary: Sendable {}
+extension FaceRunCommandResult: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeFaceRunSummary: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceRunSummary {
+public struct FfiConverterTypeFaceRunCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceRunCommandResult {
         return
-            try FaceRunSummary(
+            try FaceRunCommandResult(
                 processed: FfiConverterUInt32.read(from: &buf), 
                 photosWithFaces: FfiConverterUInt32.read(from: &buf), 
                 facesFound: FfiConverterUInt32.read(from: &buf), 
@@ -4998,7 +5299,7 @@ public struct FfiConverterTypeFaceRunSummary: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: FaceRunSummary, into buf: inout [UInt8]) {
+    public static func write(_ value: FaceRunCommandResult, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.processed, into: &buf)
         FfiConverterUInt32.write(value.photosWithFaces, into: &buf)
         FfiConverterUInt32.write(value.facesFound, into: &buf)
@@ -5019,66 +5320,58 @@ public struct FfiConverterTypeFaceRunSummary: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceRunSummary_lift(_ buf: RustBuffer) throws -> FaceRunSummary {
-    return try FfiConverterTypeFaceRunSummary.lift(buf)
+public func FfiConverterTypeFaceRunCommandResult_lift(_ buf: RustBuffer) throws -> FaceRunCommandResult {
+    return try FfiConverterTypeFaceRunCommandResult.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceRunSummary_lower(_ value: FaceRunSummary) -> RustBuffer {
-    return FfiConverterTypeFaceRunSummary.lower(value)
+public func FfiConverterTypeFaceRunCommandResult_lower(_ value: FaceRunCommandResult) -> RustBuffer {
+    return FfiConverterTypeFaceRunCommandResult.lower(value)
 }
 
 
 /**
- * Face-queue counts. Cheap enough to poll.
+ * What one `split_cluster()` did.
+ *
+ * R6 role: command DTO.
  */
-public struct FaceStats: Equatable, Hashable {
+public struct FaceSplitCommandResult: Equatable, Hashable {
     /**
-     * Rows waiting to be processed (including stale and retryable failures).
+     * The cluster the selected faces moved into. Unlabeled and pinned.
      */
-    public var pending: UInt64
+    public var newClusterId: Int64
     /**
-     * Rows scanned under the current face models.
+     * Selected keys that named no face of the source cluster.
+     *
+     * Non-zero means the screen's selection was stale — a run deleted a face
+     * under it — which is worth a log line and is not a failure.
      */
-    public var done: UInt64
+    public var ignoredKeys: UInt32
     /**
-     * Rows that failed and are out of retries.
+     * The sidecars the split rewrote.
      */
-    public var failed: UInt64
-    /**
-     * Rows skipped as an unsupported format.
-     */
-    public var skipped: UInt64
-    /**
-     * Rows that turned out to contain at least one face.
-     */
-    public var withFaces: UInt64
+    public var report: SidecarWriteCommandResult
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
-         * Rows waiting to be processed (including stale and retryable failures).
-         */pending: UInt64, 
+         * The cluster the selected faces moved into. Unlabeled and pinned.
+         */newClusterId: Int64, 
         /**
-         * Rows scanned under the current face models.
-         */done: UInt64, 
+         * Selected keys that named no face of the source cluster.
+         *
+         * Non-zero means the screen's selection was stale — a run deleted a face
+         * under it — which is worth a log line and is not a failure.
+         */ignoredKeys: UInt32, 
         /**
-         * Rows that failed and are out of retries.
-         */failed: UInt64, 
-        /**
-         * Rows skipped as an unsupported format.
-         */skipped: UInt64, 
-        /**
-         * Rows that turned out to contain at least one face.
-         */withFaces: UInt64) {
-        self.pending = pending
-        self.done = done
-        self.failed = failed
-        self.skipped = skipped
-        self.withFaces = withFaces
+         * The sidecars the split rewrote.
+         */report: SidecarWriteCommandResult) {
+        self.newClusterId = newClusterId
+        self.ignoredKeys = ignoredKeys
+        self.report = report
     }
 
     
@@ -5087,30 +5380,26 @@ public struct FaceStats: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension FaceStats: Sendable {}
+extension FaceSplitCommandResult: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeFaceStats: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceStats {
+public struct FfiConverterTypeFaceSplitCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceSplitCommandResult {
         return
-            try FaceStats(
-                pending: FfiConverterUInt64.read(from: &buf), 
-                done: FfiConverterUInt64.read(from: &buf), 
-                failed: FfiConverterUInt64.read(from: &buf), 
-                skipped: FfiConverterUInt64.read(from: &buf), 
-                withFaces: FfiConverterUInt64.read(from: &buf)
+            try FaceSplitCommandResult(
+                newClusterId: FfiConverterInt64.read(from: &buf), 
+                ignoredKeys: FfiConverterUInt32.read(from: &buf), 
+                report: FfiConverterTypeSidecarWriteCommandResult.read(from: &buf)
         )
     }
 
-    public static func write(_ value: FaceStats, into buf: inout [UInt8]) {
-        FfiConverterUInt64.write(value.pending, into: &buf)
-        FfiConverterUInt64.write(value.done, into: &buf)
-        FfiConverterUInt64.write(value.failed, into: &buf)
-        FfiConverterUInt64.write(value.skipped, into: &buf)
-        FfiConverterUInt64.write(value.withFaces, into: &buf)
+    public static func write(_ value: FaceSplitCommandResult, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.newClusterId, into: &buf)
+        FfiConverterUInt32.write(value.ignoredKeys, into: &buf)
+        FfiConverterTypeSidecarWriteCommandResult.write(value.report, into: &buf)
     }
 }
 
@@ -5118,15 +5407,15 @@ public struct FfiConverterTypeFaceStats: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceStats_lift(_ buf: RustBuffer) throws -> FaceStats {
-    return try FfiConverterTypeFaceStats.lift(buf)
+public func FfiConverterTypeFaceSplitCommandResult_lift(_ buf: RustBuffer) throws -> FaceSplitCommandResult {
+    return try FfiConverterTypeFaceSplitCommandResult.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeFaceStats_lower(_ value: FaceStats) -> RustBuffer {
-    return FfiConverterTypeFaceStats.lower(value)
+public func FfiConverterTypeFaceSplitCommandResult_lower(_ value: FaceSplitCommandResult) -> RustBuffer {
+    return FfiConverterTypeFaceSplitCommandResult.lower(value)
 }
 
 
@@ -5277,9 +5566,85 @@ public func FfiConverterTypeGalleryTextRow_lower(_ value: GalleryTextRow) -> Rus
 
 
 /**
- * Packed RGB8 pixels from a host decoder.
+ * A file's identity without reading it.
+ *
+ * R6 role: host-port DTO.
  */
-public struct HeicPixels: Equatable, Hashable {
+public struct HostContentVersion: Equatable, Hashable {
+    /**
+     * Modification date, reference-date seconds.
+     */
+    public var modificationDate: Double?
+    /**
+     * Size in bytes.
+     */
+    public var size: Int64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Modification date, reference-date seconds.
+         */modificationDate: Double?, 
+        /**
+         * Size in bytes.
+         */size: Int64?) {
+        self.modificationDate = modificationDate
+        self.size = size
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HostContentVersion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHostContentVersion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HostContentVersion {
+        return
+            try HostContentVersion(
+                modificationDate: FfiConverterOptionDouble.read(from: &buf), 
+                size: FfiConverterOptionInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HostContentVersion, into buf: inout [UInt8]) {
+        FfiConverterOptionDouble.write(value.modificationDate, into: &buf)
+        FfiConverterOptionInt64.write(value.size, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostContentVersion_lift(_ buf: RustBuffer) throws -> HostContentVersion {
+    return try FfiConverterTypeHostContentVersion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostContentVersion_lower(_ value: HostContentVersion) -> RustBuffer {
+    return FfiConverterTypeHostContentVersion.lower(value)
+}
+
+
+/**
+ * Packed RGB8 pixels from a host decoder.
+ *
+ * The adapter rejects dimensions above 4096×4096 before constructing a core
+ * image, so this host-port payload has a deterministic 48 MiB ceiling.
+ *
+ * R6 role: host-port DTO.
+ */
+public struct HostDecodedImage: Equatable, Hashable {
     /**
      * Pixel width.
      */
@@ -5316,23 +5681,23 @@ public struct HeicPixels: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension HeicPixels: Sendable {}
+extension HostDecodedImage: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeHeicPixels: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HeicPixels {
+public struct FfiConverterTypeHostDecodedImage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HostDecodedImage {
         return
-            try HeicPixels(
+            try HostDecodedImage(
                 width: FfiConverterUInt32.read(from: &buf), 
                 height: FfiConverterUInt32.read(from: &buf), 
                 rgb: FfiConverterData.read(from: &buf)
         )
     }
 
-    public static func write(_ value: HeicPixels, into buf: inout [UInt8]) {
+    public static func write(_ value: HostDecodedImage, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.width, into: &buf)
         FfiConverterUInt32.write(value.height, into: &buf)
         FfiConverterData.write(value.rgb, into: &buf)
@@ -5343,30 +5708,133 @@ public struct FfiConverterTypeHeicPixels: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeHeicPixels_lift(_ buf: RustBuffer) throws -> HeicPixels {
-    return try FfiConverterTypeHeicPixels.lift(buf)
+public func FfiConverterTypeHostDecodedImage_lift(_ buf: RustBuffer) throws -> HostDecodedImage {
+    return try FfiConverterTypeHostDecodedImage.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeHeicPixels_lower(_ value: HeicPixels) -> RustBuffer {
-    return FfiConverterTypeHeicPixels.lower(value)
+public func FfiConverterTypeHostDecodedImage_lower(_ value: HostDecodedImage) -> RustBuffer {
+    return FfiConverterTypeHostDecodedImage.lower(value)
+}
+
+
+/**
+ * One MWG region, normalised 0…1.
+ *
+ * R6 role: host-port DTO.
+ */
+public struct HostFaceRegion: Equatable, Hashable {
+    /**
+     * `mwg-rs:Name`, absent for unnamed rectangles.
+     */
+    public var name: String?
+    /**
+     * Centre x.
+     */
+    public var centerX: Double
+    /**
+     * Centre y.
+     */
+    public var centerY: Double
+    /**
+     * Full width.
+     */
+    public var width: Double
+    /**
+     * Full height.
+     */
+    public var height: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `mwg-rs:Name`, absent for unnamed rectangles.
+         */name: String?, 
+        /**
+         * Centre x.
+         */centerX: Double, 
+        /**
+         * Centre y.
+         */centerY: Double, 
+        /**
+         * Full width.
+         */width: Double, 
+        /**
+         * Full height.
+         */height: Double) {
+        self.name = name
+        self.centerX = centerX
+        self.centerY = centerY
+        self.width = width
+        self.height = height
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HostFaceRegion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHostFaceRegion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HostFaceRegion {
+        return
+            try HostFaceRegion(
+                name: FfiConverterOptionString.read(from: &buf), 
+                centerX: FfiConverterDouble.read(from: &buf), 
+                centerY: FfiConverterDouble.read(from: &buf), 
+                width: FfiConverterDouble.read(from: &buf), 
+                height: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HostFaceRegion, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.name, into: &buf)
+        FfiConverterDouble.write(value.centerX, into: &buf)
+        FfiConverterDouble.write(value.centerY, into: &buf)
+        FfiConverterDouble.write(value.width, into: &buf)
+        FfiConverterDouble.write(value.height, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostFaceRegion_lift(_ buf: RustBuffer) throws -> HostFaceRegion {
+    return try FfiConverterTypeHostFaceRegion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostFaceRegion_lower(_ value: HostFaceRegion) -> RustBuffer {
+    return FfiConverterTypeHostFaceRegion.lower(value)
 }
 
 
 /**
  * What one photo contributes to a `PhotoFile`.
+ *
+ * R6 role: host-port DTO.
  */
-public struct ImageMetadataRecord: Equatable, Hashable {
+public struct HostImageMetadata: Equatable, Hashable {
     /**
      * EXIF capture date, zone-less.
      */
-    public var captureWallClock: WallClock?
+    public var captureWallClock: HostWallClock?
     /**
      * Sidecar tags, deduplicated.
      */
-    public var hierarchicalTags: [ScanTag]
+    public var hierarchicalTags: [HostTagValue]
     /**
      * Uppercase country code.
      */
@@ -5382,17 +5850,17 @@ public struct ImageMetadataRecord: Equatable, Hashable {
     /**
      * Face regions from the sidecar.
      */
-    public var faceRegions: [ScanRegion]
+    public var faceRegions: [HostFaceRegion]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * EXIF capture date, zone-less.
-         */captureWallClock: WallClock?, 
+         */captureWallClock: HostWallClock?, 
         /**
          * Sidecar tags, deduplicated.
-         */hierarchicalTags: [ScanTag], 
+         */hierarchicalTags: [HostTagValue], 
         /**
          * Uppercase country code.
          */countryCode: String?, 
@@ -5404,7 +5872,7 @@ public struct ImageMetadataRecord: Equatable, Hashable {
          */gpsLongitude: Double?, 
         /**
          * Face regions from the sidecar.
-         */faceRegions: [ScanRegion]) {
+         */faceRegions: [HostFaceRegion]) {
         self.captureWallClock = captureWallClock
         self.hierarchicalTags = hierarchicalTags
         self.countryCode = countryCode
@@ -5419,32 +5887,32 @@ public struct ImageMetadataRecord: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension ImageMetadataRecord: Sendable {}
+extension HostImageMetadata: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeImageMetadataRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ImageMetadataRecord {
+public struct FfiConverterTypeHostImageMetadata: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HostImageMetadata {
         return
-            try ImageMetadataRecord(
-                captureWallClock: FfiConverterOptionTypeWallClock.read(from: &buf), 
-                hierarchicalTags: FfiConverterSequenceTypeScanTag.read(from: &buf), 
+            try HostImageMetadata(
+                captureWallClock: FfiConverterOptionTypeHostWallClock.read(from: &buf), 
+                hierarchicalTags: FfiConverterSequenceTypeHostTagValue.read(from: &buf), 
                 countryCode: FfiConverterOptionString.read(from: &buf), 
                 gpsLatitude: FfiConverterOptionDouble.read(from: &buf), 
                 gpsLongitude: FfiConverterOptionDouble.read(from: &buf), 
-                faceRegions: FfiConverterSequenceTypeScanRegion.read(from: &buf)
+                faceRegions: FfiConverterSequenceTypeHostFaceRegion.read(from: &buf)
         )
     }
 
-    public static func write(_ value: ImageMetadataRecord, into buf: inout [UInt8]) {
-        FfiConverterOptionTypeWallClock.write(value.captureWallClock, into: &buf)
-        FfiConverterSequenceTypeScanTag.write(value.hierarchicalTags, into: &buf)
+    public static func write(_ value: HostImageMetadata, into buf: inout [UInt8]) {
+        FfiConverterOptionTypeHostWallClock.write(value.captureWallClock, into: &buf)
+        FfiConverterSequenceTypeHostTagValue.write(value.hierarchicalTags, into: &buf)
         FfiConverterOptionString.write(value.countryCode, into: &buf)
         FfiConverterOptionDouble.write(value.gpsLatitude, into: &buf)
         FfiConverterOptionDouble.write(value.gpsLongitude, into: &buf)
-        FfiConverterSequenceTypeScanRegion.write(value.faceRegions, into: &buf)
+        FfiConverterSequenceTypeHostFaceRegion.write(value.faceRegions, into: &buf)
     }
 }
 
@@ -5452,15 +5920,212 @@ public struct FfiConverterTypeImageMetadataRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeImageMetadataRecord_lift(_ buf: RustBuffer) throws -> ImageMetadataRecord {
-    return try FfiConverterTypeImageMetadataRecord.lift(buf)
+public func FfiConverterTypeHostImageMetadata_lift(_ buf: RustBuffer) throws -> HostImageMetadata {
+    return try FfiConverterTypeHostImageMetadata.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeImageMetadataRecord_lower(_ value: ImageMetadataRecord) -> RustBuffer {
-    return FfiConverterTypeImageMetadataRecord.lower(value)
+public func FfiConverterTypeHostImageMetadata_lower(_ value: HostImageMetadata) -> RustBuffer {
+    return FfiConverterTypeHostImageMetadata.lower(value)
+}
+
+
+/**
+ * One `digiKam:TagsList` entry.
+ *
+ * R6 role: host-port DTO.
+ */
+public struct HostTagValue: Equatable, Hashable {
+    /**
+     * Raw `/`-separated path.
+     */
+    public var fullPath: String
+    /**
+     * First segment, or `None` for a flat tag.
+     */
+    public var namespace: String?
+    /**
+     * Leaf segment.
+     */
+    public var displayName: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Raw `/`-separated path.
+         */fullPath: String, 
+        /**
+         * First segment, or `None` for a flat tag.
+         */namespace: String?, 
+        /**
+         * Leaf segment.
+         */displayName: String) {
+        self.fullPath = fullPath
+        self.namespace = namespace
+        self.displayName = displayName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HostTagValue: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHostTagValue: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HostTagValue {
+        return
+            try HostTagValue(
+                fullPath: FfiConverterString.read(from: &buf), 
+                namespace: FfiConverterOptionString.read(from: &buf), 
+                displayName: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HostTagValue, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.fullPath, into: &buf)
+        FfiConverterOptionString.write(value.namespace, into: &buf)
+        FfiConverterString.write(value.displayName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostTagValue_lift(_ buf: RustBuffer) throws -> HostTagValue {
+    return try FfiConverterTypeHostTagValue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostTagValue_lower(_ value: HostTagValue) -> RustBuffer {
+    return FfiConverterTypeHostTagValue.lower(value)
+}
+
+
+/**
+ * A zone-less wall clock, as EXIF records it.
+ *
+ * The bridge resolves it in the **device** time zone, which is what
+ * `MetadataReader.exifDateFormatter` did by having no `timeZone` at all.
+ * Handing back an instant here would bake this machine's zone into a value
+ * the app is supposed to read in the user's.
+ *
+ * R6 role: host-port DTO.
+ */
+public struct HostWallClock: Equatable, Hashable {
+    /**
+     * Year.
+     */
+    public var year: Int32
+    /**
+     * 1-12.
+     */
+    public var month: UInt32
+    /**
+     * 1-31.
+     */
+    public var day: UInt32
+    /**
+     * 0-23 — hour 24 has already been rolled into the next day.
+     */
+    public var hour: UInt32
+    /**
+     * 0-59.
+     */
+    public var minute: UInt32
+    /**
+     * 0-59.
+     */
+    public var second: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Year.
+         */year: Int32, 
+        /**
+         * 1-12.
+         */month: UInt32, 
+        /**
+         * 1-31.
+         */day: UInt32, 
+        /**
+         * 0-23 — hour 24 has already been rolled into the next day.
+         */hour: UInt32, 
+        /**
+         * 0-59.
+         */minute: UInt32, 
+        /**
+         * 0-59.
+         */second: UInt32) {
+        self.year = year
+        self.month = month
+        self.day = day
+        self.hour = hour
+        self.minute = minute
+        self.second = second
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HostWallClock: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHostWallClock: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HostWallClock {
+        return
+            try HostWallClock(
+                year: FfiConverterInt32.read(from: &buf), 
+                month: FfiConverterUInt32.read(from: &buf), 
+                day: FfiConverterUInt32.read(from: &buf), 
+                hour: FfiConverterUInt32.read(from: &buf), 
+                minute: FfiConverterUInt32.read(from: &buf), 
+                second: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HostWallClock, into buf: inout [UInt8]) {
+        FfiConverterInt32.write(value.year, into: &buf)
+        FfiConverterUInt32.write(value.month, into: &buf)
+        FfiConverterUInt32.write(value.day, into: &buf)
+        FfiConverterUInt32.write(value.hour, into: &buf)
+        FfiConverterUInt32.write(value.minute, into: &buf)
+        FfiConverterUInt32.write(value.second, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostWallClock_lift(_ buf: RustBuffer) throws -> HostWallClock {
+    return try FfiConverterTypeHostWallClock.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostWallClock_lower(_ value: HostWallClock) -> RustBuffer {
+    return FfiConverterTypeHostWallClock.lower(value)
 }
 
 
@@ -5472,8 +6137,10 @@ public func FfiConverterTypeImageMetadataRecord_lower(_ value: ImageMetadataReco
  * to fetch them would be pure overhead. It is also what lets the whole rebuild
  * be one `await` on the Swift side, which is what makes the generation guard
  * around it checkable.
+ *
+ * R6 role: structure DTO.
  */
-public struct LibraryIndexSummary: Equatable, Hashable {
+public struct LibraryBuildStructure: Equatable, Hashable {
     /**
      * Photo ids, date descending with the `url.path` tiebreak. **This order is
      * the grid.**
@@ -5482,11 +6149,11 @@ public struct LibraryIndexSummary: Equatable, Hashable {
     /**
      * One suggestion per tag bucket, `(count desc, id asc)`.
      */
-    public var tags: [TagSuggestionRecord]
+    public var tags: [TagStructureItem]
     /**
      * The `People/…` subset, each carrying its most recent photo date.
      */
-    public var people: [TagSuggestionRecord]
+    public var people: [TagStructureItem]
     /**
      * Time spent inside the core, for the `Built:` log line the performance
      * gates are read from.
@@ -5502,10 +6169,10 @@ public struct LibraryIndexSummary: Equatable, Hashable {
          */sortedPhotoIds: [String], 
         /**
          * One suggestion per tag bucket, `(count desc, id asc)`.
-         */tags: [TagSuggestionRecord], 
+         */tags: [TagStructureItem], 
         /**
          * The `People/…` subset, each carrying its most recent photo date.
-         */people: [TagSuggestionRecord], 
+         */people: [TagStructureItem], 
         /**
          * Time spent inside the core, for the `Built:` log line the performance
          * gates are read from.
@@ -5522,27 +6189,27 @@ public struct LibraryIndexSummary: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension LibraryIndexSummary: Sendable {}
+extension LibraryBuildStructure: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeLibraryIndexSummary: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryIndexSummary {
+public struct FfiConverterTypeLibraryBuildStructure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryBuildStructure {
         return
-            try LibraryIndexSummary(
+            try LibraryBuildStructure(
                 sortedPhotoIds: FfiConverterSequenceString.read(from: &buf), 
-                tags: FfiConverterSequenceTypeTagSuggestionRecord.read(from: &buf), 
-                people: FfiConverterSequenceTypeTagSuggestionRecord.read(from: &buf), 
+                tags: FfiConverterSequenceTypeTagStructureItem.read(from: &buf), 
+                people: FfiConverterSequenceTypeTagStructureItem.read(from: &buf), 
                 buildMillis: FfiConverterUInt64.read(from: &buf)
         )
     }
 
-    public static func write(_ value: LibraryIndexSummary, into buf: inout [UInt8]) {
+    public static func write(_ value: LibraryBuildStructure, into buf: inout [UInt8]) {
         FfiConverterSequenceString.write(value.sortedPhotoIds, into: &buf)
-        FfiConverterSequenceTypeTagSuggestionRecord.write(value.tags, into: &buf)
-        FfiConverterSequenceTypeTagSuggestionRecord.write(value.people, into: &buf)
+        FfiConverterSequenceTypeTagStructureItem.write(value.tags, into: &buf)
+        FfiConverterSequenceTypeTagStructureItem.write(value.people, into: &buf)
         FfiConverterUInt64.write(value.buildMillis, into: &buf)
     }
 }
@@ -5551,80 +6218,25 @@ public struct FfiConverterTypeLibraryIndexSummary: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeLibraryIndexSummary_lift(_ buf: RustBuffer) throws -> LibraryIndexSummary {
-    return try FfiConverterTypeLibraryIndexSummary.lift(buf)
+public func FfiConverterTypeLibraryBuildStructure_lift(_ buf: RustBuffer) throws -> LibraryBuildStructure {
+    return try FfiConverterTypeLibraryBuildStructure.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeLibraryIndexSummary_lower(_ value: LibraryIndexSummary) -> RustBuffer {
-    return FfiConverterTypeLibraryIndexSummary.lower(value)
-}
-
-
-/**
- * [`LibraryIndex::tag_suggestions`]' pair.
- */
-public struct LibraryTagSuggestions: Equatable, Hashable {
-    public var tags: [TagSuggestionRecord]
-    public var people: [TagSuggestionRecord]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(tags: [TagSuggestionRecord], people: [TagSuggestionRecord]) {
-        self.tags = tags
-        self.people = people
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension LibraryTagSuggestions: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeLibraryTagSuggestions: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryTagSuggestions {
-        return
-            try LibraryTagSuggestions(
-                tags: FfiConverterSequenceTypeTagSuggestionRecord.read(from: &buf), 
-                people: FfiConverterSequenceTypeTagSuggestionRecord.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: LibraryTagSuggestions, into buf: inout [UInt8]) {
-        FfiConverterSequenceTypeTagSuggestionRecord.write(value.tags, into: &buf)
-        FfiConverterSequenceTypeTagSuggestionRecord.write(value.people, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeLibraryTagSuggestions_lift(_ buf: RustBuffer) throws -> LibraryTagSuggestions {
-    return try FfiConverterTypeLibraryTagSuggestions.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeLibraryTagSuggestions_lower(_ value: LibraryTagSuggestions) -> RustBuffer {
-    return FfiConverterTypeLibraryTagSuggestions.lower(value)
+public func FfiConverterTypeLibraryBuildStructure_lower(_ value: LibraryBuildStructure) -> RustBuffer {
+    return FfiConverterTypeLibraryBuildStructure.lower(value)
 }
 
 
 /**
  * `ContactInfo`, reduced to the fields the engine reads. `birthday.year` is
  * routinely absent in address-book data and is never consulted.
+ *
+ * R6 role: command DTO.
  */
-public struct MemoryContact: Equatable, Hashable {
+public struct MemoryContactCommandItem: Equatable, Hashable {
     public var id: String
     public var givenName: String
     public var familyName: String
@@ -5647,16 +6259,16 @@ public struct MemoryContact: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension MemoryContact: Sendable {}
+extension MemoryContactCommandItem: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeMemoryContact: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryContact {
+public struct FfiConverterTypeMemoryContactCommandItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryContactCommandItem {
         return
-            try MemoryContact(
+            try MemoryContactCommandItem(
                 id: FfiConverterString.read(from: &buf), 
                 givenName: FfiConverterString.read(from: &buf), 
                 familyName: FfiConverterString.read(from: &buf), 
@@ -5665,7 +6277,7 @@ public struct FfiConverterTypeMemoryContact: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: MemoryContact, into buf: inout [UInt8]) {
+    public static func write(_ value: MemoryContactCommandItem, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterString.write(value.givenName, into: &buf)
         FfiConverterString.write(value.familyName, into: &buf)
@@ -5678,22 +6290,24 @@ public struct FfiConverterTypeMemoryContact: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryContact_lift(_ buf: RustBuffer) throws -> MemoryContact {
-    return try FfiConverterTypeMemoryContact.lift(buf)
+public func FfiConverterTypeMemoryContactCommandItem_lift(_ buf: RustBuffer) throws -> MemoryContactCommandItem {
+    return try FfiConverterTypeMemoryContactCommandItem.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryContact_lower(_ value: MemoryContact) -> RustBuffer {
-    return FfiConverterTypeMemoryContact.lower(value)
+public func FfiConverterTypeMemoryContactCommandItem_lower(_ value: MemoryContactCommandItem) -> RustBuffer {
+    return FfiConverterTypeMemoryContactCommandItem.lower(value)
 }
 
 
 /**
  * A `[String: Date]` entry — seen memories, surfaced clusters.
+ *
+ * R6 role: command DTO.
  */
-public struct MemoryDateEntry: Equatable, Hashable {
+public struct MemoryDateCommandItem: Equatable, Hashable {
     public var key: String
     /**
      * Reference-date seconds.
@@ -5716,22 +6330,22 @@ public struct MemoryDateEntry: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension MemoryDateEntry: Sendable {}
+extension MemoryDateCommandItem: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeMemoryDateEntry: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryDateEntry {
+public struct FfiConverterTypeMemoryDateCommandItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryDateCommandItem {
         return
-            try MemoryDateEntry(
+            try MemoryDateCommandItem(
                 key: FfiConverterString.read(from: &buf), 
                 date: FfiConverterDouble.read(from: &buf)
         )
     }
 
-    public static func write(_ value: MemoryDateEntry, into buf: inout [UInt8]) {
+    public static func write(_ value: MemoryDateCommandItem, into buf: inout [UInt8]) {
         FfiConverterString.write(value.key, into: &buf)
         FfiConverterDouble.write(value.date, into: &buf)
     }
@@ -5741,241 +6355,24 @@ public struct FfiConverterTypeMemoryDateEntry: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryDateEntry_lift(_ buf: RustBuffer) throws -> MemoryDateEntry {
-    return try FfiConverterTypeMemoryDateEntry.lift(buf)
+public func FfiConverterTypeMemoryDateCommandItem_lift(_ buf: RustBuffer) throws -> MemoryDateCommandItem {
+    return try FfiConverterTypeMemoryDateCommandItem.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryDateEntry_lower(_ value: MemoryDateEntry) -> RustBuffer {
-    return FfiConverterTypeMemoryDateEntry.lower(value)
-}
-
-
-/**
- * `MemoryCoordinator.GenerationInputs` plus the clock, zone, seed and the
- * seen/cool-down state — everything the engine reads.
-
- */
-public struct MemoryGenerationInputs: Equatable, Hashable {
-    public var photos: [ScanPhoto]
-    /**
-     * `Calendar.current.timeZone.secondsFromGMT(for: photo.dateTaken)`, one
-     * per entry of `photos`, in the same order.
-     *
-     * **Empty is legal** and means "use `time_zone_offset_seconds` for every
-     * photo" — the behaviour before this field existed. Supplying them matters
-     * for a zone with DST: a single offset resolved at `now` buckets a summer
-     * photo on a different day depending on the season the run happens in,
-     * which moves `density-*` and `trip-*` ids — and therefore cluster keys —
-     * twice a year, so the cool-down and seen penalties stop matching the
-     * history the user's own taps wrote.
-     */
-    public var photoTimeZoneOffsets: [Int32]
-    public var leafFolders: [MemoryLeafFolder]
-    public var contacts: [MemoryContact]
-    public var personContactLinks: [MemoryPersonLink]
-    public var birthdaysEnabled: Bool
-    /**
-     * The user's own `People/…` tag, dropped from trip titles. Empty = unset.
-     */
-    public var mePersonPath: String
-    public var hiddenPeople: [String]
-    /**
-     * "Now", reference-date seconds.
-     */
-    public var now: Double
-    /**
-     * The UTC offset in seconds **at `now`**:
-     * `Calendar.current.timeZone.secondsFromGMT(for: now)`.
-     *
-     * `Calendar.current.timeZone`, not `TimeZone.current`, and the difference
-     * is load-bearing: `TimeZone.current` is cached and does not track an
-     * `NSTimeZone.default` override, so it answers GMT in exactly the
-     * situation the non-UTC conformance scenario creates, and answers a stale
-     * zone on a device whose zone changed while the app was running.
-     * `Calendar.current.timeZone` is what the deleted engine read.
-     *
-     * Not an IANA zone: the core has no tz database. Today, the horizon and
-     * the penalty windows are computed in this offset; each *photo* is bucketed
-     * in its own (see [`Self::photo_time_zone_offsets`]).
-     */
-    public var timeZoneOffsetSeconds: Int32
-    /**
-     * `Calendar.current.timeZone.secondsFromGMT(for: <that day's local noon>)`
-     * for each day of the pre-publish horizon, indexed by days from today —
-     * entry 0 is today.
-     *
-     * **Empty is legal** and means "use `time_zone_offset_seconds` for every
-     * day", the behaviour before this field existed. Supplying it matters for
-     * a zone with DST: seven days can straddle a transition, and a
-     * pre-published item's validity window is compared against the wall clock.
-     * Noon rather than midnight because midnight is the instant a transition
-     * can land on. Only `compute_scheduled_memories` reads it; a table two
-     * entries longer than the horizon covers the last window's close.
-     */
-    public var horizonOffsetSeconds: [Int32]
-    /**
-     * Drives the daily jitter: the day key for a normal run, a time-based
-     * value for force-regenerate.
-     */
-    public var seed: String
-    /**
-     * Memory id → when the user last opened it. −30 within ~6 months.
-     */
-    public var seenMemoryIds: [MemoryDateEntry]
-    /**
-     * Cluster key → when the cluster last surfaced. −25 within 3 days.
-     */
-    public var surfacedClusters: [MemoryDateEntry]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(photos: [ScanPhoto], 
-        /**
-         * `Calendar.current.timeZone.secondsFromGMT(for: photo.dateTaken)`, one
-         * per entry of `photos`, in the same order.
-         *
-         * **Empty is legal** and means "use `time_zone_offset_seconds` for every
-         * photo" — the behaviour before this field existed. Supplying them matters
-         * for a zone with DST: a single offset resolved at `now` buckets a summer
-         * photo on a different day depending on the season the run happens in,
-         * which moves `density-*` and `trip-*` ids — and therefore cluster keys —
-         * twice a year, so the cool-down and seen penalties stop matching the
-         * history the user's own taps wrote.
-         */photoTimeZoneOffsets: [Int32], leafFolders: [MemoryLeafFolder], contacts: [MemoryContact], personContactLinks: [MemoryPersonLink], birthdaysEnabled: Bool, 
-        /**
-         * The user's own `People/…` tag, dropped from trip titles. Empty = unset.
-         */mePersonPath: String, hiddenPeople: [String], 
-        /**
-         * "Now", reference-date seconds.
-         */now: Double, 
-        /**
-         * The UTC offset in seconds **at `now`**:
-         * `Calendar.current.timeZone.secondsFromGMT(for: now)`.
-         *
-         * `Calendar.current.timeZone`, not `TimeZone.current`, and the difference
-         * is load-bearing: `TimeZone.current` is cached and does not track an
-         * `NSTimeZone.default` override, so it answers GMT in exactly the
-         * situation the non-UTC conformance scenario creates, and answers a stale
-         * zone on a device whose zone changed while the app was running.
-         * `Calendar.current.timeZone` is what the deleted engine read.
-         *
-         * Not an IANA zone: the core has no tz database. Today, the horizon and
-         * the penalty windows are computed in this offset; each *photo* is bucketed
-         * in its own (see [`Self::photo_time_zone_offsets`]).
-         */timeZoneOffsetSeconds: Int32, 
-        /**
-         * `Calendar.current.timeZone.secondsFromGMT(for: <that day's local noon>)`
-         * for each day of the pre-publish horizon, indexed by days from today —
-         * entry 0 is today.
-         *
-         * **Empty is legal** and means "use `time_zone_offset_seconds` for every
-         * day", the behaviour before this field existed. Supplying it matters for
-         * a zone with DST: seven days can straddle a transition, and a
-         * pre-published item's validity window is compared against the wall clock.
-         * Noon rather than midnight because midnight is the instant a transition
-         * can land on. Only `compute_scheduled_memories` reads it; a table two
-         * entries longer than the horizon covers the last window's close.
-         */horizonOffsetSeconds: [Int32], 
-        /**
-         * Drives the daily jitter: the day key for a normal run, a time-based
-         * value for force-regenerate.
-         */seed: String, 
-        /**
-         * Memory id → when the user last opened it. −30 within ~6 months.
-         */seenMemoryIds: [MemoryDateEntry], 
-        /**
-         * Cluster key → when the cluster last surfaced. −25 within 3 days.
-         */surfacedClusters: [MemoryDateEntry]) {
-        self.photos = photos
-        self.photoTimeZoneOffsets = photoTimeZoneOffsets
-        self.leafFolders = leafFolders
-        self.contacts = contacts
-        self.personContactLinks = personContactLinks
-        self.birthdaysEnabled = birthdaysEnabled
-        self.mePersonPath = mePersonPath
-        self.hiddenPeople = hiddenPeople
-        self.now = now
-        self.timeZoneOffsetSeconds = timeZoneOffsetSeconds
-        self.horizonOffsetSeconds = horizonOffsetSeconds
-        self.seed = seed
-        self.seenMemoryIds = seenMemoryIds
-        self.surfacedClusters = surfacedClusters
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension MemoryGenerationInputs: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeMemoryGenerationInputs: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryGenerationInputs {
-        return
-            try MemoryGenerationInputs(
-                photos: FfiConverterSequenceTypeScanPhoto.read(from: &buf), 
-                photoTimeZoneOffsets: FfiConverterSequenceInt32.read(from: &buf), 
-                leafFolders: FfiConverterSequenceTypeMemoryLeafFolder.read(from: &buf), 
-                contacts: FfiConverterSequenceTypeMemoryContact.read(from: &buf), 
-                personContactLinks: FfiConverterSequenceTypeMemoryPersonLink.read(from: &buf), 
-                birthdaysEnabled: FfiConverterBool.read(from: &buf), 
-                mePersonPath: FfiConverterString.read(from: &buf), 
-                hiddenPeople: FfiConverterSequenceString.read(from: &buf), 
-                now: FfiConverterDouble.read(from: &buf), 
-                timeZoneOffsetSeconds: FfiConverterInt32.read(from: &buf), 
-                horizonOffsetSeconds: FfiConverterSequenceInt32.read(from: &buf), 
-                seed: FfiConverterString.read(from: &buf), 
-                seenMemoryIds: FfiConverterSequenceTypeMemoryDateEntry.read(from: &buf), 
-                surfacedClusters: FfiConverterSequenceTypeMemoryDateEntry.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: MemoryGenerationInputs, into buf: inout [UInt8]) {
-        FfiConverterSequenceTypeScanPhoto.write(value.photos, into: &buf)
-        FfiConverterSequenceInt32.write(value.photoTimeZoneOffsets, into: &buf)
-        FfiConverterSequenceTypeMemoryLeafFolder.write(value.leafFolders, into: &buf)
-        FfiConverterSequenceTypeMemoryContact.write(value.contacts, into: &buf)
-        FfiConverterSequenceTypeMemoryPersonLink.write(value.personContactLinks, into: &buf)
-        FfiConverterBool.write(value.birthdaysEnabled, into: &buf)
-        FfiConverterString.write(value.mePersonPath, into: &buf)
-        FfiConverterSequenceString.write(value.hiddenPeople, into: &buf)
-        FfiConverterDouble.write(value.now, into: &buf)
-        FfiConverterInt32.write(value.timeZoneOffsetSeconds, into: &buf)
-        FfiConverterSequenceInt32.write(value.horizonOffsetSeconds, into: &buf)
-        FfiConverterString.write(value.seed, into: &buf)
-        FfiConverterSequenceTypeMemoryDateEntry.write(value.seenMemoryIds, into: &buf)
-        FfiConverterSequenceTypeMemoryDateEntry.write(value.surfacedClusters, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeMemoryGenerationInputs_lift(_ buf: RustBuffer) throws -> MemoryGenerationInputs {
-    return try FfiConverterTypeMemoryGenerationInputs.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeMemoryGenerationInputs_lower(_ value: MemoryGenerationInputs) -> RustBuffer {
-    return FfiConverterTypeMemoryGenerationInputs.lower(value)
+public func FfiConverterTypeMemoryDateCommandItem_lower(_ value: MemoryDateCommandItem) -> RustBuffer {
+    return FfiConverterTypeMemoryDateCommandItem.lower(value)
 }
 
 
 /**
  * A leaf `PhotoFolder`, by reference into the photo list rather than by value.
+ *
+ * R6 role: command DTO.
  */
-public struct MemoryLeafFolder: Equatable, Hashable {
+public struct MemoryFolderCommandItem: Equatable, Hashable {
     /**
      * `PhotoFolder.id`. The memory id is `"folder-<this>"`.
      */
@@ -6006,23 +6403,23 @@ public struct MemoryLeafFolder: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension MemoryLeafFolder: Sendable {}
+extension MemoryFolderCommandItem: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeMemoryLeafFolder: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryLeafFolder {
+public struct FfiConverterTypeMemoryFolderCommandItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryFolderCommandItem {
         return
-            try MemoryLeafFolder(
+            try MemoryFolderCommandItem(
                 id: FfiConverterString.read(from: &buf), 
                 name: FfiConverterString.read(from: &buf), 
                 photoIds: FfiConverterSequenceString.read(from: &buf)
         )
     }
 
-    public static func write(_ value: MemoryLeafFolder, into buf: inout [UInt8]) {
+    public static func write(_ value: MemoryFolderCommandItem, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterString.write(value.name, into: &buf)
         FfiConverterSequenceString.write(value.photoIds, into: &buf)
@@ -6033,15 +6430,15 @@ public struct FfiConverterTypeMemoryLeafFolder: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryLeafFolder_lift(_ buf: RustBuffer) throws -> MemoryLeafFolder {
-    return try FfiConverterTypeMemoryLeafFolder.lift(buf)
+public func FfiConverterTypeMemoryFolderCommandItem_lift(_ buf: RustBuffer) throws -> MemoryFolderCommandItem {
+    return try FfiConverterTypeMemoryFolderCommandItem.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryLeafFolder_lower(_ value: MemoryLeafFolder) -> RustBuffer {
-    return FfiConverterTypeMemoryLeafFolder.lower(value)
+public func FfiConverterTypeMemoryFolderCommandItem_lower(_ value: MemoryFolderCommandItem) -> RustBuffer {
+    return FfiConverterTypeMemoryFolderCommandItem.lower(value)
 }
 
 
@@ -6051,8 +6448,10 @@ public func FfiConverterTypeMemoryLeafFolder_lower(_ value: MemoryLeafFolder) ->
  *
  * `contact_id == None` is `PersonLink.disabled` — "this tag is not a person in
  * the address book", which suppresses the memory entirely.
+ *
+ * R6 role: command DTO.
  */
-public struct MemoryPersonLink: Equatable, Hashable {
+public struct MemoryPersonCommandItem: Equatable, Hashable {
     public var personPath: String
     public var contactId: String?
 
@@ -6069,22 +6468,22 @@ public struct MemoryPersonLink: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension MemoryPersonLink: Sendable {}
+extension MemoryPersonCommandItem: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeMemoryPersonLink: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryPersonLink {
+public struct FfiConverterTypeMemoryPersonCommandItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryPersonCommandItem {
         return
-            try MemoryPersonLink(
+            try MemoryPersonCommandItem(
                 personPath: FfiConverterString.read(from: &buf), 
                 contactId: FfiConverterOptionString.read(from: &buf)
         )
     }
 
-    public static func write(_ value: MemoryPersonLink, into buf: inout [UInt8]) {
+    public static func write(_ value: MemoryPersonCommandItem, into buf: inout [UInt8]) {
         FfiConverterString.write(value.personPath, into: &buf)
         FfiConverterOptionString.write(value.contactId, into: &buf)
     }
@@ -6094,15 +6493,15 @@ public struct FfiConverterTypeMemoryPersonLink: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryPersonLink_lift(_ buf: RustBuffer) throws -> MemoryPersonLink {
-    return try FfiConverterTypeMemoryPersonLink.lift(buf)
+public func FfiConverterTypeMemoryPersonCommandItem_lift(_ buf: RustBuffer) throws -> MemoryPersonCommandItem {
+    return try FfiConverterTypeMemoryPersonCommandItem.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryPersonLink_lower(_ value: MemoryPersonLink) -> RustBuffer {
-    return FfiConverterTypeMemoryPersonLink.lower(value)
+public func FfiConverterTypeMemoryPersonCommandItem_lower(_ value: MemoryPersonCommandItem) -> RustBuffer {
+    return FfiConverterTypeMemoryPersonCommandItem.lower(value)
 }
 
 
@@ -6112,8 +6511,10 @@ public func FfiConverterTypeMemoryPersonLink_lower(_ value: MemoryPersonLink) ->
  * `date_range` is two optional fields rather than one optional pair because
  * UniFFI has no tuple: both are `Some` or both are `None`, and
  * [`MemoryRecord::of`] is the only thing that constructs them.
+ *
+ * R6 role: structure DTO.
  */
-public struct MemoryRecord: Equatable, Hashable {
+public struct MemoryStructure: Equatable, Hashable {
     public var id: String
     public var kind: MemoryKind
     public var title: String
@@ -6168,16 +6569,16 @@ public struct MemoryRecord: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension MemoryRecord: Sendable {}
+extension MemoryStructure: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeMemoryRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryRecord {
+public struct FfiConverterTypeMemoryStructure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryStructure {
         return
-            try MemoryRecord(
+            try MemoryStructure(
                 id: FfiConverterString.read(from: &buf), 
                 kind: FfiConverterTypeMemoryKind.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
@@ -6192,7 +6593,7 @@ public struct FfiConverterTypeMemoryRecord: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: MemoryRecord, into buf: inout [UInt8]) {
+    public static func write(_ value: MemoryStructure, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterTypeMemoryKind.write(value.kind, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
@@ -6211,109 +6612,24 @@ public struct FfiConverterTypeMemoryRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryRecord_lift(_ buf: RustBuffer) throws -> MemoryRecord {
-    return try FfiConverterTypeMemoryRecord.lift(buf)
+public func FfiConverterTypeMemoryStructure_lift(_ buf: RustBuffer) throws -> MemoryStructure {
+    return try FfiConverterTypeMemoryStructure.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeMemoryRecord_lower(_ value: MemoryRecord) -> RustBuffer {
-    return FfiConverterTypeMemoryRecord.lower(value)
-}
-
-
-/**
- * Two clusters the core thinks are the same person.
- *
- * Ids only. The app already holds `clusters()` and joins locally, and a
- * library with a chain of similar groups would otherwise ship the same
- * exemplars several times over.
- *
- * Advisory in both directions: nothing merges on its own, and a proposal is
- * only as fresh as the centroids it was computed from — a merge invalidates
- * every proposal touching either end, and the next run recomputes them.
- */
-public struct MergeProposal: Equatable, Hashable {
-    /**
-     * The lower of the two cluster ids.
-     */
-    public var a: Int64
-    /**
-     * The higher.
-     */
-    public var b: Int64
-    /**
-     * Cosine similarity of the two centroids, 0…1.
-     */
-    public var similarity: Float
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * The lower of the two cluster ids.
-         */a: Int64, 
-        /**
-         * The higher.
-         */b: Int64, 
-        /**
-         * Cosine similarity of the two centroids, 0…1.
-         */similarity: Float) {
-        self.a = a
-        self.b = b
-        self.similarity = similarity
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension MergeProposal: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeMergeProposal: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MergeProposal {
-        return
-            try MergeProposal(
-                a: FfiConverterInt64.read(from: &buf), 
-                b: FfiConverterInt64.read(from: &buf), 
-                similarity: FfiConverterFloat.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: MergeProposal, into buf: inout [UInt8]) {
-        FfiConverterInt64.write(value.a, into: &buf)
-        FfiConverterInt64.write(value.b, into: &buf)
-        FfiConverterFloat.write(value.similarity, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeMergeProposal_lift(_ buf: RustBuffer) throws -> MergeProposal {
-    return try FfiConverterTypeMergeProposal.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeMergeProposal_lower(_ value: MergeProposal) -> RustBuffer {
-    return FfiConverterTypeMergeProposal.lower(value)
+public func FfiConverterTypeMemoryStructure_lower(_ value: MemoryStructure) -> RustBuffer {
+    return FfiConverterTypeMemoryStructure.lower(value)
 }
 
 
 /**
  * Identity and shape of the loaded model pack, for the Settings status line.
+ *
+ * R6 role: host-port DTO.
  */
-public struct ModelPackInfo: Equatable, Hashable {
+public struct ModelPackHostInfo: Equatable, Hashable {
     /**
      * `manifest.pack_version` — the string written into every sidecar.
      */
@@ -6376,16 +6692,16 @@ public struct ModelPackInfo: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension ModelPackInfo: Sendable {}
+extension ModelPackHostInfo: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeModelPackInfo: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ModelPackInfo {
+public struct FfiConverterTypeModelPackHostInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ModelPackHostInfo {
         return
-            try ModelPackInfo(
+            try ModelPackHostInfo(
                 version: FfiConverterString.read(from: &buf), 
                 labelCount: FfiConverterUInt32.read(from: &buf), 
                 embeddingDim: FfiConverterUInt32.read(from: &buf), 
@@ -6394,7 +6710,7 @@ public struct FfiConverterTypeModelPackInfo: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: ModelPackInfo, into buf: inout [UInt8]) {
+    public static func write(_ value: ModelPackHostInfo, into buf: inout [UInt8]) {
         FfiConverterString.write(value.version, into: &buf)
         FfiConverterUInt32.write(value.labelCount, into: &buf)
         FfiConverterUInt32.write(value.embeddingDim, into: &buf)
@@ -6407,22 +6723,24 @@ public struct FfiConverterTypeModelPackInfo: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeModelPackInfo_lift(_ buf: RustBuffer) throws -> ModelPackInfo {
-    return try FfiConverterTypeModelPackInfo.lift(buf)
+public func FfiConverterTypeModelPackHostInfo_lift(_ buf: RustBuffer) throws -> ModelPackHostInfo {
+    return try FfiConverterTypeModelPackHostInfo.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeModelPackInfo_lower(_ value: ModelPackInfo) -> RustBuffer {
-    return FfiConverterTypeModelPackInfo.lower(value)
+public func FfiConverterTypeModelPackHostInfo_lower(_ value: ModelPackHostInfo) -> RustBuffer {
+    return FfiConverterTypeModelPackHostInfo.lower(value)
 }
 
 
 /**
  * The pack the host should load. `name` is the directory's last component.
+ *
+ * R6 role: host-port DTO.
  */
-public struct PackResolution: Equatable, Hashable {
+public struct ModelPackHostResolution: Equatable, Hashable {
     /**
      * Directory name (the version string).
      */
@@ -6451,22 +6769,22 @@ public struct PackResolution: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension PackResolution: Sendable {}
+extension ModelPackHostResolution: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypePackResolution: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PackResolution {
+public struct FfiConverterTypeModelPackHostResolution: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ModelPackHostResolution {
         return
-            try PackResolution(
+            try ModelPackHostResolution(
                 name: FfiConverterString.read(from: &buf), 
                 source: FfiConverterTypePackSource.read(from: &buf)
         )
     }
 
-    public static func write(_ value: PackResolution, into buf: inout [UInt8]) {
+    public static func write(_ value: ModelPackHostResolution, into buf: inout [UInt8]) {
         FfiConverterString.write(value.name, into: &buf)
         FfiConverterTypePackSource.write(value.source, into: &buf)
     }
@@ -6476,30 +6794,92 @@ public struct FfiConverterTypePackResolution: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePackResolution_lift(_ buf: RustBuffer) throws -> PackResolution {
-    return try FfiConverterTypePackResolution.lift(buf)
+public func FfiConverterTypeModelPackHostResolution_lift(_ buf: RustBuffer) throws -> ModelPackHostResolution {
+    return try FfiConverterTypeModelPackHostResolution.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePackResolution_lower(_ value: PackResolution) -> RustBuffer {
-    return FfiConverterTypePackResolution.lower(value)
+public func FfiConverterTypeModelPackHostResolution_lower(_ value: ModelPackHostResolution) -> RustBuffer {
+    return FfiConverterTypeModelPackHostResolution.lower(value)
 }
 
 
 /**
- * One path-keyed string in a projected person-state map.
+ * The three things a `.xmp` contributes, plus photo-tools stamps.
+ *
+ * R6 role: host-port DTO.
  */
-public struct PersonKeyedString: Equatable, Hashable {
-    public var path: String
-    public var value: String
+public struct ParsedSidecarHost: Equatable, Hashable {
+    /**
+     * Raw `digiKam:TagsList` entries, in packet order, undeduplicated.
+     */
+    public var rawTags: [String]
+    /**
+     * Uppercase `photo-tools:CountryCode`.
+     */
+    public var countryCode: String?
+    /**
+     * MWG regions.
+     */
+    public var faceRegions: [HostFaceRegion]
+    /**
+     * `TaggerVersion`, else `CoreModelPack`.
+     */
+    public var taggerVersion: String?
+    /**
+     * `TaggedAt`, else `CoreTaggedAt`.
+     */
+    public var taggedAt: String?
+    public var clipModel: String?
+    public var clipTimestamp: String?
+    public var facePack: String?
+    public var faceTaggedAt: String?
+    /**
+     * Raw `CoreFaceDecisions` bag entries.
+     */
+    public var faceDecisions: [String]
+    /**
+     * People named in decisions who have no MWG box.
+     */
+    public var namedWithoutBox: [String]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(path: String, value: String) {
-        self.path = path
-        self.value = value
+    public init(
+        /**
+         * Raw `digiKam:TagsList` entries, in packet order, undeduplicated.
+         */rawTags: [String], 
+        /**
+         * Uppercase `photo-tools:CountryCode`.
+         */countryCode: String?, 
+        /**
+         * MWG regions.
+         */faceRegions: [HostFaceRegion], 
+        /**
+         * `TaggerVersion`, else `CoreModelPack`.
+         */taggerVersion: String?, 
+        /**
+         * `TaggedAt`, else `CoreTaggedAt`.
+         */taggedAt: String?, clipModel: String?, clipTimestamp: String?, facePack: String?, faceTaggedAt: String?, 
+        /**
+         * Raw `CoreFaceDecisions` bag entries.
+         */faceDecisions: [String], 
+        /**
+         * People named in decisions who have no MWG box.
+         */namedWithoutBox: [String]) {
+        self.rawTags = rawTags
+        self.countryCode = countryCode
+        self.faceRegions = faceRegions
+        self.taggerVersion = taggerVersion
+        self.taggedAt = taggedAt
+        self.clipModel = clipModel
+        self.clipTimestamp = clipTimestamp
+        self.facePack = facePack
+        self.faceTaggedAt = faceTaggedAt
+        self.faceDecisions = faceDecisions
+        self.namedWithoutBox = namedWithoutBox
     }
 
     
@@ -6508,24 +6888,42 @@ public struct PersonKeyedString: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension PersonKeyedString: Sendable {}
+extension ParsedSidecarHost: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypePersonKeyedString: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonKeyedString {
+public struct FfiConverterTypeParsedSidecarHost: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ParsedSidecarHost {
         return
-            try PersonKeyedString(
-                path: FfiConverterString.read(from: &buf), 
-                value: FfiConverterString.read(from: &buf)
+            try ParsedSidecarHost(
+                rawTags: FfiConverterSequenceString.read(from: &buf), 
+                countryCode: FfiConverterOptionString.read(from: &buf), 
+                faceRegions: FfiConverterSequenceTypeHostFaceRegion.read(from: &buf), 
+                taggerVersion: FfiConverterOptionString.read(from: &buf), 
+                taggedAt: FfiConverterOptionString.read(from: &buf), 
+                clipModel: FfiConverterOptionString.read(from: &buf), 
+                clipTimestamp: FfiConverterOptionString.read(from: &buf), 
+                facePack: FfiConverterOptionString.read(from: &buf), 
+                faceTaggedAt: FfiConverterOptionString.read(from: &buf), 
+                faceDecisions: FfiConverterSequenceString.read(from: &buf), 
+                namedWithoutBox: FfiConverterSequenceString.read(from: &buf)
         )
     }
 
-    public static func write(_ value: PersonKeyedString, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.path, into: &buf)
-        FfiConverterString.write(value.value, into: &buf)
+    public static func write(_ value: ParsedSidecarHost, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.rawTags, into: &buf)
+        FfiConverterOptionString.write(value.countryCode, into: &buf)
+        FfiConverterSequenceTypeHostFaceRegion.write(value.faceRegions, into: &buf)
+        FfiConverterOptionString.write(value.taggerVersion, into: &buf)
+        FfiConverterOptionString.write(value.taggedAt, into: &buf)
+        FfiConverterOptionString.write(value.clipModel, into: &buf)
+        FfiConverterOptionString.write(value.clipTimestamp, into: &buf)
+        FfiConverterOptionString.write(value.facePack, into: &buf)
+        FfiConverterOptionString.write(value.faceTaggedAt, into: &buf)
+        FfiConverterSequenceString.write(value.faceDecisions, into: &buf)
+        FfiConverterSequenceString.write(value.namedWithoutBox, into: &buf)
     }
 }
 
@@ -6533,28 +6931,30 @@ public struct FfiConverterTypePersonKeyedString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePersonKeyedString_lift(_ buf: RustBuffer) throws -> PersonKeyedString {
-    return try FfiConverterTypePersonKeyedString.lift(buf)
+public func FfiConverterTypeParsedSidecarHost_lift(_ buf: RustBuffer) throws -> ParsedSidecarHost {
+    return try FfiConverterTypeParsedSidecarHost.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePersonKeyedString_lower(_ value: PersonKeyedString) -> RustBuffer {
-    return FfiConverterTypePersonKeyedString.lower(value)
+public func FfiConverterTypeParsedSidecarHost_lower(_ value: ParsedSidecarHost) -> RustBuffer {
+    return FfiConverterTypeParsedSidecarHost.lower(value)
 }
 
 
 /**
  * Projected state plus non-fatal append-only-log diagnostics.
+ *
+ * R6 role: structure DTO.
  */
 public struct PersonProjectionRecord: Equatable, Hashable {
-    public var state: PersonStateRecord
+    public var state: PersonStateStructure
     public var tornTails: [PersonTornTailRecord]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(state: PersonStateRecord, tornTails: [PersonTornTailRecord]) {
+    public init(state: PersonStateStructure, tornTails: [PersonTornTailRecord]) {
         self.state = state
         self.tornTails = tornTails
     }
@@ -6575,13 +6975,13 @@ public struct FfiConverterTypePersonProjectionRecord: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonProjectionRecord {
         return
             try PersonProjectionRecord(
-                state: FfiConverterTypePersonStateRecord.read(from: &buf), 
+                state: FfiConverterTypePersonStateStructure.read(from: &buf), 
                 tornTails: FfiConverterSequenceTypePersonTornTailRecord.read(from: &buf)
         )
     }
 
     public static func write(_ value: PersonProjectionRecord, into buf: inout [UInt8]) {
-        FfiConverterTypePersonStateRecord.write(value.state, into: &buf)
+        FfiConverterTypePersonStateStructure.write(value.state, into: &buf)
         FfiConverterSequenceTypePersonTornTailRecord.write(value.tornTails, into: &buf)
     }
 }
@@ -6603,21 +7003,82 @@ public func FfiConverterTypePersonProjectionRecord_lower(_ value: PersonProjecti
 
 
 /**
+ * One path-keyed string in a projected person-state map.
+ *
+ * R6 role: structure DTO.
+ */
+public struct PersonStatePair: Equatable, Hashable {
+    public var path: String
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, value: String) {
+        self.path = path
+        self.value = value
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PersonStatePair: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonStatePair: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonStatePair {
+        return
+            try PersonStatePair(
+                path: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PersonStatePair, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonStatePair_lift(_ buf: RustBuffer) throws -> PersonStatePair {
+    return try FfiConverterTypePersonStatePair.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonStatePair_lower(_ value: PersonStatePair) -> RustBuffer {
+    return FfiConverterTypePersonStatePair.lower(value)
+}
+
+
+/**
  * Projected people-rail state after replaying `.gallery/log`.
  *
  * `me` is empty when unset. `links` values: a contact id, or empty for
  * `PersonLink.disabled`.
+ *
+ * R6 role: structure DTO.
  */
-public struct PersonStateRecord: Equatable, Hashable {
+public struct PersonStateStructure: Equatable, Hashable {
     public var hidden: [String]
     public var featured: [String]
     public var me: String
-    public var featuredPhoto: [PersonKeyedString]
-    public var links: [PersonKeyedString]
+    public var featuredPhoto: [PersonStatePair]
+    public var links: [PersonStatePair]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(hidden: [String], featured: [String], me: String, featuredPhoto: [PersonKeyedString], links: [PersonKeyedString]) {
+    public init(hidden: [String], featured: [String], me: String, featuredPhoto: [PersonStatePair], links: [PersonStatePair]) {
         self.hidden = hidden
         self.featured = featured
         self.me = me
@@ -6631,30 +7092,30 @@ public struct PersonStateRecord: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension PersonStateRecord: Sendable {}
+extension PersonStateStructure: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypePersonStateRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonStateRecord {
+public struct FfiConverterTypePersonStateStructure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonStateStructure {
         return
-            try PersonStateRecord(
+            try PersonStateStructure(
                 hidden: FfiConverterSequenceString.read(from: &buf), 
                 featured: FfiConverterSequenceString.read(from: &buf), 
                 me: FfiConverterString.read(from: &buf), 
-                featuredPhoto: FfiConverterSequenceTypePersonKeyedString.read(from: &buf), 
-                links: FfiConverterSequenceTypePersonKeyedString.read(from: &buf)
+                featuredPhoto: FfiConverterSequenceTypePersonStatePair.read(from: &buf), 
+                links: FfiConverterSequenceTypePersonStatePair.read(from: &buf)
         )
     }
 
-    public static func write(_ value: PersonStateRecord, into buf: inout [UInt8]) {
+    public static func write(_ value: PersonStateStructure, into buf: inout [UInt8]) {
         FfiConverterSequenceString.write(value.hidden, into: &buf)
         FfiConverterSequenceString.write(value.featured, into: &buf)
         FfiConverterString.write(value.me, into: &buf)
-        FfiConverterSequenceTypePersonKeyedString.write(value.featuredPhoto, into: &buf)
-        FfiConverterSequenceTypePersonKeyedString.write(value.links, into: &buf)
+        FfiConverterSequenceTypePersonStatePair.write(value.featuredPhoto, into: &buf)
+        FfiConverterSequenceTypePersonStatePair.write(value.links, into: &buf)
     }
 }
 
@@ -6662,21 +7123,23 @@ public struct FfiConverterTypePersonStateRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePersonStateRecord_lift(_ buf: RustBuffer) throws -> PersonStateRecord {
-    return try FfiConverterTypePersonStateRecord.lift(buf)
+public func FfiConverterTypePersonStateStructure_lift(_ buf: RustBuffer) throws -> PersonStateStructure {
+    return try FfiConverterTypePersonStateStructure.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypePersonStateRecord_lower(_ value: PersonStateRecord) -> RustBuffer {
-    return FfiConverterTypePersonStateRecord.lower(value)
+public func FfiConverterTypePersonStateStructure_lower(_ value: PersonStateStructure) -> RustBuffer {
+    return FfiConverterTypePersonStateStructure.lower(value)
 }
 
 
 /**
  * One recovered torn final line. Complete events before this offset were
  * projected and remain authoritative.
+ *
+ * R6 role: structure DTO.
  */
 public struct PersonTornTailRecord: Equatable, Hashable {
     public var path: String
@@ -6738,6 +7201,8 @@ public func FfiConverterTypePersonTornTailRecord_lower(_ value: PersonTornTailRe
 
 /**
  * One photo processed by a Places run.
+ *
+ * R6 role: command DTO.
  */
 public struct PlacesRunRecord: Equatable, Hashable {
     /**
@@ -6817,6 +7282,8 @@ public func FfiConverterTypePlacesRunRecord_lower(_ value: PlacesRunRecord) -> R
 
 /**
  * Display and refresh data from one Places run.
+ *
+ * R6 role: command DTO.
  */
 public struct PlacesRunSummary: Equatable, Hashable {
     /**
@@ -6945,45 +7412,91 @@ public func FfiConverterTypePlacesRunSummary_lower(_ value: PlacesRunSummary) ->
 
 
 /**
- * What one `recluster()` did.
+ * Everything one pass produces.
+ *
+ * R6 role: host-port DTO.
  */
-public struct ReclusterSummary: Equatable, Hashable {
+public struct ScanCatalogHost: Equatable, Hashable {
     /**
-     * Unlabeled clusters that existed before the pass.
+     * Every photo, in traversal order. Folder membership is expressed as
+     * slices of this array.
      */
-    public var clustersBefore: UInt32
+    public var flatPhotos: [ScannedMediaHost]
     /**
-     * Unlabeled clusters after it.
+     * The tree, flattened; empty when the root itself could not be visited.
      */
-    public var clustersAfter: UInt32
+    public var folders: [ScannedFolderHost]
     /**
-     * Faces the pass re-partitioned.
+     * Whether anything needs an enrichment pass.
      */
-    public var faces: UInt32
+    public var needsEnrichment: Bool
     /**
-     * Merge proposals standing afterwards.
+     * One row per image that has a `<basename>.xmp` beside it.
      */
-    public var proposals: UInt32
+    public var sidecarManifest: [ScannedSidecarHost]
+    /**
+     * Paths seen now and absent from the cache.
+     */
+    public var addedPaths: [String]
+    /**
+     * Paths in the cache and not seen now, excluding anything under a failed
+     * directory.
+     */
+    public var removedPaths: [String]
+    /**
+     * Paths whose size or mtime changed.
+     */
+    public var modifiedPaths: [String]
+    /**
+     * Decomposed paths of directories whose listing failed.
+     */
+    public var failedDirectoryPaths: [String]
+    /**
+     * Timings and counters.
+     */
+    public var timings: ScanMetrics
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
-         * Unlabeled clusters that existed before the pass.
-         */clustersBefore: UInt32, 
+         * Every photo, in traversal order. Folder membership is expressed as
+         * slices of this array.
+         */flatPhotos: [ScannedMediaHost], 
         /**
-         * Unlabeled clusters after it.
-         */clustersAfter: UInt32, 
+         * The tree, flattened; empty when the root itself could not be visited.
+         */folders: [ScannedFolderHost], 
         /**
-         * Faces the pass re-partitioned.
-         */faces: UInt32, 
+         * Whether anything needs an enrichment pass.
+         */needsEnrichment: Bool, 
         /**
-         * Merge proposals standing afterwards.
-         */proposals: UInt32) {
-        self.clustersBefore = clustersBefore
-        self.clustersAfter = clustersAfter
-        self.faces = faces
-        self.proposals = proposals
+         * One row per image that has a `<basename>.xmp` beside it.
+         */sidecarManifest: [ScannedSidecarHost], 
+        /**
+         * Paths seen now and absent from the cache.
+         */addedPaths: [String], 
+        /**
+         * Paths in the cache and not seen now, excluding anything under a failed
+         * directory.
+         */removedPaths: [String], 
+        /**
+         * Paths whose size or mtime changed.
+         */modifiedPaths: [String], 
+        /**
+         * Decomposed paths of directories whose listing failed.
+         */failedDirectoryPaths: [String], 
+        /**
+         * Timings and counters.
+         */timings: ScanMetrics) {
+        self.flatPhotos = flatPhotos
+        self.folders = folders
+        self.needsEnrichment = needsEnrichment
+        self.sidecarManifest = sidecarManifest
+        self.addedPaths = addedPaths
+        self.removedPaths = removedPaths
+        self.modifiedPaths = modifiedPaths
+        self.failedDirectoryPaths = failedDirectoryPaths
+        self.timings = timings
     }
 
     
@@ -6992,28 +7505,38 @@ public struct ReclusterSummary: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension ReclusterSummary: Sendable {}
+extension ScanCatalogHost: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeReclusterSummary: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReclusterSummary {
+public struct FfiConverterTypeScanCatalogHost: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanCatalogHost {
         return
-            try ReclusterSummary(
-                clustersBefore: FfiConverterUInt32.read(from: &buf), 
-                clustersAfter: FfiConverterUInt32.read(from: &buf), 
-                faces: FfiConverterUInt32.read(from: &buf), 
-                proposals: FfiConverterUInt32.read(from: &buf)
+            try ScanCatalogHost(
+                flatPhotos: FfiConverterSequenceTypeScannedMediaHost.read(from: &buf), 
+                folders: FfiConverterSequenceTypeScannedFolderHost.read(from: &buf), 
+                needsEnrichment: FfiConverterBool.read(from: &buf), 
+                sidecarManifest: FfiConverterSequenceTypeScannedSidecarHost.read(from: &buf), 
+                addedPaths: FfiConverterSequenceString.read(from: &buf), 
+                removedPaths: FfiConverterSequenceString.read(from: &buf), 
+                modifiedPaths: FfiConverterSequenceString.read(from: &buf), 
+                failedDirectoryPaths: FfiConverterSequenceString.read(from: &buf), 
+                timings: FfiConverterTypeScanMetrics.read(from: &buf)
         )
     }
 
-    public static func write(_ value: ReclusterSummary, into buf: inout [UInt8]) {
-        FfiConverterUInt32.write(value.clustersBefore, into: &buf)
-        FfiConverterUInt32.write(value.clustersAfter, into: &buf)
-        FfiConverterUInt32.write(value.faces, into: &buf)
-        FfiConverterUInt32.write(value.proposals, into: &buf)
+    public static func write(_ value: ScanCatalogHost, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeScannedMediaHost.write(value.flatPhotos, into: &buf)
+        FfiConverterSequenceTypeScannedFolderHost.write(value.folders, into: &buf)
+        FfiConverterBool.write(value.needsEnrichment, into: &buf)
+        FfiConverterSequenceTypeScannedSidecarHost.write(value.sidecarManifest, into: &buf)
+        FfiConverterSequenceString.write(value.addedPaths, into: &buf)
+        FfiConverterSequenceString.write(value.removedPaths, into: &buf)
+        FfiConverterSequenceString.write(value.modifiedPaths, into: &buf)
+        FfiConverterSequenceString.write(value.failedDirectoryPaths, into: &buf)
+        FfiConverterTypeScanMetrics.write(value.timings, into: &buf)
     }
 }
 
@@ -7021,42 +7544,54 @@ public struct FfiConverterTypeReclusterSummary: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeReclusterSummary_lift(_ buf: RustBuffer) throws -> ReclusterSummary {
-    return try FfiConverterTypeReclusterSummary.lift(buf)
+public func FfiConverterTypeScanCatalogHost_lift(_ buf: RustBuffer) throws -> ScanCatalogHost {
+    return try FfiConverterTypeScanCatalogHost.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeReclusterSummary_lower(_ value: ReclusterSummary) -> RustBuffer {
-    return FfiConverterTypeReclusterSummary.lower(value)
+public func FfiConverterTypeScanCatalogHost_lower(_ value: ScanCatalogHost) -> RustBuffer {
+    return FfiConverterTypeScanCatalogHost.lower(value)
 }
 
 
 /**
- * A file's identity without reading it.
+ * The cache a pass is allowed to reuse.
+ *
+ * R6 role: command DTO.
  */
-public struct ScanContentVersion: Equatable, Hashable {
+public struct ScanCommand: Equatable, Hashable {
     /**
-     * Modification date, reference-date seconds.
+     * Reuse cached photos for unchanged paths — the light scan.
      */
-    public var modificationDate: Double?
+    public var reuseCached: Bool
     /**
-     * Size in bytes.
+     * Last pass's photos. Carries EXIF, tags and GPS forward.
      */
-    public var size: Int64?
+    public var cachedPhotos: [ScannedMediaHost]
+    /**
+     * Last pass's sidecar rows. A hit here is what lets a light scan skip
+     * rebuilding an `.xmp` row when the listing still matches.
+     */
+    public var cachedSidecarManifest: [ScannedSidecarHost]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
-         * Modification date, reference-date seconds.
-         */modificationDate: Double?, 
+         * Reuse cached photos for unchanged paths — the light scan.
+         */reuseCached: Bool, 
         /**
-         * Size in bytes.
-         */size: Int64?) {
-        self.modificationDate = modificationDate
-        self.size = size
+         * Last pass's photos. Carries EXIF, tags and GPS forward.
+         */cachedPhotos: [ScannedMediaHost], 
+        /**
+         * Last pass's sidecar rows. A hit here is what lets a light scan skip
+         * rebuilding an `.xmp` row when the listing still matches.
+         */cachedSidecarManifest: [ScannedSidecarHost]) {
+        self.reuseCached = reuseCached
+        self.cachedPhotos = cachedPhotos
+        self.cachedSidecarManifest = cachedSidecarManifest
     }
 
     
@@ -7065,24 +7600,26 @@ public struct ScanContentVersion: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension ScanContentVersion: Sendable {}
+extension ScanCommand: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeScanContentVersion: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanContentVersion {
+public struct FfiConverterTypeScanCommand: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanCommand {
         return
-            try ScanContentVersion(
-                modificationDate: FfiConverterOptionDouble.read(from: &buf), 
-                size: FfiConverterOptionInt64.read(from: &buf)
+            try ScanCommand(
+                reuseCached: FfiConverterBool.read(from: &buf), 
+                cachedPhotos: FfiConverterSequenceTypeScannedMediaHost.read(from: &buf), 
+                cachedSidecarManifest: FfiConverterSequenceTypeScannedSidecarHost.read(from: &buf)
         )
     }
 
-    public static func write(_ value: ScanContentVersion, into buf: inout [UInt8]) {
-        FfiConverterOptionDouble.write(value.modificationDate, into: &buf)
-        FfiConverterOptionInt64.write(value.size, into: &buf)
+    public static func write(_ value: ScanCommand, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.reuseCached, into: &buf)
+        FfiConverterSequenceTypeScannedMediaHost.write(value.cachedPhotos, into: &buf)
+        FfiConverterSequenceTypeScannedSidecarHost.write(value.cachedSidecarManifest, into: &buf)
     }
 }
 
@@ -7090,23 +7627,127 @@ public struct FfiConverterTypeScanContentVersion: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScanContentVersion_lift(_ buf: RustBuffer) throws -> ScanContentVersion {
-    return try FfiConverterTypeScanContentVersion.lift(buf)
+public func FfiConverterTypeScanCommand_lift(_ buf: RustBuffer) throws -> ScanCommand {
+    return try FfiConverterTypeScanCommand.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScanContentVersion_lower(_ value: ScanContentVersion) -> RustBuffer {
-    return FfiConverterTypeScanContentVersion.lower(value)
+public func FfiConverterTypeScanCommand_lower(_ value: ScanCommand) -> RustBuffer {
+    return FfiConverterTypeScanCommand.lower(value)
+}
+
+
+/**
+ * Where a pass spent its time. Feeds the `Scan totals:` log line the
+ * performance gates are measured from.
+ *
+ * R6 role: host-port DTO.
+ */
+public struct ScanMetrics: Equatable, Hashable {
+    /**
+     * Whole pass, inside the core.
+     */
+    public var totalMillis: UInt64
+    /**
+     * Directory listings.
+     */
+    public var listMillis: UInt64
+    /**
+     * Photos reused verbatim from the cache.
+     */
+    public var cacheHits: UInt32
+    /**
+     * Photos rebuilt.
+     */
+    public var slowPath: UInt32
+    /**
+     * Directories visited.
+     */
+    public var folders: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Whole pass, inside the core.
+         */totalMillis: UInt64, 
+        /**
+         * Directory listings.
+         */listMillis: UInt64, 
+        /**
+         * Photos reused verbatim from the cache.
+         */cacheHits: UInt32, 
+        /**
+         * Photos rebuilt.
+         */slowPath: UInt32, 
+        /**
+         * Directories visited.
+         */folders: UInt32) {
+        self.totalMillis = totalMillis
+        self.listMillis = listMillis
+        self.cacheHits = cacheHits
+        self.slowPath = slowPath
+        self.folders = folders
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ScanMetrics: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeScanMetrics: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanMetrics {
+        return
+            try ScanMetrics(
+                totalMillis: FfiConverterUInt64.read(from: &buf), 
+                listMillis: FfiConverterUInt64.read(from: &buf), 
+                cacheHits: FfiConverterUInt32.read(from: &buf), 
+                slowPath: FfiConverterUInt32.read(from: &buf), 
+                folders: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ScanMetrics, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.totalMillis, into: &buf)
+        FfiConverterUInt64.write(value.listMillis, into: &buf)
+        FfiConverterUInt32.write(value.cacheHits, into: &buf)
+        FfiConverterUInt32.write(value.slowPath, into: &buf)
+        FfiConverterUInt32.write(value.folders, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeScanMetrics_lift(_ buf: RustBuffer) throws -> ScanMetrics {
+    return try FfiConverterTypeScanMetrics.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeScanMetrics_lower(_ value: ScanMetrics) -> RustBuffer {
+    return FfiConverterTypeScanMetrics.lower(value)
 }
 
 
 /**
  * One folder, flattened. See the module docs for why the tree is not
  * recursive on the wire.
+ *
+ * R6 role: host-port DTO.
  */
-public struct ScanFolderNode: Equatable, Hashable {
+public struct ScannedFolderHost: Equatable, Hashable {
     /**
      * `StableUUID.derive("folder:" + path)`, uppercase hyphenated.
      */
@@ -7203,16 +7844,16 @@ public struct ScanFolderNode: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension ScanFolderNode: Sendable {}
+extension ScannedFolderHost: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeScanFolderNode: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanFolderNode {
+public struct FfiConverterTypeScannedFolderHost: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScannedFolderHost {
         return
-            try ScanFolderNode(
+            try ScannedFolderHost(
                 id: FfiConverterString.read(from: &buf), 
                 path: FfiConverterString.read(from: &buf), 
                 name: FfiConverterString.read(from: &buf), 
@@ -7226,7 +7867,7 @@ public struct FfiConverterTypeScanFolderNode: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: ScanFolderNode, into buf: inout [UInt8]) {
+    public static func write(_ value: ScannedFolderHost, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterString.write(value.path, into: &buf)
         FfiConverterString.write(value.name, into: &buf)
@@ -7244,158 +7885,15 @@ public struct FfiConverterTypeScanFolderNode: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScanFolderNode_lift(_ buf: RustBuffer) throws -> ScanFolderNode {
-    return try FfiConverterTypeScanFolderNode.lift(buf)
+public func FfiConverterTypeScannedFolderHost_lift(_ buf: RustBuffer) throws -> ScannedFolderHost {
+    return try FfiConverterTypeScannedFolderHost.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScanFolderNode_lower(_ value: ScanFolderNode) -> RustBuffer {
-    return FfiConverterTypeScanFolderNode.lower(value)
-}
-
-
-/**
- * Everything one pass produces.
- */
-public struct ScanOutcomeRecord: Equatable, Hashable {
-    /**
-     * Every photo, in traversal order. Folder membership is expressed as
-     * slices of this array.
-     */
-    public var flatPhotos: [ScanPhoto]
-    /**
-     * The tree, flattened; empty when the root itself could not be visited.
-     */
-    public var folders: [ScanFolderNode]
-    /**
-     * Whether anything needs an enrichment pass.
-     */
-    public var needsEnrichment: Bool
-    /**
-     * One row per image that has a `<basename>.xmp` beside it.
-     */
-    public var sidecarManifest: [ScanSidecarRow]
-    /**
-     * Paths seen now and absent from the cache.
-     */
-    public var addedPaths: [String]
-    /**
-     * Paths in the cache and not seen now, excluding anything under a failed
-     * directory.
-     */
-    public var removedPaths: [String]
-    /**
-     * Paths whose size or mtime changed.
-     */
-    public var modifiedPaths: [String]
-    /**
-     * Decomposed paths of directories whose listing failed.
-     */
-    public var failedDirectoryPaths: [String]
-    /**
-     * Timings and counters.
-     */
-    public var timings: ScanTimings
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Every photo, in traversal order. Folder membership is expressed as
-         * slices of this array.
-         */flatPhotos: [ScanPhoto], 
-        /**
-         * The tree, flattened; empty when the root itself could not be visited.
-         */folders: [ScanFolderNode], 
-        /**
-         * Whether anything needs an enrichment pass.
-         */needsEnrichment: Bool, 
-        /**
-         * One row per image that has a `<basename>.xmp` beside it.
-         */sidecarManifest: [ScanSidecarRow], 
-        /**
-         * Paths seen now and absent from the cache.
-         */addedPaths: [String], 
-        /**
-         * Paths in the cache and not seen now, excluding anything under a failed
-         * directory.
-         */removedPaths: [String], 
-        /**
-         * Paths whose size or mtime changed.
-         */modifiedPaths: [String], 
-        /**
-         * Decomposed paths of directories whose listing failed.
-         */failedDirectoryPaths: [String], 
-        /**
-         * Timings and counters.
-         */timings: ScanTimings) {
-        self.flatPhotos = flatPhotos
-        self.folders = folders
-        self.needsEnrichment = needsEnrichment
-        self.sidecarManifest = sidecarManifest
-        self.addedPaths = addedPaths
-        self.removedPaths = removedPaths
-        self.modifiedPaths = modifiedPaths
-        self.failedDirectoryPaths = failedDirectoryPaths
-        self.timings = timings
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension ScanOutcomeRecord: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeScanOutcomeRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanOutcomeRecord {
-        return
-            try ScanOutcomeRecord(
-                flatPhotos: FfiConverterSequenceTypeScanPhoto.read(from: &buf), 
-                folders: FfiConverterSequenceTypeScanFolderNode.read(from: &buf), 
-                needsEnrichment: FfiConverterBool.read(from: &buf), 
-                sidecarManifest: FfiConverterSequenceTypeScanSidecarRow.read(from: &buf), 
-                addedPaths: FfiConverterSequenceString.read(from: &buf), 
-                removedPaths: FfiConverterSequenceString.read(from: &buf), 
-                modifiedPaths: FfiConverterSequenceString.read(from: &buf), 
-                failedDirectoryPaths: FfiConverterSequenceString.read(from: &buf), 
-                timings: FfiConverterTypeScanTimings.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ScanOutcomeRecord, into buf: inout [UInt8]) {
-        FfiConverterSequenceTypeScanPhoto.write(value.flatPhotos, into: &buf)
-        FfiConverterSequenceTypeScanFolderNode.write(value.folders, into: &buf)
-        FfiConverterBool.write(value.needsEnrichment, into: &buf)
-        FfiConverterSequenceTypeScanSidecarRow.write(value.sidecarManifest, into: &buf)
-        FfiConverterSequenceString.write(value.addedPaths, into: &buf)
-        FfiConverterSequenceString.write(value.removedPaths, into: &buf)
-        FfiConverterSequenceString.write(value.modifiedPaths, into: &buf)
-        FfiConverterSequenceString.write(value.failedDirectoryPaths, into: &buf)
-        FfiConverterTypeScanTimings.write(value.timings, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanOutcomeRecord_lift(_ buf: RustBuffer) throws -> ScanOutcomeRecord {
-    return try FfiConverterTypeScanOutcomeRecord.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanOutcomeRecord_lower(_ value: ScanOutcomeRecord) -> RustBuffer {
-    return FfiConverterTypeScanOutcomeRecord.lower(value)
+public func FfiConverterTypeScannedFolderHost_lower(_ value: ScannedFolderHost) -> RustBuffer {
+    return FfiConverterTypeScannedFolderHost.lower(value)
 }
 
 
@@ -7409,8 +7907,10 @@ public func FfiConverterTypeScanOutcomeRecord_lower(_ value: ScanOutcomeRecord) 
  * `sidecarStatus` is deliberately absent. It is runtime state the scanner
  * never sets and the Store re-derives from `SidecarCacheStore` in
  * `mergeCachedSidecars`, on the same pass, before anything is published.
+ *
+ * R6 role: host-port DTO.
  */
-public struct ScanPhoto: Equatable, Hashable {
+public struct ScannedMediaHost: Equatable, Hashable {
     /**
      * `StableUUID.derive(path)`, uppercase hyphenated.
      */
@@ -7447,7 +7947,7 @@ public struct ScanPhoto: Equatable, Hashable {
     /**
      * Tags from `digiKam:TagsList`.
      */
-    public var hierarchicalTags: [ScanTag]
+    public var hierarchicalTags: [HostTagValue]
     /**
      * Uppercase ISO 3166-1 alpha-2.
      */
@@ -7471,7 +7971,7 @@ public struct ScanPhoto: Equatable, Hashable {
     /**
      * MWG regions.
      */
-    public var faceRegions: [ScanRegion]
+    public var faceRegions: [HostFaceRegion]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7503,7 +8003,7 @@ public struct ScanPhoto: Equatable, Hashable {
          */livePhotoVideoPath: String?, 
         /**
          * Tags from `digiKam:TagsList`.
-         */hierarchicalTags: [ScanTag], 
+         */hierarchicalTags: [HostTagValue], 
         /**
          * Uppercase ISO 3166-1 alpha-2.
          */countryCode: String?, 
@@ -7521,7 +8021,7 @@ public struct ScanPhoto: Equatable, Hashable {
          */gpsLongitude: Double?, 
         /**
          * MWG regions.
-         */faceRegions: [ScanRegion]) {
+         */faceRegions: [HostFaceRegion]) {
         self.id = id
         self.path = path
         self.filename = filename
@@ -7545,16 +8045,16 @@ public struct ScanPhoto: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension ScanPhoto: Sendable {}
+extension ScannedMediaHost: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeScanPhoto: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanPhoto {
+public struct FfiConverterTypeScannedMediaHost: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScannedMediaHost {
         return
-            try ScanPhoto(
+            try ScannedMediaHost(
                 id: FfiConverterString.read(from: &buf), 
                 path: FfiConverterString.read(from: &buf), 
                 filename: FfiConverterString.read(from: &buf), 
@@ -7563,17 +8063,17 @@ public struct FfiConverterTypeScanPhoto: FfiConverterRustBuffer {
                 dateFromMetadata: FfiConverterBool.read(from: &buf), 
                 isVideo: FfiConverterBool.read(from: &buf), 
                 livePhotoVideoPath: FfiConverterOptionString.read(from: &buf), 
-                hierarchicalTags: FfiConverterSequenceTypeScanTag.read(from: &buf), 
+                hierarchicalTags: FfiConverterSequenceTypeHostTagValue.read(from: &buf), 
                 countryCode: FfiConverterOptionString.read(from: &buf), 
                 enrichedFileDate: FfiConverterOptionDouble.read(from: &buf), 
                 fileModificationDate: FfiConverterOptionDouble.read(from: &buf), 
                 gpsLatitude: FfiConverterOptionDouble.read(from: &buf), 
                 gpsLongitude: FfiConverterOptionDouble.read(from: &buf), 
-                faceRegions: FfiConverterSequenceTypeScanRegion.read(from: &buf)
+                faceRegions: FfiConverterSequenceTypeHostFaceRegion.read(from: &buf)
         )
     }
 
-    public static func write(_ value: ScanPhoto, into buf: inout [UInt8]) {
+    public static func write(_ value: ScannedMediaHost, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterString.write(value.path, into: &buf)
         FfiConverterString.write(value.filename, into: &buf)
@@ -7582,13 +8082,13 @@ public struct FfiConverterTypeScanPhoto: FfiConverterRustBuffer {
         FfiConverterBool.write(value.dateFromMetadata, into: &buf)
         FfiConverterBool.write(value.isVideo, into: &buf)
         FfiConverterOptionString.write(value.livePhotoVideoPath, into: &buf)
-        FfiConverterSequenceTypeScanTag.write(value.hierarchicalTags, into: &buf)
+        FfiConverterSequenceTypeHostTagValue.write(value.hierarchicalTags, into: &buf)
         FfiConverterOptionString.write(value.countryCode, into: &buf)
         FfiConverterOptionDouble.write(value.enrichedFileDate, into: &buf)
         FfiConverterOptionDouble.write(value.fileModificationDate, into: &buf)
         FfiConverterOptionDouble.write(value.gpsLatitude, into: &buf)
         FfiConverterOptionDouble.write(value.gpsLongitude, into: &buf)
-        FfiConverterSequenceTypeScanRegion.write(value.faceRegions, into: &buf)
+        FfiConverterSequenceTypeHostFaceRegion.write(value.faceRegions, into: &buf)
     }
 }
 
@@ -7596,202 +8096,24 @@ public struct FfiConverterTypeScanPhoto: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScanPhoto_lift(_ buf: RustBuffer) throws -> ScanPhoto {
-    return try FfiConverterTypeScanPhoto.lift(buf)
+public func FfiConverterTypeScannedMediaHost_lift(_ buf: RustBuffer) throws -> ScannedMediaHost {
+    return try FfiConverterTypeScannedMediaHost.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScanPhoto_lower(_ value: ScanPhoto) -> RustBuffer {
-    return FfiConverterTypeScanPhoto.lower(value)
-}
-
-
-/**
- * One MWG region, normalised 0…1.
- */
-public struct ScanRegion: Equatable, Hashable {
-    /**
-     * `mwg-rs:Name`, absent for unnamed rectangles.
-     */
-    public var name: String?
-    /**
-     * Centre x.
-     */
-    public var centerX: Double
-    /**
-     * Centre y.
-     */
-    public var centerY: Double
-    /**
-     * Full width.
-     */
-    public var width: Double
-    /**
-     * Full height.
-     */
-    public var height: Double
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * `mwg-rs:Name`, absent for unnamed rectangles.
-         */name: String?, 
-        /**
-         * Centre x.
-         */centerX: Double, 
-        /**
-         * Centre y.
-         */centerY: Double, 
-        /**
-         * Full width.
-         */width: Double, 
-        /**
-         * Full height.
-         */height: Double) {
-        self.name = name
-        self.centerX = centerX
-        self.centerY = centerY
-        self.width = width
-        self.height = height
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension ScanRegion: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeScanRegion: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanRegion {
-        return
-            try ScanRegion(
-                name: FfiConverterOptionString.read(from: &buf), 
-                centerX: FfiConverterDouble.read(from: &buf), 
-                centerY: FfiConverterDouble.read(from: &buf), 
-                width: FfiConverterDouble.read(from: &buf), 
-                height: FfiConverterDouble.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ScanRegion, into buf: inout [UInt8]) {
-        FfiConverterOptionString.write(value.name, into: &buf)
-        FfiConverterDouble.write(value.centerX, into: &buf)
-        FfiConverterDouble.write(value.centerY, into: &buf)
-        FfiConverterDouble.write(value.width, into: &buf)
-        FfiConverterDouble.write(value.height, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanRegion_lift(_ buf: RustBuffer) throws -> ScanRegion {
-    return try FfiConverterTypeScanRegion.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanRegion_lower(_ value: ScanRegion) -> RustBuffer {
-    return FfiConverterTypeScanRegion.lower(value)
-}
-
-
-/**
- * The cache a pass is allowed to reuse.
- */
-public struct ScanRequest: Equatable, Hashable {
-    /**
-     * Reuse cached photos for unchanged paths — the light scan.
-     */
-    public var reuseCached: Bool
-    /**
-     * Last pass's photos. Carries EXIF, tags and GPS forward.
-     */
-    public var cachedPhotos: [ScanPhoto]
-    /**
-     * Last pass's sidecar rows. A hit here is what lets a light scan skip
-     * rebuilding an `.xmp` row when the listing still matches.
-     */
-    public var cachedSidecarManifest: [ScanSidecarRow]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Reuse cached photos for unchanged paths — the light scan.
-         */reuseCached: Bool, 
-        /**
-         * Last pass's photos. Carries EXIF, tags and GPS forward.
-         */cachedPhotos: [ScanPhoto], 
-        /**
-         * Last pass's sidecar rows. A hit here is what lets a light scan skip
-         * rebuilding an `.xmp` row when the listing still matches.
-         */cachedSidecarManifest: [ScanSidecarRow]) {
-        self.reuseCached = reuseCached
-        self.cachedPhotos = cachedPhotos
-        self.cachedSidecarManifest = cachedSidecarManifest
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension ScanRequest: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeScanRequest: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanRequest {
-        return
-            try ScanRequest(
-                reuseCached: FfiConverterBool.read(from: &buf), 
-                cachedPhotos: FfiConverterSequenceTypeScanPhoto.read(from: &buf), 
-                cachedSidecarManifest: FfiConverterSequenceTypeScanSidecarRow.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ScanRequest, into buf: inout [UInt8]) {
-        FfiConverterBool.write(value.reuseCached, into: &buf)
-        FfiConverterSequenceTypeScanPhoto.write(value.cachedPhotos, into: &buf)
-        FfiConverterSequenceTypeScanSidecarRow.write(value.cachedSidecarManifest, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanRequest_lift(_ buf: RustBuffer) throws -> ScanRequest {
-    return try FfiConverterTypeScanRequest.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanRequest_lower(_ value: ScanRequest) -> RustBuffer {
-    return FfiConverterTypeScanRequest.lower(value)
+public func FfiConverterTypeScannedMediaHost_lower(_ value: ScannedMediaHost) -> RustBuffer {
+    return FfiConverterTypeScannedMediaHost.lower(value)
 }
 
 
 /**
  * One sidecar manifest row.
+ *
+ * R6 role: host-port DTO.
  */
-public struct ScanSidecarRow: Equatable, Hashable {
+public struct ScannedSidecarHost: Equatable, Hashable {
     /**
      * The photo the `.xmp` belongs to.
      */
@@ -7803,7 +8125,7 @@ public struct ScanSidecarRow: Equatable, Hashable {
     /**
      * Its identity at scan time.
      */
-    public var currentVersion: ScanContentVersion
+    public var currentVersion: HostContentVersion
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7816,7 +8138,7 @@ public struct ScanSidecarRow: Equatable, Hashable {
          */sidecarPath: String, 
         /**
          * Its identity at scan time.
-         */currentVersion: ScanContentVersion) {
+         */currentVersion: HostContentVersion) {
         self.photoId = photoId
         self.sidecarPath = sidecarPath
         self.currentVersion = currentVersion
@@ -7828,26 +8150,26 @@ public struct ScanSidecarRow: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension ScanSidecarRow: Sendable {}
+extension ScannedSidecarHost: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeScanSidecarRow: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanSidecarRow {
+public struct FfiConverterTypeScannedSidecarHost: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScannedSidecarHost {
         return
-            try ScanSidecarRow(
+            try ScannedSidecarHost(
                 photoId: FfiConverterString.read(from: &buf), 
                 sidecarPath: FfiConverterString.read(from: &buf), 
-                currentVersion: FfiConverterTypeScanContentVersion.read(from: &buf)
+                currentVersion: FfiConverterTypeHostContentVersion.read(from: &buf)
         )
     }
 
-    public static func write(_ value: ScanSidecarRow, into buf: inout [UInt8]) {
+    public static func write(_ value: ScannedSidecarHost, into buf: inout [UInt8]) {
         FfiConverterString.write(value.photoId, into: &buf)
         FfiConverterString.write(value.sidecarPath, into: &buf)
-        FfiConverterTypeScanContentVersion.write(value.currentVersion, into: &buf)
+        FfiConverterTypeHostContentVersion.write(value.currentVersion, into: &buf)
     }
 }
 
@@ -7855,194 +8177,15 @@ public struct FfiConverterTypeScanSidecarRow: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScanSidecarRow_lift(_ buf: RustBuffer) throws -> ScanSidecarRow {
-    return try FfiConverterTypeScanSidecarRow.lift(buf)
+public func FfiConverterTypeScannedSidecarHost_lift(_ buf: RustBuffer) throws -> ScannedSidecarHost {
+    return try FfiConverterTypeScannedSidecarHost.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScanSidecarRow_lower(_ value: ScanSidecarRow) -> RustBuffer {
-    return FfiConverterTypeScanSidecarRow.lower(value)
-}
-
-
-/**
- * One `digiKam:TagsList` entry.
- */
-public struct ScanTag: Equatable, Hashable {
-    /**
-     * Raw `/`-separated path.
-     */
-    public var fullPath: String
-    /**
-     * First segment, or `None` for a flat tag.
-     */
-    public var namespace: String?
-    /**
-     * Leaf segment.
-     */
-    public var displayName: String
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Raw `/`-separated path.
-         */fullPath: String, 
-        /**
-         * First segment, or `None` for a flat tag.
-         */namespace: String?, 
-        /**
-         * Leaf segment.
-         */displayName: String) {
-        self.fullPath = fullPath
-        self.namespace = namespace
-        self.displayName = displayName
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension ScanTag: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeScanTag: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanTag {
-        return
-            try ScanTag(
-                fullPath: FfiConverterString.read(from: &buf), 
-                namespace: FfiConverterOptionString.read(from: &buf), 
-                displayName: FfiConverterString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ScanTag, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.fullPath, into: &buf)
-        FfiConverterOptionString.write(value.namespace, into: &buf)
-        FfiConverterString.write(value.displayName, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanTag_lift(_ buf: RustBuffer) throws -> ScanTag {
-    return try FfiConverterTypeScanTag.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanTag_lower(_ value: ScanTag) -> RustBuffer {
-    return FfiConverterTypeScanTag.lower(value)
-}
-
-
-/**
- * Where a pass spent its time. Feeds the `Scan totals:` log line the
- * performance gates are measured from.
- */
-public struct ScanTimings: Equatable, Hashable {
-    /**
-     * Whole pass, inside the core.
-     */
-    public var totalMillis: UInt64
-    /**
-     * Directory listings.
-     */
-    public var listMillis: UInt64
-    /**
-     * Photos reused verbatim from the cache.
-     */
-    public var cacheHits: UInt32
-    /**
-     * Photos rebuilt.
-     */
-    public var slowPath: UInt32
-    /**
-     * Directories visited.
-     */
-    public var folders: UInt32
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Whole pass, inside the core.
-         */totalMillis: UInt64, 
-        /**
-         * Directory listings.
-         */listMillis: UInt64, 
-        /**
-         * Photos reused verbatim from the cache.
-         */cacheHits: UInt32, 
-        /**
-         * Photos rebuilt.
-         */slowPath: UInt32, 
-        /**
-         * Directories visited.
-         */folders: UInt32) {
-        self.totalMillis = totalMillis
-        self.listMillis = listMillis
-        self.cacheHits = cacheHits
-        self.slowPath = slowPath
-        self.folders = folders
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension ScanTimings: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeScanTimings: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanTimings {
-        return
-            try ScanTimings(
-                totalMillis: FfiConverterUInt64.read(from: &buf), 
-                listMillis: FfiConverterUInt64.read(from: &buf), 
-                cacheHits: FfiConverterUInt32.read(from: &buf), 
-                slowPath: FfiConverterUInt32.read(from: &buf), 
-                folders: FfiConverterUInt32.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: ScanTimings, into buf: inout [UInt8]) {
-        FfiConverterUInt64.write(value.totalMillis, into: &buf)
-        FfiConverterUInt64.write(value.listMillis, into: &buf)
-        FfiConverterUInt32.write(value.cacheHits, into: &buf)
-        FfiConverterUInt32.write(value.slowPath, into: &buf)
-        FfiConverterUInt32.write(value.folders, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanTimings_lift(_ buf: RustBuffer) throws -> ScanTimings {
-    return try FfiConverterTypeScanTimings.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeScanTimings_lower(_ value: ScanTimings) -> RustBuffer {
-    return FfiConverterTypeScanTimings.lower(value)
+public func FfiConverterTypeScannedSidecarHost_lower(_ value: ScannedSidecarHost) -> RustBuffer {
+    return FfiConverterTypeScannedSidecarHost.lower(value)
 }
 
 
@@ -8057,9 +8200,9 @@ public func FfiConverterTypeScanTimings_lower(_ value: ScanTimings) -> RustBuffe
  * R6 role: host-port DTO.
  */
 public struct ScheduledMemoryContext: Equatable, Hashable {
-    public var leafFolders: [MemoryLeafFolder]
-    public var contacts: [MemoryContact]
-    public var personContactLinks: [MemoryPersonLink]
+    public var leafFolders: [MemoryFolderCommandItem]
+    public var contacts: [MemoryContactCommandItem]
+    public var personContactLinks: [MemoryPersonCommandItem]
     public var birthdaysEnabled: Bool
     public var mePersonPath: String
     public var hiddenPeople: [String]
@@ -8070,15 +8213,15 @@ public struct ScheduledMemoryContext: Equatable, Hashable {
     public var timeZoneOffsetSeconds: Int32
     public var horizonOffsetSeconds: [Int32]
     public var seed: String
-    public var seenMemoryIds: [MemoryDateEntry]
-    public var surfacedClusters: [MemoryDateEntry]
+    public var seenMemoryIds: [MemoryDateCommandItem]
+    public var surfacedClusters: [MemoryDateCommandItem]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(leafFolders: [MemoryLeafFolder], contacts: [MemoryContact], personContactLinks: [MemoryPersonLink], birthdaysEnabled: Bool, mePersonPath: String, hiddenPeople: [String], 
+    public init(leafFolders: [MemoryFolderCommandItem], contacts: [MemoryContactCommandItem], personContactLinks: [MemoryPersonCommandItem], birthdaysEnabled: Bool, mePersonPath: String, hiddenPeople: [String], 
         /**
          * "Now", reference-date seconds.
-         */now: Double, timeZoneOffsetSeconds: Int32, horizonOffsetSeconds: [Int32], seed: String, seenMemoryIds: [MemoryDateEntry], surfacedClusters: [MemoryDateEntry]) {
+         */now: Double, timeZoneOffsetSeconds: Int32, horizonOffsetSeconds: [Int32], seed: String, seenMemoryIds: [MemoryDateCommandItem], surfacedClusters: [MemoryDateCommandItem]) {
         self.leafFolders = leafFolders
         self.contacts = contacts
         self.personContactLinks = personContactLinks
@@ -8109,9 +8252,9 @@ public struct FfiConverterTypeScheduledMemoryContext: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScheduledMemoryContext {
         return
             try ScheduledMemoryContext(
-                leafFolders: FfiConverterSequenceTypeMemoryLeafFolder.read(from: &buf), 
-                contacts: FfiConverterSequenceTypeMemoryContact.read(from: &buf), 
-                personContactLinks: FfiConverterSequenceTypeMemoryPersonLink.read(from: &buf), 
+                leafFolders: FfiConverterSequenceTypeMemoryFolderCommandItem.read(from: &buf), 
+                contacts: FfiConverterSequenceTypeMemoryContactCommandItem.read(from: &buf), 
+                personContactLinks: FfiConverterSequenceTypeMemoryPersonCommandItem.read(from: &buf), 
                 birthdaysEnabled: FfiConverterBool.read(from: &buf), 
                 mePersonPath: FfiConverterString.read(from: &buf), 
                 hiddenPeople: FfiConverterSequenceString.read(from: &buf), 
@@ -8119,15 +8262,15 @@ public struct FfiConverterTypeScheduledMemoryContext: FfiConverterRustBuffer {
                 timeZoneOffsetSeconds: FfiConverterInt32.read(from: &buf), 
                 horizonOffsetSeconds: FfiConverterSequenceInt32.read(from: &buf), 
                 seed: FfiConverterString.read(from: &buf), 
-                seenMemoryIds: FfiConverterSequenceTypeMemoryDateEntry.read(from: &buf), 
-                surfacedClusters: FfiConverterSequenceTypeMemoryDateEntry.read(from: &buf)
+                seenMemoryIds: FfiConverterSequenceTypeMemoryDateCommandItem.read(from: &buf), 
+                surfacedClusters: FfiConverterSequenceTypeMemoryDateCommandItem.read(from: &buf)
         )
     }
 
     public static func write(_ value: ScheduledMemoryContext, into buf: inout [UInt8]) {
-        FfiConverterSequenceTypeMemoryLeafFolder.write(value.leafFolders, into: &buf)
-        FfiConverterSequenceTypeMemoryContact.write(value.contacts, into: &buf)
-        FfiConverterSequenceTypeMemoryPersonLink.write(value.personContactLinks, into: &buf)
+        FfiConverterSequenceTypeMemoryFolderCommandItem.write(value.leafFolders, into: &buf)
+        FfiConverterSequenceTypeMemoryContactCommandItem.write(value.contacts, into: &buf)
+        FfiConverterSequenceTypeMemoryPersonCommandItem.write(value.personContactLinks, into: &buf)
         FfiConverterBool.write(value.birthdaysEnabled, into: &buf)
         FfiConverterString.write(value.mePersonPath, into: &buf)
         FfiConverterSequenceString.write(value.hiddenPeople, into: &buf)
@@ -8135,8 +8278,8 @@ public struct FfiConverterTypeScheduledMemoryContext: FfiConverterRustBuffer {
         FfiConverterInt32.write(value.timeZoneOffsetSeconds, into: &buf)
         FfiConverterSequenceInt32.write(value.horizonOffsetSeconds, into: &buf)
         FfiConverterString.write(value.seed, into: &buf)
-        FfiConverterSequenceTypeMemoryDateEntry.write(value.seenMemoryIds, into: &buf)
-        FfiConverterSequenceTypeMemoryDateEntry.write(value.surfacedClusters, into: &buf)
+        FfiConverterSequenceTypeMemoryDateCommandItem.write(value.seenMemoryIds, into: &buf)
+        FfiConverterSequenceTypeMemoryDateCommandItem.write(value.surfacedClusters, into: &buf)
     }
 }
 
@@ -8158,9 +8301,11 @@ public func FfiConverterTypeScheduledMemoryContext_lower(_ value: ScheduledMemor
 
 /**
  * A memory pre-published for a future day, with the window it is valid in.
+ *
+ * R6 role: structure DTO.
  */
-public struct ScheduledMemoryRecord: Equatable, Hashable {
-    public var memory: MemoryRecord
+public struct ScheduledMemoryStructure: Equatable, Hashable {
+    public var memory: MemoryStructure
     /**
      * Local midnight of the day it is about, reference-date seconds.
      */
@@ -8172,7 +8317,7 @@ public struct ScheduledMemoryRecord: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(memory: MemoryRecord, 
+    public init(memory: MemoryStructure, 
         /**
          * Local midnight of the day it is about, reference-date seconds.
          */validFrom: Double, 
@@ -8190,24 +8335,24 @@ public struct ScheduledMemoryRecord: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension ScheduledMemoryRecord: Sendable {}
+extension ScheduledMemoryStructure: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeScheduledMemoryRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScheduledMemoryRecord {
+public struct FfiConverterTypeScheduledMemoryStructure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScheduledMemoryStructure {
         return
-            try ScheduledMemoryRecord(
-                memory: FfiConverterTypeMemoryRecord.read(from: &buf), 
+            try ScheduledMemoryStructure(
+                memory: FfiConverterTypeMemoryStructure.read(from: &buf), 
                 validFrom: FfiConverterDouble.read(from: &buf), 
                 validTo: FfiConverterDouble.read(from: &buf)
         )
     }
 
-    public static func write(_ value: ScheduledMemoryRecord, into buf: inout [UInt8]) {
-        FfiConverterTypeMemoryRecord.write(value.memory, into: &buf)
+    public static func write(_ value: ScheduledMemoryStructure, into buf: inout [UInt8]) {
+        FfiConverterTypeMemoryStructure.write(value.memory, into: &buf)
         FfiConverterDouble.write(value.validFrom, into: &buf)
         FfiConverterDouble.write(value.validTo, into: &buf)
     }
@@ -8217,157 +8362,24 @@ public struct FfiConverterTypeScheduledMemoryRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScheduledMemoryRecord_lift(_ buf: RustBuffer) throws -> ScheduledMemoryRecord {
-    return try FfiConverterTypeScheduledMemoryRecord.lift(buf)
+public func FfiConverterTypeScheduledMemoryStructure_lift(_ buf: RustBuffer) throws -> ScheduledMemoryStructure {
+    return try FfiConverterTypeScheduledMemoryStructure.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeScheduledMemoryRecord_lower(_ value: ScheduledMemoryRecord) -> RustBuffer {
-    return FfiConverterTypeScheduledMemoryRecord.lower(value)
-}
-
-
-/**
- * The three things a `.xmp` contributes, plus photo-tools stamps.
- */
-public struct SidecarParseRecord: Equatable, Hashable {
-    /**
-     * Raw `digiKam:TagsList` entries, in packet order, undeduplicated.
-     */
-    public var rawTags: [String]
-    /**
-     * Uppercase `photo-tools:CountryCode`.
-     */
-    public var countryCode: String?
-    /**
-     * MWG regions.
-     */
-    public var faceRegions: [ScanRegion]
-    /**
-     * `TaggerVersion`, else `CoreModelPack`.
-     */
-    public var taggerVersion: String?
-    /**
-     * `TaggedAt`, else `CoreTaggedAt`.
-     */
-    public var taggedAt: String?
-    public var clipModel: String?
-    public var clipTimestamp: String?
-    public var facePack: String?
-    public var faceTaggedAt: String?
-    /**
-     * Raw `CoreFaceDecisions` bag entries.
-     */
-    public var faceDecisions: [String]
-    /**
-     * People named in decisions who have no MWG box.
-     */
-    public var namedWithoutBox: [String]
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Raw `digiKam:TagsList` entries, in packet order, undeduplicated.
-         */rawTags: [String], 
-        /**
-         * Uppercase `photo-tools:CountryCode`.
-         */countryCode: String?, 
-        /**
-         * MWG regions.
-         */faceRegions: [ScanRegion], 
-        /**
-         * `TaggerVersion`, else `CoreModelPack`.
-         */taggerVersion: String?, 
-        /**
-         * `TaggedAt`, else `CoreTaggedAt`.
-         */taggedAt: String?, clipModel: String?, clipTimestamp: String?, facePack: String?, faceTaggedAt: String?, 
-        /**
-         * Raw `CoreFaceDecisions` bag entries.
-         */faceDecisions: [String], 
-        /**
-         * People named in decisions who have no MWG box.
-         */namedWithoutBox: [String]) {
-        self.rawTags = rawTags
-        self.countryCode = countryCode
-        self.faceRegions = faceRegions
-        self.taggerVersion = taggerVersion
-        self.taggedAt = taggedAt
-        self.clipModel = clipModel
-        self.clipTimestamp = clipTimestamp
-        self.facePack = facePack
-        self.faceTaggedAt = faceTaggedAt
-        self.faceDecisions = faceDecisions
-        self.namedWithoutBox = namedWithoutBox
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SidecarParseRecord: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSidecarParseRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SidecarParseRecord {
-        return
-            try SidecarParseRecord(
-                rawTags: FfiConverterSequenceString.read(from: &buf), 
-                countryCode: FfiConverterOptionString.read(from: &buf), 
-                faceRegions: FfiConverterSequenceTypeScanRegion.read(from: &buf), 
-                taggerVersion: FfiConverterOptionString.read(from: &buf), 
-                taggedAt: FfiConverterOptionString.read(from: &buf), 
-                clipModel: FfiConverterOptionString.read(from: &buf), 
-                clipTimestamp: FfiConverterOptionString.read(from: &buf), 
-                facePack: FfiConverterOptionString.read(from: &buf), 
-                faceTaggedAt: FfiConverterOptionString.read(from: &buf), 
-                faceDecisions: FfiConverterSequenceString.read(from: &buf), 
-                namedWithoutBox: FfiConverterSequenceString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SidecarParseRecord, into buf: inout [UInt8]) {
-        FfiConverterSequenceString.write(value.rawTags, into: &buf)
-        FfiConverterOptionString.write(value.countryCode, into: &buf)
-        FfiConverterSequenceTypeScanRegion.write(value.faceRegions, into: &buf)
-        FfiConverterOptionString.write(value.taggerVersion, into: &buf)
-        FfiConverterOptionString.write(value.taggedAt, into: &buf)
-        FfiConverterOptionString.write(value.clipModel, into: &buf)
-        FfiConverterOptionString.write(value.clipTimestamp, into: &buf)
-        FfiConverterOptionString.write(value.facePack, into: &buf)
-        FfiConverterOptionString.write(value.faceTaggedAt, into: &buf)
-        FfiConverterSequenceString.write(value.faceDecisions, into: &buf)
-        FfiConverterSequenceString.write(value.namedWithoutBox, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSidecarParseRecord_lift(_ buf: RustBuffer) throws -> SidecarParseRecord {
-    return try FfiConverterTypeSidecarParseRecord.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSidecarParseRecord_lower(_ value: SidecarParseRecord) -> RustBuffer {
-    return FfiConverterTypeSidecarParseRecord.lower(value)
+public func FfiConverterTypeScheduledMemoryStructure_lower(_ value: ScheduledMemoryStructure) -> RustBuffer {
+    return FfiConverterTypeScheduledMemoryStructure.lower(value)
 }
 
 
 /**
  * One sidecar on disk, cheap-parsed. Tags, regions, and photo-tools stamps.
+ *
+ * R6 role: host-port DTO.
  */
-public struct SidecarViewRecord: Equatable, Hashable {
+public struct SidecarHostView: Equatable, Hashable {
     /**
      * A `.xmp` exists next to the image.
      */
@@ -8387,7 +8399,7 @@ public struct SidecarViewRecord: Equatable, Hashable {
     /**
      * MWG regions.
      */
-    public var faceRegions: [ScanRegion]
+    public var faceRegions: [HostFaceRegion]
     /**
      * `TaggerVersion`, else `CoreModelPack`.
      */
@@ -8438,7 +8450,7 @@ public struct SidecarViewRecord: Equatable, Hashable {
          */countryCode: String?, 
         /**
          * MWG regions.
-         */faceRegions: [ScanRegion], 
+         */faceRegions: [HostFaceRegion], 
         /**
          * `TaggerVersion`, else `CoreModelPack`.
          */taggerVersion: String?, 
@@ -8484,21 +8496,21 @@ public struct SidecarViewRecord: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension SidecarViewRecord: Sendable {}
+extension SidecarHostView: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeSidecarViewRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SidecarViewRecord {
+public struct FfiConverterTypeSidecarHostView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SidecarHostView {
         return
-            try SidecarViewRecord(
+            try SidecarHostView(
                 exists: FfiConverterBool.read(from: &buf), 
                 sidecarPath: FfiConverterOptionString.read(from: &buf), 
                 rawTags: FfiConverterSequenceString.read(from: &buf), 
                 countryCode: FfiConverterOptionString.read(from: &buf), 
-                faceRegions: FfiConverterSequenceTypeScanRegion.read(from: &buf), 
+                faceRegions: FfiConverterSequenceTypeHostFaceRegion.read(from: &buf), 
                 taggerVersion: FfiConverterOptionString.read(from: &buf), 
                 taggedAt: FfiConverterOptionString.read(from: &buf), 
                 clipModel: FfiConverterOptionString.read(from: &buf), 
@@ -8510,12 +8522,12 @@ public struct FfiConverterTypeSidecarViewRecord: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: SidecarViewRecord, into buf: inout [UInt8]) {
+    public static func write(_ value: SidecarHostView, into buf: inout [UInt8]) {
         FfiConverterBool.write(value.exists, into: &buf)
         FfiConverterOptionString.write(value.sidecarPath, into: &buf)
         FfiConverterSequenceString.write(value.rawTags, into: &buf)
         FfiConverterOptionString.write(value.countryCode, into: &buf)
-        FfiConverterSequenceTypeScanRegion.write(value.faceRegions, into: &buf)
+        FfiConverterSequenceTypeHostFaceRegion.write(value.faceRegions, into: &buf)
         FfiConverterOptionString.write(value.taggerVersion, into: &buf)
         FfiConverterOptionString.write(value.taggedAt, into: &buf)
         FfiConverterOptionString.write(value.clipModel, into: &buf)
@@ -8531,15 +8543,15 @@ public struct FfiConverterTypeSidecarViewRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSidecarViewRecord_lift(_ buf: RustBuffer) throws -> SidecarViewRecord {
-    return try FfiConverterTypeSidecarViewRecord.lift(buf)
+public func FfiConverterTypeSidecarHostView_lift(_ buf: RustBuffer) throws -> SidecarHostView {
+    return try FfiConverterTypeSidecarHostView.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSidecarViewRecord_lower(_ value: SidecarViewRecord) -> RustBuffer {
-    return FfiConverterTypeSidecarViewRecord.lower(value)
+public func FfiConverterTypeSidecarHostView_lower(_ value: SidecarHostView) -> RustBuffer {
+    return FfiConverterTypeSidecarHostView.lower(value)
 }
 
 
@@ -8550,8 +8562,10 @@ public func FfiConverterTypeSidecarViewRecord_lower(_ value: SidecarViewRecord) 
  * the failures carry their paths: `written` is a count because the app's
  * response to it is "rescan", not "look at these files", and a 5 000-photo
  * rename would otherwise hand the main actor a 5 000-element array it drops.
+ *
+ * R6 role: command DTO.
  */
-public struct SidecarWriteReport: Equatable, Hashable {
+public struct SidecarWriteCommandResult: Equatable, Hashable {
     /**
      * Photos whose sidecar bytes changed.
      */
@@ -8604,16 +8618,16 @@ public struct SidecarWriteReport: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension SidecarWriteReport: Sendable {}
+extension SidecarWriteCommandResult: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeSidecarWriteReport: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SidecarWriteReport {
+public struct FfiConverterTypeSidecarWriteCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SidecarWriteCommandResult {
         return
-            try SidecarWriteReport(
+            try SidecarWriteCommandResult(
                 written: FfiConverterUInt32.read(from: &buf), 
                 unchanged: FfiConverterUInt32.read(from: &buf), 
                 skipped: FfiConverterUInt32.read(from: &buf), 
@@ -8622,7 +8636,7 @@ public struct FfiConverterTypeSidecarWriteReport: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: SidecarWriteReport, into buf: inout [UInt8]) {
+    public static func write(_ value: SidecarWriteCommandResult, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.written, into: &buf)
         FfiConverterUInt32.write(value.unchanged, into: &buf)
         FfiConverterUInt32.write(value.skipped, into: &buf)
@@ -8635,47 +8649,49 @@ public struct FfiConverterTypeSidecarWriteReport: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSidecarWriteReport_lift(_ buf: RustBuffer) throws -> SidecarWriteReport {
-    return try FfiConverterTypeSidecarWriteReport.lift(buf)
+public func FfiConverterTypeSidecarWriteCommandResult_lift(_ buf: RustBuffer) throws -> SidecarWriteCommandResult {
+    return try FfiConverterTypeSidecarWriteCommandResult.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSidecarWriteReport_lower(_ value: SidecarWriteReport) -> RustBuffer {
-    return FfiConverterTypeSidecarWriteReport.lower(value)
+public func FfiConverterTypeSidecarWriteCommandResult_lower(_ value: SidecarWriteCommandResult) -> RustBuffer {
+    return FfiConverterTypeSidecarWriteCommandResult.lower(value)
 }
 
 
 /**
  * A persisted library, as the core sees it.
+ *
+ * R6 role: host-port DTO.
  */
-public struct SnapshotRecord: Equatable, Hashable {
+public struct SnapshotHostDocument: Equatable, Hashable {
     /**
      * Every photo, flat.
      */
-    public var allPhotos: [ScanPhoto]
+    public var allPhotos: [ScannedMediaHost]
     /**
      * The tree, flattened the same way [`ScanOutcomeRecord`] flattens it.
      */
-    public var folders: [ScanFolderNode]
+    public var folders: [ScannedFolderHost]
     /**
      * The sidecar manifest from the same scan, when the file carries one.
      */
-    public var sidecarManifest: [ScanSidecarRow]?
+    public var sidecarManifest: [ScannedSidecarHost]?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * Every photo, flat.
-         */allPhotos: [ScanPhoto], 
+         */allPhotos: [ScannedMediaHost], 
         /**
          * The tree, flattened the same way [`ScanOutcomeRecord`] flattens it.
-         */folders: [ScanFolderNode], 
+         */folders: [ScannedFolderHost], 
         /**
          * The sidecar manifest from the same scan, when the file carries one.
-         */sidecarManifest: [ScanSidecarRow]?) {
+         */sidecarManifest: [ScannedSidecarHost]?) {
         self.allPhotos = allPhotos
         self.folders = folders
         self.sidecarManifest = sidecarManifest
@@ -8687,26 +8703,26 @@ public struct SnapshotRecord: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension SnapshotRecord: Sendable {}
+extension SnapshotHostDocument: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeSnapshotRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SnapshotRecord {
+public struct FfiConverterTypeSnapshotHostDocument: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SnapshotHostDocument {
         return
-            try SnapshotRecord(
-                allPhotos: FfiConverterSequenceTypeScanPhoto.read(from: &buf), 
-                folders: FfiConverterSequenceTypeScanFolderNode.read(from: &buf), 
-                sidecarManifest: FfiConverterOptionSequenceTypeScanSidecarRow.read(from: &buf)
+            try SnapshotHostDocument(
+                allPhotos: FfiConverterSequenceTypeScannedMediaHost.read(from: &buf), 
+                folders: FfiConverterSequenceTypeScannedFolderHost.read(from: &buf), 
+                sidecarManifest: FfiConverterOptionSequenceTypeScannedSidecarHost.read(from: &buf)
         )
     }
 
-    public static func write(_ value: SnapshotRecord, into buf: inout [UInt8]) {
-        FfiConverterSequenceTypeScanPhoto.write(value.allPhotos, into: &buf)
-        FfiConverterSequenceTypeScanFolderNode.write(value.folders, into: &buf)
-        FfiConverterOptionSequenceTypeScanSidecarRow.write(value.sidecarManifest, into: &buf)
+    public static func write(_ value: SnapshotHostDocument, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeScannedMediaHost.write(value.allPhotos, into: &buf)
+        FfiConverterSequenceTypeScannedFolderHost.write(value.folders, into: &buf)
+        FfiConverterOptionSequenceTypeScannedSidecarHost.write(value.sidecarManifest, into: &buf)
     }
 }
 
@@ -8714,107 +8730,24 @@ public struct FfiConverterTypeSnapshotRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSnapshotRecord_lift(_ buf: RustBuffer) throws -> SnapshotRecord {
-    return try FfiConverterTypeSnapshotRecord.lift(buf)
+public func FfiConverterTypeSnapshotHostDocument_lift(_ buf: RustBuffer) throws -> SnapshotHostDocument {
+    return try FfiConverterTypeSnapshotHostDocument.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeSnapshotRecord_lower(_ value: SnapshotRecord) -> RustBuffer {
-    return FfiConverterTypeSnapshotRecord.lower(value)
-}
-
-
-/**
- * What one `split_cluster()` did.
- */
-public struct SplitResult: Equatable, Hashable {
-    /**
-     * The cluster the selected faces moved into. Unlabeled and pinned.
-     */
-    public var newClusterId: Int64
-    /**
-     * Selected keys that named no face of the source cluster.
-     *
-     * Non-zero means the screen's selection was stale — a run deleted a face
-     * under it — which is worth a log line and is not a failure.
-     */
-    public var ignoredKeys: UInt32
-    /**
-     * The sidecars the split rewrote.
-     */
-    public var report: SidecarWriteReport
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * The cluster the selected faces moved into. Unlabeled and pinned.
-         */newClusterId: Int64, 
-        /**
-         * Selected keys that named no face of the source cluster.
-         *
-         * Non-zero means the screen's selection was stale — a run deleted a face
-         * under it — which is worth a log line and is not a failure.
-         */ignoredKeys: UInt32, 
-        /**
-         * The sidecars the split rewrote.
-         */report: SidecarWriteReport) {
-        self.newClusterId = newClusterId
-        self.ignoredKeys = ignoredKeys
-        self.report = report
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension SplitResult: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeSplitResult: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SplitResult {
-        return
-            try SplitResult(
-                newClusterId: FfiConverterInt64.read(from: &buf), 
-                ignoredKeys: FfiConverterUInt32.read(from: &buf), 
-                report: FfiConverterTypeSidecarWriteReport.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: SplitResult, into buf: inout [UInt8]) {
-        FfiConverterInt64.write(value.newClusterId, into: &buf)
-        FfiConverterUInt32.write(value.ignoredKeys, into: &buf)
-        FfiConverterTypeSidecarWriteReport.write(value.report, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSplitResult_lift(_ buf: RustBuffer) throws -> SplitResult {
-    return try FfiConverterTypeSplitResult.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeSplitResult_lower(_ value: SplitResult) -> RustBuffer {
-    return FfiConverterTypeSplitResult.lower(value)
+public func FfiConverterTypeSnapshotHostDocument_lower(_ value: SnapshotHostDocument) -> RustBuffer {
+    return FfiConverterTypeSnapshotHostDocument.lower(value)
 }
 
 
 /**
  * `TagSuggestion.swift` — one tag bucket, flattened for the UI.
+ *
+ * R6 role: structure DTO.
  */
-public struct TagSuggestionRecord: Equatable, Hashable {
+public struct TagStructureItem: Equatable, Hashable {
     /**
      * `full_path` lowercased and NFC-folded. The bucket key, and the Swift
      * `TagSuggestion.id`.
@@ -8881,16 +8814,16 @@ public struct TagSuggestionRecord: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension TagSuggestionRecord: Sendable {}
+extension TagStructureItem: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeTagSuggestionRecord: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TagSuggestionRecord {
+public struct FfiConverterTypeTagStructureItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TagStructureItem {
         return
-            try TagSuggestionRecord(
+            try TagStructureItem(
                 id: FfiConverterString.read(from: &buf), 
                 displayName: FfiConverterString.read(from: &buf), 
                 fullPath: FfiConverterString.read(from: &buf), 
@@ -8900,7 +8833,7 @@ public struct FfiConverterTypeTagSuggestionRecord: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: TagSuggestionRecord, into buf: inout [UInt8]) {
+    public static func write(_ value: TagStructureItem, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterString.write(value.displayName, into: &buf)
         FfiConverterString.write(value.fullPath, into: &buf)
@@ -8914,23 +8847,185 @@ public struct FfiConverterTypeTagSuggestionRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeTagSuggestionRecord_lift(_ buf: RustBuffer) throws -> TagSuggestionRecord {
-    return try FfiConverterTypeTagSuggestionRecord.lift(buf)
+public func FfiConverterTypeTagStructureItem_lift(_ buf: RustBuffer) throws -> TagStructureItem {
+    return try FfiConverterTypeTagStructureItem.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeTagSuggestionRecord_lower(_ value: TagSuggestionRecord) -> RustBuffer {
-    return FfiConverterTypeTagSuggestionRecord.lower(value)
+public func FfiConverterTypeTagStructureItem_lower(_ value: TagStructureItem) -> RustBuffer {
+    return FfiConverterTypeTagStructureItem.lower(value)
+}
+
+
+/**
+ * [`LibraryIndex::tag_suggestions`]' pair.
+ *
+ * R6 role: structure DTO.
+ */
+public struct TagStructures: Equatable, Hashable {
+    public var tags: [TagStructureItem]
+    public var people: [TagStructureItem]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tags: [TagStructureItem], people: [TagStructureItem]) {
+        self.tags = tags
+        self.people = people
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TagStructures: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTagStructures: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TagStructures {
+        return
+            try TagStructures(
+                tags: FfiConverterSequenceTypeTagStructureItem.read(from: &buf), 
+                people: FfiConverterSequenceTypeTagStructureItem.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TagStructures, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeTagStructureItem.write(value.tags, into: &buf)
+        FfiConverterSequenceTypeTagStructureItem.write(value.people, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTagStructures_lift(_ buf: RustBuffer) throws -> TagStructures {
+    return try FfiConverterTypeTagStructures.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTagStructures_lower(_ value: TagStructures) -> RustBuffer {
+    return FfiConverterTypeTagStructures.lower(value)
+}
+
+
+/**
+ * Queue counts. Cheap enough to poll.
+ *
+ * R6 role: command DTO.
+ */
+public struct TaggingQueueCommandResult: Equatable, Hashable {
+    /**
+     * Rows waiting to be processed (including stale and retryable failures).
+     */
+    public var pending: UInt64
+    /**
+     * Rows tagged under the current pack.
+     */
+    public var done: UInt64
+    /**
+     * Rows that failed and are out of retries.
+     */
+    public var failed: UInt64
+    /**
+     * Rows skipped as an unsupported format.
+     */
+    public var skipped: UInt64
+    /**
+     * Rows that ended up with at least one tag.
+     */
+    public var tagged: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Rows waiting to be processed (including stale and retryable failures).
+         */pending: UInt64, 
+        /**
+         * Rows tagged under the current pack.
+         */done: UInt64, 
+        /**
+         * Rows that failed and are out of retries.
+         */failed: UInt64, 
+        /**
+         * Rows skipped as an unsupported format.
+         */skipped: UInt64, 
+        /**
+         * Rows that ended up with at least one tag.
+         */tagged: UInt64) {
+        self.pending = pending
+        self.done = done
+        self.failed = failed
+        self.skipped = skipped
+        self.tagged = tagged
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TaggingQueueCommandResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTaggingQueueCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TaggingQueueCommandResult {
+        return
+            try TaggingQueueCommandResult(
+                pending: FfiConverterUInt64.read(from: &buf), 
+                done: FfiConverterUInt64.read(from: &buf), 
+                failed: FfiConverterUInt64.read(from: &buf), 
+                skipped: FfiConverterUInt64.read(from: &buf), 
+                tagged: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TaggingQueueCommandResult, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.pending, into: &buf)
+        FfiConverterUInt64.write(value.done, into: &buf)
+        FfiConverterUInt64.write(value.failed, into: &buf)
+        FfiConverterUInt64.write(value.skipped, into: &buf)
+        FfiConverterUInt64.write(value.tagged, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTaggingQueueCommandResult_lift(_ buf: RustBuffer) throws -> TaggingQueueCommandResult {
+    return try FfiConverterTypeTaggingQueueCommandResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTaggingQueueCommandResult_lower(_ value: TaggingQueueCommandResult) -> RustBuffer {
+    return FfiConverterTypeTaggingQueueCommandResult.lower(value)
 }
 
 
 /**
  * What one run did. Mirrors [`gallery_ml::RunSummary`] with a `failure` field
  * for the run-level-error case, since `onFinished` fires either way.
+ *
+ * R6 role: command DTO.
  */
-public struct TaggingRunSummary: Equatable, Hashable {
+public struct TaggingRunCommandResult: Equatable, Hashable {
     /**
      * Items carried to a terminal state.
      */
@@ -9007,16 +9102,16 @@ public struct TaggingRunSummary: Equatable, Hashable {
 }
 
 #if compiler(>=6)
-extension TaggingRunSummary: Sendable {}
+extension TaggingRunCommandResult: Sendable {}
 #endif
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeTaggingRunSummary: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TaggingRunSummary {
+public struct FfiConverterTypeTaggingRunCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TaggingRunCommandResult {
         return
-            try TaggingRunSummary(
+            try TaggingRunCommandResult(
                 processed: FfiConverterUInt32.read(from: &buf), 
                 tagged: FfiConverterUInt32.read(from: &buf), 
                 sidecarsWritten: FfiConverterUInt32.read(from: &buf), 
@@ -9028,7 +9123,7 @@ public struct FfiConverterTypeTaggingRunSummary: FfiConverterRustBuffer {
         )
     }
 
-    public static func write(_ value: TaggingRunSummary, into buf: inout [UInt8]) {
+    public static func write(_ value: TaggingRunCommandResult, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.processed, into: &buf)
         FfiConverterUInt32.write(value.tagged, into: &buf)
         FfiConverterUInt32.write(value.sidecarsWritten, into: &buf)
@@ -9044,114 +9139,15 @@ public struct FfiConverterTypeTaggingRunSummary: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeTaggingRunSummary_lift(_ buf: RustBuffer) throws -> TaggingRunSummary {
-    return try FfiConverterTypeTaggingRunSummary.lift(buf)
+public func FfiConverterTypeTaggingRunCommandResult_lift(_ buf: RustBuffer) throws -> TaggingRunCommandResult {
+    return try FfiConverterTypeTaggingRunCommandResult.lift(buf)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeTaggingRunSummary_lower(_ value: TaggingRunSummary) -> RustBuffer {
-    return FfiConverterTypeTaggingRunSummary.lower(value)
-}
-
-
-/**
- * Queue counts. Cheap enough to poll.
- */
-public struct TaggingStats: Equatable, Hashable {
-    /**
-     * Rows waiting to be processed (including stale and retryable failures).
-     */
-    public var pending: UInt64
-    /**
-     * Rows tagged under the current pack.
-     */
-    public var done: UInt64
-    /**
-     * Rows that failed and are out of retries.
-     */
-    public var failed: UInt64
-    /**
-     * Rows skipped as an unsupported format.
-     */
-    public var skipped: UInt64
-    /**
-     * Rows that ended up with at least one tag.
-     */
-    public var tagged: UInt64
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Rows waiting to be processed (including stale and retryable failures).
-         */pending: UInt64, 
-        /**
-         * Rows tagged under the current pack.
-         */done: UInt64, 
-        /**
-         * Rows that failed and are out of retries.
-         */failed: UInt64, 
-        /**
-         * Rows skipped as an unsupported format.
-         */skipped: UInt64, 
-        /**
-         * Rows that ended up with at least one tag.
-         */tagged: UInt64) {
-        self.pending = pending
-        self.done = done
-        self.failed = failed
-        self.skipped = skipped
-        self.tagged = tagged
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension TaggingStats: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeTaggingStats: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TaggingStats {
-        return
-            try TaggingStats(
-                pending: FfiConverterUInt64.read(from: &buf), 
-                done: FfiConverterUInt64.read(from: &buf), 
-                failed: FfiConverterUInt64.read(from: &buf), 
-                skipped: FfiConverterUInt64.read(from: &buf), 
-                tagged: FfiConverterUInt64.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: TaggingStats, into buf: inout [UInt8]) {
-        FfiConverterUInt64.write(value.pending, into: &buf)
-        FfiConverterUInt64.write(value.done, into: &buf)
-        FfiConverterUInt64.write(value.failed, into: &buf)
-        FfiConverterUInt64.write(value.skipped, into: &buf)
-        FfiConverterUInt64.write(value.tagged, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeTaggingStats_lift(_ buf: RustBuffer) throws -> TaggingStats {
-    return try FfiConverterTypeTaggingStats.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeTaggingStats_lower(_ value: TaggingStats) -> RustBuffer {
-    return FfiConverterTypeTaggingStats.lower(value)
+public func FfiConverterTypeTaggingRunCommandResult_lower(_ value: TaggingRunCommandResult) -> RustBuffer {
+    return FfiConverterTypeTaggingRunCommandResult.lower(value)
 }
 
 
@@ -9350,120 +9346,6 @@ public func FfiConverterTypeViewStructure_lift(_ buf: RustBuffer) throws -> View
 #endif
 public func FfiConverterTypeViewStructure_lower(_ value: ViewStructure) -> RustBuffer {
     return FfiConverterTypeViewStructure.lower(value)
-}
-
-
-/**
- * A zone-less wall clock, as EXIF records it.
- *
- * The bridge resolves it in the **device** time zone, which is what
- * `MetadataReader.exifDateFormatter` did by having no `timeZone` at all.
- * Handing back an instant here would bake this machine's zone into a value
- * the app is supposed to read in the user's.
- */
-public struct WallClock: Equatable, Hashable {
-    /**
-     * Year.
-     */
-    public var year: Int32
-    /**
-     * 1-12.
-     */
-    public var month: UInt32
-    /**
-     * 1-31.
-     */
-    public var day: UInt32
-    /**
-     * 0-23 — hour 24 has already been rolled into the next day.
-     */
-    public var hour: UInt32
-    /**
-     * 0-59.
-     */
-    public var minute: UInt32
-    /**
-     * 0-59.
-     */
-    public var second: UInt32
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(
-        /**
-         * Year.
-         */year: Int32, 
-        /**
-         * 1-12.
-         */month: UInt32, 
-        /**
-         * 1-31.
-         */day: UInt32, 
-        /**
-         * 0-23 — hour 24 has already been rolled into the next day.
-         */hour: UInt32, 
-        /**
-         * 0-59.
-         */minute: UInt32, 
-        /**
-         * 0-59.
-         */second: UInt32) {
-        self.year = year
-        self.month = month
-        self.day = day
-        self.hour = hour
-        self.minute = minute
-        self.second = second
-    }
-
-    
-
-    
-}
-
-#if compiler(>=6)
-extension WallClock: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeWallClock: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WallClock {
-        return
-            try WallClock(
-                year: FfiConverterInt32.read(from: &buf), 
-                month: FfiConverterUInt32.read(from: &buf), 
-                day: FfiConverterUInt32.read(from: &buf), 
-                hour: FfiConverterUInt32.read(from: &buf), 
-                minute: FfiConverterUInt32.read(from: &buf), 
-                second: FfiConverterUInt32.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: WallClock, into buf: inout [UInt8]) {
-        FfiConverterInt32.write(value.year, into: &buf)
-        FfiConverterUInt32.write(value.month, into: &buf)
-        FfiConverterUInt32.write(value.day, into: &buf)
-        FfiConverterUInt32.write(value.hour, into: &buf)
-        FfiConverterUInt32.write(value.minute, into: &buf)
-        FfiConverterUInt32.write(value.second, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeWallClock_lift(_ buf: RustBuffer) throws -> WallClock {
-    return try FfiConverterTypeWallClock.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeWallClock_lower(_ value: WallClock) -> RustBuffer {
-    return FfiConverterTypeWallClock.lower(value)
 }
 
 
@@ -11522,8 +11404,8 @@ fileprivate struct FfiConverterOptionTypeScanProgressListener: FfiConverterRustB
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeFaceMergeDecision: FfiConverterRustBuffer {
-    typealias SwiftType = FaceMergeDecision?
+fileprivate struct FfiConverterOptionTypeFaceMergeCommand: FfiConverterRustBuffer {
+    typealias SwiftType = FaceMergeCommand?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -11531,13 +11413,13 @@ fileprivate struct FfiConverterOptionTypeFaceMergeDecision: FfiConverterRustBuff
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeFaceMergeDecision.write(value, into: &buf)
+        FfiConverterTypeFaceMergeCommand.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeFaceMergeDecision.read(from: &buf)
+        case 1: return try FfiConverterTypeFaceMergeCommand.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11546,8 +11428,8 @@ fileprivate struct FfiConverterOptionTypeFaceMergeDecision: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypePackResolution: FfiConverterRustBuffer {
-    typealias SwiftType = PackResolution?
+fileprivate struct FfiConverterOptionTypeHostWallClock: FfiConverterRustBuffer {
+    typealias SwiftType = HostWallClock?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -11555,13 +11437,13 @@ fileprivate struct FfiConverterOptionTypePackResolution: FfiConverterRustBuffer 
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypePackResolution.write(value, into: &buf)
+        FfiConverterTypeHostWallClock.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypePackResolution.read(from: &buf)
+        case 1: return try FfiConverterTypeHostWallClock.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11570,8 +11452,8 @@ fileprivate struct FfiConverterOptionTypePackResolution: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeWallClock: FfiConverterRustBuffer {
-    typealias SwiftType = WallClock?
+fileprivate struct FfiConverterOptionTypeModelPackHostResolution: FfiConverterRustBuffer {
+    typealias SwiftType = ModelPackHostResolution?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -11579,13 +11461,13 @@ fileprivate struct FfiConverterOptionTypeWallClock: FfiConverterRustBuffer {
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeWallClock.write(value, into: &buf)
+        FfiConverterTypeModelPackHostResolution.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeWallClock.read(from: &buf)
+        case 1: return try FfiConverterTypeModelPackHostResolution.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11666,8 +11548,8 @@ fileprivate struct FfiConverterOptionTypeTaggingFailure: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionSequenceTypeScanSidecarRow: FfiConverterRustBuffer {
-    typealias SwiftType = [ScanSidecarRow]?
+fileprivate struct FfiConverterOptionSequenceTypeScannedSidecarHost: FfiConverterRustBuffer {
+    typealias SwiftType = [ScannedSidecarHost]?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -11675,13 +11557,13 @@ fileprivate struct FfiConverterOptionSequenceTypeScanSidecarRow: FfiConverterRus
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterSequenceTypeScanSidecarRow.write(value, into: &buf)
+        FfiConverterSequenceTypeScannedSidecarHost.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterSequenceTypeScanSidecarRow.read(from: &buf)
+        case 1: return try FfiConverterSequenceTypeScannedSidecarHost.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11765,23 +11647,23 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeClusterSummary: FfiConverterRustBuffer {
-    typealias SwiftType = [ClusterSummary]
+fileprivate struct FfiConverterSequenceTypeFaceAssignmentCommandResult: FfiConverterRustBuffer {
+    typealias SwiftType = [FaceAssignmentCommandResult]
 
-    public static func write(_ value: [ClusterSummary], into buf: inout [UInt8]) {
+    public static func write(_ value: [FaceAssignmentCommandResult], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeClusterSummary.write(item, into: &buf)
+            FfiConverterTypeFaceAssignmentCommandResult.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ClusterSummary] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FaceAssignmentCommandResult] {
         let len: Int32 = try readInt(&buf)
-        var seq = [ClusterSummary]()
+        var seq = [FaceAssignmentCommandResult]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeClusterSummary.read(from: &buf))
+            seq.append(try FfiConverterTypeFaceAssignmentCommandResult.read(from: &buf))
         }
         return seq
     }
@@ -11790,23 +11672,23 @@ fileprivate struct FfiConverterSequenceTypeClusterSummary: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeFaceAssignmentRecord: FfiConverterRustBuffer {
-    typealias SwiftType = [FaceAssignmentRecord]
+fileprivate struct FfiConverterSequenceTypeFaceClusterHostRow: FfiConverterRustBuffer {
+    typealias SwiftType = [FaceClusterHostRow]
 
-    public static func write(_ value: [FaceAssignmentRecord], into buf: inout [UInt8]) {
+    public static func write(_ value: [FaceClusterHostRow], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeFaceAssignmentRecord.write(item, into: &buf)
+            FfiConverterTypeFaceClusterHostRow.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FaceAssignmentRecord] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FaceClusterHostRow] {
         let len: Int32 = try readInt(&buf)
-        var seq = [FaceAssignmentRecord]()
+        var seq = [FaceClusterHostRow]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeFaceAssignmentRecord.read(from: &buf))
+            seq.append(try FfiConverterTypeFaceClusterHostRow.read(from: &buf))
         }
         return seq
     }
@@ -11815,23 +11697,23 @@ fileprivate struct FfiConverterSequenceTypeFaceAssignmentRecord: FfiConverterRus
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeFacePhotoRecord: FfiConverterRustBuffer {
-    typealias SwiftType = [FacePhotoRecord]
+fileprivate struct FfiConverterSequenceTypeFaceCropHostItem: FfiConverterRustBuffer {
+    typealias SwiftType = [FaceCropHostItem]
 
-    public static func write(_ value: [FacePhotoRecord], into buf: inout [UInt8]) {
+    public static func write(_ value: [FaceCropHostItem], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeFacePhotoRecord.write(item, into: &buf)
+            FfiConverterTypeFaceCropHostItem.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FacePhotoRecord] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FaceCropHostItem] {
         let len: Int32 = try readInt(&buf)
-        var seq = [FacePhotoRecord]()
+        var seq = [FaceCropHostItem]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeFacePhotoRecord.read(from: &buf))
+            seq.append(try FfiConverterTypeFaceCropHostItem.read(from: &buf))
         }
         return seq
     }
@@ -11840,23 +11722,48 @@ fileprivate struct FfiConverterSequenceTypeFacePhotoRecord: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeFaceRef: FfiConverterRustBuffer {
-    typealias SwiftType = [FaceRef]
+fileprivate struct FfiConverterSequenceTypeFaceMergeStructure: FfiConverterRustBuffer {
+    typealias SwiftType = [FaceMergeStructure]
 
-    public static func write(_ value: [FaceRef], into buf: inout [UInt8]) {
+    public static func write(_ value: [FaceMergeStructure], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeFaceRef.write(item, into: &buf)
+            FfiConverterTypeFaceMergeStructure.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FaceRef] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FaceMergeStructure] {
         let len: Int32 = try readInt(&buf)
-        var seq = [FaceRef]()
+        var seq = [FaceMergeStructure]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeFaceRef.read(from: &buf))
+            seq.append(try FfiConverterTypeFaceMergeStructure.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeFacePhotoCommandResult: FfiConverterRustBuffer {
+    typealias SwiftType = [FacePhotoCommandResult]
+
+    public static func write(_ value: [FacePhotoCommandResult], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFacePhotoCommandResult.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FacePhotoCommandResult] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FacePhotoCommandResult]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFacePhotoCommandResult.read(from: &buf))
         }
         return seq
     }
@@ -11915,23 +11822,23 @@ fileprivate struct FfiConverterSequenceTypeGalleryTextRow: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeMemoryContact: FfiConverterRustBuffer {
-    typealias SwiftType = [MemoryContact]
+fileprivate struct FfiConverterSequenceTypeHostFaceRegion: FfiConverterRustBuffer {
+    typealias SwiftType = [HostFaceRegion]
 
-    public static func write(_ value: [MemoryContact], into buf: inout [UInt8]) {
+    public static func write(_ value: [HostFaceRegion], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeMemoryContact.write(item, into: &buf)
+            FfiConverterTypeHostFaceRegion.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryContact] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [HostFaceRegion] {
         let len: Int32 = try readInt(&buf)
-        var seq = [MemoryContact]()
+        var seq = [HostFaceRegion]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeMemoryContact.read(from: &buf))
+            seq.append(try FfiConverterTypeHostFaceRegion.read(from: &buf))
         }
         return seq
     }
@@ -11940,23 +11847,23 @@ fileprivate struct FfiConverterSequenceTypeMemoryContact: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeMemoryDateEntry: FfiConverterRustBuffer {
-    typealias SwiftType = [MemoryDateEntry]
+fileprivate struct FfiConverterSequenceTypeHostTagValue: FfiConverterRustBuffer {
+    typealias SwiftType = [HostTagValue]
 
-    public static func write(_ value: [MemoryDateEntry], into buf: inout [UInt8]) {
+    public static func write(_ value: [HostTagValue], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeMemoryDateEntry.write(item, into: &buf)
+            FfiConverterTypeHostTagValue.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryDateEntry] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [HostTagValue] {
         let len: Int32 = try readInt(&buf)
-        var seq = [MemoryDateEntry]()
+        var seq = [HostTagValue]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeMemoryDateEntry.read(from: &buf))
+            seq.append(try FfiConverterTypeHostTagValue.read(from: &buf))
         }
         return seq
     }
@@ -11965,23 +11872,23 @@ fileprivate struct FfiConverterSequenceTypeMemoryDateEntry: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeMemoryLeafFolder: FfiConverterRustBuffer {
-    typealias SwiftType = [MemoryLeafFolder]
+fileprivate struct FfiConverterSequenceTypeMemoryContactCommandItem: FfiConverterRustBuffer {
+    typealias SwiftType = [MemoryContactCommandItem]
 
-    public static func write(_ value: [MemoryLeafFolder], into buf: inout [UInt8]) {
+    public static func write(_ value: [MemoryContactCommandItem], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeMemoryLeafFolder.write(item, into: &buf)
+            FfiConverterTypeMemoryContactCommandItem.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryLeafFolder] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryContactCommandItem] {
         let len: Int32 = try readInt(&buf)
-        var seq = [MemoryLeafFolder]()
+        var seq = [MemoryContactCommandItem]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeMemoryLeafFolder.read(from: &buf))
+            seq.append(try FfiConverterTypeMemoryContactCommandItem.read(from: &buf))
         }
         return seq
     }
@@ -11990,23 +11897,23 @@ fileprivate struct FfiConverterSequenceTypeMemoryLeafFolder: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeMemoryPersonLink: FfiConverterRustBuffer {
-    typealias SwiftType = [MemoryPersonLink]
+fileprivate struct FfiConverterSequenceTypeMemoryDateCommandItem: FfiConverterRustBuffer {
+    typealias SwiftType = [MemoryDateCommandItem]
 
-    public static func write(_ value: [MemoryPersonLink], into buf: inout [UInt8]) {
+    public static func write(_ value: [MemoryDateCommandItem], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeMemoryPersonLink.write(item, into: &buf)
+            FfiConverterTypeMemoryDateCommandItem.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryPersonLink] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryDateCommandItem] {
         let len: Int32 = try readInt(&buf)
-        var seq = [MemoryPersonLink]()
+        var seq = [MemoryDateCommandItem]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeMemoryPersonLink.read(from: &buf))
+            seq.append(try FfiConverterTypeMemoryDateCommandItem.read(from: &buf))
         }
         return seq
     }
@@ -12015,23 +11922,23 @@ fileprivate struct FfiConverterSequenceTypeMemoryPersonLink: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeMemoryRecord: FfiConverterRustBuffer {
-    typealias SwiftType = [MemoryRecord]
+fileprivate struct FfiConverterSequenceTypeMemoryFolderCommandItem: FfiConverterRustBuffer {
+    typealias SwiftType = [MemoryFolderCommandItem]
 
-    public static func write(_ value: [MemoryRecord], into buf: inout [UInt8]) {
+    public static func write(_ value: [MemoryFolderCommandItem], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeMemoryRecord.write(item, into: &buf)
+            FfiConverterTypeMemoryFolderCommandItem.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryRecord] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryFolderCommandItem] {
         let len: Int32 = try readInt(&buf)
-        var seq = [MemoryRecord]()
+        var seq = [MemoryFolderCommandItem]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeMemoryRecord.read(from: &buf))
+            seq.append(try FfiConverterTypeMemoryFolderCommandItem.read(from: &buf))
         }
         return seq
     }
@@ -12040,23 +11947,23 @@ fileprivate struct FfiConverterSequenceTypeMemoryRecord: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeMergeProposal: FfiConverterRustBuffer {
-    typealias SwiftType = [MergeProposal]
+fileprivate struct FfiConverterSequenceTypeMemoryPersonCommandItem: FfiConverterRustBuffer {
+    typealias SwiftType = [MemoryPersonCommandItem]
 
-    public static func write(_ value: [MergeProposal], into buf: inout [UInt8]) {
+    public static func write(_ value: [MemoryPersonCommandItem], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeMergeProposal.write(item, into: &buf)
+            FfiConverterTypeMemoryPersonCommandItem.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MergeProposal] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryPersonCommandItem] {
         let len: Int32 = try readInt(&buf)
-        var seq = [MergeProposal]()
+        var seq = [MemoryPersonCommandItem]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeMergeProposal.read(from: &buf))
+            seq.append(try FfiConverterTypeMemoryPersonCommandItem.read(from: &buf))
         }
         return seq
     }
@@ -12065,23 +11972,48 @@ fileprivate struct FfiConverterSequenceTypeMergeProposal: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypePersonKeyedString: FfiConverterRustBuffer {
-    typealias SwiftType = [PersonKeyedString]
+fileprivate struct FfiConverterSequenceTypeMemoryStructure: FfiConverterRustBuffer {
+    typealias SwiftType = [MemoryStructure]
 
-    public static func write(_ value: [PersonKeyedString], into buf: inout [UInt8]) {
+    public static func write(_ value: [MemoryStructure], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypePersonKeyedString.write(item, into: &buf)
+            FfiConverterTypeMemoryStructure.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PersonKeyedString] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryStructure] {
         let len: Int32 = try readInt(&buf)
-        var seq = [PersonKeyedString]()
+        var seq = [MemoryStructure]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypePersonKeyedString.read(from: &buf))
+            seq.append(try FfiConverterTypeMemoryStructure.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypePersonStatePair: FfiConverterRustBuffer {
+    typealias SwiftType = [PersonStatePair]
+
+    public static func write(_ value: [PersonStatePair], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePersonStatePair.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PersonStatePair] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PersonStatePair]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePersonStatePair.read(from: &buf))
         }
         return seq
     }
@@ -12140,23 +12072,23 @@ fileprivate struct FfiConverterSequenceTypePlacesRunRecord: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeScanFolderNode: FfiConverterRustBuffer {
-    typealias SwiftType = [ScanFolderNode]
+fileprivate struct FfiConverterSequenceTypeScannedFolderHost: FfiConverterRustBuffer {
+    typealias SwiftType = [ScannedFolderHost]
 
-    public static func write(_ value: [ScanFolderNode], into buf: inout [UInt8]) {
+    public static func write(_ value: [ScannedFolderHost], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeScanFolderNode.write(item, into: &buf)
+            FfiConverterTypeScannedFolderHost.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScanFolderNode] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScannedFolderHost] {
         let len: Int32 = try readInt(&buf)
-        var seq = [ScanFolderNode]()
+        var seq = [ScannedFolderHost]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeScanFolderNode.read(from: &buf))
+            seq.append(try FfiConverterTypeScannedFolderHost.read(from: &buf))
         }
         return seq
     }
@@ -12165,23 +12097,23 @@ fileprivate struct FfiConverterSequenceTypeScanFolderNode: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeScanPhoto: FfiConverterRustBuffer {
-    typealias SwiftType = [ScanPhoto]
+fileprivate struct FfiConverterSequenceTypeScannedMediaHost: FfiConverterRustBuffer {
+    typealias SwiftType = [ScannedMediaHost]
 
-    public static func write(_ value: [ScanPhoto], into buf: inout [UInt8]) {
+    public static func write(_ value: [ScannedMediaHost], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeScanPhoto.write(item, into: &buf)
+            FfiConverterTypeScannedMediaHost.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScanPhoto] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScannedMediaHost] {
         let len: Int32 = try readInt(&buf)
-        var seq = [ScanPhoto]()
+        var seq = [ScannedMediaHost]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeScanPhoto.read(from: &buf))
+            seq.append(try FfiConverterTypeScannedMediaHost.read(from: &buf))
         }
         return seq
     }
@@ -12190,23 +12122,23 @@ fileprivate struct FfiConverterSequenceTypeScanPhoto: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeScanRegion: FfiConverterRustBuffer {
-    typealias SwiftType = [ScanRegion]
+fileprivate struct FfiConverterSequenceTypeScannedSidecarHost: FfiConverterRustBuffer {
+    typealias SwiftType = [ScannedSidecarHost]
 
-    public static func write(_ value: [ScanRegion], into buf: inout [UInt8]) {
+    public static func write(_ value: [ScannedSidecarHost], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeScanRegion.write(item, into: &buf)
+            FfiConverterTypeScannedSidecarHost.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScanRegion] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScannedSidecarHost] {
         let len: Int32 = try readInt(&buf)
-        var seq = [ScanRegion]()
+        var seq = [ScannedSidecarHost]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeScanRegion.read(from: &buf))
+            seq.append(try FfiConverterTypeScannedSidecarHost.read(from: &buf))
         }
         return seq
     }
@@ -12215,23 +12147,23 @@ fileprivate struct FfiConverterSequenceTypeScanRegion: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeScanSidecarRow: FfiConverterRustBuffer {
-    typealias SwiftType = [ScanSidecarRow]
+fileprivate struct FfiConverterSequenceTypeScheduledMemoryStructure: FfiConverterRustBuffer {
+    typealias SwiftType = [ScheduledMemoryStructure]
 
-    public static func write(_ value: [ScanSidecarRow], into buf: inout [UInt8]) {
+    public static func write(_ value: [ScheduledMemoryStructure], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeScanSidecarRow.write(item, into: &buf)
+            FfiConverterTypeScheduledMemoryStructure.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScanSidecarRow] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScheduledMemoryStructure] {
         let len: Int32 = try readInt(&buf)
-        var seq = [ScanSidecarRow]()
+        var seq = [ScheduledMemoryStructure]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeScanSidecarRow.read(from: &buf))
+            seq.append(try FfiConverterTypeScheduledMemoryStructure.read(from: &buf))
         }
         return seq
     }
@@ -12240,73 +12172,23 @@ fileprivate struct FfiConverterSequenceTypeScanSidecarRow: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceTypeScanTag: FfiConverterRustBuffer {
-    typealias SwiftType = [ScanTag]
+fileprivate struct FfiConverterSequenceTypeTagStructureItem: FfiConverterRustBuffer {
+    typealias SwiftType = [TagStructureItem]
 
-    public static func write(_ value: [ScanTag], into buf: inout [UInt8]) {
+    public static func write(_ value: [TagStructureItem], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
-            FfiConverterTypeScanTag.write(item, into: &buf)
+            FfiConverterTypeTagStructureItem.write(item, into: &buf)
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScanTag] {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TagStructureItem] {
         let len: Int32 = try readInt(&buf)
-        var seq = [ScanTag]()
+        var seq = [TagStructureItem]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeScanTag.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterSequenceTypeScheduledMemoryRecord: FfiConverterRustBuffer {
-    typealias SwiftType = [ScheduledMemoryRecord]
-
-    public static func write(_ value: [ScheduledMemoryRecord], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeScheduledMemoryRecord.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ScheduledMemoryRecord] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [ScheduledMemoryRecord]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeScheduledMemoryRecord.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterSequenceTypeTagSuggestionRecord: FfiConverterRustBuffer {
-    typealias SwiftType = [TagSuggestionRecord]
-
-    public static func write(_ value: [TagSuggestionRecord], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterTypeTagSuggestionRecord.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TagSuggestionRecord] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [TagSuggestionRecord]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeTagSuggestionRecord.read(from: &buf))
+            seq.append(try FfiConverterTypeTagStructureItem.read(from: &buf))
         }
         return seq
     }
@@ -12415,42 +12297,12 @@ public func stableUuid(input: String) -> String  {
 /**
  * Named beats unnamed, then size, then the lower id. `None` for a self-merge.
  */
-public func faceMergeDirection(a: FaceMergeCandidate, b: FaceMergeCandidate) -> FaceMergeDecision?  {
-    return try!  FfiConverterOptionTypeFaceMergeDecision.lift(try! rustCall() {
+public func faceMergeDirection(a: FaceMergeCommandSide, b: FaceMergeCommandSide) -> FaceMergeCommand?  {
+    return try!  FfiConverterOptionTypeFaceMergeCommand.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_face_merge_direction(
-        FfiConverterTypeFaceMergeCandidate_lower(a),
-        FfiConverterTypeFaceMergeCandidate_lower(b),uniffiCallStatus
-    )
-})
-}
-/**
- * `GalleryStore.computeScheduledMemories` — the widget's pre-published
- * horizon, offsets `1..=horizon_days` from local midnight.
- *
- * `hidden_memory_ids` is `MemoryCoordinator.hiddenMemories`, which stays in
- * Swift; it is passed separately because it is coordinator state rather than
- * engine input, and `generate` does not read it at all.
- */
-public func computeScheduledMemories(inputs: MemoryGenerationInputs, horizonDays: Int64, hiddenMemoryIds: [String]) -> [ScheduledMemoryRecord]  {
-    return try!  FfiConverterSequenceTypeScheduledMemoryRecord.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_compute_scheduled_memories(
-        FfiConverterTypeMemoryGenerationInputs_lower(inputs),
-        FfiConverterInt64.lower(horizonDays),
-        FfiConverterSequenceString.lower(hiddenMemoryIds),uniffiCallStatus
-    )
-})
-}
-/**
- * `MemoryEngine.generate`, uncancellable — for callers that do not have a
- * cancellation to forward (tests, and the conformance harness).
- */
-public func generateMemories(inputs: MemoryGenerationInputs) -> [MemoryRecord]  {
-    return try!  FfiConverterSequenceTypeMemoryRecord.lift(try! rustCall() {
-        uniffiCallStatus in
-    uniffi_gallery_ffi_fn_func_generate_memories(
-        FfiConverterTypeMemoryGenerationInputs_lower(inputs),uniffiCallStatus
+        FfiConverterTypeFaceMergeCommandSide_lower(a),
+        FfiConverterTypeFaceMergeCommandSide_lower(b),uniffiCallStatus
     )
 })
 }
@@ -12521,8 +12373,8 @@ public func personLogMigrateFromSnapshot(root: String, device: String, snapshotJ
 /**
  * Replay every device file under `{root}/.gallery/log`.
  */
-public func personLogProject(root: String)throws  -> PersonStateRecord  {
-    return try  FfiConverterTypePersonStateRecord_lift(try rustCallWithError(FfiConverterTypePersonLogError_lift) {
+public func personLogProject(root: String)throws  -> PersonStateStructure  {
+    return try  FfiConverterTypePersonStateStructure_lift(try rustCallWithError(FfiConverterTypePersonLogError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_person_log_project(
         FfiConverterString.lower(root),uniffiCallStatus
@@ -12565,11 +12417,11 @@ public func libraryWatchRefreshIntervalMs() -> UInt64  {
 /**
  * Whether one photo belongs in the shared Places queue.
  */
-public func placesCandidate(photo: ScanPhoto) -> Bool  {
+public func placesCandidate(photo: ScannedMediaHost) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_places_candidate(
-        FfiConverterTypeScanPhoto_lower(photo),uniffiCallStatus
+        FfiConverterTypeScannedMediaHost_lower(photo),uniffiCallStatus
     )
 })
 }
@@ -12591,8 +12443,8 @@ public func placesCandidate(photo: ScanPhoto) -> Bool  {
  * lists but the tree does not hold is appended after it — in file order, so
  * nothing is lost and nothing is misaddressed.
  */
-public func loadSnapshot(path: String)throws  -> SnapshotRecord  {
-    return try  FfiConverterTypeSnapshotRecord_lift(try rustCallWithError(FfiConverterTypeScanError_lift) {
+public func loadSnapshot(path: String)throws  -> SnapshotHostDocument  {
+    return try  FfiConverterTypeSnapshotHostDocument_lift(try rustCallWithError(FfiConverterTypeScanError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_load_snapshot(
         FfiConverterString.lower(path),uniffiCallStatus
@@ -12615,8 +12467,8 @@ public func namedPeopleWithoutBox(regionNames: [String?], decisions: [String]) -
  * Parse XMP bytes the caller already holds — the coordinated sidecar-read
  * path never asks Rust to open the file again.
  */
-public func parseXmpBytes(bytes: Data) -> SidecarParseRecord  {
-    return try!  FfiConverterTypeSidecarParseRecord_lift(try! rustCall() {
+public func parseXmpBytes(bytes: Data) -> ParsedSidecarHost  {
+    return try!  FfiConverterTypeParsedSidecarHost_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_parse_xmp_bytes(
         FfiConverterData.lower(bytes),uniffiCallStatus
@@ -12644,8 +12496,8 @@ public func probeSnapshotVersion(path: String)throws  -> Int64  {
  * The precedence table between the two sources lives at the merge site in
  * `gallery_meta::media`, which is now its only copy.
  */
-public func readImageMetadata(path: String) -> ImageMetadataRecord  {
-    return try!  FfiConverterTypeImageMetadataRecord_lift(try! rustCall() {
+public func readImageMetadata(path: String) -> HostImageMetadata  {
+    return try!  FfiConverterTypeHostImageMetadata_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_read_image_metadata(
         FfiConverterString.lower(path),uniffiCallStatus
@@ -12655,8 +12507,8 @@ public func readImageMetadata(path: String) -> ImageMetadataRecord  {
 /**
  * Read `{image}.xmp` (then the Lightroom alt) and project it.
  */
-public func readSidecar(imagePath: String)throws  -> SidecarViewRecord  {
-    return try  FfiConverterTypeSidecarViewRecord_lift(try rustCallWithError(FfiConverterTypeScanError_lift) {
+public func readSidecar(imagePath: String)throws  -> SidecarHostView  {
+    return try  FfiConverterTypeSidecarHostView_lift(try rustCallWithError(FfiConverterTypeScanError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_read_sidecar(
         FfiConverterString.lower(imagePath),uniffiCallStatus
@@ -12684,11 +12536,11 @@ public func readVideoDate(path: String) -> Int64?  {
  * The app persists through `JSONDiskCache` — this exists so a test can prove
  * the two encoders agree at runtime, not only against a committed fixture.
  */
-public func saveSnapshot(path: String, snapshot: SnapshotRecord)throws   {try rustCallWithError(FfiConverterTypeScanError_lift) {
+public func saveSnapshot(path: String, snapshot: SnapshotHostDocument)throws   {try rustCallWithError(FfiConverterTypeScanError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_save_snapshot(
         FfiConverterString.lower(path),
-        FfiConverterTypeSnapshotRecord_lower(snapshot),uniffiCallStatus
+        FfiConverterTypeSnapshotHostDocument_lower(snapshot),uniffiCallStatus
     )
 }
 }
@@ -12737,8 +12589,8 @@ public func snapshotVersion() -> Int64  {
  * [`TaggingSession::new`] does, so an invalid pack is rejected at discovery
  * time rather than at the first Scan Photos.
  */
-public func inspectModelPack(modelPackDir: String)throws  -> ModelPackInfo  {
-    return try  FfiConverterTypeModelPackInfo_lift(try rustCallWithError(FfiConverterTypeTaggingError_lift) {
+public func inspectModelPack(modelPackDir: String)throws  -> ModelPackHostInfo  {
+    return try  FfiConverterTypeModelPackHostInfo_lift(try rustCallWithError(FfiConverterTypeTaggingError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_inspect_model_pack(
         FfiConverterString.lower(modelPackDir),uniffiCallStatus
@@ -12751,8 +12603,8 @@ public func inspectModelPack(modelPackDir: String)throws  -> ModelPackInfo  {
  * The host enumerates the two roots and passes directory *names*. Numeric
  * compare so `…-v1.10` beats `…-v1.9`.
  */
-public func resolveModelPack(bundled: [String], imported: [String]) -> PackResolution?  {
-    return try!  FfiConverterOptionTypePackResolution.lift(try! rustCall() {
+public func resolveModelPack(bundled: [String], imported: [String]) -> ModelPackHostResolution?  {
+    return try!  FfiConverterOptionTypeModelPackHostResolution.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_resolve_model_pack(
         FfiConverterSequenceString.lower(bundled),
@@ -12782,13 +12634,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_stable_uuid() != 60971) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_face_merge_direction() != 43698) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_gallery_ffi_checksum_func_compute_scheduled_memories() != 21848) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_gallery_ffi_checksum_func_generate_memories() != 12144) {
+    if (uniffi_gallery_ffi_checksum_func_face_merge_direction() != 11517) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_memory_cluster_key() != 24175) {
@@ -12806,7 +12652,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_person_log_migrate_from_snapshot() != 64294) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_person_log_project() != 61117) {
+    if (uniffi_gallery_ffi_checksum_func_person_log_project() != 50149) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_person_log_project_report() != 11290) {
@@ -12818,31 +12664,31 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_library_watch_refresh_interval_ms() != 10678) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_places_candidate() != 9645) {
+    if (uniffi_gallery_ffi_checksum_func_places_candidate() != 7764) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_load_snapshot() != 40842) {
+    if (uniffi_gallery_ffi_checksum_func_load_snapshot() != 62618) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_named_people_without_box() != 17912) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_parse_xmp_bytes() != 30043) {
+    if (uniffi_gallery_ffi_checksum_func_parse_xmp_bytes() != 47373) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_probe_snapshot_version() != 37625) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_read_image_metadata() != 54304) {
+    if (uniffi_gallery_ffi_checksum_func_read_image_metadata() != 5028) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_read_sidecar() != 42960) {
+    if (uniffi_gallery_ffi_checksum_func_read_sidecar() != 58648) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_read_video_date() != 2678) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_save_snapshot() != 8566) {
+    if (uniffi_gallery_ffi_checksum_func_save_snapshot() != 51262) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_scanner_image_extensions() != 55583) {
@@ -12854,10 +12700,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_snapshot_version() != 64747) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_inspect_model_pack() != 26872) {
+    if (uniffi_gallery_ffi_checksum_func_inspect_model_pack() != 20487) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_func_resolve_model_pack() != 2895) {
+    if (uniffi_gallery_ffi_checksum_func_resolve_model_pack() != 25169) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_faceprogresslistener_on_progress() != 64966) {
@@ -12869,16 +12715,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_faceprogresslistener_on_sidecars_written() != 59018) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_faceprogresslistener_on_finished() != 32437) {
+    if (uniffi_gallery_ffi_checksum_method_faceprogresslistener_on_finished() != 11452) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_facesession_cancel() != 42465) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_cluster_faces() != 31706) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_cluster_faces() != 19920) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_clusters() != 58958) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_clusters() != 21607) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_facesession_dismiss_merge_proposal() != 63371) {
@@ -12887,46 +12733,46 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_facesession_enqueue() != 35600) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_ignore_cluster() != 30204) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_ignore_cluster() != 16410) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_facesession_is_running() != 33316) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_library_stats() != 40625) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_library_stats() != 52301) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_merge_clusters() != 43067) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_merge_clusters() != 59477) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_merge_clusters_many() != 65185) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_merge_clusters_many() != 7057) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_merge_proposals() != 26130) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_merge_proposals() != 41839) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_name_cluster() != 10772) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_name_cluster() != 8625) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_recluster() != 23647) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_recluster() != 27233) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_reject_cluster() != 26458) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_reject_cluster() != 12355) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_rename_person() != 2771) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_rename_person() != 15437) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_facesession_reset_queue() != 41515) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_resync_face_decisions_once() != 16615) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_resync_face_decisions_once() != 23447) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_resync_named_keywords_once() != 29814) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_resync_named_keywords_once() != 10720) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_split_cluster() != 17265) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_split_cluster() != 33330) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_facesession_start() != 42868) {
@@ -12935,25 +12781,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_facesession_start_one() != 42561) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_stats() != 28586) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_stats() != 38595) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_take_last_run_photos() != 27401) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_take_last_run_photos() != 59505) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_facesession_unname_cluster() != 63802) {
+    if (uniffi_gallery_ffi_checksum_method_facesession_unname_cluster() != 28963) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_heicdecoder_decode() != 28593) {
+    if (uniffi_gallery_ffi_checksum_method_heicdecoder_decode() != 6576) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_build() != 2091) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_build() != 58115) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_build_with_time_zone_offsets() != 45599) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_build_with_time_zone_offsets() != 59277) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_compute_scheduled() != 38617) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_compute_scheduled() != 54446) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_photo_count() != 25523) {
@@ -12968,7 +12814,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_libraryindex_photo_window() != 13639) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_rebuild() != 27379) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_rebuild() != 40374) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_scheduled_photo_count() != 60180) {
@@ -12989,7 +12835,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_libraryindex_tag_structure() != 26735) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_tag_suggestions() != 53695) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_tag_suggestions() != 54689) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_tag_window() != 20988) {
@@ -13001,7 +12847,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_memorygenerator_cancel() != 62443) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_memorygenerator_generate() != 46158) {
+    if (uniffi_gallery_ffi_checksum_method_memorygenerator_generate() != 38862) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_memorygenerator_is_cancelled() != 63354) {
@@ -13016,7 +12862,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_placessession_prepare() != 22182) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_placessession_run() != 12481) {
+    if (uniffi_gallery_ffi_checksum_method_placessession_run() != 37766) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_scanprogresslistener_on_progress() != 2334) {
@@ -13025,7 +12871,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_scannersession_cancel() != 30242) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_scannersession_scan() != 58351) {
+    if (uniffi_gallery_ffi_checksum_method_scannersession_scan() != 6850) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_taggingprogresslistener_on_progress() != 21273) {
@@ -13034,7 +12880,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_taggingprogresslistener_on_photos_tagged() != 44552) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_taggingprogresslistener_on_finished() != 21939) {
+    if (uniffi_gallery_ffi_checksum_method_taggingprogresslistener_on_finished() != 4200) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_taggingsession_cancel() != 42165) {
@@ -13046,7 +12892,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_taggingsession_is_running() != 59183) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_taggingsession_model_pack_info() != 39144) {
+    if (uniffi_gallery_ffi_checksum_method_taggingsession_model_pack_info() != 12572) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_taggingsession_reset_queue() != 11521) {
@@ -13058,7 +12904,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_taggingsession_start_one() != 2329) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_taggingsession_stats() != 11241) {
+    if (uniffi_gallery_ffi_checksum_method_taggingsession_stats() != 56441) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_constructor_facesession_new() != 28976) {
