@@ -6,7 +6,7 @@ import Observation
 /// from `GalleryStore` so the whole People feature lives (and can be tested)
 /// in one place; views reach it via `store.people`.
 ///
-/// Owns UserDefaults dual-write plus the synced `.gallery/log` (ADR 0005
+/// The synced `.gallery/log` is authoritative after folder attach (ADR 0005
 /// R5/R13). Cross-domain side effects (memory regeneration when hidden/me
 /// changes, widget re-export when visibility changes) are injected as
 /// closures by the Store — this type knows nothing about memories or widgets.
@@ -16,24 +16,16 @@ final class PeopleStore {
     /// Person tag paths hidden from the rail, people list, and memories.
     private(set) var hiddenPeople: Set<String> = [] {
         didSet {
-            defaults.set(Array(hiddenPeople), forKey: "hiddenPeople")
             onMemoryAffectingChange?()
         }
     }
 
     /// Person tag paths that are "featured" — sorted to the front of the
-    /// People rail and decorated with a star. Stored under the legacy
-    /// `pinnedPeople` key.
-    private(set) var featuredPeople: [String] = [] {
-        didSet { defaults.set(featuredPeople, forKey: "pinnedPeople") }
-    }
+    /// People rail and decorated with a star.
+    private(set) var featuredPeople: [String] = []
 
     /// Per-person featured photo ID. Keyed by person tag fullPath (case-sensitive).
-    private(set) var featuredPhotoByPerson: [String: UUID] = [:] {
-        didSet {
-            defaults.set(featuredPhotoByPerson.mapValues { $0.uuidString }, forKey: "featuredPhotoByPerson")
-        }
-    }
+    private(set) var featuredPhotoByPerson: [String: UUID] = [:]
 
     /// Person tag fullPath ("People/<name>") that represents the current user.
     /// Excluded from "with X, Y, Z" trip-title suffixes so memories don't read
@@ -41,17 +33,26 @@ final class PeopleStore {
     private(set) var mePersonPath: String = "" {
         didSet {
             guard oldValue != mePersonPath else { return }
-            defaults.set(mePersonPath, forKey: "mePersonPath")
             // Trip titles depend on this — regenerate so the change surfaces
             // immediately instead of waiting for the daily gate.
             onMemoryAffectingChange?()
         }
     }
 
-    /// Projected contact-link decisions. GalleryStore still persists the
-    /// UserDefaults key for the live UI; this copy exists so
-    /// `applyProjection` applies all five person keys, not four.
+    /// Projected contact-link decisions.
     private(set) var personContactLinks: [String: PersonLink] = [:]
+
+    enum Diagnostic: Equatable {
+        case tornTail(path: String, offset: UInt64, detail: String)
+        case migrationFailed(detail: String)
+        case projectionFailed(detail: String)
+        case appendFailed(operation: String, detail: String)
+    }
+
+    /// Non-fatal log health surfaced to Settings/diagnostics callers. A torn
+    /// tail accompanies a recovered projection; it never triggers a stale
+    /// UserDefaults fallback.
+    private(set) var diagnostics: [Diagnostic] = []
 
     /// All People/* tags with photo counts + latest-photo dates, sorted by
     /// count. Published here by the Store after each async tag aggregation.
@@ -59,14 +60,12 @@ final class PeopleStore {
 
     // MARK: Wiring
 
-    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let clock: any Clock
+    @ObservationIgnored private let log: PersonLogBackend
     /// ADR 0005 R5: per-device, not synced.
     @ObservationIgnored let deviceId: String
     /// Library folder; log lives at `{libraryRoot}/.gallery/log/<deviceId>/`.
     @ObservationIgnored private(set) var libraryRoot: URL?
-    /// False while applying a projection so we do not re-append.
-    @ObservationIgnored private var writeLog = true
     /// The core library index: O(1) photo lookup for featured-photo IDs, and
     /// the tag → photos buckets for the candidate pool. Strong reference is
     /// cycle-free: the index doesn't know about this type.
@@ -75,33 +74,21 @@ final class PeopleStore {
     @ObservationIgnored var onMemoryAffectingChange: (() -> Void)?
     /// Set by the Store: visibility changes affect the widget snapshot.
     @ObservationIgnored var onWidgetAffectingChange: (() -> Void)?
-    /// Set by the Store so projected contact links update GalleryStore's fifth key.
+    /// Set by the Store so projected contact links update its observed mirror.
     @ObservationIgnored var onLinksProjected: (([String: PersonLink]) -> Void)?
 
     init(
         defaults: UserDefaults,
         clock: any Clock,
         index: CoreLibraryIndex,
-        libraryRoot: URL? = nil
+        libraryRoot: URL? = nil,
+        log: PersonLogBackend = .live
     ) {
-        self.defaults = defaults
         self.clock = clock
         self.index = index
         self.deviceId = PersonLog.deviceId(in: defaults)
         self.libraryRoot = libraryRoot
-
-        if let hidden = defaults.array(forKey: "hiddenPeople") as? [String] {
-            hiddenPeople = Set(hidden)
-        }
-        if let pinned = defaults.array(forKey: "pinnedPeople") as? [String] {
-            featuredPeople = pinned
-        }
-        if let dict = defaults.dictionary(forKey: "featuredPhotoByPerson") as? [String: String] {
-            featuredPhotoByPerson = dict.compactMapValues { UUID(uuidString: $0) }
-        }
-        if let raw = defaults.string(forKey: "mePersonPath") {
-            mePersonPath = raw
-        }
+        self.log = log
     }
 
     /// Called by the Store after each tag aggregation pass.
@@ -156,100 +143,200 @@ final class PeopleStore {
 
     // MARK: Mutations
 
-    /// Bind the synced log once the library folder is known, then migrate
-    /// the UserDefaults snapshot if this device has not written a marker yet.
+    struct AttachResult: Equatable {
+        var state: PersonLog.State
+        /// True when migration returned successfully, including the no-op
+        /// "this device already has a marker" result.
+        var legacyMigrationComplete: Bool
+    }
+
+    /// Bind the synced log once the library folder is known, import the
+    /// legacy snapshot if needed, and always project `.gallery/log`.
     ///
-    /// Returns nil without touching UserDefaults when migrate/project fails
-    /// or when the projected state is empty and the incoming snapshot is not.
+    /// Projection is authoritative even when it is empty. A torn final line
+    /// returns the complete prefix plus a diagnostic. A hard failure leaves
+    /// this folder's state empty rather than leaking state from UserDefaults
+    /// or from the previously attached library.
     @discardableResult
-    func attachLibrary(_ root: URL, snapshot: PersonLog.Snapshot) -> PersonLog.State? {
+    func attachLibrary(_ root: URL, snapshot: PersonLog.Snapshot) -> AttachResult {
         libraryRoot = root
+        diagnostics = []
+        applyProjection(.init())
+        var migrationComplete = false
         do {
-            _ = try PersonLog.migrate(libraryRoot: root, device: deviceId, snapshot: snapshot)
-            let state = try PersonLog.project(libraryRoot: root)
-            if state.isEmpty && !snapshot.isEmpty {
-                Log.cache.warning("Person log project is empty; keeping UserDefaults snapshot")
-                return nil
-            }
-            applyProjection(state)
-            return state
+            _ = try log.migrate(root, deviceId, snapshot)
+            migrationComplete = true
         } catch {
-            Log.cache.error("Person log attach failed: \(error.localizedDescription)")
-            return nil
+            let detail = error.localizedDescription
+            diagnostics.append(.migrationFailed(detail: detail))
+            Log.cache.error("Person log migration failed: \(detail)")
+        }
+
+        do {
+            let projection = try log.project(root)
+            applyProjection(projection.state)
+            diagnostics.append(contentsOf: projection.tornTails.map {
+                .tornTail(path: $0.path, offset: $0.offset, detail: $0.detail)
+            })
+            for tail in projection.tornTails {
+                Log.cache.error(
+                    "Person log torn tail \(tail.path) at \(tail.offset): \(tail.detail)"
+                )
+            }
+            return AttachResult(
+                state: projection.state,
+                legacyMigrationComplete: migrationComplete
+            )
+        } catch {
+            let detail = error.localizedDescription
+            diagnostics.append(.projectionFailed(detail: detail))
+            Log.cache.error("Person log projection failed: \(detail)")
+            return AttachResult(state: .init(), legacyMigrationComplete: migrationComplete)
         }
     }
 
     func applyProjection(_ state: PersonLog.State) {
-        writeLog = false
         hiddenPeople = state.hidden
         featuredPeople = state.featured
         featuredPhotoByPerson = state.featuredPhoto.compactMapValues { UUID(uuidString: $0) }
         mePersonPath = state.me
         personContactLinks = state.personLinks()
         onLinksProjected?(personContactLinks)
-        writeLog = true
     }
 
-    func appendPersonEvent(_ type: String, _ body: [(String, PersonLog.LogJSON)]) {
-        guard writeLog, let root = libraryRoot else { return }
+    @discardableResult
+    private func appendPersonEvent(
+        _ type: String,
+        _ body: [(String, PersonLog.LogJSON)]
+    ) -> Bool {
+        guard let root = libraryRoot else {
+            diagnostics.append(.appendFailed(operation: type, detail: "no library attached"))
+            return false
+        }
         do {
-            try PersonLog.append(libraryRoot: root, device: deviceId, type: type, body: body)
+            try log.append(root, deviceId, type, body)
+            return true
         } catch {
-            Log.cache.error("Person log append failed: \(error.localizedDescription)")
+            let detail = error.localizedDescription
+            diagnostics.append(.appendFailed(operation: type, detail: detail))
+            Log.cache.error("Person log append failed (\(type)): \(detail)")
+            return false
         }
     }
 
-    func hidePerson(_ path: String) {
+    @discardableResult
+    func hidePerson(_ path: String) -> Bool {
+        guard appendPersonEvent("person_hidden", [("path", .string(path))]) else {
+            return false
+        }
         hiddenPeople.insert(path)
         featuredPeople.removeAll { $0 == path }
-        appendPersonEvent("person_hidden", [("path", .string(path))])
         onWidgetAffectingChange?()
+        return true
     }
 
-    func unhidePerson(_ path: String) {
+    @discardableResult
+    func unhidePerson(_ path: String) -> Bool {
+        guard appendPersonEvent("person_unhidden", [("path", .string(path))]) else {
+            return false
+        }
         hiddenPeople.remove(path)
-        appendPersonEvent("person_unhidden", [("path", .string(path))])
         onWidgetAffectingChange?()
+        return true
     }
 
     func isFeatured(_ path: String) -> Bool {
         featuredPeople.contains(path)
     }
 
-    func toggleFeaturePerson(_ path: String) {
+    @discardableResult
+    func toggleFeaturePerson(_ path: String) -> Bool {
         if let idx = featuredPeople.firstIndex(of: path) {
+            guard appendPersonEvent("person_unfeatured", [("path", .string(path))]) else {
+                return false
+            }
             featuredPeople.remove(at: idx)
-            appendPersonEvent("person_unfeatured", [("path", .string(path))])
         } else {
+            guard appendPersonEvent("person_featured", [("path", .string(path))]) else {
+                return false
+            }
             featuredPeople.append(path)
-            appendPersonEvent("person_featured", [("path", .string(path))])
         }
         // Featured ordering floats people to the front of the rail, which
         // the widget mirrors.
         onWidgetAffectingChange?()
+        return true
     }
 
     func isMe(_ path: String) -> Bool {
         !mePersonPath.isEmpty && mePersonPath == path
     }
 
-    func markAsMe(_ path: String) {
+    @discardableResult
+    func markAsMe(_ path: String) -> Bool {
+        guard appendPersonEvent("person_me_set", [("path", .string(path))]) else {
+            return false
+        }
         mePersonPath = path
-        appendPersonEvent("person_me_set", [("path", .string(path))])
+        return true
     }
 
-    func unmarkAsMe() {
+    @discardableResult
+    func unmarkAsMe() -> Bool {
+        guard appendPersonEvent("person_me_clear", []) else { return false }
         mePersonPath = ""
-        appendPersonEvent("person_me_clear", [])
+        return true
     }
 
-    func setFeaturedPhoto(personPath: String, photoID: UUID) {
-        featuredPhotoByPerson[personPath] = photoID
-        appendPersonEvent("featured_photo_set", [
+    @discardableResult
+    func setFeaturedPhoto(personPath: String, photoID: UUID) -> Bool {
+        guard appendPersonEvent("featured_photo_set", [
             ("path", .string(personPath)),
             ("photo", .string(photoID.uuidString)),
-        ])
+        ]) else {
+            return false
+        }
+        featuredPhotoByPerson[personPath] = photoID
         onWidgetAffectingChange?()
+        return true
+    }
+
+    @discardableResult
+    func setContactLink(personPath: String, link: PersonLink) -> Bool {
+        let body: [(String, PersonLog.LogJSON)]
+        switch link {
+        case .manual(let contactID):
+            body = [
+                ("path", .string(personPath)),
+                ("contact", .string(contactID)),
+            ]
+        case .disabled:
+            body = [
+                ("path", .string(personPath)),
+                ("disabled", .bool(true)),
+            ]
+        }
+        guard appendPersonEvent("person_contact_link_set", body) else {
+            return false
+        }
+        personContactLinks[personPath] = link
+        onLinksProjected?(personContactLinks)
+        onMemoryAffectingChange?()
+        return true
+    }
+
+    @discardableResult
+    func clearContactLink(personPath: String) -> Bool {
+        guard appendPersonEvent(
+            "person_contact_link_clear",
+            [("path", .string(personPath))]
+        ) else {
+            return false
+        }
+        personContactLinks.removeValue(forKey: personPath)
+        onLinksProjected?(personContactLinks)
+        onMemoryAffectingChange?()
+        return true
     }
 
     /// A move changes a photo's stable id (it is derived from the path).
@@ -258,35 +345,33 @@ final class PeopleStore {
     func remapFeaturedPhotoIDs(_ map: [UUID: UUID]) {
         guard !map.isEmpty else { return }
         var next = featuredPhotoByPerson
-        var remapped: [(String, UUID)] = []
         for (path, id) in featuredPhotoByPerson {
-            if let new = map[id] {
-                next[path] = new
-                remapped.append((path, new))
-            }
-        }
-        if !remapped.isEmpty {
-            featuredPhotoByPerson = next
-            for (path, new) in remapped {
-                appendPersonEvent("featured_photo_set", [
+            if let new = map[id],
+               appendPersonEvent("featured_photo_set", [
                     ("path", .string(path)),
                     ("photo", .string(new.uuidString)),
-                ])
+               ]) {
+                next[path] = new
             }
+        }
+        if next != featuredPhotoByPerson {
+            featuredPhotoByPerson = next
         }
     }
 
     /// Carry every persisted decision about a person across a rename.
     ///
-    /// Dual-write: local keys still move (so UserDefaults tests stay green)
-    /// and a `person_renamed` event is appended so replay migrates every
-    /// device identically (ADR 0005 R14).
-    func renamePerson(from old: String, to new: String) {
-        guard old != new else { return }
-        appendPersonEvent("person_renamed", [
+    /// `person_renamed` is the operation replayed by every device; install-
+    /// local snapshots are neither read nor rewritten after cutover.
+    @discardableResult
+    func renamePerson(from old: String, to new: String) -> Bool {
+        guard old != new else { return true }
+        guard appendPersonEvent("person_renamed", [
             ("from", .string(old)),
             ("to", .string(new)),
-        ])
+        ]) else {
+            return false
+        }
 
         if hiddenPeople.contains(old) {
             hiddenPeople.remove(old)
@@ -306,7 +391,14 @@ final class PeopleStore {
         if mePersonPath == old {
             mePersonPath = new
         }
+        if let link = personContactLinks.removeValue(forKey: old) {
+            if personContactLinks[new] == nil {
+                personContactLinks[new] = link
+            }
+            onLinksProjected?(personContactLinks)
+        }
         onWidgetAffectingChange?()
+        return true
     }
 
     // MARK: Cover photo / face region

@@ -19,7 +19,8 @@ enum TestGalleryStore {
 
     static func make(
         clock: any Clock = SystemClock(),
-        contacts: [ContactInfo] = []
+        contacts: [ContactInfo] = [],
+        configureDefaults: (UserDefaults) -> Void = { _ in }
     ) -> Harness {
         let tempDir = TempDir.make()
         let paths = GalleryPaths(
@@ -34,6 +35,7 @@ enum TestGalleryStore {
             bookmarkKey: "rootFolderBookmark"
         )
         let defaults = TestUserDefaults.make()
+        configureDefaults(defaults)
         let store = GalleryStore(
             paths: paths,
             defaults: defaults,

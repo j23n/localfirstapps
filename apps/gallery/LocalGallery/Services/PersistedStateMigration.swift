@@ -27,6 +27,13 @@ enum PersistedStateMigration {
         var duplicatePhotosRemoved: Int
     }
 
+    /// Mapping derived from the path-bearing pre-M1 snapshot. Used to project
+    /// the legacy M2 import in memory without writing obsolete person-domain
+    /// fields back to UserDefaults.
+    static func photoIDMapping(at libraryCacheURL: URL) -> [UUID: UUID] {
+        loadPlan(at: libraryCacheURL)?.photoIDs ?? [:]
+    }
+
     private struct LibraryEnvelope: Codable {
         var version: Int
         var value: LibrarySnapshot
@@ -81,7 +88,6 @@ enum PersistedStateMigration {
         try removeIfPresent(paths.memoriesCacheURL)
         migrateInstallLocalReferences(
             defaults: defaults,
-            photoIDs: photoIDs,
             folderIDs: folderIDs
         )
         if let widgetDataDir = paths.widgetDataDir {
@@ -351,17 +357,8 @@ enum PersistedStateMigration {
 
     private static func migrateInstallLocalReferences(
         defaults: UserDefaults,
-        photoIDs: [UUID: UUID],
         folderIDs: [UUID: UUID]
     ) {
-        if let covers = defaults.dictionary(forKey: "featuredPhotoByPerson") as? [String: String] {
-            let migrated = covers.compactMapValues { raw -> String? in
-                guard let old = UUID(uuidString: raw) else { return nil }
-                return (photoIDs[old] ?? old).uuidString
-            }
-            defaults.set(migrated, forKey: "featuredPhotoByPerson")
-        }
-
         if let hidden = defaults.array(forKey: "hiddenMemories") as? [String] {
             defaults.set(hidden.map { migrateMemoryKey($0, folderIDs: folderIDs) }, forKey: "hiddenMemories")
         }

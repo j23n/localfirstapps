@@ -167,9 +167,7 @@ final class GalleryStore {
     /// (case-sensitive). Absence from the dictionary means "auto-match by
     /// name"; entries record either a manual contact pick or an explicit
     /// "no birthdays for this person" choice. See `PersonLink`.
-    var personContactLinks: [String: PersonLink] = [:] {
-        didSet { persistPersonContactLinks() }
-    }
+    var personContactLinks: [String: PersonLink] = [:]
 
     /// Scan-pipeline state (GalleryStore+Scanning) — internal because the
     /// pipeline lives in a separate file; not meant for use elsewhere.
@@ -249,6 +247,9 @@ final class GalleryStore {
     // `.standard` defaults so existing call sites are unchanged).
 
     @ObservationIgnored let defaults: UserDefaults
+    /// Pre-M2 import source. Read once before the person store exists and
+    /// discarded as soon as `.gallery/log` confirms the migration marker.
+    @ObservationIgnored private var legacyPersonSnapshot: PersonLog.Snapshot?
     @ObservationIgnored let clock: any Clock
     @ObservationIgnored private let contactsService: any ContactsServicing
     /// NotificationCenter observer tokens. Set once in `init()` (on main),
@@ -273,6 +274,10 @@ final class GalleryStore {
         clock: any Clock = SystemClock(),
         contactsService: any ContactsServicing = LiveContactsService()
     ) {
+        let legacyPersonSnapshot = PersonLog.Snapshot.legacy(in: defaults)
+            .remappingPhotoIDs(
+                PersistedStateMigration.photoIDMapping(at: paths.libraryCacheURL)
+            )
         do {
             try PersistedStateMigration.run(paths: paths, defaults: defaults)
         } catch {
@@ -281,6 +286,7 @@ final class GalleryStore {
             Log.cache.error("Persisted-state migration deferred: \(Log.r.error(error))")
         }
         self.defaults = defaults
+        self.legacyPersonSnapshot = legacyPersonSnapshot
         self.clock = clock
         self.contactsService = contactsService
         self.bookmarks = BookmarkManager(defaults: defaults, bookmarkKey: paths.bookmarkKey)
@@ -453,12 +459,6 @@ final class GalleryStore {
         if let raw = defaults.object(forKey: "lastFullScanAt") as? Date {
             lastFullScanAt = raw
         }
-        if let data = defaults.data(forKey: "personContactLinks"),
-           let dict = try? JSONDecoder().decode([String: FailableDecodable<PersonLink>].self, from: data) {
-            // Per-entry tolerant decode — one bad entry must not wipe the
-            // user's entire set of manual contact links.
-            personContactLinks = dict.compactMapValues(\.value)
-        }
         // Load cache + start security scope synchronously so cached
         // URLs are accessible before the first SwiftUI render
         if loadCache(), let url = resolveBookmark() {
@@ -586,19 +586,17 @@ final class GalleryStore {
         attachPersonLog(to: url)
     }
 
-    /// One-shot UserDefaults → `.gallery/log` once a library folder exists.
-    /// Contact links are applied inside `PeopleStore.applyProjection`.
-    private func attachPersonLog(to url: URL) {
-        let snapshot = PersonLog.Snapshot(
-            hiddenPeople: Array(people.hiddenPeople),
-            pinnedPeople: people.featuredPeople,
-            featuredPhotoByPerson: Dictionary(
-                uniqueKeysWithValues: people.featuredPhotoByPerson.map { ($0.key, $0.value.uuidString) }
-            ),
-            mePersonPath: people.mePersonPath,
-            personContactLinks: personContactLinks
+    /// One-shot UserDefaults → `.gallery/log` once a library folder exists,
+    /// followed by an authoritative projection on every attach.
+    func attachPersonLog(to url: URL) {
+        let result = people.attachLibrary(
+            url,
+            snapshot: legacyPersonSnapshot ?? .empty
         )
-        _ = people.attachLibrary(url, snapshot: snapshot)
+        if result.legacyMigrationComplete {
+            PersonLog.Snapshot.clearLegacy(from: defaults)
+            legacyPersonSnapshot = nil
+        }
     }
 
     func saveBookmark(for url: URL) {
@@ -666,62 +664,38 @@ final class GalleryStore {
     /// the new link is reflected on the next launch (or right away if today is
     /// the contact's birthday).
     func linkPerson(_ personPath: String, toContactID contactID: String) {
-        personContactLinks[personPath] = .manual(contactID: contactID)
-        people.appendPersonEvent("person_contact_link_set", [
-            ("path", .string(personPath)),
-            ("contact", .string(contactID)),
-        ])
+        guard people.setContactLink(
+            personPath: personPath,
+            link: .manual(contactID: contactID)
+        ) else { return }
         Log.contacts.info("Linked '\(Log.r.person(personPath))' to contact \(Log.r.contact(contactID))")
-        memories.forceRegenerate()
     }
 
     /// Disable any contact link for a person tag. Records `.disabled` so the
     /// auto-match by name does not re-apply.
     func unlinkPerson(_ personPath: String) {
-        personContactLinks[personPath] = .disabled
-        people.appendPersonEvent("person_contact_link_set", [
-            ("path", .string(personPath)),
-            ("disabled", .bool(true)),
-        ])
+        guard people.setContactLink(personPath: personPath, link: .disabled) else {
+            return
+        }
         Log.contacts.info("Unlinked '\(Log.r.person(personPath))' (auto-match disabled)")
-        memories.forceRegenerate()
     }
 
     /// Forget any manual override — auto-match by name resumes for this person.
     func resetPersonLink(_ personPath: String) {
-        personContactLinks.removeValue(forKey: personPath)
-        people.appendPersonEvent("person_contact_link_clear", [
-            ("path", .string(personPath)),
-        ])
+        guard people.clearContactLink(personPath: personPath) else { return }
         Log.contacts.info("Reset link for '\(Log.r.person(personPath))' (auto-match restored)")
-        memories.forceRegenerate()
     }
 
     /// Move every persisted decision about a person onto their new tag path.
     ///
-    /// `people.renamePerson` appends `person_renamed` (the replayed operation)
-    /// and still rewrites the four local keys. The fifth key lives here;
-    /// dual-write keeps UserDefaults in sync for this process while replay
-    /// migrates every device identically (ADR 0005 R14).
+    /// `people.renamePerson` appends the operation before updating its
+    /// projection, including the contact-link key.
     private func migratePersonState(from old: String, to new: String) {
         guard old != new else { return }
-        people.renamePerson(from: old, to: new)
-        if let link = personContactLinks.removeValue(forKey: old),
-           personContactLinks[new] == nil {
-            personContactLinks[new] = link
-        }
+        guard people.renamePerson(from: old, to: new) else { return }
         // Birthdays hang off the contact link and trip titles off the "me"
         // person, so both halves of what just moved feed memory generation.
         memories.forceRegenerate()
-    }
-
-    /// Backing store for the `personContactLinks` didSet. PersonLink is an
-    /// enum with associated values, so it round-trips through JSON rather
-    /// than a flat UserDefaults dict; the loader in `init` decodes each
-    /// entry tolerantly via `FailableDecodable`.
-    private func persistPersonContactLinks() {
-        guard let data = try? JSONEncoder().encode(personContactLinks) else { return }
-        defaults.set(data, forKey: "personContactLinks")
     }
 
     /// Resolved link state for a person tag — what the UI should display.

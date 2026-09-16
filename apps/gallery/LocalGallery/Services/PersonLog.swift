@@ -8,14 +8,17 @@ import Foundation
 /// Writes go through gallery-ffi (`person_log_append` /
 /// `person_log_project` / `person_log_migrate_from_snapshot`), which
 /// calls `localcore-log`. Lines are field order `id,ts,dev,type,body`,
-/// 9-digit UTC `ts`, no HTML escape. UserDefaults remains the process
-/// snapshot until cutover; the log is dual-write. Migrate is one-shot
-/// via a `person_migrated` marker written last.
+/// 9-digit UTC `ts`, no HTML escape. UserDefaults is read only as the
+/// pre-M2 import source; after attach the log projection is authoritative.
+/// Migrate is one-shot via a `person_migrated` marker written last.
 ///
 /// The device id is the ADR 0005 R5 UserDefaults exception and is not
 /// written into the synced folder.
 enum PersonLog {
     static let deviceIdKey = "galleryDeviceId"
+    /// Install-local one-shot cursor. Once true, the five obsolete domain
+    /// keys are not even read again.
+    static let migrationCursorKey = "galleryPersonLogMigrationComplete"
 
     /// Per-device id, created once. Must match `localcore_log::valid_device`.
     static func deviceId(in defaults: UserDefaults) -> String {
@@ -39,12 +42,63 @@ enum PersonLog {
     }
 
     /// Pre-M2 dump of the five UserDefaults keys (ADR 0005 R19 fixture shape).
-    struct Snapshot: Equatable {
+    struct Snapshot: Equatable, Sendable {
         var hiddenPeople: [String]
         var pinnedPeople: [String]
         var featuredPhotoByPerson: [String: String]
         var mePersonPath: String
         var personContactLinks: [String: PersonLink]
+
+        static let empty = Snapshot(
+            hiddenPeople: [],
+            pinnedPeople: [],
+            featuredPhotoByPerson: [:],
+            mePersonPath: "",
+            personContactLinks: [:]
+        )
+
+        /// Read old install-local fields only for the one-shot M2 import.
+        /// Per-entry tolerant contact-link decoding preserves every valid
+        /// decision if one old value is malformed.
+        static func legacy(in defaults: UserDefaults) -> Snapshot {
+            guard !defaults.bool(forKey: PersonLog.migrationCursorKey) else {
+                return .empty
+            }
+            let links: [String: PersonLink]
+            if let data = defaults.data(forKey: "personContactLinks"),
+               let decoded = try? JSONDecoder().decode(
+                   [String: FailableDecodable<PersonLink>].self,
+                   from: data
+               ) {
+                links = decoded.compactMapValues(\.value)
+            } else {
+                links = [:]
+            }
+            return Snapshot(
+                hiddenPeople: defaults.array(forKey: "hiddenPeople") as? [String] ?? [],
+                pinnedPeople: defaults.array(forKey: "pinnedPeople") as? [String] ?? [],
+                featuredPhotoByPerson:
+                    defaults.dictionary(forKey: "featuredPhotoByPerson") as? [String: String] ?? [:],
+                mePersonPath: defaults.string(forKey: "mePersonPath") ?? "",
+                personContactLinks: links
+            )
+        }
+
+        /// Called only once `person_log_migrate_from_snapshot` confirms this
+        /// device's marker exists. Obsolete domain snapshots must not linger
+        /// as a tempting fallback.
+        static func clearLegacy(from defaults: UserDefaults) {
+            for key in [
+                "hiddenPeople",
+                "pinnedPeople",
+                "featuredPhotoByPerson",
+                "mePersonPath",
+                "personContactLinks",
+            ] {
+                defaults.removeObject(forKey: key)
+            }
+            defaults.set(true, forKey: PersonLog.migrationCursorKey)
+        }
 
         func jsonString() -> String {
             let encodedLinks: [String: Any] = Dictionary(
@@ -75,9 +129,19 @@ enum PersonLog {
                 && mePersonPath.isEmpty
                 && personContactLinks.isEmpty
         }
+
+        func remappingPhotoIDs(_ ids: [UUID: UUID]) -> Snapshot {
+            guard !ids.isEmpty else { return self }
+            var copy = self
+            copy.featuredPhotoByPerson = featuredPhotoByPerson.compactMapValues { raw in
+                guard let old = UUID(uuidString: raw) else { return nil }
+                return (ids[old] ?? old).uuidString
+            }
+            return copy
+        }
     }
 
-    struct State: Equatable {
+    struct State: Equatable, Sendable {
         var hidden: Set<String> = []
         var featured: [String] = []
         var me: String = ""
@@ -116,6 +180,17 @@ enum PersonLog {
                 (path, value.isEmpty ? PersonLink.disabled : PersonLink.manual(contactID: value))
             })
         }
+    }
+
+    struct TornTail: Equatable, Sendable {
+        var path: String
+        var offset: UInt64
+        var detail: String
+    }
+
+    struct Projection: Equatable, Sendable {
+        var state: State
+        var tornTails: [TornTail]
     }
 
     enum LogJSON {
@@ -165,6 +240,16 @@ enum PersonLog {
         State(try personLogProject(root: path(libraryRoot)))
     }
 
+    static func projectReport(libraryRoot: URL) throws -> Projection {
+        let report = try personLogProjectReport(root: path(libraryRoot))
+        return Projection(
+            state: State(report.state),
+            tornTails: report.tornTails.map {
+                TornTail(path: $0.path, offset: $0.offset, detail: $0.detail)
+            }
+        )
+    }
+
     /// Compact JSON string. `<` `>` `&` stay literal (Go `SetEscapeHTML(false)`).
     static func jsonString(_ s: String) -> String {
         var out = "\""
@@ -190,4 +275,34 @@ enum PersonLog {
     private static func path(_ url: URL) -> String {
         url.standardized.path
     }
+}
+
+/// Injectable log boundary. Production stays on the Rust FFI; unit tests can
+/// force an append failure without relying on chmod behavior under CI.
+@MainActor
+struct PersonLogBackend {
+    var append: (
+        _ libraryRoot: URL,
+        _ device: String,
+        _ type: String,
+        _ body: [(String, PersonLog.LogJSON)]
+    ) throws -> Void
+    var migrate: (
+        _ libraryRoot: URL,
+        _ device: String,
+        _ snapshot: PersonLog.Snapshot
+    ) throws -> Int
+    var project: (_ libraryRoot: URL) throws -> PersonLog.Projection
+
+    static let live = PersonLogBackend(
+        append: { root, device, type, body in
+            try PersonLog.append(libraryRoot: root, device: device, type: type, body: body)
+        },
+        migrate: { root, device, snapshot in
+            try PersonLog.migrate(libraryRoot: root, device: device, snapshot: snapshot)
+        },
+        project: { root in
+            try PersonLog.projectReport(libraryRoot: root)
+        }
+    )
 }

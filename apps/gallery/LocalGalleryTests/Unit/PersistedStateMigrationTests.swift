@@ -58,6 +58,10 @@ final class PersistedStateMigrationTests: XCTestCase {
         let newFolder = "AC701734-A924-5059-AE63-DD08D00904BC"
         defaults.set(["folder-\(oldFolder)"], forKey: "hiddenMemories")
 
+        let legacyPersonState = PersonLog.Snapshot.legacy(in: defaults)
+            .remappingPhotoIDs(
+                PersistedStateMigration.photoIDMapping(at: paths.libraryCacheURL)
+            )
         let outcome = try PersistedStateMigration.run(paths: paths, defaults: defaults)
 
         XCTAssertTrue(outcome.migrated)
@@ -100,8 +104,13 @@ final class PersistedStateMigrationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: widgetSentinel.path))
         XCTAssertEqual(try Data(contentsOf: authoritativeXMP), Data("authoritative".utf8))
         XCTAssertEqual(
-            (defaults.dictionary(forKey: "featuredPhotoByPerson") as? [String: String])?["People/Ada"],
+            legacyPersonState.featuredPhotoByPerson["People/Ada"],
             newID.uuidString
+        )
+        XCTAssertEqual(
+            (defaults.dictionary(forKey: "featuredPhotoByPerson") as? [String: String])?["People/Ada"],
+            oldID.uuidString,
+            "M1 must not write an obsolete M2 domain field back to UserDefaults"
         )
         XCTAssertEqual(
             defaults.array(forKey: "hiddenMemories") as? [String],
