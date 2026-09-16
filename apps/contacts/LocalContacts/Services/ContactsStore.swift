@@ -43,6 +43,15 @@ final class ContactsStore {
     // MARK: - Computed
 
     var allTags: [(tag: String, count: Int)] {
+        if let session, let rows = try? session.tagRows() {
+            return rows.map { row in
+                let count = row.trailing?
+                    .split(separator: " ")
+                    .first
+                    .flatMap { Int($0) } ?? 0
+                return (tag: row.id, count: count)
+            }
+        }
         var tagCounts: [String: Int] = [:]
         for contact in contacts {
             for tag in contact.categories {
@@ -53,26 +62,39 @@ final class ContactsStore {
     }
 
     var filteredContacts: [Contact] {
-        var result = contacts
-
-        if showConflictsOnly {
-            result = result.filter { $0.conflictState != nil }
-        } else if let tag = selectedTag {
-            result = result.filter { $0.categories.contains(tag) }
-        }
-
-        if !searchText.isEmpty {
-            let query = searchText.lowercased()
-            result = result.filter { contact in
-                contact.displayName.lowercased().contains(query)
-                || contact.organization.lowercased().contains(query)
-                || contact.jobTitle.lowercased().contains(query)
-                || contact.phoneNumbers.contains { $0.value.contains(query) }
-                || contact.emailAddresses.contains { $0.value.lowercased().contains(query) }
+        let tag = showConflictsOnly ? nil : selectedTag
+        var result: [Contact]
+        if let session,
+           let rows = try? session.filteredListRows(query: searchText, tag: tag) {
+            let contactsByID = Dictionary(
+                uniqueKeysWithValues: contacts.map { ($0.localContactsID, $0) }
+            )
+            result = rows.compactMap { contactsByID[$0.id] }
+        } else {
+            result = contacts
+            if let tag {
+                result = result.filter { $0.categories.contains(tag) }
+            }
+            if !searchText.isEmpty {
+                let query = searchText.lowercased()
+                result = result.filter { contact in
+                    contact.displayName.lowercased().contains(query)
+                    || contact.organization.lowercased().contains(query)
+                    || contact.jobTitle.lowercased().contains(query)
+                    || contact.phoneNumbers.contains { $0.value.contains(query) }
+                    || contact.emailAddresses.contains { $0.value.lowercased().contains(query) }
+                }
+            }
+            result.sort {
+                $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
             }
         }
 
-        return result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        if showConflictsOnly {
+            result = result.filter { $0.conflictState != nil }
+        }
+
+        return result
     }
 
     var groupedContacts: [(letter: String, contacts: [Contact])] {
@@ -356,7 +378,7 @@ final class ContactsStore {
     private func persist(_ contact: Contact) throws -> ContactsSession {
         let session = try openSession()
         let saved = try session.saveContact(command: SaveContactCommand(draft: editDraft(from: contact)))
-        guard let id = saved.id else { throw ContactsStoreError.encodingFailed }
+        guard let id = saved.id else { throw ContactsStoreError.missingSavedID }
         contact.localContactsID = id
         contact.contentToken = saved.contentToken
         contact.fileName = try session.fileName(id: id)
@@ -508,12 +530,12 @@ enum FolderLayoutMode: Equatable, Sendable {
 
 enum ContactsStoreError: LocalizedError, Equatable {
     case noFolder
-    case encodingFailed
+    case missingSavedID
 
     var errorDescription: String? {
         switch self {
         case .noFolder: "No folder selected. Please select a contacts folder first."
-        case .encodingFailed: "Failed to encode vCard data."
+        case .missingSavedID: "The saved contact did not return an identifier."
         }
     }
 }
