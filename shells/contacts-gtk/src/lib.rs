@@ -8,8 +8,12 @@ use std::path::{Path, PathBuf};
 
 use contacts_core::valid_device;
 
+mod diagnostics;
+mod routing;
 mod window;
 
+pub use diagnostics::{LogEntry, LogLevel, LogStore};
+pub use routing::{gtk_route, ROUTED_SCREENS};
 pub use window::Window;
 
 /// Desktop file / libadwaita application id.

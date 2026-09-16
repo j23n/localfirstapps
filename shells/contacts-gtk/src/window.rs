@@ -1,6 +1,6 @@
 //! Laptop chrome or the Comet collapse. Bindings come from `shell-kit-gtk`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -15,15 +15,17 @@ use contacts_core::{
 use shell_kit_gtk::{
     action_row, apply_token_css, banner, confirm_dialog, field_row, field_row_widget, list_page,
     nav_row, primary_action, push_page, search_entry, settings_page, sheet, status_row, text_row,
-    ActionRole, ActionRowData, ConfirmData, FieldRowData, NavRowData, StatusRowData,
-    StatusSeverity, TextRowData,
+    ActionRole, ActionRowData, ConfirmData, ContactsScreen, FieldRowData, NavRowData,
+    StatusRowData, StatusSeverity, TextRowData,
 };
 
-use crate::{hostname, Paths, APP_TITLE, COMPACT_WIDTH};
+use crate::routing::route_id;
+use crate::{hostname, LogLevel, LogStore, Paths, APP_TITLE, COMPACT_WIDTH};
 
 const TOKEN_CSS: &str = include_str!("../../../design/tokens/generated/contacts.css");
 const ADW_ACCENT: &str =
     "@define-color accent_bg_color var(--accent);\n@define-color accent_color var(--accent);\n";
+const DIAGNOSTIC_CAPACITY: usize = 5_000;
 
 #[derive(Clone)]
 pub struct Window {
@@ -41,6 +43,7 @@ struct Inner {
     list: gtk::ListBox,
     banner: adw::Banner,
     add: gtk::Button,
+    settings_nav: adw::NavigationView,
     settings_box: gtk::Box,
     toast: adw::ToastOverlay,
     vfs: StdVfs,
@@ -49,6 +52,7 @@ struct Inner {
     store: RefCell<Option<Store>>,
     folder: RefCell<Option<String>>,
     query: RefCell<String>,
+    diagnostics: RefCell<LogStore>,
 }
 
 impl Window {
@@ -75,6 +79,7 @@ impl Window {
         picker.set_margin_bottom(24);
         picker.set_margin_start(18);
         picker.set_margin_end(18);
+        picker.set_widget_name(route_id(ContactsScreen::FolderPicker));
         picker.append(&status_row(&StatusRowData {
             message: "Welcome to LocalContacts".into(),
             severity: StatusSeverity::Info,
@@ -90,10 +95,10 @@ impl Window {
         picker.append(&choose);
 
         let list_col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        list_col.set_widget_name(route_id(ContactsScreen::ContactList));
         let conflict_banner = banner("");
         conflict_banner.set_revealed(false);
         conflict_banner.set_button_label(Some("Review"));
-        conflict_banner.set_widget_name("sync-conflict-group");
         let search = search_entry();
         search.set_placeholder_text(Some("Name, company, phone, or email"));
         search.set_hexpand(true);
@@ -107,19 +112,28 @@ impl Window {
         list_col.append(&scroll);
 
         let root_stack = gtk::Stack::new();
-        root_stack.add_named(&picker, Some("picker"));
-        root_stack.add_named(&list_col, Some("list"));
-        root_stack.set_visible_child_name("picker");
+        root_stack.add_named(&picker, Some(route_id(ContactsScreen::FolderPicker)));
+        root_stack.add_named(&list_col, Some(route_id(ContactsScreen::ContactList)));
+        root_stack.set_visible_child_name(route_id(ContactsScreen::FolderPicker));
 
         let nav = shell_kit_gtk::navigation_view();
         let root_page = push_page("Contacts", &root_stack);
+        root_page.set_widget_name(route_id(ContactsScreen::FolderPicker));
         nav.add(&root_page);
 
         let settings_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let settings_nav = shell_kit_gtk::navigation_view();
+        let settings_root = push_page("Settings", &settings_box);
+        settings_root.set_widget_name(route_id(ContactsScreen::Settings));
+        settings_nav.add(&settings_root);
         let stack = adw::ViewStack::new();
         let contacts_page = stack.add_titled(&nav, Some("contacts"), "Contacts");
         contacts_page.set_icon_name(Some("avatar-default-symbolic"));
-        let settings_page = stack.add_titled(&settings_box, Some("settings"), "Settings");
+        let settings_page = stack.add_titled(
+            &settings_nav,
+            Some(route_id(ContactsScreen::Settings)),
+            "Settings",
+        );
         settings_page.set_icon_name(Some("emblem-system-symbolic"));
 
         let switcher = adw::ViewSwitcher::new();
@@ -159,6 +173,7 @@ impl Window {
             list: list.clone(),
             banner: conflict_banner.clone(),
             add: add.clone(),
+            settings_nav: settings_nav.clone(),
             settings_box: settings_box.clone(),
             toast,
             vfs: StdVfs::new(TEMP_PREFIX),
@@ -167,6 +182,7 @@ impl Window {
             store: RefCell::new(None),
             folder: RefCell::new(None),
             query: RefCell::new(String::new()),
+            diagnostics: RefCell::new(LogStore::new(DIAGNOSTIC_CAPACITY)),
         });
         let this = Window { inner };
 
@@ -202,6 +218,7 @@ impl Window {
             sized.apply_chrome(w.width());
         });
         this.apply_chrome(window.default_width());
+        this.record(LogLevel::Info, "app", "Application started");
         this.refill_settings();
         this
     }
@@ -225,11 +242,26 @@ impl Window {
         self.inner.toast.add_toast(adw::Toast::new(message));
     }
 
+    fn record(&self, level: LogLevel, category: &str, message: impl Into<String>) {
+        self.inner
+            .diagnostics
+            .borrow_mut()
+            .record(level, category, message);
+    }
+
     fn load_persisted(&self) {
         if let Some(folder) = self.inner.paths.load_folder() {
             if std::path::Path::new(&folder).is_dir() {
                 self.open_folder(&folder);
+            } else {
+                self.record(
+                    LogLevel::Warning,
+                    "folder",
+                    "Saved contacts folder is unavailable",
+                );
             }
+        } else {
+            self.record(LogLevel::Info, "folder", "Waiting for a contacts folder");
         }
     }
 
@@ -246,11 +278,19 @@ impl Window {
             move |result| match result {
                 Ok(file) => match file.path().and_then(|p| p.to_str().map(str::to_owned)) {
                     Some(path) => this.open_folder(&path),
-                    None => this.toast("Folder path is not UTF-8"),
+                    None => {
+                        this.record(
+                            LogLevel::Warning,
+                            "folder",
+                            "Selected folder path is not supported",
+                        );
+                        this.toast("Folder path is not UTF-8");
+                    }
                 },
                 Err(err) => {
                     let msg = err.to_string();
                     if !msg.contains("Dismissed") && !msg.contains("dismissed") {
+                        this.record(LogLevel::Error, "folder", "Folder picker failed");
                         this.toast(&msg);
                     }
                 }
@@ -261,16 +301,30 @@ impl Window {
     fn open_folder(&self, folder: &str) {
         match Store::open(&self.inner.vfs, folder) {
             Ok(store) => {
+                let count = store.cards().len();
                 self.inner.store.replace(Some(store));
                 self.inner.folder.replace(Some(folder.to_string()));
                 self.inner.paths.save_folder(folder);
-                self.inner.root_stack.set_visible_child_name("list");
+                self.inner
+                    .root_stack
+                    .set_visible_child_name(route_id(ContactsScreen::ContactList));
+                self.inner
+                    .root_page
+                    .set_widget_name(route_id(ContactsScreen::ContactList));
                 self.inner.add.set_sensitive(true);
                 self.inner.nav.pop_to_page(&self.inner.root_page);
+                self.record(
+                    LogLevel::Info,
+                    "folder",
+                    format!("Opened contacts folder with {count} contacts"),
+                );
                 self.refill_list();
                 self.refill_settings();
             }
-            Err(err) => self.toast(&err.to_string()),
+            Err(err) => {
+                self.record(LogLevel::Error, "folder", "Could not open contacts folder");
+                self.toast(&err.to_string());
+            }
         }
     }
 
@@ -317,7 +371,14 @@ impl Window {
                     self.inner.banner.set_revealed(true);
                 }
             }
-            Err(err) => self.toast(&err.to_string()),
+            Err(err) => {
+                self.record(
+                    LogLevel::Error,
+                    "conflict",
+                    "Could not inspect sync conflicts",
+                );
+                self.toast(&err.to_string());
+            }
         }
     }
 
@@ -326,6 +387,7 @@ impl Window {
             return;
         };
         let Some(card) = store.get(id).cloned() else {
+            self.record(LogLevel::Warning, "contact", "Contact was not found");
             self.toast("Not found");
             return;
         };
@@ -370,6 +432,7 @@ impl Window {
         column.append(&delete);
         let scroll = gtk::ScrolledWindow::builder().child(&column).build();
         let page = push_page(&title, &scroll);
+        page.set_widget_name(route_id(ContactsScreen::ContactDetail));
         self.inner.nav.push(&page);
 
         let editor = self.clone();
@@ -400,11 +463,22 @@ impl Window {
                 .with_store_mut(|vfs, store| delete_logged(vfs, store, &this.inner.device, &id));
             match result {
                 Some(Ok(())) => {
+                    this.record(LogLevel::Info, "contact", "Deleted contact");
                     this.inner.nav.pop_to_page(&this.inner.root_page);
                     this.refill_list();
                 }
-                Some(Err(err)) => this.toast(&err.to_string()),
-                None => this.toast("No folder selected. Please select a contacts folder first."),
+                Some(Err(err)) => {
+                    this.record(LogLevel::Error, "contact", "Could not delete contact");
+                    this.toast(&err.to_string());
+                }
+                None => {
+                    this.record(
+                        LogLevel::Warning,
+                        "contact",
+                        "Delete requested without a contacts folder",
+                    );
+                    this.toast("No folder selected. Please select a contacts folder first.");
+                }
             }
         });
         dialog.present(&self.inner.window);
@@ -418,6 +492,7 @@ impl Window {
             match store.get(id) {
                 Some(card) => draft_from_card(card),
                 None => {
+                    self.record(LogLevel::Warning, "contact", "Contact was not found");
                     self.toast("Not found");
                     return;
                 }
@@ -447,6 +522,7 @@ impl Window {
         column.append(&page);
         column.append(&save);
         let dialog = sheet("Contact", &column);
+        dialog.set_widget_name(route_id(ContactsScreen::ContactEdit));
         dialog.present(&self.inner.window);
 
         let this = self.clone();
@@ -476,12 +552,23 @@ impl Window {
                 this.with_store_mut(|vfs, store| save_logged(vfs, store, &this.inner.device, card));
             match result {
                 Some(Ok(_)) => {
+                    this.record(LogLevel::Info, "contact", "Saved contact");
                     dialog.close();
                     this.inner.nav.pop_to_page(&this.inner.root_page);
                     this.refill_list();
                 }
-                Some(Err(err)) => this.toast(&err.to_string()),
-                None => this.toast("No folder selected. Please select a contacts folder first."),
+                Some(Err(err)) => {
+                    this.record(LogLevel::Error, "contact", "Could not save contact");
+                    this.toast(&err.to_string());
+                }
+                None => {
+                    this.record(
+                        LogLevel::Warning,
+                        "contact",
+                        "Save requested without a contacts folder",
+                    );
+                    this.toast("No folder selected. Please select a contacts folder first.");
+                }
             }
         });
     }
@@ -502,13 +589,23 @@ impl Window {
                 Ok(file) => {
                     if let Some(path) = file.path() {
                         if let Err(err) = std::fs::write(path, text.as_bytes()) {
+                            this.record(LogLevel::Error, "export", "Could not export contact");
                             this.toast(&err.to_string());
+                        } else {
+                            this.record(LogLevel::Info, "export", "Exported contact");
                         }
+                    } else {
+                        this.record(
+                            LogLevel::Warning,
+                            "export",
+                            "Selected export destination is not supported",
+                        );
                     }
                 }
                 Err(err) => {
                     let msg = err.to_string();
                     if !msg.contains("Dismissed") && !msg.contains("dismissed") {
+                        this.record(LogLevel::Error, "export", "Contact export failed");
                         this.toast(&msg);
                     }
                 }
@@ -518,15 +615,26 @@ impl Window {
 
     fn present_conflicts(&self) {
         let Some(store) = self.inner.store.borrow().clone() else {
+            self.record(
+                LogLevel::Warning,
+                "conflict",
+                "Conflict review requested without a contacts folder",
+            );
             return;
         };
         let groups = match conflict_rows(&self.inner.vfs, &store) {
             Ok(groups) => groups,
             Err(err) => {
+                self.record(LogLevel::Error, "conflict", "Could not load sync conflicts");
                 self.toast(&err.to_string());
                 return;
             }
         };
+        self.record(
+            LogLevel::Info,
+            "conflict",
+            format!("Reviewing {} sync conflict groups", groups.len()),
+        );
         let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
         column.set_margin_top(12);
         column.set_margin_bottom(12);
@@ -544,7 +652,7 @@ impl Window {
             "Sync Conflicts",
             &gtk::ScrolledWindow::builder().child(&column).build(),
         );
-        dialog.set_widget_name("sync-conflict-group");
+        dialog.set_widget_name(route_id(ContactsScreen::SyncConflictGroup));
 
         for group in groups {
             let row = text_row(&TextRowData {
@@ -580,11 +688,21 @@ impl Window {
 
     fn present_choices(&self, canonical: &str, parent: Option<&adw::Dialog>) {
         let Some(store) = self.inner.store.borrow().clone() else {
+            self.record(
+                LogLevel::Warning,
+                "conflict",
+                "Conflict choices requested without a contacts folder",
+            );
             return;
         };
         let rows = match choice_rows(&self.inner.vfs, &store, canonical) {
             Ok(rows) => rows,
             Err(err) => {
+                self.record(
+                    LogLevel::Error,
+                    "conflict",
+                    "Could not load conflict choices",
+                );
                 self.toast(&err.to_string());
                 return;
             }
@@ -638,6 +756,7 @@ impl Window {
         column.append(&page);
         column.append(&resolve);
         let dialog = sheet("Choose", &column);
+        dialog.set_widget_name(route_id(ContactsScreen::SyncConflictGroup));
         dialog.present(&self.inner.window);
 
         let this = self.clone();
@@ -647,6 +766,11 @@ impl Window {
         resolve.connect_clicked(move |_| {
             let map = picks.borrow().clone();
             if map.len() != needed {
+                this.record(
+                    LogLevel::Warning,
+                    "conflict",
+                    "Resolve requested before every field had a choice",
+                );
                 this.toast("Choose a value for every field");
                 return;
             }
@@ -662,6 +786,7 @@ impl Window {
         });
         match result {
             Some(Ok(())) => {
+                self.record(LogLevel::Info, "conflict", "Resolved sync conflict group");
                 self.refill_list();
                 let empty = self
                     .inner
@@ -675,8 +800,121 @@ impl Window {
                     }
                 }
             }
-            Some(Err(err)) => self.toast(&err.to_string()),
-            None => self.toast("No folder selected. Please select a contacts folder first."),
+            Some(Err(err)) => {
+                self.record(
+                    LogLevel::Error,
+                    "conflict",
+                    "Could not resolve sync conflict group",
+                );
+                self.toast(&err.to_string());
+            }
+            None => {
+                self.record(
+                    LogLevel::Warning,
+                    "conflict",
+                    "Resolve requested without a contacts folder",
+                );
+                self.toast("No folder selected. Please select a contacts folder first.");
+            }
+        }
+    }
+
+    fn present_logs(&self) {
+        self.record(LogLevel::Info, "diagnostics", "Opened app diagnostics");
+
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        controls.set_margin_top(8);
+        controls.set_margin_start(8);
+        controls.set_margin_end(8);
+
+        let search = search_entry();
+        search.set_placeholder_text(Some("Message or category"));
+        search.set_hexpand(true);
+        let level = gtk::DropDown::from_strings(&["All levels", "Info", "Warning", "Error"]);
+        let clear = action_row(&ActionRowData {
+            label: "Clear".into(),
+            role: ActionRole::Destructive,
+            enabled: true,
+        });
+        controls.append(&search);
+        controls.append(&level);
+        controls.append(&clear);
+
+        let scroll = list_page();
+        scroll.set_vexpand(true);
+        let list = scroll
+            .child()
+            .and_downcast::<gtk::ListBox>()
+            .expect("list_page child");
+        column.append(&controls);
+        column.append(&scroll);
+
+        let query = Rc::new(RefCell::new(String::new()));
+        let selected_level = Rc::new(Cell::new(None::<LogLevel>));
+        self.refill_logs(&list, "", None);
+
+        let searched = self.clone();
+        let searched_list = list.clone();
+        let searched_query = query.clone();
+        let searched_level = selected_level.clone();
+        search.connect_search_changed(move |entry| {
+            searched_query.replace(entry.text().to_string());
+            searched.refill_logs(
+                &searched_list,
+                &searched_query.borrow(),
+                searched_level.get(),
+            );
+        });
+
+        let filtered = self.clone();
+        let filtered_list = list.clone();
+        let filtered_query = query.clone();
+        let filtered_level = selected_level.clone();
+        level.connect_selected_notify(move |dropdown| {
+            let selected = match dropdown.selected() {
+                1 => Some(LogLevel::Info),
+                2 => Some(LogLevel::Warning),
+                3 => Some(LogLevel::Error),
+                _ => None,
+            };
+            filtered_level.set(selected);
+            filtered.refill_logs(&filtered_list, &filtered_query.borrow(), selected);
+        });
+
+        let cleared = self.clone();
+        let cleared_list = list.clone();
+        let cleared_query = query;
+        let cleared_level = selected_level;
+        clear.connect_clicked(move |_| {
+            cleared.inner.diagnostics.borrow_mut().clear();
+            cleared.refill_logs(&cleared_list, &cleared_query.borrow(), cleared_level.get());
+        });
+
+        let page = push_page("Logs", &column);
+        page.set_widget_name(route_id(ContactsScreen::Logs));
+        self.inner.settings_nav.push(&page);
+    }
+
+    fn refill_logs(&self, list: &gtk::ListBox, query: &str, level: Option<LogLevel>) {
+        while let Some(child) = list.first_child() {
+            list.remove(&child);
+        }
+        let diagnostics = self.inner.diagnostics.borrow();
+        let entries = diagnostics.filtered(query, level);
+        if entries.is_empty() {
+            list.append(&status_row(&StatusRowData {
+                message: "No matching app diagnostics".into(),
+                severity: StatusSeverity::Info,
+            }));
+            return;
+        }
+        for entry in entries {
+            list.append(&text_row(&TextRowData {
+                title: entry.message.clone(),
+                subtitle: Some(format!("{} · {}", entry.time_label(), entry.category)),
+                trailing: Some(entry.level.label().into()),
+            }));
         }
     }
 
@@ -689,6 +927,7 @@ impl Window {
 
     fn settings_page_widget(&self) -> adw::PreferencesPage {
         let page = settings_page();
+        page.set_widget_name(route_id(ContactsScreen::Settings));
         let folder_group = adw::PreferencesGroup::new();
         folder_group.set_title("Contacts Folder");
         let folder = self.inner.folder.borrow().clone();
@@ -706,6 +945,17 @@ impl Window {
         change.connect_activated(move |_| this.pick_folder());
         folder_group.add(&change);
         page.add(&folder_group);
+
+        let diagnostics = adw::PreferencesGroup::new();
+        diagnostics.set_title("Diagnostics");
+        let logs = nav_row(&NavRowData {
+            label: "Logs".into(),
+            trailing: Some("Info, warnings, and errors".into()),
+        });
+        let this = self.clone();
+        logs.connect_activated(move |_| this.present_logs());
+        diagnostics.add(&logs);
+        page.add(&diagnostics);
 
         let info = adw::PreferencesGroup::new();
         info.set_title("About");
