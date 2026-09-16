@@ -2018,6 +2018,24 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
     func build(photos: [ScanPhoto])  -> LibraryIndexSummary
     
     /**
+     * Rebuild and retain the platform's per-photo UTC offsets.
+     *
+     * The offsets are supplied on the same once-per-library crossing as the
+     * photos. Scheduled memories then reuse both tables instead of rebuilding
+     * and re-marshalling a second 20,000-photo generation snapshot.
+     */
+    func buildWithTimeZoneOffsets(photos: [ScanPhoto], photoTimeZoneOffsets: [Int32])  -> LibraryIndexSummary
+    
+    /**
+     * Compute the widget's scheduled horizon over the library table already
+     * retained by this index.
+     *
+     * Only the small platform context crosses per run. Photo records and
+     * capture-time offsets crossed once, at build.
+     */
+    func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, hiddenMemoryIds: [String])  -> [ScheduledMemoryRecord]
+    
+    /**
      * How many photos the index currently holds. Cheap; used by the app's
      * "did the rebuild I am waiting on actually land" assertions and by tests.
      */
@@ -2028,6 +2046,27 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * including the `Places/…` prefix expansion, in `allPhotos` order.
      */
     func photoIdsForTag(fullPath: String)  -> [String]
+    
+    /**
+     * Current Photos-screen structure without changing search intent.
+     */
+    func photoStructure()  -> ViewStructure
+    
+    /**
+     * Display-ready photos for one visible window.
+     */
+    func photoWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryMediaItem]
+    
+    /**
+     * Rebuild every index from `photos` and return the results the app needs
+     * straight away.
+     */
+    func rebuild(photos: [ScanPhoto], photoTimeZoneOffsets: [Int32])  -> LibraryIndexSummary
+    
+    /**
+     * Number of photos the scheduled-horizon reuse path currently owns.
+     */
+    func scheduledPhotoCount()  -> UInt32
     
     /**
      * `SearchIndex.search(query:requiredTags:allTags:)`, in sorted order.
@@ -2041,15 +2080,47 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
     func search(query: String, requiredTagPaths: [String])  -> [String]
     
     /**
+     * Apply an id-only drill-in intent (folder, memory, or saved selection).
+     *
+     * The shell supplies structure ids, never photo records. Unknown/removed
+     * ids are dropped and the caller's order is preserved.
+     */
+    func setPhotoIdsView(viewId: String, photoIds: [String], query: String, requiredTagPaths: [String])  -> ViewStructure
+    
+    /**
+     * Apply Photos-screen search/tag intent and return cheap structure.
+     *
+     * The whole ordered id list is structure by ADR 0003 R4. The records
+     * behind those ids are fetched only through [`Self::photo_window`].
+     */
+    func setPhotoView(query: String, requiredTagPaths: [String])  -> ViewStructure
+    
+    /**
      * The date-descending photo order. Backs `store.sortedPhotos`.
      */
     func sortedPhotoIds()  -> [String]
+    
+    /**
+     * Tag-picker structure. The list is ids only; labels and counts are
+     * returned by [`Self::tag_window`].
+     */
+    func tagStructure()  -> ViewStructure
     
     /**
      * The aggregated tag list and the `People/…` subset — the same pair
      * [`Self::build`] returned, for a caller that has lost it.
      */
     func tagSuggestions()  -> LibraryTagSuggestions
+    
+    /**
+     * Display-ready tag rows for one visible window.
+     */
+    func tagWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryTextRow]
+    
+    /**
+     * Generation currently guarding every library window.
+     */
+    func viewGeneration()  -> UInt64
     
 }
 /**
@@ -2144,6 +2215,43 @@ open func build(photos: [ScanPhoto]) -> LibraryIndexSummary  {
 }
     
     /**
+     * Rebuild and retain the platform's per-photo UTC offsets.
+     *
+     * The offsets are supplied on the same once-per-library crossing as the
+     * photos. Scheduled memories then reuse both tables instead of rebuilding
+     * and re-marshalling a second 20,000-photo generation snapshot.
+     */
+open func buildWithTimeZoneOffsets(photos: [ScanPhoto], photoTimeZoneOffsets: [Int32]) -> LibraryIndexSummary  {
+    return try!  FfiConverterTypeLibraryIndexSummary_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_build_with_time_zone_offsets(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeScanPhoto.lower(photos),
+        FfiConverterSequenceInt32.lower(photoTimeZoneOffsets),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Compute the widget's scheduled horizon over the library table already
+     * retained by this index.
+     *
+     * Only the small platform context crosses per run. Photo records and
+     * capture-time offsets crossed once, at build.
+     */
+open func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, hiddenMemoryIds: [String]) -> [ScheduledMemoryRecord]  {
+    return try!  FfiConverterSequenceTypeScheduledMemoryRecord.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_compute_scheduled(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeScheduledMemoryContext_lower(context),
+        FfiConverterInt64.lower(horizonDays),
+        FfiConverterSequenceString.lower(hiddenMemoryIds),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * How many photos the index currently holds. Cheap; used by the app's
      * "did the rebuild I am waiting on actually land" assertions and by tests.
      */
@@ -2171,6 +2279,61 @@ open func photoIdsForTag(fullPath: String) -> [String]  {
 }
     
     /**
+     * Current Photos-screen structure without changing search intent.
+     */
+open func photoStructure() -> ViewStructure  {
+    return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_photo_structure(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Display-ready photos for one visible window.
+     */
+open func photoWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryMediaItem]  {
+    return try  FfiConverterSequenceTypeGalleryMediaItem.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_photo_window(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sectionId),
+        FfiConverterUInt64.lower(offset),
+        FfiConverterUInt64.lower(limit),
+        FfiConverterUInt64.lower(generation),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Rebuild every index from `photos` and return the results the app needs
+     * straight away.
+     */
+open func rebuild(photos: [ScanPhoto], photoTimeZoneOffsets: [Int32]) -> LibraryIndexSummary  {
+    return try!  FfiConverterTypeLibraryIndexSummary_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_rebuild(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeScanPhoto.lower(photos),
+        FfiConverterSequenceInt32.lower(photoTimeZoneOffsets),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Number of photos the scheduled-horizon reuse path currently owns.
+     */
+open func scheduledPhotoCount() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_scheduled_photo_count(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * `SearchIndex.search(query:requiredTags:allTags:)`, in sorted order.
      *
      * Required tags arrive as plain paths rather than as whole suggestions:
@@ -2191,12 +2354,61 @@ open func search(query: String, requiredTagPaths: [String]) -> [String]  {
 }
     
     /**
+     * Apply an id-only drill-in intent (folder, memory, or saved selection).
+     *
+     * The shell supplies structure ids, never photo records. Unknown/removed
+     * ids are dropped and the caller's order is preserved.
+     */
+open func setPhotoIdsView(viewId: String, photoIds: [String], query: String, requiredTagPaths: [String]) -> ViewStructure  {
+    return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_set_photo_ids_view(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(viewId),
+        FfiConverterSequenceString.lower(photoIds),
+        FfiConverterString.lower(query),
+        FfiConverterSequenceString.lower(requiredTagPaths),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Apply Photos-screen search/tag intent and return cheap structure.
+     *
+     * The whole ordered id list is structure by ADR 0003 R4. The records
+     * behind those ids are fetched only through [`Self::photo_window`].
+     */
+open func setPhotoView(query: String, requiredTagPaths: [String]) -> ViewStructure  {
+    return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_set_photo_view(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(query),
+        FfiConverterSequenceString.lower(requiredTagPaths),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * The date-descending photo order. Backs `store.sortedPhotos`.
      */
 open func sortedPhotoIds() -> [String]  {
     return try!  FfiConverterSequenceString.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_libraryindex_sorted_photo_ids(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Tag-picker structure. The list is ids only; labels and counts are
+     * returned by [`Self::tag_window`].
+     */
+open func tagStructure() -> ViewStructure  {
+    return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_tag_structure(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -2210,6 +2422,34 @@ open func tagSuggestions() -> LibraryTagSuggestions  {
     return try!  FfiConverterTypeLibraryTagSuggestions_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_libraryindex_tag_suggestions(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Display-ready tag rows for one visible window.
+     */
+open func tagWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryTextRow]  {
+    return try  FfiConverterSequenceTypeGalleryTextRow.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_tag_window(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sectionId),
+        FfiConverterUInt64.lower(offset),
+        FfiConverterUInt64.lower(limit),
+        FfiConverterUInt64.lower(generation),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Generation currently guarding every library window.
+     */
+open func viewGeneration() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_view_generation(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4884,6 +5124,136 @@ public func FfiConverterTypeFaceStats_lift(_ buf: RustBuffer) throws -> FaceStat
 #endif
 public func FfiConverterTypeFaceStats_lower(_ value: FaceStats) -> RustBuffer {
     return FfiConverterTypeFaceStats.lower(value)
+}
+
+
+/**
+ * Display-ready ADR 0004 media item.
+ */
+public struct GalleryMediaItem: Equatable, Hashable {
+    public var id: String
+    public var thumbnailRef: String
+    public var label: String?
+    public var badge: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, thumbnailRef: String, label: String?, badge: String?) {
+        self.id = id
+        self.thumbnailRef = thumbnailRef
+        self.label = label
+        self.badge = badge
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GalleryMediaItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGalleryMediaItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GalleryMediaItem {
+        return
+            try GalleryMediaItem(
+                id: FfiConverterString.read(from: &buf), 
+                thumbnailRef: FfiConverterString.read(from: &buf), 
+                label: FfiConverterOptionString.read(from: &buf), 
+                badge: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GalleryMediaItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.thumbnailRef, into: &buf)
+        FfiConverterOptionString.write(value.label, into: &buf)
+        FfiConverterOptionString.write(value.badge, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGalleryMediaItem_lift(_ buf: RustBuffer) throws -> GalleryMediaItem {
+    return try FfiConverterTypeGalleryMediaItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGalleryMediaItem_lower(_ value: GalleryMediaItem) -> RustBuffer {
+    return FfiConverterTypeGalleryMediaItem.lower(value)
+}
+
+
+/**
+ * Display-ready ADR 0004 text row.
+ */
+public struct GalleryTextRow: Equatable, Hashable {
+    public var id: String
+    public var title: String
+    public var subtitle: String?
+    public var trailing: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, title: String, subtitle: String?, trailing: String?) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.trailing = trailing
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GalleryTextRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGalleryTextRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GalleryTextRow {
+        return
+            try GalleryTextRow(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterOptionString.read(from: &buf), 
+                trailing: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GalleryTextRow, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.subtitle, into: &buf)
+        FfiConverterOptionString.write(value.trailing, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGalleryTextRow_lift(_ buf: RustBuffer) throws -> GalleryTextRow {
+    return try FfiConverterTypeGalleryTextRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGalleryTextRow_lower(_ value: GalleryTextRow) -> RustBuffer {
+    return FfiConverterTypeGalleryTextRow.lower(value)
 }
 
 
@@ -7658,6 +8028,116 @@ public func FfiConverterTypeScanTimings_lower(_ value: ScanTimings) -> RustBuffe
 
 
 /**
+ * Small platform context for the scheduled-memory horizon.
+ *
+ * Photo content is deliberately absent: [`LibraryIndex::compute_scheduled`]
+ * reuses the index's retained table and capture-time UTC offsets. Contacts,
+ * clock and horizon offsets are the minimum platform-owned values the pure
+ * core cannot discover itself.
+ *
+ * R6 role: host-port DTO.
+ */
+public struct ScheduledMemoryContext: Equatable, Hashable {
+    public var leafFolders: [MemoryLeafFolder]
+    public var contacts: [MemoryContact]
+    public var personContactLinks: [MemoryPersonLink]
+    public var birthdaysEnabled: Bool
+    public var mePersonPath: String
+    public var hiddenPeople: [String]
+    /**
+     * "Now", reference-date seconds.
+     */
+    public var now: Double
+    public var timeZoneOffsetSeconds: Int32
+    public var horizonOffsetSeconds: [Int32]
+    public var seed: String
+    public var seenMemoryIds: [MemoryDateEntry]
+    public var surfacedClusters: [MemoryDateEntry]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(leafFolders: [MemoryLeafFolder], contacts: [MemoryContact], personContactLinks: [MemoryPersonLink], birthdaysEnabled: Bool, mePersonPath: String, hiddenPeople: [String], 
+        /**
+         * "Now", reference-date seconds.
+         */now: Double, timeZoneOffsetSeconds: Int32, horizonOffsetSeconds: [Int32], seed: String, seenMemoryIds: [MemoryDateEntry], surfacedClusters: [MemoryDateEntry]) {
+        self.leafFolders = leafFolders
+        self.contacts = contacts
+        self.personContactLinks = personContactLinks
+        self.birthdaysEnabled = birthdaysEnabled
+        self.mePersonPath = mePersonPath
+        self.hiddenPeople = hiddenPeople
+        self.now = now
+        self.timeZoneOffsetSeconds = timeZoneOffsetSeconds
+        self.horizonOffsetSeconds = horizonOffsetSeconds
+        self.seed = seed
+        self.seenMemoryIds = seenMemoryIds
+        self.surfacedClusters = surfacedClusters
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ScheduledMemoryContext: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeScheduledMemoryContext: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScheduledMemoryContext {
+        return
+            try ScheduledMemoryContext(
+                leafFolders: FfiConverterSequenceTypeMemoryLeafFolder.read(from: &buf), 
+                contacts: FfiConverterSequenceTypeMemoryContact.read(from: &buf), 
+                personContactLinks: FfiConverterSequenceTypeMemoryPersonLink.read(from: &buf), 
+                birthdaysEnabled: FfiConverterBool.read(from: &buf), 
+                mePersonPath: FfiConverterString.read(from: &buf), 
+                hiddenPeople: FfiConverterSequenceString.read(from: &buf), 
+                now: FfiConverterDouble.read(from: &buf), 
+                timeZoneOffsetSeconds: FfiConverterInt32.read(from: &buf), 
+                horizonOffsetSeconds: FfiConverterSequenceInt32.read(from: &buf), 
+                seed: FfiConverterString.read(from: &buf), 
+                seenMemoryIds: FfiConverterSequenceTypeMemoryDateEntry.read(from: &buf), 
+                surfacedClusters: FfiConverterSequenceTypeMemoryDateEntry.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ScheduledMemoryContext, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeMemoryLeafFolder.write(value.leafFolders, into: &buf)
+        FfiConverterSequenceTypeMemoryContact.write(value.contacts, into: &buf)
+        FfiConverterSequenceTypeMemoryPersonLink.write(value.personContactLinks, into: &buf)
+        FfiConverterBool.write(value.birthdaysEnabled, into: &buf)
+        FfiConverterString.write(value.mePersonPath, into: &buf)
+        FfiConverterSequenceString.write(value.hiddenPeople, into: &buf)
+        FfiConverterDouble.write(value.now, into: &buf)
+        FfiConverterInt32.write(value.timeZoneOffsetSeconds, into: &buf)
+        FfiConverterSequenceInt32.write(value.horizonOffsetSeconds, into: &buf)
+        FfiConverterString.write(value.seed, into: &buf)
+        FfiConverterSequenceTypeMemoryDateEntry.write(value.seenMemoryIds, into: &buf)
+        FfiConverterSequenceTypeMemoryDateEntry.write(value.surfacedClusters, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeScheduledMemoryContext_lift(_ buf: RustBuffer) throws -> ScheduledMemoryContext {
+    return try FfiConverterTypeScheduledMemoryContext.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeScheduledMemoryContext_lower(_ value: ScheduledMemoryContext) -> RustBuffer {
+    return FfiConverterTypeScheduledMemoryContext.lower(value)
+}
+
+
+/**
  * A memory pre-published for a future day, with the window it is valid in.
  */
 public struct ScheduledMemoryRecord: Equatable, Hashable {
@@ -8653,6 +9133,204 @@ public func FfiConverterTypeTaggingStats_lift(_ buf: RustBuffer) throws -> Taggi
 #endif
 public func FfiConverterTypeTaggingStats_lower(_ value: TaggingStats) -> RustBuffer {
     return FfiConverterTypeTaggingStats.lower(value)
+}
+
+
+/**
+ * One action advertised by a structure read.
+ *
+ * R6 role: structure DTO.
+ */
+public struct ViewAction: Equatable, Hashable {
+    public var id: String
+    public var enabled: Bool
+    public var disabledReason: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, enabled: Bool, disabledReason: String?) {
+        self.id = id
+        self.enabled = enabled
+        self.disabledReason = disabledReason
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ViewAction: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeViewAction: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ViewAction {
+        return
+            try ViewAction(
+                id: FfiConverterString.read(from: &buf), 
+                enabled: FfiConverterBool.read(from: &buf), 
+                disabledReason: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ViewAction, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterOptionString.write(value.disabledReason, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewAction_lift(_ buf: RustBuffer) throws -> ViewAction {
+    return try FfiConverterTypeViewAction.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewAction_lower(_ value: ViewAction) -> RustBuffer {
+    return FfiConverterTypeViewAction.lower(value)
+}
+
+
+/**
+ * Metadata for one section. Item content is deliberately absent.
+ *
+ * R6 role: structure DTO.
+ */
+public struct ViewSection: Equatable, Hashable {
+    public var id: String
+    public var title: String
+    public var slotKind: ViewSlotKind
+    public var itemIds: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, title: String, slotKind: ViewSlotKind, itemIds: [String]) {
+        self.id = id
+        self.title = title
+        self.slotKind = slotKind
+        self.itemIds = itemIds
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ViewSection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeViewSection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ViewSection {
+        return
+            try ViewSection(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                slotKind: FfiConverterTypeViewSlotKind.read(from: &buf), 
+                itemIds: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ViewSection, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterTypeViewSlotKind.write(value.slotKind, into: &buf)
+        FfiConverterSequenceString.write(value.itemIds, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewSection_lift(_ buf: RustBuffer) throws -> ViewSection {
+    return try FfiConverterTypeViewSection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewSection_lower(_ value: ViewSection) -> RustBuffer {
+    return FfiConverterTypeViewSection.lower(value)
+}
+
+
+/**
+ * Cheap whole-screen structure. No formatted collection content appears
+ * here; callers fetch that through a bounded window method.
+ *
+ * R6 role: structure DTO.
+ */
+public struct ViewStructure: Equatable, Hashable {
+    public var state: ViewContentState
+    public var sections: [ViewSection]
+    public var actions: [ViewAction]
+    public var generation: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(state: ViewContentState, sections: [ViewSection], actions: [ViewAction], generation: UInt64) {
+        self.state = state
+        self.sections = sections
+        self.actions = actions
+        self.generation = generation
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ViewStructure: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeViewStructure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ViewStructure {
+        return
+            try ViewStructure(
+                state: FfiConverterTypeViewContentState.read(from: &buf), 
+                sections: FfiConverterSequenceTypeViewSection.read(from: &buf), 
+                actions: FfiConverterSequenceTypeViewAction.read(from: &buf), 
+                generation: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ViewStructure, into buf: inout [UInt8]) {
+        FfiConverterTypeViewContentState.write(value.state, into: &buf)
+        FfiConverterSequenceTypeViewSection.write(value.sections, into: &buf)
+        FfiConverterSequenceTypeViewAction.write(value.actions, into: &buf)
+        FfiConverterUInt64.write(value.generation, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewStructure_lift(_ buf: RustBuffer) throws -> ViewStructure {
+    return try FfiConverterTypeViewStructure.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewStructure_lower(_ value: ViewStructure) -> RustBuffer {
+    return FfiConverterTypeViewStructure.lower(value)
 }
 
 
@@ -10381,6 +11059,279 @@ public func FfiConverterTypeTaggingFailure_lower(_ value: TaggingFailure) -> Rus
 }
 
 
+
+/**
+ * Whole-screen content state.
+ */
+
+public enum ViewContentState: Equatable, Hashable {
+    
+    case loading
+    case empty
+    case content
+    case error
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ViewContentState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeViewContentState: FfiConverterRustBuffer {
+    typealias SwiftType = ViewContentState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ViewContentState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .loading
+        
+        case 2: return .empty
+        
+        case 3: return .content
+        
+        case 4: return .error
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ViewContentState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .loading:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .empty:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .content:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .error:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewContentState_lift(_ buf: RustBuffer) throws -> ViewContentState {
+    return try FfiConverterTypeViewContentState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewContentState_lower(_ value: ViewContentState) -> RustBuffer {
+    return FfiConverterTypeViewContentState.lower(value)
+}
+
+
+
+/**
+ * Typed refusal from a generation-checked window read.
+ */
+public 
+enum ViewError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    case StaleGeneration(requested: UInt64, current: UInt64, message: String, userActionable: Bool
+    )
+    case WindowTooLarge(requested: UInt64, maximum: UInt64, message: String, userActionable: Bool
+    )
+    case SectionNotFound(sectionId: String, message: String, userActionable: Bool
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension ViewError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeViewError: FfiConverterRustBuffer {
+    typealias SwiftType = ViewError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ViewError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .StaleGeneration(
+            requested: try FfiConverterUInt64.read(from: &buf), 
+            current: try FfiConverterUInt64.read(from: &buf), 
+            message: try FfiConverterString.read(from: &buf), 
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
+        case 2: return .WindowTooLarge(
+            requested: try FfiConverterUInt64.read(from: &buf), 
+            maximum: try FfiConverterUInt64.read(from: &buf), 
+            message: try FfiConverterString.read(from: &buf), 
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
+        case 3: return .SectionNotFound(
+            sectionId: try FfiConverterString.read(from: &buf), 
+            message: try FfiConverterString.read(from: &buf), 
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ViewError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .StaleGeneration(requested,current,message,userActionable):
+            writeInt(&buf, Int32(1))
+            FfiConverterUInt64.write(requested, into: &buf)
+            FfiConverterUInt64.write(current, into: &buf)
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+            
+        
+        case let .WindowTooLarge(requested,maximum,message,userActionable):
+            writeInt(&buf, Int32(2))
+            FfiConverterUInt64.write(requested, into: &buf)
+            FfiConverterUInt64.write(maximum, into: &buf)
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+            
+        
+        case let .SectionNotFound(sectionId,message,userActionable):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(sectionId, into: &buf)
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewError_lift(_ buf: RustBuffer) throws -> ViewError {
+    return try FfiConverterTypeViewError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewError_lower(_ value: ViewError) -> RustBuffer {
+    return FfiConverterTypeViewError.lower(value)
+}
+
+
+/**
+ * ADR 0004 slot kind used by one structure section.
+ */
+
+public enum ViewSlotKind: Equatable, Hashable {
+    
+    case textRow
+    case mediaItem
+    case actionRow
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ViewSlotKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeViewSlotKind: FfiConverterRustBuffer {
+    typealias SwiftType = ViewSlotKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ViewSlotKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .textRow
+        
+        case 2: return .mediaItem
+        
+        case 3: return .actionRow
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ViewSlotKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .textRow:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .mediaItem:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .actionRow:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewSlotKind_lift(_ buf: RustBuffer) throws -> ViewSlotKind {
+    return try FfiConverterTypeViewSlotKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeViewSlotKind_lower(_ value: ViewSlotKind) -> RustBuffer {
+    return FfiConverterTypeViewSlotKind.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -10895,6 +11846,56 @@ fileprivate struct FfiConverterSequenceTypeFaceRef: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeGalleryMediaItem: FfiConverterRustBuffer {
+    typealias SwiftType = [GalleryMediaItem]
+
+    public static func write(_ value: [GalleryMediaItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGalleryMediaItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GalleryMediaItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GalleryMediaItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGalleryMediaItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGalleryTextRow: FfiConverterRustBuffer {
+    typealias SwiftType = [GalleryTextRow]
+
+    public static func write(_ value: [GalleryTextRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGalleryTextRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GalleryTextRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GalleryTextRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGalleryTextRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeMemoryContact: FfiConverterRustBuffer {
     typealias SwiftType = [MemoryContact]
 
@@ -11287,6 +12288,56 @@ fileprivate struct FfiConverterSequenceTypeTagSuggestionRecord: FfiConverterRust
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeTagSuggestionRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeViewAction: FfiConverterRustBuffer {
+    typealias SwiftType = [ViewAction]
+
+    public static func write(_ value: [ViewAction], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeViewAction.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ViewAction] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ViewAction]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeViewAction.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeViewSection: FfiConverterRustBuffer {
+    typealias SwiftType = [ViewSection]
+
+    public static func write(_ value: [ViewSection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeViewSection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ViewSection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ViewSection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeViewSection.read(from: &buf))
         }
         return seq
     }
@@ -11880,19 +12931,52 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_libraryindex_build() != 2091) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_build_with_time_zone_offsets() != 45599) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_compute_scheduled() != 38617) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_photo_count() != 25523) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_photo_ids_for_tag() != 38494) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_photo_structure() != 58671) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_photo_window() != 13639) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_rebuild() != 27379) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_scheduled_photo_count() != 60180) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_search() != 14207) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_set_photo_ids_view() != 26440) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_set_photo_view() != 24212) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_sorted_photo_ids() != 49029) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_tag_structure() != 26735) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_tag_suggestions() != 53695) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_tag_window() != 20988) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_view_generation() != 36832) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_memorygenerator_cancel() != 62443) {
