@@ -74,7 +74,7 @@ jobs:
           retention-days: 7
 
   shell-kit:
-    name: shell-kit-gtk
+    name: GTK shells
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -83,19 +83,22 @@ jobs:
         with:
           toolchain: "1.97.1"
 
-      - name: OS dependencies (GTK)
+      - name: OS dependencies (GTK, GStreamer)
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential \
             pkg-config \
             libgtk-4-dev \
-            libadwaita-1-dev
+            libadwaita-1-dev \
+            libgstreamer1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good
 
-      - name: cargo test --locked --workspace
+      - name: cargo test --locked --workspace --all-features
         working-directory: shells
-        run: cargo test --locked --workspace --all-targets 2>&1 | tee "${GITHUB_WORKSPACE}/shell-kit-test.log"
-        # Covers shell-kit-gtk and contacts-gtk (Phase 3.5).
+        run: cargo test --locked --workspace --all-targets --all-features 2>&1 | tee "${GITHUB_WORKSPACE}/shell-kit-test.log"
+        # Covers shell-kit-gtk, contacts-gtk, music-gtk, and real GStreamer compilation.
 
       - name: Upload shell-kit test logs
         if: always()

@@ -11,12 +11,17 @@ UI toolkit.
 - `contacts-gtk` — LocalContacts laptop / Comet shell. Links the kit
   and `contacts-core` (display rows live in the core). `--comet` is
   540×620; chrome follows width (bottom nav at or below 550).
+- `music-gtk` — LocalMusic laptop / Comet shell. Links the kit and
+  `music-core`; GStreamer and MPRIS remain host ports. Headless tests inject
+  a deterministic transport.
 
 ```
 cd shells
 cargo test --locked --workspace --all-targets
 cargo run -p contacts-gtk
 cargo run -p contacts-gtk -- --comet
+cargo run -p music-gtk --features gstreamer-playback
+cargo run -p music-gtk --features gstreamer-playback -- --comet
 ```
 
 On macOS:

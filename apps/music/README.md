@@ -3,7 +3,7 @@
 Lives at `apps/music` in the localfiles monorepo. Commands below are
 from that directory.
 
-A music player for locally stored audio files on iOS. Point it at a folder
+A music player for locally stored audio files on iOS and Linux. Point it at a folder
 whose files already have local bytes and it becomes your library — no
 streaming service required. The folder may be provider-backed, but the app
 does not request downloads or materialise placeholders.
@@ -24,6 +24,7 @@ does not request downloads or materialise placeholders.
 - Xcode 15+
 - iOS 17.0+
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+- Linux: GTK 4.14+, libadwaita 1.5+, GStreamer 1.0, and Rust 1.97
 
 ## Build
 
@@ -39,6 +40,14 @@ open LocalMusic.xcodeproj
 ```
 
 Then build and run on a simulator or device (iOS 17+).
+
+Linux laptop / Mecha Comet:
+
+```bash
+cd ../../shells
+cargo run -p music-gtk --features gstreamer-playback
+cargo run -p music-gtk --features gstreamer-playback -- --comet
+```
 
 ## Architecture
 
@@ -61,6 +70,11 @@ Folder bytes are authoritative through `MusicSession`; the Swift `Track` and
 `MPNowPlayingInfoCenter`, artwork/lyrics caches, bookmarks, and the document
 picker remain iOS host ports. The obsolete `library.json` projection is
 consumed once only to salvage legacy artwork/lyrics, then removed and rescanned.
+
+The Linux shell lives in `shells/music-gtk`, links `music-core` directly, and
+keeps GStreamer playback plus MPRIS D-Bus behind shell host ports. Its
+playlist UI consumes typed commands and display rows rather than playlist
+serialization.
 
 ## AI disclaimer
 

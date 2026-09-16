@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer)
 
 ## Scope
 
@@ -89,10 +89,11 @@ platform's `shell-kit` (ADR 0001 R1), which depends on this vocabulary and on
 no app core. A generated enum arm proves inventory coverage; it does not by
 itself prove that a production-quality reusable binding exists.
 
-As of Milestone C, `shell-kit-gtk` is a provisional extraction from one app.
-There is no `shell-kit-swift`: the iOS contacts views are hand-rolled
-SwiftUI. Music is the second-consumer test for both platforms; it decides
-which bindings are genuinely shared.
+As of the GTK Music slice, `shell-kit-gtk` has two product consumers.
+Their checked inventories intersect on 17 public, domain-neutral behaviors.
+That promotes those behaviors from provisional extraction to measured reuse;
+it does not promote Music's media-item behavior, which Contacts does not use.
+`shell-kit-swift` remains provisional and is evaluated separately.
 
 **R7.** An R4 **kind** omitted from a vocabulary consumer MUST fail the build
 through a non-exhaustive match. Tests and review still verify that the
@@ -162,8 +163,9 @@ the platform itself owns.
 - Every screen in every app resolves to kinds drawn only from R4.
 - Each kind a shell uses has a native binding. Generated exhaustive matches
   prove vocabulary coverage, while tests prove required data and behavior.
-- GTK's provisional bindings live in `shell-kit-gtk` and are used by
-  `contacts-gtk`. A second app has not yet established reuse.
+- GTK's domain-neutral bindings live in `shell-kit-gtk`. `contacts-gtk` and
+  `music-gtk` publish distinct binding inventories; their test-pinned
+  intersection is 17.
 - No shell source contains a hard-coded colour outside generated tokens
   or a platform semantic colour (R12).
 - Shell control flow uses typed actions/dispositions rather than display copy.
@@ -205,6 +207,25 @@ values, structured addresses, yearless birthdays, categories, and JPEG photo
 selection. These changes close the GTK product gaps recorded in the Milestone C
 table without adding an R4 kind or moving app-specific widgets into
 `shell-kit-gtk`.
+
+### GTK Music second-consumer evidence (2026-09-16)
+
+Music routes all nine generated Linux screens and uses `music-core` display
+rows and typed commands for folder projection, search/sort, playlist
+creation/editing, and M3U conflict decisions. Its headless path test performs
+Folder open → list → playlist create/add/reorder save → explicit ordered
+conflict choice. GStreamer playback and MPRIS are shell host ports; the
+deterministic test adapter moves no playback domain state through UniFFI.
+
+The second consumer exposed three useful boundary facts:
+
+| Finding | Evidence / disposition |
+|---|---|
+| Local diagnostics were duplicated shell behavior | Moved the bounded, non-persistent logger into the kit and made both products consume it. |
+| Sort/filter needed an option-bearing native control | Added a domain-neutral choice dropdown; both products consume it. |
+| The provisional media item dropped `thumbnail_ref` | The binding now carries semantic/file references and renders a native action row. Only Music currently consumes it, so cross-product reuse is not claimed. |
+| Measured common surface | `measure_reuse(contacts_gtk::KIT_BINDINGS, music_gtk::KIT_BINDINGS)` reports 17 shared of 17 Contacts and 18 Music bindings; the assertion fails on inventory drift. |
+| Native/runtime confidence | CI compiles and links GTK plus GStreamer and runs headless workflow tests. Audio output, MPRIS media-key interoperability, Flatpak folder portals, and physical Comet layout remain manual and unmeasured. |
 
 ## Rationale
 
