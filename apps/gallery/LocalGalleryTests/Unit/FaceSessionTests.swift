@@ -83,7 +83,7 @@ final class FaceSessionTests: XCTestCase {
         temp.appending("\(name).xmp")
     }
 
-    private func parsed(_ name: String) throws -> SidecarParseRecord {
+    private func parsed(_ name: String) throws -> ParsedSidecarHost {
         parseXmpBytes(bytes: try Data(contentsOf: sidecar(name)))
     }
 
