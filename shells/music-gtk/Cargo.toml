@@ -1,0 +1,26 @@
+[package]
+name = "music-gtk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "LocalMusic GTK shell — laptop and Mecha Comet"
+
+[[bin]]
+name = "localmusic"
+path = "src/main.rs"
+
+[features]
+default = []
+gstreamer-playback = ["dep:gstreamer"]
+
+[dependencies]
+shell-kit-gtk = { path = "../shell-kit-gtk" }
+music-core = { path = "../../core/music-core" }
+gtk = { package = "gtk4", version = "0.8", features = ["v4_14"] }
+adw = { package = "libadwaita", version = "0.6", features = ["v1_5"] }
+gstreamer = { version = "0.22", optional = true }
+
+[dev-dependencies]
+contacts-gtk = { path = "../contacts-gtk" }
