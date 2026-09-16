@@ -1,0 +1,10 @@
+# Source precedence for Apple Health sourceName values. Lower rank wins.
+# Unlisted names get rank 100 so a new app never silently becomes preferred.
+# Override per archive at <archive root>/config/sources.toml.
+[sources]
+"Apple Watch" = 10   # on-wrist sensors: HR, HRV, sleep, watch steps
+"iPhone" = 20        # phone pedometer/GPS when the watch is off
+"Pace" = 30          # third-party workout app; keep raw rows, never preferred over Watch/phone
+"Health" = 40        # Health app / system entries
+"Mindful" = 50       # third-party meditation (MindfulSession only)
+"Sleep" = 60         # third-party sleep app

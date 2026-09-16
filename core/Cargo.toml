@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "contacts-core",
     "contacts-ffi",
+    "health-core",
     "localcore-blob",
     "localcore-conflict",
     "localcore-id",
