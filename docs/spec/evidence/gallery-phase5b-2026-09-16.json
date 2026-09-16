@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "generated_by_harness_commit": "a642eca5d57fecc30a7e3f417e5d6b965b4f1395",
+  "execution": {
+    "date": "2026-09-16",
+    "architecture": "x86_64",
+    "platform": "Linux-7.1.13-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "python": "3.14.7",
+    "opencv": "5.0.0",
+    "opencv_threads": 1
+  },
+  "face_alignment": {
+    "opencv_zoo_revision": "47534e27c9851bb1128ccc0102f1145e27f23f98",
+    "candidate_models": {
+      "face_detector.onnx": {
+        "model": "YuNet 2023mar",
+        "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+        "bytes": 232589
+      },
+      "face_embedder.onnx": {
+        "model": "SFace 2021dec",
+        "sha256": "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
+        "bytes": 38696353
+      }
+    },
+    "yunet_row_permutation_to_arcface": [0, 1, 2, 3, 4],
+    "fixtures": [
+      {
+        "image": "face.jpg",
+        "image_sha256": "6d788e0d0c07a3af4409dabcf4ae5b9d15020e99cff599decba04026e2d2ca9a",
+        "direct_vs_reference_max_channel_delta": 1,
+        "direct_vs_reference_mean_channel_delta": 0.00018601190476190475,
+        "direct_vs_swapped_embedding_cosine": -0.08387008309364319,
+        "direct_crop_sha256": "f47496fcb96f51d413cc895a22e74617fa0fd947f1ea1805794043584666f453",
+        "reference_crop_sha256": "e8be717e8d2e74ec3ca6b53e25e8a937824b4fda72ec5f68255465fb548b16b0"
+      },
+      {
+        "image": "face2.jpg",
+        "image_sha256": "3abedb6b528cb8874be8a48c73203dd6fdc07b2b1b656d7ed87c0b7de8e9ecef",
+        "direct_vs_reference_max_channel_delta": 1,
+        "direct_vs_reference_mean_channel_delta": 0.00023915816326530612,
+        "direct_vs_swapped_embedding_cosine": 0.7285361289978027,
+        "direct_crop_sha256": "a96d4c1522b3e95e7c407f6e379c92566c13ea0045e189e2f460266067a55e24",
+        "reference_crop_sha256": "443b68cd539c4e3f4209bffcadce020c8c8aff40e0bc937e7c2682c3d6ed3550"
+      }
+    ]
+  },
+  "face_library": {
+    "dataset": "Labeled Faces in the Wild, original 250x250 images",
+    "source": "marcelohaps/lfw on Hugging Face",
+    "source_revision": "12a61458b56d0433d07269dc1d64368abf4f6b4d",
+    "selection": "first 20 identities after sorting eligible identity names by SHA-256; first 5 source-order images each",
+    "identity_count": 20,
+    "images_per_identity": 5,
+    "images_requested": 100,
+    "pairs": 4950,
+    "current": {
+      "pipeline": "SCRFD-500M+w600k_mbf",
+      "detector_sha256": "5e4447f50245bbd7966bd6c0fa52938c61474a04ec7def48753668a9d8b4ea3a",
+      "embedder_sha256": "9cc6e4a75f0e2bf0b1aed94578f144d15175f357bdc05e815e5c4a02b319eb4f",
+      "images_embedded": 100,
+      "images_missed": 0,
+      "auc": 0.9587968421052632,
+      "best_pair_f1": 0.9501312335958005,
+      "single_link_pair_precision": 1.0,
+      "single_link_pair_recall": 0.905,
+      "single_link_pair_f1": 0.9501312335958005,
+      "single_link_clusters": 25,
+      "false_join_pairs": 0,
+      "missed_same_identity_pairs": 19,
+      "elapsed_ms": 4800.219226999616,
+      "mean_image_ms": 47.21184150992485,
+      "p95_image_ms": 64.13546190051414,
+      "model_loaded_rss_mib": 92.078125,
+      "process_peak_rss_mib": 144.36328125,
+      "measured_peak_delta_mib": 52.28515625,
+      "first_input_embedding_sha256": "b8e17977814ee768cd3d6c63386f939b6400d6bb282e39a2539993abb81c48de"
+    },
+    "candidate": {
+      "pipeline": "YuNet+SFace",
+      "detector_sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+      "embedder_sha256": "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
+      "images_embedded": 100,
+      "images_missed": 0,
+      "auc": 0.9677568421052631,
+      "best_pair_f1": 0.9690721649484536,
+      "single_link_pair_precision": 1.0,
+      "single_link_pair_recall": 0.94,
+      "single_link_pair_f1": 0.9690721649484536,
+      "single_link_clusters": 23,
+      "false_join_pairs": 0,
+      "missed_same_identity_pairs": 12,
+      "elapsed_ms": 4534.159545000875,
+      "mean_image_ms": 44.73858409044624,
+      "p95_image_ms": 79.73373460081348,
+      "model_loaded_rss_mib": 120.0546875,
+      "process_peak_rss_mib": 184.33984375,
+      "measured_peak_delta_mib": 64.28515625,
+      "first_input_embedding_sha256": "813b843697b1df54a4cdfae885533c1344fada2fef98ef9ad097e7dcb2e6efb6"
+    },
+    "cross_isa": {
+      "architectures_observed": ["x86_64"],
+      "identical_model_input_comparisons": [],
+      "outcome": "unavailable",
+      "reason": "no arm64 execution environment was available"
+    }
+  },
+  "flatpak_portal": {
+    "session": {
+      "dbus_session_address": false,
+      "display_or_wayland": false,
+      "documents_bus_owner": false,
+      "documents_mount_exists": false,
+      "probe_detail": "no D-Bus session address"
+    },
+    "real_portal_grant_observed": false,
+    "persisted_access_tested": false,
+    "native_control": {
+      "rescan_new_file_visible": true,
+      "separate_process_inotify_event_received": true,
+      "atomic_replace": true,
+      "loser_survived_until_explicit_delete": true,
+      "explicit_loser_delete": true,
+      "stat_entries": 20000,
+      "stat_elapsed_ms": 450.91778699861607,
+      "stat_entries_per_second": 44353.983312841425
+    }
+  },
+  "crate_consumers": {
+    "method": "all repository Cargo.toml path dependencies; feature-unified registry edges excluded",
+    "gallery-ffi": [],
+    "gallery-index": ["gallery-ffi", "localgallery"],
+    "gallery-memories": ["gallery-ffi"],
+    "gallery-meta": ["gallery-ffi", "gallery-ml", "gallery-session", "localgallery"],
+    "gallery-ml": ["gallery-ffi", "gallery-session", "localgallery"],
+    "gallery-model": ["gallery-ffi", "gallery-index", "gallery-memories", "gallery-meta", "gallery-scan", "gallery-session", "localgallery"],
+    "gallery-scan": ["gallery-ffi", "localgallery"],
+    "gallery-session": ["gallery-ffi", "localgallery"],
+    "gallery-vfs": ["gallery-ffi", "gallery-meta", "gallery-ml", "gallery-scan", "gallery-session", "localgallery"]
+  }
+}
