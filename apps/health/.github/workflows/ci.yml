@@ -1,5 +1,5 @@
-# Nested copy for the old health remote. Monorepo gate for the log
-# contract is `.github/workflows/apps.yml` (`go test ./internal/log ./internal/event`).
+# Nested copy for the old health remote. The monorepo gate in
+# `.github/workflows/apps.yml` tests this root module with `go test ./...`.
 name: ci
 
 on:

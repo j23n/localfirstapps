@@ -1,6 +1,7 @@
 # App suites the nested apps/*/.github workflows cannot run on this
 # monorepo. The top-level CI routes app and shared changes here: shell kits,
-# gallery Linux + iOS, contacts iOS, music iOS, health log/event. Nested
+# gallery Linux + iOS, contacts iOS, music iOS, and the Health root Go
+# module. Nested
 # copies stay for the old remotes.
 name: Apps
 
@@ -307,8 +308,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  health-log:
-    name: health log
+  health:
+    name: health Go
     runs-on: ubuntu-24.04
     env:
       CGO_ENABLED: "1"
@@ -324,6 +325,8 @@ jobs:
       - name: C compiler
         run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential
 
-      - name: go test log and event
+      # reference/web-ui is a frozen separate module with its own go.mod, so
+      # this root-module pattern intentionally does not select it.
+      - name: go test root module
         working-directory: apps/health
-        run: go test ./internal/log ./internal/event
+        run: go test ./...
