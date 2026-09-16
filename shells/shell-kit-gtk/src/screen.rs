@@ -17,10 +17,20 @@ pub fn bind_screen(kind: ScreenKind) -> ScreenKind {
 }
 
 pub fn list_page() -> gtk::ScrolledWindow {
+    list_box_page().0
+}
+
+/// Same as [`list_page`], plus the list itself.
+///
+/// GTK 4.20+ may wrap the list in a `GtkViewport`, so
+/// `ScrolledWindow::child` is not always the `ListBox`. Keep the
+/// list handle from construction instead of fishing it out.
+pub fn list_box_page() -> (gtk::ScrolledWindow, gtk::ListBox) {
     let list = gtk::ListBox::new();
     list.set_selection_mode(gtk::SelectionMode::None);
     list.add_css_class("boxed-list");
-    gtk::ScrolledWindow::builder().child(&list).build()
+    let scroll = gtk::ScrolledWindow::builder().child(&list).build();
+    (scroll, list)
 }
 
 pub fn grid_page() -> gtk::ScrolledWindow {

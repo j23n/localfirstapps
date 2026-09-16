@@ -16,7 +16,8 @@ use contacts_core::{
 };
 use shell_kit_gtk::{
     action_row, apply_token_css, banner, choice_dropdown, confirm_dialog, field_row,
-    field_row_widget, list_page, nav_row, primary_action, push_page, search_entry, settings_page,
+    field_row_widget, list_box_page, nav_row, primary_action, push_page, search_entry,
+    settings_page,
     sheet, status_row, text_row, ActionRole, ActionRowData, ChoiceData, ConfirmData,
     ContactsScreen, FieldRowData, NavRowData, StatusRowData, StatusSeverity, TextRowData,
 };
@@ -149,11 +150,7 @@ impl Window {
         selection_actions.append(&selection_count);
         selection_actions.append(&assign_tag);
         selection_actions.append(&bulk_delete);
-        let scroll = list_page();
-        let list = scroll
-            .child()
-            .and_downcast::<gtk::ListBox>()
-            .expect("list_page child");
+        let (scroll, list) = list_box_page();
         list_col.append(&conflict_banner);
         list_col.append(&list_controls);
         list_col.append(&selection_actions);
@@ -1061,11 +1058,7 @@ impl Window {
     }
 
     fn present_tag_management(&self) {
-        let scroll = list_page();
-        let list = scroll
-            .child()
-            .and_downcast::<gtk::ListBox>()
-            .expect("list_page child");
+        let (scroll, list) = list_box_page();
         self.refill_tag_management(&list);
         let page = push_page("Tags", &scroll);
         page.set_widget_name(route_id(ContactsScreen::TagManagement));
@@ -1222,12 +1215,8 @@ impl Window {
         controls.append(&level);
         controls.append(&clear);
 
-        let scroll = list_page();
+        let (scroll, list) = list_box_page();
         scroll.set_vexpand(true);
-        let list = scroll
-            .child()
-            .and_downcast::<gtk::ListBox>()
-            .expect("list_page child");
         column.append(&controls);
         column.append(&scroll);
 

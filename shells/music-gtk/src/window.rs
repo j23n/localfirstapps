@@ -11,7 +11,7 @@ use music_core::{
     StatusSeverity as CoreStatusSeverity, StdVfs, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
-    action_row, apply_token_css, banner, choice_dropdown, confirm_dialog, field_row, list_page,
+    action_row, apply_token_css, banner, choice_dropdown, confirm_dialog, field_row, list_box_page,
     media_item, nav_row, primary_action, push_page, search_entry, settings_page, sheet, status_row,
     text_row, ActionRole, ActionRowData, ChoiceData, ConfirmData, FieldRowData, LogLevel,
     MediaItemData, MusicScreen, NavRowData, StatusRowData, StatusSeverity, TextRowData,
@@ -119,9 +119,8 @@ impl Window {
         library_controls.append(&search);
         library_controls.append(&sort);
         library_col.append(&library_controls);
-        let library_scroll = list_page();
+        let (library_scroll, library_list) = list_box_page();
         library_scroll.set_vexpand(true);
-        let library_list = list_from(&library_scroll);
         library_col.append(&library_scroll);
         let library_nav = shell_kit_gtk::navigation_view();
         library_nav.add(&push_page("Library", &library_col));
@@ -133,9 +132,8 @@ impl Window {
         create_playlist.set_margin_start(8);
         create_playlist.set_margin_end(8);
         playlist_col.append(&create_playlist);
-        let playlist_scroll = list_page();
+        let (playlist_scroll, playlist_list) = list_box_page();
         playlist_scroll.set_vexpand(true);
-        let playlist_list = list_from(&playlist_scroll);
         playlist_col.append(&playlist_scroll);
         let playlist_nav = shell_kit_gtk::navigation_view();
         let playlist_root = push_page("Playlists", &playlist_col);
@@ -683,8 +681,7 @@ impl Window {
             }
         };
         let selected = Rc::new(RefCell::new(BTreeSet::<String>::new()));
-        let list_scroll = list_page();
-        let list = list_from(&list_scroll);
+        let (list_scroll, list) = list_box_page();
         for item in library
             .sections
             .into_iter()
@@ -1122,8 +1119,7 @@ impl Window {
         controls.append(&search);
         controls.append(&level);
         controls.append(&clear);
-        let scroll = list_page();
-        let list = list_from(&scroll);
+        let (scroll, list) = list_box_page();
         column.append(&controls);
         column.append(&scroll);
         self.refill_logs(&list, "", None);
@@ -1199,13 +1195,6 @@ impl Window {
     fn toast(&self, message: &str) {
         self.inner.toast.add_toast(adw::Toast::new(message));
     }
-}
-
-fn list_from(scroll: &gtk::ScrolledWindow) -> gtk::ListBox {
-    scroll
-        .child()
-        .and_downcast::<gtk::ListBox>()
-        .expect("list_page child")
 }
 
 fn clear_list(list: &gtk::ListBox) {
