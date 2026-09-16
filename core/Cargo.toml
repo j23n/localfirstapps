@@ -13,6 +13,7 @@ members = [
     "localcore-vfs",
     "localcore-walk",
     "music-core",
+    "music-ffi",
 ]
 
 [workspace.package]

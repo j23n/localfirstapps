@@ -20,7 +20,10 @@ targets:
     type: application
     platform: iOS
     sources:
-      - LocalMusic
+      - path: LocalMusic
+        excludes:
+          - MusicCore-Bridging-Header.h
+          - MusicCoreFFI.h
       - path: ../../core/localcore-conflict/support/SyncConflict.swift
       - path: ../../docs/spec/ui/generated/Kinds.swift
     settings:
@@ -44,8 +47,22 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
         ENABLE_PREVIEWS: YES
+        SWIFT_OBJC_BRIDGING_HEADER: LocalMusic/MusicCore-Bridging-Header.h
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
     dependencies:
       - package: ShellKitSwift
+      - framework: build/core/MusicCore.xcframework
+        embed: false
+    preBuildScripts:
+      - name: Build music-ffi
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+        outputFiles:
+          - $(SRCROOT)/LocalMusic/MusicCore.swift
+          - $(SRCROOT)/LocalMusic/MusicCoreFFI.h
+        script: |
+          set -euo pipefail
+          exec /bin/bash "$SRCROOT/scripts/build_ffi.sh"
     postBuildScripts:
       - name: Set Build Number from Git
         basedOnDependencyAnalysis: false

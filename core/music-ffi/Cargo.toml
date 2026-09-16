@@ -1,0 +1,19 @@
+[package]
+name = "music-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "R6-green UniFFI session for music-core"
+
+[lib]
+name = "music_ffi"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[dependencies]
+music-core = { path = "../music-core" }
+uniffi.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
