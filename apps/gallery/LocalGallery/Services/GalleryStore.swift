@@ -1078,6 +1078,7 @@ final class GalleryStore {
 
         widgetExportGeneration += 1
         let generation = widgetExportGeneration
+        let index = self.index
         Task { [weak self] in
             let started = CFAbsoluteTimeGetCurrent()
             let scheduled = await index.computeScheduled(inputs, hiddenMemoryIDs: hidden)
