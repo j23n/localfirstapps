@@ -564,6 +564,11 @@ public protocol MusicSessionProtocol: AnyObject, Sendable {
     func applyMetadata(result: MetadataResult) throws  -> UInt64
 
     /**
+     * Apply one bounded platform metadata window and return the new generation.
+     */
+    func applyMetadataBatch(results: [MetadataResult]) throws  -> UInt64
+
+    /**
      * Whole-document choices for one ordered M3U conflict.
      */
     func conflictChoiceRows(groupId: String) throws  -> [TextRow]
@@ -627,6 +632,11 @@ public protocol MusicSessionProtocol: AnyObject, Sendable {
      * Current token for typed playlist edits.
      */
     func playlistContentToken(playlistId: String) throws  -> String
+
+    /**
+     * Resolved playlist entries as minimal AVFoundation/gstreamer sources.
+     */
+    func playlistEntryMediaSources(playlistId: String) throws  -> [PlaylistEntryMediaSource]
 
     /**
      * Ordered playlist entry rows, including missing/unsupported values.
@@ -755,6 +765,19 @@ open func applyMetadata(result: MetadataResult)throws  -> UInt64  {
     uniffi_music_ffi_fn_method_musicsession_apply_metadata(
             self.uniffiCloneHandle(),
         FfiConverterTypeMetadataResult_lower(result),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Apply one bounded platform metadata window and return the new generation.
+     */
+open func applyMetadataBatch(results: [MetadataResult])throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeMusicError_lift) {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_method_musicsession_apply_metadata_batch(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeMetadataResult.lower(results),uniffiCallStatus
     )
 })
 }
@@ -921,6 +944,19 @@ open func playlistContentToken(playlistId: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMusicError_lift) {
         uniffiCallStatus in
     uniffi_music_ffi_fn_method_musicsession_playlist_content_token(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(playlistId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Resolved playlist entries as minimal AVFoundation/gstreamer sources.
+     */
+open func playlistEntryMediaSources(playlistId: String)throws  -> [PlaylistEntryMediaSource]  {
+    return try  FfiConverterSequenceTypePlaylistEntryMediaSource.lift(try rustCallWithError(FfiConverterTypeMusicError_lift) {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_method_musicsession_playlist_entry_media_sources(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(playlistId),uniffiCallStatus
     )
@@ -1894,6 +1930,87 @@ public func FfiConverterTypeMovePlaylistEntryCommand_lift(_ buf: RustBuffer) thr
 #endif
 public func FfiConverterTypeMovePlaylistEntryCommand_lower(_ value: MovePlaylistEntryCommand) -> RustBuffer {
     return FfiConverterTypeMovePlaylistEntryCommand.lower(value)
+}
+
+
+/**
+ * R6 role: host-port DTO.
+ *
+ * A resolved playlist entry paired with its minimal playback source.
+ */
+public struct PlaylistEntryMediaSource: Equatable, Hashable {
+    /**
+     * Entry id used by typed playlist commands.
+     */
+    public var entryId: String
+    /**
+     * Opaque track id.
+     */
+    public var trackId: String
+    /**
+     * Local audio path.
+     */
+    public var path: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Entry id used by typed playlist commands.
+         */entryId: String,
+        /**
+         * Opaque track id.
+         */trackId: String,
+        /**
+         * Local audio path.
+         */path: String) {
+        self.entryId = entryId
+        self.trackId = trackId
+        self.path = path
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlaylistEntryMediaSource: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlaylistEntryMediaSource: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaylistEntryMediaSource {
+        return
+            try PlaylistEntryMediaSource(
+                entryId: FfiConverterString.read(from: &buf),
+                trackId: FfiConverterString.read(from: &buf),
+                path: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlaylistEntryMediaSource, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.entryId, into: &buf)
+        FfiConverterString.write(value.trackId, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylistEntryMediaSource_lift(_ buf: RustBuffer) throws -> PlaylistEntryMediaSource {
+    return try FfiConverterTypePlaylistEntryMediaSource.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylistEntryMediaSource_lower(_ value: PlaylistEntryMediaSource) -> RustBuffer {
+    return FfiConverterTypePlaylistEntryMediaSource.lower(value)
 }
 
 
@@ -3104,6 +3221,56 @@ fileprivate struct FfiConverterSequenceTypeMetadataRequest: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeMetadataResult: FfiConverterRustBuffer {
+    typealias SwiftType = [MetadataResult]
+
+    public static func write(_ value: [MetadataResult], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMetadataResult.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MetadataResult] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MetadataResult]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMetadataResult.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypePlaylistEntryMediaSource: FfiConverterRustBuffer {
+    typealias SwiftType = [PlaylistEntryMediaSource]
+
+    public static func write(_ value: [PlaylistEntryMediaSource], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePlaylistEntryMediaSource.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PlaylistEntryMediaSource] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PlaylistEntryMediaSource]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePlaylistEntryMediaSource.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeStatusRow: FfiConverterRustBuffer {
     typealias SwiftType = [StatusRow]
 
@@ -3186,6 +3353,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_music_ffi_checksum_method_musicsession_apply_metadata() != 42180) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_music_ffi_checksum_method_musicsession_apply_metadata_batch() != 41604) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_music_ffi_checksum_method_musicsession_conflict_choice_rows() != 21541) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3223,6 +3393,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_music_ffi_checksum_method_musicsession_playlist_content_token() != 63862) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_music_ffi_checksum_method_musicsession_playlist_entry_media_sources() != 8287) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_music_ffi_checksum_method_musicsession_playlist_entry_rows() != 57579) {

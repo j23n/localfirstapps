@@ -48,14 +48,19 @@ The app is a single-target SwiftUI project with a tab-based layout (Library, Now
 |---|---|
 | `LocalMusicApp` | App entry point; sets up the tab view and injects the shared player |
 | `AudioPlayerManager` | `ObservableObject` wrapping `AVPlayer`; owns playback state, queue, shuffle/repeat logic, and lock-screen integration |
-| `MetadataLoader` | Scans folders for audio files, extracts ID3/iTunes metadata and lyrics, parses and writes playlist files |
-| `PersistenceManager` | Persists the selected folder (via security-scoped bookmarks) and caches the library as JSON |
+| `MusicCoreClient` | Serial adapter over generated `MusicSession` list/window/detail APIs and typed playlist/conflict commands |
+| `MetadataLoader` | AVFoundation host port for tag, artwork, duration, and lyrics enrichment requested by core |
+| `PersistenceManager` | Persists the security-scoped folder bookmark and performs one-time `library.json` payload migration |
 | `LibraryView` | Displays all tracks with search, pull-to-refresh, and context menu for adding to playlists |
 | `NowPlayingView` | Full-screen player with artwork, synced lyrics overlay, seek bar, and transport controls |
 | `PlaylistsView` | Lists discovered and user-created playlists; supports creation and deletion |
 | `DocumentPicker` | `UIViewControllerRepresentable` wrapper around `UIDocumentPickerViewController` for folder selection |
 
-Data flows from `AudioPlayerManager` (injected as an `@EnvironmentObject`) down to all views. The library is cached to disk as JSON and refreshed in the background on each launch.
+Folder bytes are authoritative through `MusicSession`; the Swift `Track` and
+`Playlist` values are thin UI/playback projections. AVFoundation playback,
+`MPNowPlayingInfoCenter`, artwork/lyrics caches, bookmarks, and the document
+picker remain iOS host ports. The obsolete `library.json` projection is
+consumed once only to salvage legacy artwork/lyrics, then removed and rescanned.
 
 ## AI disclaimer
 

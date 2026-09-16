@@ -4,316 +4,212 @@ import Testing
 
 @MainActor
 final class LibraryStoreTests {
-
     private let tempDir: URL
+    private let defaults: UserDefaults
 
     init() throws {
         tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LibraryStoreTests-\(UUID().uuidString)",
-                                    isDirectory: true)
+            .appendingPathComponent("LibraryStoreTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defaults = try #require(
+            UserDefaults(suiteName: "com.localmusic.store-tests.\(UUID().uuidString)")
+        )
     }
 
     deinit {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    // MARK: - searchTracks(query:limit:)
+    @Test func sessionWalkBuildsTrackAdapterWithStableIDParity() async throws {
+        try touch("nested/Café.mp3", makeDirectories: true)
+        let store = makeStore()
+        await store._testOpenFolder(tempDir)
 
-    @Test func searchTracks_emptyQueryReturnsAll() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "Alpha"),
-            Fixtures.track(title: "Beta")
-        ])
-
-        #expect(store.searchTracks(query: "").count == 2)
+        let track = try #require(store.tracks.first)
+        #expect(track.title == "Café")
+        #expect(track.coreID == Track.stableID(for: track.url).uuidString.lowercased())
+        #expect(store.displayTracks.map(\.id) == store.tracks.map(\.id))
     }
 
-    @Test func searchTracks_emptyQueryRespectsLimit() async {
-        let store = LibraryStore()
-        await store._testSeedTracks(Fixtures.tracks(10))
+    @Test func searchSortAndSectionsComeFromCoreProjection() async throws {
+        try touch("zebra.mp3")
+        try touch("Alpha.mp3")
+        try touch("apple.mp3")
+        let store = makeStore()
+        await store._testOpenFolder(tempDir)
 
-        #expect(store.searchTracks(query: "", limit: 3).count == 3)
-    }
+        #expect(store.displayTracks.map(\.title) == ["Alpha", "apple", "zebra"])
+        #expect(store.sections.map(\.title) == ["A", "Z"])
 
-    @Test func searchTracks_matchesTitleArtistAlbumCaseInsensitively() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "Hello World", artist: "Anyone", album: "X"),
-            Fixtures.track(title: "Other",       artist: "WORLDLY", album: "X"),
-            Fixtures.track(title: "Other",       artist: "Anyone", album: "Earth"),
-            Fixtures.track(title: "Skip",        artist: "Skip",   album: "Skip")
-        ])
-
-        #expect(store.searchTracks(query: "world").count == 2)
-        #expect(store.searchTracks(query: "EARTH").count == 1)
-        #expect(store.searchTracks(query: "nope").count == 0)
-    }
-
-    @Test func searchTracks_limitHonoredOnMatches() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "Match A"),
-            Fixtures.track(title: "Match B"),
-            Fixtures.track(title: "Match C")
-        ])
-
-        #expect(store.searchTracks(query: "match", limit: 2).count == 2)
-    }
-
-    // MARK: - Sort
-
-    @Test func sort_byTitle() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "Charlie"),
-            Fixtures.track(title: "alpha"),
-            Fixtures.track(title: "Bravo")
-        ])
-        store.sortOption = .title
+        store.searchText = "APP"
         await store._testWaitForApply()
+        #expect(store.displayTracks.map(\.title) == ["apple"])
+        #expect(store.contentState == .content)
 
-        #expect(store.displayTracks.map(\.title) == ["alpha", "Bravo", "Charlie"])
-    }
-
-    @Test func sort_byArtistFallsBackToTitle() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "Z", artist: "Same"),
-            Fixtures.track(title: "A", artist: "Same"),
-            Fixtures.track(title: "M", artist: "Other")
-        ])
-        store.sortOption = .artist
+        store.searchText = "missing"
         await store._testWaitForApply()
-
-        let titles = store.displayTracks.map(\.title)
-        // "Other" comes before "Same" (case-insensitive); within "Same",
-        // titles are A, Z.
-        #expect(titles == ["M", "A", "Z"])
+        #expect(store.displayTracks.isEmpty)
+        #expect(store.contentState == .noMatches)
     }
 
-    @Test func sort_byDuration() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "Long",   duration: 600),
-            Fixtures.track(title: "Short",  duration: 30),
-            Fixtures.track(title: "Medium", duration: 200)
-        ])
-        store.sortOption = .duration
-        await store._testWaitForApply()
+    @Test func typedPlaylistCreateAddRemoveAndDelete() async throws {
+        try touch("one.mp3")
+        let store = makeStore()
+        await store._testOpenFolder(tempDir)
+        let track = try #require(store.tracks.first)
 
-        #expect(store.displayTracks.map(\.title) == ["Short", "Medium", "Long"])
-    }
-
-    // MARK: - Sectioning
-
-    @Test func sections_byFirstLetterUppercased() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "alpha"),
-            Fixtures.track(title: "Apple"),
-            Fixtures.track(title: "banana")
-        ])
-        store.sortOption = .title
-        await store._testWaitForApply()
-
-        #expect(store.sections.map(\.title) == ["A", "B"])
-        #expect(store.sections[0].tracks.count == 2)
-    }
-
-    @Test func sections_nonLetterStartsBucketIntoHash() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "1999"),
-            Fixtures.track(title: "!Bang"),
-            Fixtures.track(title: "Apple")
-        ])
-        store.sortOption = .title
-        await store._testWaitForApply()
-
-        let titles = store.sections.map(\.title)
-        #expect(titles.contains("#"))
-        #expect(titles.contains("A"))
-    }
-
-    @Test func sections_byDuration_bucketsBoundaries() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "tiny",   duration: 30),
-            Fixtures.track(title: "edge1",  duration: 60),       // 1–3 min
-            Fixtures.track(title: "edge2",  duration: 179.999),  // 1–3 min
-            Fixtures.track(title: "edge3",  duration: 180),      // 3–5 min
-            Fixtures.track(title: "huge",   duration: 700)
-        ])
-        store.sortOption = .duration
-        await store._testWaitForApply()
-
-        let titles = store.sections.map(\.title)
-        #expect(titles == ["Under 1 min", "1\u{2013}3 min", "3\u{2013}5 min", "10+ min"])
-    }
-
-    // MARK: - Search through the pipeline
-
-    @Test func search_filtersDisplayTracks() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([
-            Fixtures.track(title: "Hello"),
-            Fixtures.track(title: "Goodbye")
-        ])
-        store.searchText = "hello"
-        await store._testWaitForApply()
-
-        #expect(store.displayTracks.map(\.title) == ["Hello"])
-    }
-
-    // MARK: - Playlist CRUD
-
-    @Test func createPlaylist_emptyNameReturnsNil() {
-        let store = LibraryStore()
-        store._testSetFolderURL(tempDir)
-
-        #expect(store.createPlaylist(name: "") == nil)
-        #expect(store.createPlaylist(name: "   ") == nil)
-    }
-
-    @Test func createPlaylist_appendsAndSortsCaseInsensitively() {
-        let store = LibraryStore()
-        store._testSetFolderURL(tempDir)
-
-        _ = store.createPlaylist(name: "zeta")
-        _ = store.createPlaylist(name: "Alpha")
-        _ = store.createPlaylist(name: "beta")
-
-        #expect(store.playlists.map(\.name) == ["Alpha", "beta", "zeta"])
-        for p in store.playlists {
-            #expect(FileManager.default.fileExists(atPath: p.fileURL.path))
-        }
-    }
-
-    @Test func createPlaylist_duplicateNameGetsNumericSuffix() throws {
-        let store = LibraryStore()
-        store._testSetFolderURL(tempDir)
-
-        let first = try #require(store.createPlaylist(name: "Mix"))
-        let second = try #require(store.createPlaylist(name: "Mix"))
-
-        #expect(store.playlists.count == 2)
-        #expect(first.fileURL.lastPathComponent == "Mix.m3u")
-        #expect(second.fileURL.lastPathComponent == "Mix 2.m3u")
-        #expect(FileManager.default.fileExists(atPath: first.fileURL.path))
-        #expect(FileManager.default.fileExists(atPath: second.fileURL.path))
-        #expect(store.playlists.map(\.name) == ["Mix", "Mix 2"])
-    }
-
-    @Test func createPlaylist_pathCharactersStayInsideFolder() throws {
-        let store = LibraryStore()
-        store._testSetFolderURL(tempDir)
-
-        let nested = try #require(store.createPlaylist(name: "foo/bar"))
-        #expect(nested.fileURL.deletingLastPathComponent().standardized.path ==
-                tempDir.standardized.path)
-        #expect(!nested.fileURL.lastPathComponent.contains("/"))
-        #expect(nested.fileURL.lastPathComponent == "foo-bar.m3u")
-        #expect(!FileManager.default.fileExists(
-            atPath: tempDir.appendingPathComponent("foo")
-                .appendingPathComponent("bar.m3u").path
+        let created = await store.createPlaylist(name: "Mix")
+        let playlist = try #require(created)
+        #expect(playlist.name == "Mix")
+        #expect(FileManager.default.fileExists(
+            atPath: tempDir.appendingPathComponent("Mix.m3u").path
         ))
 
-        let escaped = try #require(store.createPlaylist(name: "../outside"))
-        #expect(escaped.fileURL.deletingLastPathComponent().standardized.path ==
-                tempDir.standardized.path)
-        let parentLeak = tempDir.deletingLastPathComponent()
-            .appendingPathComponent("outside.m3u")
-        #expect(!FileManager.default.fileExists(atPath: parentLeak.path))
+        await store.addTrack(track, to: playlist.id)
+        let added = try #require(store.playlist(id: playlist.id))
+        #expect(added.entries.count == 1)
+        #expect(added.entries.first?.trackID == track.coreID)
+        #expect(added.entries.first?.sourceURL?.standardized.path == track.url.standardized.path)
+
+        await store.removePlaylistEntries(
+            playlistID: playlist.id,
+            offsets: IndexSet(integer: 0)
+        )
+        #expect(store.playlist(id: playlist.id)?.entries.isEmpty == true)
+
+        let index = try #require(store.playlists.firstIndex { $0.id == playlist.id })
+        await store.deletePlaylists(at: IndexSet(integer: index))
+        #expect(store.playlist(id: playlist.id) == nil)
+        #expect(!FileManager.default.fileExists(
+            atPath: tempDir.appendingPathComponent("Mix.m3u").path
+        ))
     }
 
-    @Test func deletePlaylists_removesFromArrayAndDisk() {
-        let store = LibraryStore()
-        store._testSetFolderURL(tempDir)
-        _ = store.createPlaylist(name: "Mix1")
-        _ = store.createPlaylist(name: "Mix2")
-        let firstURL = store.playlists[0].fileURL
+    @Test func typedPlaylistMovePreservesRequestedOrder() async throws {
+        for name in ["a.mp3", "b.mp3", "c.mp3"] {
+            try touch(name)
+        }
+        let store = makeStore()
+        await store._testOpenFolder(tempDir)
+        let created = await store.createPlaylist(name: "Order")
+        let playlist = try #require(created)
+        for track in store.tracks {
+            await store.addTrack(track, to: playlist.id)
+        }
+        let before = try #require(store.playlist(id: playlist.id))
+        #expect(before.entries.map(\.title) == ["a", "b", "c"])
 
-        store.deletePlaylists(at: IndexSet(integer: 0))
-
-        #expect(store.playlists.count == 1)
-        #expect(!FileManager.default.fileExists(atPath: firstURL.path))
+        await store.movePlaylistEntry(
+            playlistID: playlist.id,
+            from: IndexSet(integer: 0),
+            to: 3
+        )
+        #expect(store.playlist(id: playlist.id)?.entries.map(\.title) == ["b", "c", "a"])
     }
 
-    @Test func savePlaylist_writesToDiskAndUpdatesMemory() throws {
+    @Test func playlistDetailKeepsMissingAndUnsupportedRows() async throws {
+        try touch("known.mp3")
+        try """
+        #EXTM3U
+        known.mp3
+        absent.mp3
+        https://example.com/live
+        """.write(
+            to: tempDir.appendingPathComponent("Foreign.m3u"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = makeStore()
+        await store._testOpenFolder(tempDir)
+        let playlist = try #require(store.playlists.first)
+
+        #expect(playlist.entries.count == 3)
+        #expect(playlist.entries[0].trackID != nil)
+        #expect(playlist.entries[1].trailing == "File not found")
+        #expect(playlist.entries[2].subtitle == "Unsupported playlist entry")
+    }
+
+    @Test func stalePlaylistEditIsRefusedAndRefreshed() async throws {
         try touch("song.mp3")
-        let store = LibraryStore()
-        store._testSetFolderURL(tempDir)
-        var playlist = try #require(store.createPlaylist(name: "Mix"))
+        let store = makeStore()
+        await store._testOpenFolder(tempDir)
+        let track = try #require(store.tracks.first)
+        let created = await store.createPlaylist(name: "Stale")
+        let playlist = try #require(created)
+        try "#EXTM3U\nexternal.mp3\n".write(
+            to: tempDir.appendingPathComponent("Stale.m3u"),
+            atomically: true,
+            encoding: .utf8
+        )
 
-        playlist.trackURLs = [tempDir.appendingPathComponent("song.mp3")]
-        playlist.rawPaths = ["song.mp3"]
-        store.savePlaylist(playlist)
-
-        #expect(store.playlists.first(where: { $0.id == playlist.id })?.trackURLs.count == 1)
-        let parsed = try #require(MetadataLoader.parsePlaylist(at: playlist.fileURL))
-        #expect(parsed.rawPaths == ["song.mp3"])
+        await store.addTrack(track, to: playlist.id)
+        #expect(store.errorMessage?.contains("changed on disk") == true)
+        #expect(store.playlist(id: playlist.id)?.entries.first?.title == "external")
     }
 
-    // MARK: - Scan result handling
+    @Test func syncConflictRowsAndResolutionUseTypedSession() async throws {
+        try "#EXTM3U\nbase.mp3\nleft.mp3\n".write(
+            to: tempDir.appendingPathComponent("mix.m3u"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "#EXTM3U\nbase.mp3\nleft.mp3\nright.mp3\n".write(
+            to: tempDir.appendingPathComponent(
+                "mix.sync-conflict-20200901-120000-PHONE01.m3u"
+            ),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = makeStore()
+        await store._testOpenFolder(tempDir)
+        let group = try #require(store.syncConflictGroups.first)
+        #expect(group.disposition == .auto)
 
-    /// Empty-success: a listable folder with no audio clears the cached
-    /// library. Inaccessible (missing) folders keep it. See
-    /// `MetadataLoader.scanFolder` / `FolderScanResult`.
-    @Test func rescan_emptyFolderClearsCachedLibrary() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([Fixtures.track(title: "Cached")])
-        store._testSetFolderURL(tempDir)
+        try await store.resolveConflict(groupID: group.id, selectedSource: nil)
+        #expect(store.syncConflictGroups.isEmpty)
+        let content = try String(
+            contentsOf: tempDir.appendingPathComponent("mix.m3u"),
+            encoding: .utf8
+        )
+        #expect(content.contains("right.mp3"))
+    }
+
+    @Test func emptyFolderClearsWhileInaccessibleFolderKeepsProjection() async throws {
+        try touch("cached.mp3")
+        let store = makeStore()
+        await store._testOpenFolder(tempDir)
+        #expect(store.tracks.count == 1)
+
+        try FileManager.default.removeItem(at: tempDir.appendingPathComponent("cached.mp3"))
         await store.rescan()
         #expect(store.tracks.isEmpty)
-    }
+        #expect(store.contentState == .emptyFolder)
 
-    @Test func rescan_inaccessibleFolderKeepsCachedLibrary() async {
-        let store = LibraryStore()
-        await store._testSeedTracks([Fixtures.track(title: "Cached")])
-        let missing = tempDir.appendingPathComponent("missing-folder", isDirectory: true)
-        store._testSetFolderURL(missing)
+        try touch("again.mp3")
         await store.rescan()
-        #expect(store.tracks.map(\.title) == ["Cached"])
+        #expect(store.tracks.count == 1)
+        let missing = tempDir.appendingPathComponent("missing", isDirectory: true)
+        await store._testOpenFolder(missing)
+        #expect(store.tracks.count == 1)
+        #expect(store.errorMessage != nil)
     }
 
-    // MARK: - Lookup helpers
-
-    @Test func trackForURL_normalizesViaStandardized() async {
-        let url = URL(fileURLWithPath: "/library/song.mp3")
-        let track = Track(
-            id: Track.stableID(for: url),
-            url: url,
-            title: "song",
-            artist: "x",
-            album: "y",
-            duration: 1,
-            hasArtwork: false,
-            hasLyrics: false
+    private func makeStore() -> LibraryStore {
+        let persistence = PersistenceManager(
+            documentsURL: tempDir.appendingPathComponent("documents"),
+            userDefaults: defaults
         )
-        let store = LibraryStore()
-        await store._testSeedTracks([track])
-
-        let dotURL = URL(fileURLWithPath: "/library/./song.mp3")
-        #expect(store.track(forURL: dotURL)?.id == track.id)
+        return LibraryStore(persistence: persistence, defaults: defaults)
     }
 
-    @Test func resolved_returnsOnlyKnownURLs() async {
-        let known = Fixtures.track(title: "K", path: "/x/known.mp3")
-        let unknown = URL(fileURLWithPath: "/x/missing.mp3")
-        let store = LibraryStore()
-        await store._testSeedTracks([known])
-
-        let resolved = store.resolved(from: [known.url, unknown])
-        #expect(resolved.count == 1)
-        #expect(resolved.first?.id == known.id)
-    }
-
-    // MARK: - Helpers
-
-    private func touch(_ relativePath: String) throws {
+    private func touch(_ relativePath: String, makeDirectories: Bool = false) throws {
         let url = tempDir.appendingPathComponent(relativePath)
+        if makeDirectories {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+        }
         FileManager.default.createFile(atPath: url.path, contents: Data())
     }
 }

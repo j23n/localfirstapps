@@ -24,7 +24,6 @@ targets:
         excludes:
           - MusicCore-Bridging-Header.h
           - MusicCoreFFI.h
-      - path: ../../core/localcore-conflict/support/SyncConflict.swift
       - path: ../../docs/spec/ui/generated/Kinds.swift
     settings:
       base:
@@ -62,6 +61,7 @@ targets:
           - $(SRCROOT)/LocalMusic/MusicCoreFFI.h
         script: |
           set -euo pipefail
+          python3 "$SRCROOT/scripts/check_ios_session.py"
           exec /bin/bash "$SRCROOT/scripts/build_ffi.sh"
     postBuildScripts:
       - name: Set Build Number from Git

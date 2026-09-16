@@ -23,11 +23,11 @@ subclasses are not used.
 |---|---|
 | `Fixtures.swift` | Shared `Track` builders for in-memory tests |
 | `PlaybackQueueTests.swift` | Queue/shuffle/repeat state machine; `Action` dispatch |
-| `MetadataLoaderTests.swift` | SYLT (UTF-8/Latin-1/UTF-16BE), m3u/pls parsing, path resolution, write→parse round-trip |
+| `MetadataLoaderTests.swift` | AVFoundation host enrichment, core/Swift stable-ID parity, and safe SYLT parsing |
 | `TrackTests.swift` | `Track.stableID` determinism + RFC 4122 bits, `RepeatMode` raw values, `TrackLyrics` Codable |
-| `LibraryStoreTests.swift` | search, sort (title/artist/album/duration), sectioning (first letter + duration buckets), playlist CRUD, URL standardization |
+| `LibraryStoreTests.swift` | `MusicSession` folder projection, core search/sort/sections, typed playlist CRUD, stale-token recovery, and Syncthing conflict resolution |
 | `HelpersTests.swift` | `Collection[safe:]`, `SyncedLyricsView.activeIndex` binary search |
-| `PersistenceManagerTests.swift` | library round-trip, legacy → slim migration, folder mtime |
+| `PersistenceManagerTests.swift` | bookmarks/last-sync and one-time legacy `library.json` payload migration/removal |
 | `ArtworkCacheTests.swift` | key/path determinism, store/remove, ImageIO downsampling |
 | `LyricsCacheTests.swift` | round-trip, empty-deletes-file, async remove, URL standardization |
 
@@ -36,9 +36,9 @@ subclasses are not used.
 These keep the production code testable. Don't remove without a replacement.
 
 - `PlaybackQueue` (`LocalMusic/Services/PlaybackQueue.swift`) — pure value-type state machine. `AudioPlayerManager` delegates to it and applies a returned `Action`.
-- `PersistenceManager.init(documentsURL:userDefaults:)` — tests inject a temp dir and a private `UserDefaults` suite.
+- `PersistenceManager.init(documentsURL:userDefaults:)` — tests isolate bookmark state and the one-time compatibility migration.
 - `ArtworkCache.directoryOverride` / `LyricsCache.directoryOverride` — `#if DEBUG` only, declared `nonisolated(unsafe)`. Set in `init` / cleared in `deinit`. Suites that touch them carry `@Suite(.serialized)` for in-suite ordering, plus `CacheTestLock.acquire()` / `release()` (in `Fixtures.swift`) for cross-suite mutual exclusion against the other cache-touching suites.
-- `LibraryStore._testSeedTracks` / `_testWaitForApply` / `_testSetFolderURL` — `#if DEBUG` only. Drive the display pipeline without disk.
+- `LibraryStore._testOpenFolder` / `_testWaitForApply` — `#if DEBUG` only. Drive the real generated session against temporary folders.
 - `SyncedLyricsView.activeIndex(in:at:)` — static helper so tests don't need a `View`.
 
 ## Follow-ups

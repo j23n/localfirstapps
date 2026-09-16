@@ -128,6 +128,7 @@ struct SettingsView: View {
                     .tint(.primary)
                 }
         }
+            .accessibilityIdentifier(MusicScreen.settings.rawValue)
             .sheet(isPresented: $showFolderPicker) {
                 DocumentPicker { pickerURL in
                     // The picker's URL carries a transient security scope that

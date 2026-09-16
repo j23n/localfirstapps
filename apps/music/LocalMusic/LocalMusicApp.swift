@@ -37,8 +37,10 @@ struct LocalMusicApp: App {
             }
             .environment(player)
             .environment(library)
-            .onChange(of: library.tracks) { _, _ in
-                player.refreshTrackMetadata { library.track(forURL: $0) }
+            .onChange(of: library.isScanning) { _, scanning in
+                if !scanning {
+                    player.refreshTrackMetadata { library.track(forURL: $0) }
+                }
             }
             .task {
                 await library.bootstrap()

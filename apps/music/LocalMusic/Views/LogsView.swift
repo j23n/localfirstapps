@@ -34,6 +34,7 @@ struct LogsView: View {
         contentBody
             .navigationTitle("Logs")
             .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier(MusicScreen.logs.rawValue)
             .searchable(text: $searchText,
                         placement: .navigationBarDrawer(displayMode: .always),
                         prompt: "Filter by message or category")

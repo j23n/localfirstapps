@@ -49,6 +49,15 @@ struct LibraryView: View {
             .refreshable {
                 await library.rescan()
             }
+            .accessibilityIdentifier(MusicScreen.library.rawValue)
+            .alert("Library Error", isPresented: Binding(
+                get: { library.errorMessage != nil },
+                set: { if !$0 { library.clearError() } }
+            )) {
+                Button("OK") { library.clearError() }
+            } message: {
+                Text(library.errorMessage ?? "")
+            }
         }
     }
 
@@ -60,7 +69,7 @@ struct LibraryView: View {
                 get: { library.sortOption },
                 set: { library.sortOption = $0 }
             )) {
-                ForEach(LibraryStore.SortOption.allCases) { option in
+                ForEach(LibrarySortOption.allCases) { option in
                     Label(option.label, systemImage: option.icon).tag(option)
                 }
             }
@@ -108,6 +117,7 @@ struct LibraryView: View {
                 }
             }
         }
+        .accessibilityIdentifier(MusicScreen.folderPicker.rawValue)
     }
 
     private var emptyStateView: some View {
@@ -154,6 +164,21 @@ struct LibraryView: View {
         let sections = library.sections
         let total = library.displayTracks.count
         List {
+            if !library.scanIssues.isEmpty {
+                Section("Scan Issues") {
+                    ForEach(library.scanIssues, id: \.id) { issue in
+                        Label(
+                            issue.message,
+                            systemImage: issue.severity == .error
+                                ? "xmark.octagon"
+                                : "exclamationmark.triangle"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             if let progress = library.scanProgress, library.isScanning, progress.total > 0 {
                 Section {
                     HStack {
@@ -191,7 +216,7 @@ struct LibraryView: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
 
-                ForEach(sections, id: \.title) { section in
+                ForEach(sections) { section in
                     Section {
                         ForEach(section.tracks) { track in
                             TrackRowButton(track: track)
@@ -249,12 +274,9 @@ private struct TrackRowButton: View {
     }
 
     private func addTrack(_ track: Track, to playlist: Playlist) {
-        guard let idx = library.playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
-        var updated = library.playlists[idx]
-        updated.trackURLs.append(track.url)
-        let baseDir = updated.fileURL.deletingLastPathComponent()
-        updated.rawPaths.append(MetadataLoader.relativePath(for: track.url, relativeTo: baseDir))
-        library.savePlaylist(updated)
+        Task {
+            await library.addTrack(track, to: playlist.id)
+        }
     }
 }
 

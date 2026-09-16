@@ -6,6 +6,8 @@ struct PlaylistsView: View {
     @Environment(LibraryStore.self) private var library
     @State private var showNewPlaylistAlert = false
     @State private var newPlaylistName = ""
+    @State private var showSyncConflicts = false
+    @State private var pendingDeleteOffsets: IndexSet?
 
     var body: some View {
         NavigationStack {
@@ -16,19 +18,7 @@ struct PlaylistsView: View {
                     List {
                         ForEach(library.playlists) { playlist in
                             NavigationLink {
-                                // Binding is keyed on `playlist.id` rather than the
-                                // ForEach index, so a delete or reorder while a
-                                // detail view is on the navigation stack can't
-                                // dereference a stale array slot.
-                                PlaylistDetailView(
-                                    playlist: Binding(
-                                        get: {
-                                            library.playlists.first(where: { $0.id == playlist.id })
-                                                ?? playlist
-                                        },
-                                        set: { library.savePlaylist($0) }
-                                    )
-                                )
+                                PlaylistDetailView(playlistID: playlist.id)
                             } label: {
                                 playlistRow(playlist)
                             }
@@ -36,7 +26,7 @@ struct PlaylistsView: View {
                             .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                         }
                         .onDelete { offsets in
-                            library.deletePlaylists(at: offsets)
+                            pendingDeleteOffsets = offsets
                         }
                     }
                     .listStyle(.plain)
@@ -46,9 +36,23 @@ struct PlaylistsView: View {
             }
             .navigationTitle("Playlists")
             .refreshable {
-                library.refreshPlaylistsFromDisk()
+                await library.refreshPlaylistsFromDisk()
             }
+            .accessibilityIdentifier(MusicScreen.playlistList.rawValue)
             .toolbar {
+                if !library.syncConflictGroups.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            showSyncConflicts = true
+                        } label: {
+                            Label(
+                                "Sync Conflicts",
+                                systemImage: "exclamationmark.arrow.triangle.2.circlepath"
+                            )
+                        }
+                        .accessibilityIdentifier(MusicScreen.syncConflictGroup.rawValue)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         newPlaylistName = ""
@@ -62,10 +66,40 @@ struct PlaylistsView: View {
                 TextField("Playlist name", text: $newPlaylistName)
                 Button("Cancel", role: .cancel) { }
                 Button("Create") {
-                    _ = library.createPlaylist(name: newPlaylistName)
+                    Task { _ = await library.createPlaylist(name: newPlaylistName) }
                 }
             } message: {
                 Text("Enter a name for the new playlist.")
+            }
+            .sheet(isPresented: $showSyncConflicts) {
+                MusicSyncConflictSheet()
+            }
+            .confirmationDialog(
+                "Delete Playlist?",
+                isPresented: Binding(
+                    get: { pendingDeleteOffsets != nil },
+                    set: { if !$0 { pendingDeleteOffsets = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    guard let offsets = pendingDeleteOffsets else { return }
+                    pendingDeleteOffsets = nil
+                    Task { await library.deletePlaylists(at: offsets) }
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingDeleteOffsets = nil
+                }
+            } message: {
+                Text("This removes the playlist file from the selected folder.")
+            }
+            .alert("Playlist Error", isPresented: Binding(
+                get: { library.errorMessage != nil },
+                set: { if !$0 { library.clearError() } }
+            )) {
+                Button("OK") { library.clearError() }
+            } message: {
+                Text(library.errorMessage ?? "")
             }
         }
     }
@@ -95,7 +129,9 @@ struct PlaylistsView: View {
     @ViewBuilder
     private func playlistRow(_ playlist: Playlist) -> some View {
         HStack(spacing: 14) {
-            PlaylistMosaicView(trackURLs: playlist.trackURLs)
+            PlaylistMosaicView(
+                trackURLs: playlist.entries.compactMap(\.sourceURL)
+            )
                 .frame(width: 52, height: 52)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
@@ -103,7 +139,7 @@ struct PlaylistsView: View {
                 Text(playlist.name)
                     .font(.callout)
                     .fontWeight(.medium)
-                Text("\(playlist.trackURLs.count) track\(playlist.trackURLs.count == 1 ? "" : "s")")
+                Text(playlist.countLabel ?? "0 tracks")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -2,322 +2,99 @@ import Foundation
 import Testing
 @testable import LocalMusic
 
-/// Disk-touching tests for `PersistenceManager`. Each test gets a private
-/// temp `Documents/` and `UserDefaults` suite so state never leaks between
-/// runs (or to the device under test). `.serialized` because the migration
-/// path writes through the shared `ArtworkCache` / `LyricsCache` overrides.
 @MainActor
 @Suite(.serialized)
 final class PersistenceManagerTests {
-
     private let tempDir: URL
     private let defaultsName: String
     private let defaults: UserDefaults
-    private let artworkOverride: URL
-    private let lyricsOverride: URL
 
     init() throws {
         CacheTestLock.acquire()
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PMTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-
-        // Isolated UserDefaults so tests can't pollute the real device state.
         defaultsName = "com.localmusic.tests.\(UUID().uuidString)"
         defaults = try #require(UserDefaults(suiteName: defaultsName))
-
-        // Migration writes into the on-disk caches; isolate those too.
-        artworkOverride = tempDir.appendingPathComponent("Artwork", isDirectory: true)
-        lyricsOverride = tempDir.appendingPathComponent("Lyrics", isDirectory: true)
-        ArtworkCache.directoryOverride = artworkOverride
-        LyricsCache.directoryOverride = lyricsOverride
+        ArtworkCache.directoryOverride = tempDir.appendingPathComponent("Artwork")
+        LyricsCache.directoryOverride = tempDir.appendingPathComponent("Lyrics")
     }
 
     deinit {
         ArtworkCache.directoryOverride = nil
         LyricsCache.directoryOverride = nil
-        // Unique suite name per instance — skip UserDefaults here; it is not
-        // Sendable and deinit is nonisolated under Swift 6.
         try? FileManager.default.removeItem(at: tempDir)
         CacheTestLock.release()
     }
 
-    // MARK: - lastSynced
-
-    @Test func lastSynced_returnsNilWhenUnset() {
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        #expect(pm.loadLastSynced() == nil)
+    @Test func lastSyncedRoundTrip() {
+        let persistence = makePersistence()
+        #expect(persistence.loadLastSynced() == nil)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        persistence.saveLastSynced(date)
+        #expect(persistence.loadLastSynced() == date)
     }
 
-    @Test func lastSynced_roundTrip() {
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let when = Date(timeIntervalSince1970: 1_700_000_000)
-        pm.saveLastSynced(when)
-        #expect(pm.loadLastSynced() == when)
-    }
-
-    // MARK: - folderBookmark
-
-    @Test func folderBookmark_returnsNilWhenUnset() {
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        #expect(pm.loadFolderBookmark() == nil)
-    }
-
-    @Test func folderBookmark_roundTrip() throws {
+    @Test func folderBookmarkRoundTrip() throws {
         let folder = tempDir.appendingPathComponent("Music", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        pm.saveFolderBookmark(folder)
-        let resolved = try #require(pm.loadFolderBookmark())
+        let persistence = makePersistence()
+        persistence.saveFolderBookmark(folder)
+        let resolved = try #require(persistence.loadFolderBookmark())
         #expect(resolved.standardized.path == folder.standardized.path)
     }
 
-    // MARK: - library round-trip (slim format)
-
-    @Test func library_roundTripSlimFormat() async {
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let tracks = [
-            Fixtures.track(title: "One",   path: "/x/one.mp3"),
-            Fixtures.track(title: "Two",   path: "/x/two.mp3"),
-            Fixtures.track(title: "Three", path: "/x/three.mp3")
-        ]
-
-        await pm.saveLibraryAsync(tracks)
-        let loaded = await pm.loadLibraryAsync()
-
-        #expect(loaded.map(\.id) == tracks.map(\.id))
-        #expect(loaded.map(\.title) == ["One", "Two", "Three"])
-        #expect(loaded.map(\.url) == tracks.map(\.url))
-    }
-
-    @Test func library_loadAsyncReturnsEmptyWhenFileMissing() async {
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        #expect(await pm.loadLibraryAsync().isEmpty)
-    }
-
-    @Test func library_loadSyncReturnsEmptyWhenFileMissing() {
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        #expect(pm.loadLibrary().isEmpty)
-    }
-
-    // MARK: - decodeAndMigrate (legacy → slim)
-
-    @Test func migrate_legacyArtworkInlinePopulatesArtworkCache() async throws {
-        let url = URL(fileURLWithPath: "/legacy/song.mp3")
-        let artworkBytes = Data(repeating: 0xAB, count: 64)
+    @Test func legacyProjectionMigratesPayloadsThenIsRemoved() async throws {
+        let trackURL = URL(fileURLWithPath: "/legacy/song.mp3")
+        let artwork = Data(repeating: 0xAB, count: 64)
         let json = """
         [{
-          "url": "\(url.absoluteString)",
+          "url": "\(trackURL.absoluteString)",
           "title": "Legacy",
-          "artist": "X",
-          "album": "Y",
+          "artist": "Artist",
+          "album": "Album",
           "duration": 42,
-          "artworkData": "\(artworkBytes.base64EncodedString())"
+          "artworkData": "\(artwork.base64EncodedString())",
+          "lyrics": "line"
         }]
         """
         try writeLibraryJSON(json)
+        let persistence = makePersistence()
 
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let loaded = await pm.loadLibraryAsync()
-
-        #expect(loaded.count == 1)
-        let track = try #require(loaded.first)
-        #expect(track.hasArtwork)
-        #expect(ArtworkCache.hasArtwork(for: url))
-        let storedURL = ArtworkCache.fileURL(for: url)
-        #expect(try Data(contentsOf: storedURL) == artworkBytes)
+        #expect(await persistence.migrateLegacyLibraryIfNeeded() == 1)
+        #expect(!FileManager.default.fileExists(atPath: libraryURL.path))
+        #expect(ArtworkCache.hasArtwork(for: trackURL))
+        #expect(LyricsCache.hasLyrics(for: trackURL))
+        #expect(try Data(contentsOf: ArtworkCache.fileURL(for: trackURL)) == artwork)
     }
 
-    @Test func migrate_legacyLyricsInlinePopulatesLyricsCache() async throws {
-        let url = URL(fileURLWithPath: "/legacy/lyrical.mp3")
-        let json = """
-        [{
-          "url": "\(url.absoluteString)",
-          "title": "Lyrical",
-          "artist": "X",
-          "album": "Y",
-          "duration": 60,
-          "lyrics": "verse one\\nverse two",
-          "syncedLyrics": [
-            {"timestamp": 1.0, "text": "first"},
-            {"timestamp": 2.0, "text": "second"}
-          ]
-        }]
-        """
-        try writeLibraryJSON(json)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let loaded = await pm.loadLibraryAsync()
-
-        let track = try #require(loaded.first)
-        #expect(track.hasLyrics)
-        #expect(LyricsCache.hasLyrics(for: url))
-
-        let lyrics = await LyricsCache.load(for: url)
-        #expect(lyrics?.unsynced == "verse one\nverse two")
-        #expect(lyrics?.synced?.map(\.text) == ["first", "second"])
+    @Test func legacyProjectionIsConsumedOnlyOnce() async throws {
+        let persistence = makePersistence()
+        try writeLibraryJSON("[]")
+        #expect(await persistence.migrateLegacyLibraryIfNeeded() == 0)
+        try writeLibraryJSON("""
+        [{"url":"file:///late.mp3","title":"Late","artist":"","album":"","duration":0}]
+        """)
+        #expect(await persistence.migrateLegacyLibraryIfNeeded() == 0)
+        #expect(FileManager.default.fileExists(atPath: libraryURL.path))
     }
 
-    @Test func migrate_missingIDDerivesStableID() async throws {
-        let url = URL(fileURLWithPath: "/legacy/no-id.mp3")
-        let json = """
-        [{
-          "url": "\(url.absoluteString)",
-          "title": "NoID",
-          "artist": "X",
-          "album": "Y",
-          "duration": 1
-        }]
-        """
-        try writeLibraryJSON(json)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let loaded = await pm.loadLibraryAsync()
-
-        let track = try #require(loaded.first)
-        #expect(track.id == Track.stableID(for: url))
-    }
-
-    @Test func migrate_preNFCIDRekeysDisposableProjection() async throws {
-        let url = URL(fileURLWithPath: "/Music/Cafe\u{301}/song.m4a")
-        let json = """
-        [{
-          "id": "00000000-0000-0000-0000-000000000000",
-          "url": "\(url.absoluteString)",
-          "title": "NFC",
-          "artist": "X",
-          "album": "Y",
-          "duration": 1
-        }]
-        """
-        try writeLibraryJSON(json)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let track = try #require(await pm.loadLibraryAsync().first)
-        #expect(track.id == Track.stableID(for: url))
-        #expect(track.id.uuidString.lowercased() == "487d20a7-3043-57c3-ae34-cbbbb78b602a")
-    }
-
-    @Test func migrate_emptyArtworkDataDoesNotCreateCacheFile() async throws {
-        let url = URL(fileURLWithPath: "/legacy/empty-art.mp3")
-        let json = """
-        [{
-          "url": "\(url.absoluteString)",
-          "title": "Empty",
-          "artist": "X",
-          "album": "Y",
-          "duration": 1,
-          "artworkData": ""
-        }]
-        """
-        try writeLibraryJSON(json)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let loaded = await pm.loadLibraryAsync()
-
-        let track = try #require(loaded.first)
-        #expect(!track.hasArtwork)
-        #expect(!ArtworkCache.hasArtwork(for: url))
-    }
-
-    @Test func migrate_explicitHasFlagsPreservedWhenCacheMissing() async throws {
-        // The migration falls back to cache presence when hasArtwork/hasLyrics
-        // are nil, but should respect explicit values when present.
-        let url = URL(fileURLWithPath: "/legacy/explicit.mp3")
-        let json = """
-        [{
-          "url": "\(url.absoluteString)",
-          "title": "Explicit",
-          "artist": "X",
-          "album": "Y",
-          "duration": 1,
-          "hasArtwork": false,
-          "hasLyrics": false
-        }]
-        """
-        try writeLibraryJSON(json)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let loaded = await pm.loadLibraryAsync()
-        let track = try #require(loaded.first)
-        #expect(!track.hasArtwork)
-        #expect(!track.hasLyrics)
-    }
-
-    @Test func migrate_corruptJSONReturnsEmpty() async throws {
+    @Test func corruptProjectionIsRemovedAndNeverAuthoritative() async throws {
         try writeLibraryJSON("{not valid json")
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        #expect(await pm.loadLibraryAsync().isEmpty)
+        let persistence = makePersistence()
+        #expect(await persistence.migrateLegacyLibraryIfNeeded() == 0)
+        #expect(!FileManager.default.fileExists(atPath: libraryURL.path))
     }
 
-    // MARK: - folderContentModificationDate
-
-    @Test func folderModification_emptyFolderReturnsRootMtime() async throws {
-        let folder = tempDir.appendingPathComponent("empty", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let mtime = await pm.folderContentModificationDateAsync(at: folder)
-        #expect(mtime != nil)
+    private var libraryURL: URL {
+        tempDir.appendingPathComponent("library.json")
     }
 
-    @Test func folderModification_picksLatestNestedMtime() async throws {
-        let folder = tempDir.appendingPathComponent("nested", isDirectory: true)
-        let nested = folder.appendingPathComponent("inner", isDirectory: true)
-        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
-
-        let oldFile = folder.appendingPathComponent("old.txt")
-        let newFile = nested.appendingPathComponent("new.txt")
-        FileManager.default.createFile(atPath: oldFile.path, contents: Data())
-        FileManager.default.createFile(atPath: newFile.path, contents: Data())
-
-        let oldDate = Date(timeIntervalSince1970: 1_600_000_000)
-        let newDate = Date(timeIntervalSince1970: 1_800_000_000)
-        try FileManager.default.setAttributes([.modificationDate: oldDate],
-                                              ofItemAtPath: oldFile.path)
-        try FileManager.default.setAttributes([.modificationDate: newDate],
-                                              ofItemAtPath: newFile.path)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let mtime = try #require(await pm.folderContentModificationDateAsync(at: folder))
-        #expect(abs(mtime.timeIntervalSince1970 - newDate.timeIntervalSince1970) < 1.5)
+    private func makePersistence() -> PersistenceManager {
+        PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
     }
-
-    @Test func folderModification_playlistFileDoesNotBumpMtime() async throws {
-        let folder = tempDir.appendingPathComponent("plskip", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-
-        let audio = folder.appendingPathComponent("song.mp3")
-        let playlist = folder.appendingPathComponent("mix.m3u")
-        FileManager.default.createFile(atPath: audio.path, contents: Data())
-        FileManager.default.createFile(atPath: playlist.path, contents: Data("#EXTM3U\n".utf8))
-
-        let audioDate = Date(timeIntervalSince1970: 1_600_000_000)
-        let playlistDate = Date(timeIntervalSince1970: 1_800_000_000)
-        try FileManager.default.setAttributes([.modificationDate: audioDate],
-                                              ofItemAtPath: audio.path)
-        try FileManager.default.setAttributes([.modificationDate: playlistDate],
-                                              ofItemAtPath: playlist.path)
-        // A naive walk that includes directory mtimes would pick this up.
-        try FileManager.default.setAttributes([.modificationDate: playlistDate],
-                                              ofItemAtPath: folder.path)
-
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        let mtime = try #require(await pm.folderContentModificationDateAsync(at: folder))
-        #expect(abs(mtime.timeIntervalSince1970 - audioDate.timeIntervalSince1970) < 1.5)
-    }
-
-    @Test func folderModification_nonExistentReturnsNil() async {
-        let missing = tempDir.appendingPathComponent("does-not-exist")
-        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
-        #expect(await pm.folderContentModificationDateAsync(at: missing) == nil)
-    }
-
-    // MARK: - Helpers
 
     private func writeLibraryJSON(_ contents: String) throws {
-        let url = tempDir.appendingPathComponent("library.json")
-        try contents.write(to: url, atomically: true, encoding: .utf8)
+        try contents.write(to: libraryURL, atomically: true, encoding: .utf8)
     }
 }

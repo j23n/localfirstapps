@@ -37,6 +37,19 @@ fn session_exposes_windowed_display_rows_and_media_host_ports() {
     assert!(row.badge.as_deref().unwrap().contains("2:05"));
     assert!(row.thumbnail_ref.starts_with("artwork:"));
     assert_eq!(session.media_source(request.id).unwrap().path, request.path);
+    assert!(session.metadata_requests(0, 20).unwrap().is_empty());
+    session.reload().unwrap();
+    assert!(
+        session.metadata_requests(0, 20).unwrap().is_empty(),
+        "reload must preserve enrichment for unchanged stable ids"
+    );
+    fs::write(temp.path().join("song.mp3"), b"retagged audio bytes").unwrap();
+    session.reload().unwrap();
+    assert_eq!(
+        session.metadata_requests(0, 20).unwrap().len(),
+        1,
+        "a changed file fingerprint must request fresh host metadata"
+    );
 
     let stale = generation;
     session
@@ -68,9 +81,15 @@ fn typed_playlist_commands_do_not_need_playlist_payloads() {
         .add_tracks(AddTracksCommand {
             playlist_id: playlist_id.clone(),
             content_token: token,
-            track_ids: vec![track_id],
+            track_ids: vec![track_id.clone()],
         })
         .unwrap();
+    let source = session
+        .playlist_entry_media_sources(playlist_id.clone())
+        .unwrap()
+        .remove(0);
+    assert_eq!(source.track_id, track_id);
+    assert!(source.path.ends_with("/song.mp3"));
     assert_eq!(
         replacement_token,
         session.playlist_content_token(playlist_id.clone()).unwrap()
@@ -96,6 +115,45 @@ fn typed_playlist_commands_do_not_need_playlist_payloads() {
         })
         .unwrap();
     assert!(session.playlist_rows().unwrap().is_empty());
+}
+
+#[test]
+fn metadata_batch_enriches_one_window_and_rejects_unbounded_input() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("one.mp3"), b"audio").unwrap();
+    fs::write(temp.path().join("two.mp3"), b"audio").unwrap();
+    let session = MusicSession::open(temp.path().to_str().unwrap().into(), "phone".into()).unwrap();
+    let requests = session.metadata_requests(0, 500).unwrap();
+    let results = requests
+        .iter()
+        .map(|request| MetadataResult {
+            id: request.id.clone(),
+            title: format!("Tagged {}", request.id),
+            artist: "Artist".into(),
+            album: "Album".into(),
+            duration_ms: 1_000,
+            has_artwork: false,
+            has_lyrics: false,
+        })
+        .collect();
+    session.apply_metadata_batch(results).unwrap();
+    assert!(session.metadata_requests(0, 500).unwrap().is_empty());
+
+    let oversized = (0..501)
+        .map(|index| MetadataResult {
+            id: index.to_string(),
+            title: String::new(),
+            artist: String::new(),
+            album: String::new(),
+            duration_ms: 0,
+            has_artwork: false,
+            has_lyrics: false,
+        })
+        .collect();
+    assert!(matches!(
+        session.apply_metadata_batch(oversized),
+        Err(MusicError::InvalidCommand { .. })
+    ));
 }
 
 #[test]

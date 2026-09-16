@@ -41,6 +41,7 @@ struct NowPlayingView: View {
                 .navigationBarTitleDisplayMode(.inline)
             }
         }
+        .accessibilityIdentifier(MusicScreen.nowPlaying.rawValue)
     }
 
     private var displayedTime: Double {

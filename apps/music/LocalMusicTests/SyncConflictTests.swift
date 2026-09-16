@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import LocalMusic
 
-/// Pins `SyncConflict` to `core/localcore-conflict/fixtures/grammar/`.
-@Suite("SyncConflict")
+/// Pins the generated core binding to the shared conflict grammar fixtures.
+@Suite("MusicCore conflict grammar")
 struct SyncConflictTests {
 
     @Test("every valid grammar line is a conflict name")
@@ -11,7 +11,7 @@ struct SyncConflictTests {
         let names = try Self.grammarLines(named: "valid.txt")
         #expect(!names.isEmpty)
         for name in names {
-            #expect(SyncConflict.isConflictName(name), "expected conflict: \(name)")
+            #expect(isConflictName(name: name), "expected conflict: \(name)")
         }
     }
 
@@ -20,7 +20,7 @@ struct SyncConflictTests {
         let names = try Self.grammarLines(named: "invalid.txt")
         #expect(!names.isEmpty)
         for name in names {
-            #expect(!SyncConflict.isConflictName(name), "expected survivor: \(name)")
+            #expect(!isConflictName(name: name), "expected survivor: \(name)")
         }
     }
 

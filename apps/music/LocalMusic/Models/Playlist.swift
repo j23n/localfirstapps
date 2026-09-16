@@ -1,12 +1,26 @@
 import Foundation
 
-/// User-editable playlist discovered from .m3u / .m3u8 / .pls files. We keep
-/// `trackURLs` and `rawPaths` parallel so missing tracks still surface in the
-/// detail view by their original on-disk path.
+/// Thin SwiftUI projection of core-owned playlist detail.
 struct Playlist: Identifiable, Sendable {
-    var id: URL { fileURL }
-    let fileURL: URL
+    let id: String
     let name: String
-    var trackURLs: [URL]
-    var rawPaths: [String]
+    let location: String?
+    let countLabel: String?
+    var contentToken: String
+    var entries: [PlaylistEntry]
+    var actions: [ActionRow]
+
+    var resolvedTrackIDs: [String] {
+        entries.compactMap(\.trackID)
+    }
+}
+
+/// One display row plus the optional host playback source returned by core.
+struct PlaylistEntry: Identifiable, Sendable {
+    let id: String
+    let title: String
+    let subtitle: String?
+    let trailing: String?
+    let trackID: String?
+    let sourceURL: URL?
 }

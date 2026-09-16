@@ -188,6 +188,19 @@ pub struct MediaSource {
     pub path: String,
 }
 
+/// R6 role: host-port DTO.
+///
+/// A resolved playlist entry paired with its minimal playback source.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct PlaylistEntryMediaSource {
+    /// Entry id used by typed playlist commands.
+    pub entry_id: String,
+    /// Opaque track id.
+    pub track_id: String,
+    /// Local audio path.
+    pub path: String,
+}
+
 /// R6 role: command DTO.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct SetLibraryViewCommand {
@@ -501,6 +514,29 @@ impl MusicSession {
         })?)
     }
 
+    /// Apply one bounded platform metadata window and return the new generation.
+    pub fn apply_metadata_batch(&self, results: Vec<MetadataResult>) -> Result<u64, MusicError> {
+        if results.len() > 500 {
+            return Err(MusicError::InvalidCommand {
+                message: "A metadata enrichment window cannot exceed 500 tracks".into(),
+                user_actionable: true,
+            });
+        }
+        let updates = results
+            .into_iter()
+            .map(|result| MetadataUpdate {
+                id: result.id,
+                title: result.title,
+                artist: result.artist,
+                album: result.album,
+                duration_ms: result.duration_ms,
+                has_artwork: result.has_artwork,
+                has_lyrics: result.has_lyrics,
+            })
+            .collect();
+        Ok(self.lock()?.apply_metadata_batch(updates)?)
+    }
+
     /// One minimal media playback source.
     pub fn media_source(&self, track_id: String) -> Result<MediaSource, MusicError> {
         let source = self.lock()?.media_source(&track_id)?;
@@ -535,6 +571,28 @@ impl MusicSession {
         Ok(core_playlist_entry_rows(&store, &playlist_id)?
             .into_iter()
             .map(to_text)
+            .collect())
+    }
+
+    /// Resolved playlist entries as minimal AVFoundation/gstreamer sources.
+    pub fn playlist_entry_media_sources(
+        &self,
+        playlist_id: String,
+    ) -> Result<Vec<PlaylistEntryMediaSource>, MusicError> {
+        let store = self.lock()?;
+        let playlist = store.playlist(&playlist_id).ok_or(StoreError::NotFound)?;
+        Ok(playlist
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let track_id = entry.track_id.as_ref()?;
+                let track = store.track(track_id)?;
+                Some(PlaylistEntryMediaSource {
+                    entry_id: entry.id.clone(),
+                    track_id: track.id.clone(),
+                    path: track.path.clone(),
+                })
+            })
             .collect())
     }
 

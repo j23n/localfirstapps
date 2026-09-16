@@ -144,7 +144,9 @@ impl Store {
         for file in outcome.files {
             let path = crate::path::standardize(&file.path);
             match classify_name(&file.name) {
-                Some(FileClass::Audio) => tracks.push(Track::from_path(path)),
+                Some(FileClass::Audio) => {
+                    tracks.push(Track::from_file(path, file.size, file.mtime));
+                }
                 Some(FileClass::Playlist(_)) => match vfs.read(&path) {
                     Ok(bytes) => match parse_playlist(&path, &bytes) {
                         Ok(playlist) => playlists.push(playlist),
@@ -203,31 +205,46 @@ impl Store {
     /// Reload while retaining metadata supplied by the host for unchanged ids
     /// and retaining the current query/sort intent.
     pub fn reload(&mut self, vfs: &dyn Vfs) -> Result<(), StoreError> {
-        let metadata: BTreeMap<String, MetadataUpdate> = self
-            .tracks
-            .iter()
-            .map(|track| {
-                (
-                    track.id.clone(),
-                    MetadataUpdate {
-                        id: track.id.clone(),
-                        title: track.title.clone(),
-                        artist: track.artist.clone(),
-                        album: track.album.clone(),
-                        duration_ms: track.duration_ms,
-                        has_artwork: track.has_artwork,
-                        has_lyrics: track.has_lyrics,
-                    },
-                )
-            })
-            .collect();
+        let metadata: BTreeMap<String, (u64, Option<localcore_vfs::FileTime>, MetadataUpdate)> =
+            self.tracks
+                .iter()
+                .filter(|track| track.metadata_loaded)
+                .map(|track| {
+                    (
+                        track.id.clone(),
+                        (
+                            track.source_size,
+                            track.source_mtime,
+                            MetadataUpdate {
+                                id: track.id.clone(),
+                                title: track.title.clone(),
+                                artist: track.artist.clone(),
+                                album: track.album.clone(),
+                                duration_ms: track.duration_ms,
+                                has_artwork: track.has_artwork,
+                                has_lyrics: track.has_lyrics,
+                            },
+                        ),
+                    )
+                })
+                .collect();
         let query = self.projection.query.clone();
         let sort = self.projection.sort;
         let mut next = Self::open(vfs, &self.root)?;
-        for update in metadata.into_values() {
-            if next.track(&update.id).is_some() {
-                next.apply_metadata(update)?;
-            }
+        let unchanged = metadata
+            .into_values()
+            .filter_map(|(source_size, source_mtime, update)| {
+                next.track(&update.id)
+                    .is_some_and(|track| {
+                        source_size == track.source_size
+                            && source_mtime.is_some()
+                            && source_mtime == track.source_mtime
+                    })
+                    .then_some(update)
+            })
+            .collect::<Vec<_>>();
+        if !unchanged.is_empty() {
+            next.apply_metadata_batch(unchanged)?;
         }
         next.set_library_view(query, sort);
         *self = next;
@@ -298,19 +315,30 @@ impl Store {
 
     /// Apply display metadata returned by the host media reader.
     pub fn apply_metadata(&mut self, update: MetadataUpdate) -> Result<u64, StoreError> {
-        let track = self
-            .tracks
-            .iter_mut()
-            .find(|track| track.id == update.id)
-            .ok_or(StoreError::NotFound)?;
-        if !update.title.trim().is_empty() {
-            track.title = update.title.trim().to_owned();
+        self.apply_metadata_batch(vec![update])
+    }
+
+    /// Apply one bounded host-enrichment window and rebuild the projection once.
+    pub fn apply_metadata_batch(
+        &mut self,
+        updates: Vec<MetadataUpdate>,
+    ) -> Result<u64, StoreError> {
+        for update in updates {
+            let track = self
+                .tracks
+                .iter_mut()
+                .find(|track| track.id == update.id)
+                .ok_or(StoreError::NotFound)?;
+            if !update.title.trim().is_empty() {
+                track.title = update.title.trim().to_owned();
+            }
+            track.artist = unknown_if_empty(&update.artist, "Unknown Artist");
+            track.album = unknown_if_empty(&update.album, "Unknown Album");
+            track.duration_ms = update.duration_ms;
+            track.has_artwork = update.has_artwork;
+            track.has_lyrics = update.has_lyrics;
+            track.metadata_loaded = true;
         }
-        track.artist = unknown_if_empty(&update.artist, "Unknown Artist");
-        track.album = unknown_if_empty(&update.album, "Unknown Album");
-        track.duration_ms = update.duration_ms;
-        track.has_artwork = update.has_artwork;
-        track.has_lyrics = update.has_lyrics;
         self.projection.rebuild(&self.tracks);
         Ok(self.projection.generation)
     }
@@ -320,6 +348,7 @@ impl Store {
     pub fn metadata_requests(&self, offset: usize, limit: usize) -> Vec<MetadataRequest> {
         self.tracks
             .iter()
+            .filter(|track| !track.metadata_loaded)
             .skip(offset)
             .take(limit.min(500))
             .map(|track| MetadataRequest {

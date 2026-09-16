@@ -16,6 +16,9 @@ struct Track: Identifiable, Codable, Hashable, Sendable {
     var hasArtwork: Bool
     var hasLyrics: Bool
 
+    /// Opaque identity used by `MusicSession` commands.
+    var coreID: String { id.uuidString.lowercased() }
+
     /// Stable UUID derived from the file path: a SHA-256 truncated to 16
     /// bytes with RFC 4122 variant + version-5 nibbles set so the value is
     /// a syntactically valid UUID. (It is not a strict v5 UUID — there's no

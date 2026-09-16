@@ -1,44 +1,38 @@
 import SwiftUI
 
-// MARK: - Playlist Item (resolved track or missing file)
-
-private enum PlaylistItem: Identifiable {
-    /// `queueIndex` is this item's offset among resolved tracks (missing
-    /// rows skipped) — the play-queue `startIndex`, not `firstIndex` by id.
-    case resolved(index: Int, track: Track, queueIndex: Int)
-    case missing(index: Int, rawPath: String)
-
-    var id: String {
-        switch self {
-        case .resolved(let index, _, _): return "r-\(index)"
-        case .missing(let index, _):  return "m-\(index)"
-        }
-    }
-}
-
 struct PlaylistDetailView: View {
-    @Binding var playlist: Playlist
+    let playlistID: String
     @Environment(LibraryStore.self) private var library
-    // Intentionally does NOT observe `AudioPlayerManager`: that would force
-    // a body re-render on every 0.5 s playback tick. Per-row playback state
-    // is read inside `PlaylistTrackRowButton`; Play All lives in its own
-    // inner view so this list is not subscribed to the player.
     @State private var showAddTracks = false
 
-    /// Resolves URLs to tracks via the store's O(1) lookup. Memoizing this
-    /// across body re-renders happens via the `@State` cache below.
-    @State private var cachedItems: [PlaylistItem] = []
-    @State private var cachedResolvedTracks: [Track] = []
+    private var playlist: Playlist? {
+        library.playlist(id: playlistID)
+    }
+
+    private var resolvedTracks: [Track] {
+        playlist?.entries.compactMap { entry in
+            entry.trackID.flatMap { library.track(coreID: $0) }
+        } ?? []
+    }
 
     var body: some View {
         Group {
-            if playlist.trackURLs.isEmpty {
-                emptyState
+            if let playlist {
+                if playlist.entries.isEmpty {
+                    emptyState
+                } else {
+                    listBody(playlist)
+                }
             } else {
-                listBody
+                ContentUnavailableView(
+                    "Playlist Unavailable",
+                    systemImage: "music.note.list",
+                    description: Text("The playlist changed on disk.")
+                )
             }
         }
-        .navigationTitle(playlist.name)
+        .navigationTitle(playlist?.name ?? "Playlist")
+        .accessibilityIdentifier(MusicScreen.playlistDetail.rawValue)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -46,26 +40,18 @@ struct PlaylistDetailView: View {
                 } label: {
                     Label("Add Tracks", systemImage: "plus")
                 }
+                .disabled(!actionEnabled("add-tracks"))
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                EditButton()
+            if !(playlist?.entries.isEmpty ?? true) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    EditButton()
+                }
             }
         }
         .sheet(isPresented: $showAddTracks) {
-            AddTracksSheet(playlist: $playlist)
-        }
-        .onAppear { rebuildCaches() }
-        .onChange(of: playlist.trackURLs) { _, _ in rebuildCaches() }
-        .onChange(of: library.tracks.count) { _, _ in rebuildCaches() }
-        // Track == is id-only, so a rescan that replaces files in place
-        // (same count, same ids) does not fire `onChange(of: library.tracks)`.
-        // Rebuild when the scan finishes so retags / replacements resolve.
-        .onChange(of: library.isScanning) { _, scanning in
-            if !scanning { rebuildCaches() }
+            AddTracksSheet(playlistID: playlistID)
         }
     }
-
-    // MARK: - Subviews
 
     private var emptyState: some View {
         VStack(spacing: 16) {
@@ -81,74 +67,63 @@ struct PlaylistDetailView: View {
                 .font(.title3)
                 .fontWeight(.medium)
             Text("Tap + to add tracks from your library.")
-                .font(.body)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    @ViewBuilder
-    private var listBody: some View {
-        let resolved = cachedResolvedTracks
-        let items = cachedItems
-        let missingCount = items.reduce(0) { acc, item in
-            if case .missing = item { return acc + 1 }
-            return acc
-        }
-
-        List {
+    private func listBody(_ playlist: Playlist) -> some View {
+        let resolved = resolvedTracks
+        let missingCount = playlist.entries.count - resolved.count
+        return List {
             if !resolved.isEmpty {
                 Section {
                     PlaylistPlayAllButton(resolved: resolved)
+                        .disabled(!actionEnabled("play-all"))
                 }
             }
 
             Section {
-                ForEach(items) { item in
-                    switch item {
-                    case .resolved(_, let track, let queueIndex):
+                ForEach(Array(playlist.entries.enumerated()), id: \.element.id) { index, entry in
+                    if let trackID = entry.trackID,
+                       let track = library.track(coreID: trackID) {
+                        let queueIndex = playlist.entries[..<index]
+                            .compactMap(\.trackID)
+                            .filter { library.track(coreID: $0) != nil }
+                            .count
                         PlaylistTrackRowButton(
                             track: track,
                             resolvedQueue: resolved,
                             startIndex: queueIndex
                         )
                         .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                    case .missing(_, let rawPath):
-                        MissingTrackRow(rawPath: rawPath)
+                    } else {
+                        MissingTrackRow(entry: entry)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                     }
                 }
                 .onMove { from, to in
-                    playlist.trackURLs.move(fromOffsets: from, toOffset: to)
-                    playlist.rawPaths.move(fromOffsets: from, toOffset: to)
-                    library.savePlaylist(playlist)
+                    Task {
+                        await library.movePlaylistEntry(
+                            playlistID: playlistID,
+                            from: from,
+                            to: to
+                        )
+                    }
                 }
                 .onDelete { offsets in
-                    playlist.trackURLs.remove(atOffsets: offsets)
-                    playlist.rawPaths.remove(atOffsets: offsets)
-                    library.savePlaylist(playlist)
+                    Task {
+                        await library.removePlaylistEntries(
+                            playlistID: playlistID,
+                            offsets: offsets
+                        )
+                    }
                 }
             } header: {
                 if missingCount > 0 {
-                    Text("\(resolved.count) track\(resolved.count == 1 ? "" : "s"), \(missingCount) missing")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                        .foregroundStyle(.primary)
-                        .padding(.top, 8)
-                } else if !resolved.isEmpty {
-                    Text("\(resolved.count) track\(resolved.count == 1 ? "" : "s")")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                        .foregroundStyle(.primary)
-                        .padding(.top, 8)
+                    Text("\(resolved.count) available, \(missingCount) missing or unsupported")
+                } else {
+                    Text(playlist.countLabel ?? "\(resolved.count) tracks")
                 }
             }
         }
@@ -158,29 +133,10 @@ struct PlaylistDetailView: View {
         .contentMargins(.bottom, 80, for: .scrollContent)
     }
 
-    // MARK: - Caching
-
-    private func rebuildCaches() {
-        var items: [PlaylistItem] = []
-        var resolved: [Track] = []
-        items.reserveCapacity(playlist.trackURLs.count)
-        for (index, url) in playlist.trackURLs.enumerated() {
-            if let track = library.track(forURL: url) {
-                // startIndex among resolved rows, so a second copy of the
-                // same file (shared Track.id) still plays the tapped row.
-                items.append(.resolved(index: index, track: track, queueIndex: resolved.count))
-                resolved.append(track)
-            } else {
-                let raw = index < playlist.rawPaths.count ? playlist.rawPaths[index] : url.path
-                items.append(.missing(index: index, rawPath: raw))
-            }
-        }
-        self.cachedItems = items
-        self.cachedResolvedTracks = resolved
+    private func actionEnabled(_ id: String) -> Bool {
+        playlist?.actions.first(where: { $0.id == id })?.enabled ?? false
     }
 }
-
-// MARK: - Play All (isolated player access)
 
 private struct PlaylistPlayAllButton: View {
     let resolved: [Track]
@@ -195,8 +151,7 @@ private struct PlaylistPlayAllButton: View {
             HStack {
                 Spacer()
                 Label("Play All", systemImage: "play.fill")
-                    .font(.callout)
-                    .fontWeight(.semibold)
+                    .font(.callout.weight(.semibold))
                     .foregroundColor(.white)
                 Spacer()
             }
@@ -204,17 +159,9 @@ private struct PlaylistPlayAllButton: View {
             .background(Color.accentColor, in: Capsule())
         }
         .buttonStyle(.plain)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 8, trailing: 20))
     }
 }
 
-// MARK: - Playlist Track Row
-
-/// Wraps a `TrackRow` with the play action. Pulled out so SwiftUI doesn't
-/// re-evaluate the entire `PlaylistDetailView` body each time the player
-/// ticks. `startIndex` is the offset in `resolvedQueue`, not `firstIndex`
-/// by `Track.id` — duplicate files in the playlist play the tapped copy.
 private struct PlaylistTrackRowButton: View {
     let track: Track
     let resolvedQueue: [Track]
@@ -225,18 +172,17 @@ private struct PlaylistTrackRowButton: View {
         Button {
             player.play(track: track, queue: resolvedQueue, startIndex: startIndex)
         } label: {
-            TrackRow(track: track,
-                     isCurrent: player.currentTrack?.id == track.id,
-                     isActivelyPlaying: player.isPlaying
-                         && player.currentTrack?.id == track.id)
+            TrackRow(
+                track: track,
+                isCurrent: player.currentTrack?.id == track.id,
+                isActivelyPlaying: player.isPlaying && player.currentTrack?.id == track.id
+            )
         }
     }
 }
 
-// MARK: - Missing Track Row
-
 struct MissingTrackRow: View {
-    let rawPath: String
+    let entry: PlaylistEntry
 
     var body: some View {
         HStack(spacing: 14) {
@@ -248,12 +194,11 @@ struct MissingTrackRow: View {
                     .foregroundColor(.orange)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(rawPath)
-                    .font(.callout)
-                    .fontWeight(.medium)
+                Text(entry.title)
+                    .font(.callout.weight(.medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text("File not found")
+                Text(entry.trailing ?? entry.subtitle ?? "Unavailable")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -263,113 +208,88 @@ struct MissingTrackRow: View {
     }
 }
 
-// MARK: - Add Tracks Sheet
-
 struct AddTracksSheet: View {
-    @Binding var playlist: Playlist
+    let playlistID: String
     @Environment(LibraryStore.self) private var library
     @Environment(\.dismiss) private var dismiss
 
     @State private var searchDraft = ""
-    @State private var debouncedQuery = ""
-    @State private var debounceTask: Task<Void, Never>?
-
-    /// Local mutable snapshot. Toggles edit this copy only; we call
-    /// `library.savePlaylist` once on dismiss so adding a hundred tracks
-    /// no longer rewrites the .m3u file a hundred times.
-    @State private var workingPlaylist: Playlist?
-    @State private var includedURLs: Set<URL> = []
-    @State private var dirty = false
+    @State private var results: [Track] = []
+    @State private var selectedTrackIDs: Set<String> = []
+    @State private var searchTask: Task<Void, Never>?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(filteredLibrary, id: \.id) { track in
-                    let key = track.url.standardized
-                    let included = includedURLs.contains(key)
-                    Button {
-                        toggle(track)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: included ? "checkmark.circle.fill" : "circle")
-                                .font(.title3)
-                                .foregroundColor(included ? Color.accentColor : .secondary)
-
-                            TrackRow(track: track)
-                        }
+            List(results) { track in
+                let selected = selectedTrackIDs.contains(track.coreID)
+                Button {
+                    if selected {
+                        selectedTrackIDs.remove(track.coreID)
+                    } else {
+                        selectedTrackIDs.insert(track.coreID)
                     }
-                    .listRowSeparator(.hidden)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                            .font(.title3)
+                            .foregroundColor(selected ? Color.accentColor : .secondary)
+                        TrackRow(track: track)
+                    }
                 }
+                .listRowSeparator(.hidden)
             }
             .listStyle(.plain)
             .searchable(text: $searchDraft, prompt: "Search library")
-            .onChange(of: searchDraft) { _, newValue in
-                debounceTask?.cancel()
-                debounceTask = Task {
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                    if Task.isCancelled { return }
-                    await MainActor.run {
-                        debouncedQuery = newValue
-                    }
-                }
+            .onChange(of: searchDraft) { _, query in
+                runSearch(query: query)
             }
             .navigationTitle("Add Tracks")
             .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier(MusicScreen.addTracks.rawValue)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
-                        commitIfNeeded()
-                        dismiss()
+                        isSaving = true
+                        Task {
+                            await library.replacePlaylistSelection(
+                                playlistID: playlistID,
+                                selectedTrackIDs: selectedTrackIDs
+                            )
+                            library.restoreLibraryView()
+                            dismiss()
+                        }
                     }
+                    .disabled(isSaving)
                 }
             }
             .onAppear {
-                workingPlaylist = playlist
-                includedURLs = Set(playlist.trackURLs.map { $0.standardized })
+                selectedTrackIDs = Set(
+                    library.playlist(id: playlistID)?.entries.compactMap(\.trackID) ?? []
+                )
+                runSearch(query: "", immediate: true)
             }
             .onDisappear {
-                commitIfNeeded()
+                searchTask?.cancel()
+                library.restoreLibraryView()
             }
         }
     }
 
-    private var filteredLibrary: [Track] {
-        // `List` is lazy; no empty-query ceiling. The store's pre-lowercased
-        // index does the actual matching.
-        library.searchTracks(query: debouncedQuery)
-    }
-
-    private func toggle(_ track: Track) {
-        guard var working = workingPlaylist else { return }
-        let key = track.url.standardized
-        if includedURLs.contains(key) {
-            includedURLs.remove(key)
-            let indices = working.trackURLs.enumerated()
-                .filter { $0.element.standardized == key }
-                .map(\.offset)
-            for index in indices.reversed() {
-                working.trackURLs.remove(at: index)
-                working.rawPaths.remove(at: index)
+    private func runSearch(query: String, immediate: Bool = false) {
+        searchTask?.cancel()
+        searchTask = Task {
+            if !immediate {
+                try? await Task.sleep(for: .milliseconds(200))
             }
-        } else {
-            includedURLs.insert(key)
-            working.trackURLs.append(track.url)
-            let baseDir = working.fileURL.deletingLastPathComponent()
-            working.rawPaths.append(
-                MetadataLoader.relativePath(for: track.url, relativeTo: baseDir)
-            )
+            guard !Task.isCancelled else { return }
+            let found = await library.searchTracks(query: query)
+            guard !Task.isCancelled else { return }
+            results = found
         }
-        workingPlaylist = working
-        dirty = true
-    }
-
-    private func commitIfNeeded() {
-        guard dirty, let working = workingPlaylist else { return }
-        // `library.savePlaylist` is the single source of truth: it updates
-        // the shared `playlists` array and writes the file once. The parent
-        // binding reads through that array, so it'll observe the change on
-        // its next render. No second write via `playlist = working`.
-        library.savePlaylist(working)
-        dirty = false
     }
 }

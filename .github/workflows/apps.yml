@@ -282,6 +282,9 @@ jobs:
       - name: Install XcodeGen
         run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
 
+      - name: Check MusicSession shell boundary
+        run: python3 apps/music/scripts/check_ios_session.py
+
       - name: Build music-ffi
         working-directory: apps/music
         run: /bin/bash scripts/build_ffi.sh

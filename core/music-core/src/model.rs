@@ -1,5 +1,7 @@
 //! Music domain records. These stay inside `music-core`.
 
+use localcore_vfs::FileTime;
+
 /// Audio files projected by the folder walk.
 pub const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "caf", "opus",
@@ -71,6 +73,12 @@ pub struct Track {
     pub id: String,
     /// Standardized host path. It crosses only in host-port DTOs.
     pub path: String,
+    /// File size captured by the authoritative walk.
+    pub(crate) source_size: u64,
+    /// Modification time captured by the authoritative walk.
+    pub(crate) source_mtime: Option<FileTime>,
+    /// Whether a platform metadata reader has enriched this projection.
+    pub metadata_loaded: bool,
     /// Display title.
     pub title: String,
     /// Display artist.
@@ -89,10 +97,23 @@ impl Track {
     /// Build the projection available before the media metadata host responds.
     #[must_use]
     pub fn from_path(path: String) -> Self {
+        Self::from_file(path, 0, None)
+    }
+
+    /// Build a projection with the walk fingerprint used across reloads.
+    #[must_use]
+    pub(crate) fn from_file(
+        path: String,
+        source_size: u64,
+        source_mtime: Option<FileTime>,
+    ) -> Self {
         let title = crate::path::file_stem(&path);
         Self {
             id: localcore_id::derive(&path).to_string(),
             path,
+            source_size,
+            source_mtime,
+            metadata_loaded: false,
             title,
             artist: "Unknown Artist".into(),
             album: "Unknown Album".into(),
