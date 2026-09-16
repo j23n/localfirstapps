@@ -38,6 +38,6 @@ struct SyncConflictTests {
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-            .map(String.init)
+            .map { String($0) }
     }
 }

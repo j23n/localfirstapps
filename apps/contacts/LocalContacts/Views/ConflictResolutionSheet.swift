@@ -109,7 +109,7 @@ private struct ConflictDiffView: View {
 
             ForEach(diffs) { diff in
                 Section(diff.label) {
-                    FieldRow(
+                    ConflictFieldChoiceRow(
                         key: diff.key,
                         localValue: diff.localValue,
                         appleValue: diff.appleValue,
@@ -290,7 +290,7 @@ private struct ConflictDiffView: View {
 
 // MARK: - Field Row
 
-private struct FieldRow: View {
+private struct ConflictFieldChoiceRow: View {
     let key: String
     let localValue: String
     let appleValue: String
