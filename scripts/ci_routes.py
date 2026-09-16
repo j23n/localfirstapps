@@ -112,6 +112,9 @@ def route_path(raw_path: str) -> Routes:
             conformance=True,
         )
 
+    if path.startswith("shells/shell-kit-swift/"):
+        return Routes(apps=True, conformance=True)
+
     if path.startswith(("shells/", "mac/")):
         return Routes(apps=True)
 

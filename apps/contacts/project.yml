@@ -6,6 +6,10 @@ options:
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
 
+packages:
+  ShellKitSwift:
+    path: ../../shells/shell-kit-swift
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -37,6 +41,7 @@ targets:
     dependencies:
       - framework: build/core/ContactsCore.xcframework
         embed: false
+      - package: ShellKitSwift
     preBuildScripts:
       - name: Build contacts-ffi
         basedOnDependencyAnalysis: false

@@ -1,4 +1,5 @@
 import SwiftUI
+import ShellKitSwift
 
 struct LibraryView: View {
     // Intentionally does NOT observe `AudioPlayerManager`: that would force
@@ -38,7 +39,10 @@ struct LibraryView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
-            .searchable(text: $searchDraft, prompt: "Search by title, artist, or album")
+            .shellSearch(
+                text: $searchDraft,
+                data: .init(prompt: "Search by title, artist, or album")
+            )
             .onChange(of: searchDraft) { _, newValue in
                 library.searchText = newValue
             }

@@ -1,7 +1,7 @@
 # App suites the nested apps/*/.github workflows cannot run on this
-# monorepo. The top-level CI routes app and shared changes here: gallery
-# Linux + iOS, contacts iOS, music iOS, health log/event. Nested copies stay
-# for the old remotes.
+# monorepo. The top-level CI routes app and shared changes here: shell kits,
+# gallery Linux + iOS, contacts iOS, music iOS, health log/event. Nested
+# copies stay for the old remotes.
 name: Apps
 
 on:
@@ -104,6 +104,21 @@ jobs:
           path: shell-kit-test.log
           if-no-files-found: warn
           retention-days: 7
+
+  shell-kit-swift:
+    name: shell-kit-swift
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "${{ env.XCODE_VERSION }}"
+
+      - name: Swift package tests
+        working-directory: shells/shell-kit-swift
+        run: swift test
 
   gallery-ios:
     name: gallery iOS

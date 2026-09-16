@@ -1,5 +1,6 @@
 import SwiftUI
 import Contacts
+import ShellKitSwift
 
 struct SettingsView: View {
     @Environment(ContactsStore.self) private var store
@@ -18,27 +19,37 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
+        ShellSettings(
+            title: "Settings",
+            tokens: ShellTokens(cardRadius: ContactsTokens.cardRadius),
+            dismissLabel: "Done",
+            onDismiss: { dismiss() }
+        ) {
                 Section("Contacts Folder") {
                     Button {
                         showFolderPicker = true
                     } label: {
-                        LabeledContent {
-                            Text(store.folderURL?.lastPathComponent ?? "Not selected")
-                                .foregroundStyle(.secondary)
-                        } label: {
-                            Label("Folder", systemImage: "folder")
-                        }
+                        ShellTextRow(
+                            .init(
+                                title: "Folder",
+                                trailingValue: store.folderURL?.lastPathComponent
+                                    ?? "Not selected",
+                                leadingSymbol: "folder"
+                            )
+                        )
                     }
                     .tint(.primary)
 
-                    Button {
+                    ShellActionRow(
+                        .init(
+                            actionID: "reload-contacts",
+                            label: "Reload Contacts",
+                            isEnabled: !store.isLoading,
+                            leadingSymbol: "arrow.clockwise"
+                        )
+                    ) { _ in
                         Task { await store.loadContacts() }
-                    } label: {
-                        Label("Reload Contacts", systemImage: "arrow.clockwise")
                     }
-                    .disabled(store.isLoading)
 
                     if let lastSync = store.lastSyncedAt {
                         LabeledContent("Last Synced", value: lastSync, format: .dateTime)
@@ -48,8 +59,12 @@ struct SettingsView: View {
                 Section {
                     switch contactsAuthStatus {
                     case .authorized:
-                        Label("Contacts access granted", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                        ShellStatusRow(
+                            .init(
+                                message: "Contacts access granted",
+                                severity: .info
+                            )
+                        )
 
                         DisclosureGroup("About Contacts Sync", isExpanded: $syncInfoExpanded) {
                             VStack(alignment: .leading, spacing: 12) {
@@ -66,8 +81,12 @@ struct SettingsView: View {
                         }
 
                     case .limited:
-                        Label("Limited Contacts access is not enough", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                        ShellStatusRow(
+                            .init(
+                                message: "Limited Contacts access is not enough",
+                                severity: .warning
+                            )
+                        )
 
                         Text("LocalContacts needs **full** Contacts access to maintain the LocalContacts group and caller ID. Limited access cannot sync.")
                             .font(.caption)
@@ -80,8 +99,12 @@ struct SettingsView: View {
                         }
 
                     case .denied, .restricted:
-                        Label("Contacts access denied", systemImage: "xmark.circle.fill")
-                            .foregroundStyle(.red)
+                        ShellStatusRow(
+                            .init(
+                                message: "Contacts access denied",
+                                severity: .error
+                            )
+                        )
 
                         Text("LocalContacts works as a standalone vCard manager. To sync contacts with the system, grant access in Settings.")
                             .font(.caption)
@@ -118,15 +141,15 @@ struct SettingsView: View {
                 }
 
                 Section("Tags") {
-                    NavigationLink {
+                    ShellNavRow(
+                        .init(
+                            destinationID: "tag-management",
+                            label: "Manage Tags",
+                            trailingValue: "\(store.allTags.count)",
+                            leadingSymbol: "tag"
+                        )
+                    ) {
                         ContactsRouter.destination(TagManagementView())
-                    } label: {
-                        LabeledContent {
-                            Text("\(store.allTags.count)")
-                                .foregroundStyle(.secondary)
-                        } label: {
-                            Label("Manage Tags", systemImage: "tag")
-                        }
                     }
                 }
 
@@ -158,14 +181,7 @@ struct SettingsView: View {
                     }
                     .tint(.primary)
                 }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+        }
             .onAppear {
                 if !hasSeenSyncInfo {
                     syncInfoExpanded = true
@@ -180,21 +196,23 @@ struct SettingsView: View {
             } message: {
                 Text(store.errorMessage ?? "")
             }
-            .confirmationDialog("Force Overwrite LocalContacts List", isPresented: $showOverwriteConfirmation, titleVisibility: .visible) {
-                Button("Overwrite", role: .destructive) {
-                    Task {
-                        do {
-                            try await store.syncService.fullReconciliation(contacts: store.contacts)
-                        } catch {
-                            store.errorMessage = error.localizedDescription
-                        }
+            .shellConfirmation(
+                data: .init(
+                    actionID: "overwrite-system-contacts",
+                    question: "Force Overwrite LocalContacts List",
+                    destructiveLabel: "Overwrite",
+                    message: store.hasConflicts
+                        ? "This will delete all contacts in the LocalContacts list in Apple Contacts and replace them with the local .vcf versions. \(store.contacts.filter { $0.conflictState != nil }.count) unresolved conflict(s) will be lost."
+                        : "This will delete all contacts in the LocalContacts list in Apple Contacts and replace them with the local .vcf versions."
+                ),
+                isPresented: $showOverwriteConfirmation
+            ) { _ in
+                Task {
+                    do {
+                        try await store.syncService.fullReconciliation(contacts: store.contacts)
+                    } catch {
+                        store.errorMessage = error.localizedDescription
                     }
-                }
-            } message: {
-                if store.hasConflicts {
-                    Text("This will delete all contacts in the LocalContacts list in Apple Contacts and replace them with the local .vcf versions. \(store.contacts.filter { $0.conflictState != nil }.count) unresolved conflict(s) will be lost.")
-                } else {
-                    Text("This will delete all contacts in the LocalContacts list in Apple Contacts and replace them with the local .vcf versions.")
                 }
             }
             .sheet(isPresented: $showFolderPicker) {
@@ -206,21 +224,26 @@ struct SettingsView: View {
                     }
                 )
             }
-        }
     }
 
     @ViewBuilder
     private var statsSection: some View {
         Section("Stats") {
-            LabeledContent("Total Contacts", value: "\(store.contacts.count)")
-            LabeledContent("Tags", value: "\(store.allTags.count)")
+            ShellTextRow(
+                .init(
+                    title: "Total Contacts",
+                    trailingValue: "\(store.contacts.count)"
+                )
+            )
+            ShellTextRow(
+                .init(title: "Tags", trailingValue: "\(store.allTags.count)")
+            )
 
             let conflicts = store.contacts.filter { $0.conflictState != nil }.count
             if conflicts > 0 {
-                LabeledContent("Conflicts") {
-                    Text("\(conflicts)")
-                        .foregroundStyle(.orange)
-                }
+                ShellTextRow(
+                    .init(title: "Conflicts", trailingValue: "\(conflicts)")
+                )
             }
 
             let layoutColor: Color = store.layoutMode.isSupported ? .secondary : .orange
@@ -239,12 +262,18 @@ struct SettingsView: View {
     @ViewBuilder
     private var diagnosticsSection: some View {
         Section {
-            NavigationLink {
+            ShellNavRow(
+                .init(
+                    destinationID: "logs",
+                    label: "Logs",
+                    leadingSymbol: "doc.text.magnifyingglass"
+                )
+            ) {
                 ContactsRouter.destination(LogsView())
-            } label: {
-                Label("Logs", systemImage: "doc.text.magnifyingglass")
             }
-            LabeledContent("Version", value: appVersion)
+            ShellTextRow(
+                .init(title: "Version", trailingValue: appVersion)
+            )
         } header: {
             Text("Diagnostics")
         }

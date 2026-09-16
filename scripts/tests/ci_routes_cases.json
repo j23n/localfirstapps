@@ -92,6 +92,17 @@
     }
   },
   {
+    "name": "shell-kit-swift",
+    "paths": ["shells/shell-kit-swift/Sources/ShellKitSwift/Rows.swift"],
+    "expected": {
+      "rust": false,
+      "apps": true,
+      "bindings": false,
+      "conformance": true,
+      "docker": false
+    }
+  },
+  {
     "name": "unknown-is-conservative",
     "paths": ["new-shared-area/config.toml"],
     "expected": {

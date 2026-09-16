@@ -9,6 +9,7 @@ Inputs:
 Outputs (reproducible; --check fails on drift):
   core/localcore-ui/src/{kinds,tokens,screens}.rs
   docs/spec/ui/generated/Kinds.swift
+  shells/shell-kit-swift/Sources/ShellKitSwift/Generated/Kinds.swift
   apps/{gallery,contacts,music}/.../Generated/{Tokens,Screens}.swift
   design/tokens/generated/{app}.css
 
@@ -28,6 +29,10 @@ TOKENS_DIR = REPO / "design/tokens"
 APPS = ("gallery", "contacts", "music", "health")
 
 SWIFT_KINDS = REPO / "docs/spec/ui/generated/Kinds.swift"
+SHELL_KIT_SWIFT_KINDS = (
+    REPO
+    / "shells/shell-kit-swift/Sources/ShellKitSwift/Generated/Kinds.swift"
+)
 RUST_KINDS = REPO / "core/localcore-ui/src/kinds.rs"
 RUST_TOKENS = REPO / "core/localcore-ui/src/tokens.rs"
 RUST_SCREENS = REPO / "core/localcore-ui/src/screens.rs"
@@ -112,7 +117,7 @@ impl {name} {{
 
 def swift_enum(name: str, variants: list[str]) -> str:
     cases = "\n".join(f'    case {camel(v)} = "{v}"' for v in variants)
-    return f"""public enum {name}: String, Sendable, CaseIterable {{
+    return f"""public enum {name}: String, Sendable, CaseIterable, Hashable {{
 {cases}
 }}
 """
@@ -368,6 +373,7 @@ def generate_all() -> dict[Path, str]:
         RUST_TOKENS: generate_tokens_rs(tables),
         RUST_SCREENS: generate_screens_rs(specs),
         SWIFT_KINDS: swift_kinds,
+        SHELL_KIT_SWIFT_KINDS: swift_kinds,
     }
     for app, table in tables.items():
         if app in TOKEN_SWIFT:

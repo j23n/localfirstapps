@@ -1,4 +1,5 @@
 import SwiftUI
+import ShellKitSwift
 
 struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
@@ -14,27 +15,38 @@ struct SettingsView: View {
     @State private var showFolderPicker = false
 
     var body: some View {
-        NavigationStack {
-            List {
+        ShellSettings(
+            title: "Settings",
+            tokens: ShellTokens(cardRadius: MusicTokens.cardRadius),
+            dismissLabel: "Done",
+            onDismiss: { dismiss() }
+        ) {
                 Section("Music Folder") {
                     Button {
                         showFolderPicker = true
                     } label: {
-                        LabeledContent {
-                            Text(library.folderURL?.lastPathComponent ?? "Not selected")
-                                .foregroundStyle(.secondary)
-                        } label: {
-                            Label("Folder", systemImage: "folder")
-                        }
+                        ShellTextRow(
+                            .init(
+                                title: "Folder",
+                                trailingValue: library.folderURL?.lastPathComponent
+                                    ?? "Not selected",
+                                leadingSymbol: "folder"
+                            )
+                        )
                     }
                     .tint(.primary)
 
-                    Button {
+                    ShellActionRow(
+                        .init(
+                            actionID: "reload-music",
+                            label: "Reload Music",
+                            isEnabled: library.folderURL != nil
+                                && !library.isScanning,
+                            leadingSymbol: "arrow.clockwise"
+                        )
+                    ) { _ in
                         Task { await library.rescan() }
-                    } label: {
-                        Label("Reload Music", systemImage: "arrow.clockwise")
                     }
-                    .disabled(library.folderURL == nil || library.isScanning)
 
                     if let lastSynced = library.lastSynced {
                         LabeledContent("Last Synced", value: lastSynced, format: .dateTime)
@@ -62,17 +74,33 @@ struct SettingsView: View {
                 }
 
                 Section("Stats") {
-                    LabeledContent("Total Songs", value: "\(library.tracks.count)")
-                    LabeledContent("Total Playlists", value: "\(library.playlists.count)")
+                    ShellTextRow(
+                        .init(
+                            title: "Total Songs",
+                            trailingValue: "\(library.tracks.count)"
+                        )
+                    )
+                    ShellTextRow(
+                        .init(
+                            title: "Total Playlists",
+                            trailingValue: "\(library.playlists.count)"
+                        )
+                    )
                 }
 
                 Section("Diagnostics") {
-                    NavigationLink {
+                    ShellNavRow(
+                        .init(
+                            destinationID: "logs",
+                            label: "Logs",
+                            leadingSymbol: "doc.text.magnifyingglass"
+                        )
+                    ) {
                         LogsView()
-                    } label: {
-                        Label("Logs", systemImage: "doc.text.magnifyingglass")
                     }
-                    LabeledContent("Version", value: appVersion)
+                    ShellTextRow(
+                        .init(title: "Version", trailingValue: appVersion)
+                    )
                 }
 
                 Section("About") {
@@ -99,14 +127,7 @@ struct SettingsView: View {
                     }
                     .tint(.primary)
                 }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+        }
             .sheet(isPresented: $showFolderPicker) {
                 DocumentPicker { pickerURL in
                     // The picker's URL carries a transient security scope that
@@ -120,6 +141,5 @@ struct SettingsView: View {
                     }
                 }
             }
-        }
     }
 }

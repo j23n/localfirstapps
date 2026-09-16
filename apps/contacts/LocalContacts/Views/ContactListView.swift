@@ -1,4 +1,5 @@
 import SwiftUI
+import ShellKitSwift
 
 struct ContactListView: View {
     @Environment(ContactsStore.self) private var store
@@ -30,7 +31,10 @@ struct ContactListView: View {
                 }
             }
             .navigationTitle("Contacts")
-            .searchable(text: $store.searchText, prompt: "Name, company, phone, or email")
+            .shellSearch(
+                text: $store.searchText,
+                data: .init(prompt: "Name, company, phone, or email")
+            )
             .overlay(alignment: .top) {
                 LinearGradient(
                     stops: [
