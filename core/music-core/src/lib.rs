@@ -25,7 +25,8 @@ pub use actions::{
 };
 pub use display::{
     conflict_choice_rows, conflict_rows, playlist_action_rows, playlist_entry_rows, playlist_rows,
-    ActionRole, ActionRow, ConflictRow, MediaItem, StatusRow, StatusSeverity, TextRow,
+    settings_info_rows, ActionRole, ActionRow, ConflictRow, MediaItem, StatusRow, StatusSeverity,
+    TextRow,
 };
 pub use folder_log::{
     append_changed, append_created, append_deleted, append_group_resolved, log_root, read_ops,

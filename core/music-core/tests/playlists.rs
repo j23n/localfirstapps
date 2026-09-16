@@ -1,8 +1,9 @@
 use music_core::{
     add_tracks_logged, canonical_bytes, create_playlist_logged, delete_playlist_logged,
     move_entry_logged, parse_playlist, playlist_entry_rows, read_ops, remove_entries_logged,
-    write_playlist, AddTracksCommand, CreatePlaylistCommand, DeletePlaylistCommand,
-    MovePlaylistEntryCommand, PlaylistFormat, RemovePlaylistEntriesCommand, Store, StoreError, Vfs,
+    settings_info_rows, write_playlist, AddTracksCommand, CreatePlaylistCommand,
+    DeletePlaylistCommand, MovePlaylistEntryCommand, PlaylistFormat, RemovePlaylistEntriesCommand,
+    Store, StoreError, Vfs,
 };
 
 #[test]
@@ -222,4 +223,23 @@ fn create_delete_and_folder_log_are_core_owned() {
     .unwrap();
     assert!(!vfs.try_exists("/music/Mix-One.m3u").unwrap());
     assert_eq!(read_ops(&vfs, "/music").unwrap().len(), 2);
+}
+
+#[test]
+fn settings_rows_and_playlist_playback_sources_are_core_projected() {
+    let vfs = music_core::MemVfs::new();
+    vfs.insert("/music/a.mp3", b"a");
+    vfs.insert("/music/missing.m3u", b"#EXTM3U\nmissing.mp3\na.mp3\n");
+    let store = Store::open(&vfs, "/music").unwrap();
+    let playlist_id = store.playlists()[0].id.clone();
+
+    let info = settings_info_rows(&store);
+    assert_eq!(info[0].trailing.as_deref(), Some("1 track"));
+    assert_eq!(info[1].trailing.as_deref(), Some("1 playlist"));
+    assert_eq!(info[2].trailing.as_deref(), Some("0 groups"));
+
+    let sources = store.playlist_media_sources(&playlist_id).unwrap();
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].id, store.tracks()[0].id);
+    assert!(sources[0].path.ends_with("/a.mp3"));
 }

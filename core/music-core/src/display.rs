@@ -107,6 +107,34 @@ pub fn playlist_rows(store: &Store) -> Vec<TextRow> {
         .collect()
 }
 
+/// Core-formatted facts for the Settings Info section.
+///
+/// Shells display these rows verbatim so item-count grammar cannot drift
+/// between GTK and Swift.
+#[must_use]
+pub fn settings_info_rows(store: &Store) -> Vec<TextRow> {
+    vec![
+        TextRow {
+            id: "tracks".into(),
+            title: "Tracks".into(),
+            subtitle: None,
+            trailing: Some(count_label(store.tracks().len(), "track")),
+        },
+        TextRow {
+            id: "playlists".into(),
+            title: "Playlists".into(),
+            subtitle: None,
+            trailing: Some(count_label(store.playlists().len(), "playlist")),
+        },
+        TextRow {
+            id: "sync-conflicts".into(),
+            title: "Sync Conflicts".into(),
+            subtitle: None,
+            trailing: Some(count_label(store.conflict_groups().len(), "group")),
+        },
+    ]
+}
+
 /// Ordered rows for one playlist. Missing and unsupported entries remain
 /// visible rather than silently falling out of the projection.
 pub fn playlist_entry_rows(store: &Store, playlist_id: &str) -> Result<Vec<TextRow>, StoreError> {

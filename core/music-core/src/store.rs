@@ -367,6 +367,23 @@ impl Store {
         })
     }
 
+    /// Playable sources in one playlist's order.
+    ///
+    /// Missing, remote, and unsupported entries remain visible in detail
+    /// rows but are deliberately omitted from this host-port window.
+    pub fn playlist_media_sources(
+        &self,
+        playlist_id: &str,
+    ) -> Result<Vec<MediaSource>, StoreError> {
+        let playlist = self.playlist(playlist_id).ok_or(StoreError::NotFound)?;
+        Ok(playlist
+            .entries
+            .iter()
+            .filter_map(|entry| entry.track_id.as_deref())
+            .filter_map(|id| self.media_source(id).ok())
+            .collect())
+    }
+
     /// Update core-owned search, sort, and sections.
     pub fn set_library_view(&mut self, query: String, sort: SortOption) -> u64 {
         self.projection.set_view(&self.tracks, query, sort);
