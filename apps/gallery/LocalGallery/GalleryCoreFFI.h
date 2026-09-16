@@ -812,6 +812,11 @@ uint32_t uniffi_gallery_ffi_fn_func_person_log_migrate_from_snapshot(RustBuffer 
 RustBuffer uniffi_gallery_ffi_fn_func_person_log_project(RustBuffer root, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LOG_PROJECT_REPORT
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LOG_PROJECT_REPORT
+RustBuffer uniffi_gallery_ffi_fn_func_person_log_project_report(RustBuffer root, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LOG_READ
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LOG_READ
 RustBuffer uniffi_gallery_ffi_fn_func_person_log_read(RustBuffer root, RustCallStatus *_Nonnull out_status
@@ -1255,6 +1260,12 @@ uint16_t uniffi_gallery_ffi_checksum_func_person_log_migrate_from_snapshot(void
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_PROJECT
 uint16_t uniffi_gallery_ffi_checksum_func_person_log_project(void
     
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_PROJECT_REPORT
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_PROJECT_REPORT
+uint16_t uniffi_gallery_ffi_checksum_func_person_log_project_report(void
+
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LOG_READ

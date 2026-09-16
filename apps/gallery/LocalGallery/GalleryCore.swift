@@ -5801,6 +5801,62 @@ public func FfiConverterTypePersonKeyedString_lower(_ value: PersonKeyedString) 
 
 
 /**
+ * Projected state plus non-fatal append-only-log diagnostics.
+ */
+public struct PersonProjectionRecord: Equatable, Hashable {
+    public var state: PersonStateRecord
+    public var tornTails: [PersonTornTailRecord]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(state: PersonStateRecord, tornTails: [PersonTornTailRecord]) {
+        self.state = state
+        self.tornTails = tornTails
+    }
+
+
+
+}
+
+#if compiler(>=6)
+extension PersonProjectionRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonProjectionRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonProjectionRecord {
+        return
+            try PersonProjectionRecord(
+                state: FfiConverterTypePersonStateRecord.read(from: &buf),
+                tornTails: FfiConverterSequenceTypePersonTornTailRecord.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PersonProjectionRecord, into buf: inout [UInt8]) {
+        FfiConverterTypePersonStateRecord.write(value.state, into: &buf)
+        FfiConverterSequenceTypePersonTornTailRecord.write(value.tornTails, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonProjectionRecord_lift(_ buf: RustBuffer) throws -> PersonProjectionRecord {
+    return try FfiConverterTypePersonProjectionRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonProjectionRecord_lower(_ value: PersonProjectionRecord) -> RustBuffer {
+    return FfiConverterTypePersonProjectionRecord.lower(value)
+}
+
+
+/**
  * Projected people-rail state after replaying `.gallery/log`.
  *
  * `me` is empty when unset. `links` values: a contact id, or empty for
@@ -5869,6 +5925,67 @@ public func FfiConverterTypePersonStateRecord_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypePersonStateRecord_lower(_ value: PersonStateRecord) -> RustBuffer {
     return FfiConverterTypePersonStateRecord.lower(value)
+}
+
+
+/**
+ * One recovered torn final line. Complete events before this offset were
+ * projected and remain authoritative.
+ */
+public struct PersonTornTailRecord: Equatable, Hashable {
+    public var path: String
+    public var offset: UInt64
+    public var detail: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, offset: UInt64, detail: String) {
+        self.path = path
+        self.offset = offset
+        self.detail = detail
+    }
+
+
+
+}
+
+#if compiler(>=6)
+extension PersonTornTailRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonTornTailRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonTornTailRecord {
+        return
+            try PersonTornTailRecord(
+                path: FfiConverterString.read(from: &buf),
+                offset: FfiConverterUInt64.read(from: &buf),
+                detail: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PersonTornTailRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterUInt64.write(value.offset, into: &buf)
+        FfiConverterString.write(value.detail, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonTornTailRecord_lift(_ buf: RustBuffer) throws -> PersonTornTailRecord {
+    return try FfiConverterTypePersonTornTailRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonTornTailRecord_lower(_ value: PersonTornTailRecord) -> RustBuffer {
+    return FfiConverterTypePersonTornTailRecord.lower(value)
 }
 
 
@@ -10803,6 +10920,31 @@ fileprivate struct FfiConverterSequenceTypePersonKeyedString: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePersonTornTailRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [PersonTornTailRecord]
+
+    public static func write(_ value: [PersonTornTailRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePersonTornTailRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PersonTornTailRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PersonTornTailRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePersonTornTailRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeScanFolderNode: FfiConverterRustBuffer {
     typealias SwiftType = [ScanFolderNode]
 
@@ -11138,6 +11280,18 @@ public func personLogProject(root: String)throws  -> PersonStateRecord  {
     return try  FfiConverterTypePersonStateRecord_lift(try rustCallWithError(FfiConverterTypePersonLogError_lift) {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_person_log_project(
+        FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+/**
+ * Replay complete events and return any ignored torn final lines. Hosts must
+ * surface these diagnostics and must not fall back to a stale local snapshot.
+ */
+public func personLogProjectReport(root: String)throws  -> PersonProjectionRecord  {
+    return try  FfiConverterTypePersonProjectionRecord_lift(try rustCallWithError(FfiConverterTypePersonLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_person_log_project_report(
         FfiConverterString.lower(root),uniffiCallStatus
     )
 })
@@ -11511,6 +11665,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_person_log_project() != 61117) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_person_log_project_report() != 11290) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_person_log_read() != 7200) {

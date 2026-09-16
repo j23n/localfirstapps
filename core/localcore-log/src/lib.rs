@@ -36,7 +36,8 @@ pub use event::{
 };
 pub use gallery::{
     append_person, is_person_event_type, migrate_from_snapshot, migrate_from_snapshot_json,
-    project_people, project_people_at, PeopleState, PersonSnapshot,
+    project_people, project_people_at, project_people_report_at, PeopleProjection, PeopleState,
+    PersonSnapshot,
 };
 
 /// A final line that lacks a trailing newline and is not valid JSON.
@@ -55,6 +56,25 @@ pub struct TornTail {
 pub struct ReadReport {
     pub events: Vec<Event>,
     pub torn_tails: Vec<TornTail>,
+}
+
+/// Sendable/display-only form of a torn tail for projections that recover
+/// complete events while surfacing the ignored final fragment to a host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TornTailDiagnostic {
+    pub path: PathBuf,
+    pub offset: u64,
+    pub detail: String,
+}
+
+impl From<&TornTail> for TornTailDiagnostic {
+    fn from(value: &TornTail) -> Self {
+        Self {
+            path: value.path.clone(),
+            offset: value.offset,
+            detail: value.err.to_string(),
+        }
+    }
 }
 
 impl std::fmt::Display for TornTail {

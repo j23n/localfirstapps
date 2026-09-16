@@ -10,7 +10,8 @@
 use std::path::{Path, PathBuf};
 
 use localcore_log::{
-    append_person, migrate_from_snapshot_json, project_people_at, read_all_json, PeopleState,
+    append_person, migrate_from_snapshot_json, project_people_at, project_people_report_at,
+    read_all_json, PeopleState,
 };
 
 /// Directory name under the library root that owns the synced event log.
@@ -108,6 +109,22 @@ pub struct PersonStateRecord {
     pub links: Vec<PersonKeyedString>,
 }
 
+/// One recovered torn final line. Complete events before this offset were
+/// projected and remain authoritative.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PersonTornTailRecord {
+    pub path: String,
+    pub offset: u64,
+    pub detail: String,
+}
+
+/// Projected state plus non-fatal append-only-log diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PersonProjectionRecord {
+    pub state: PersonStateRecord,
+    pub torn_tails: Vec<PersonTornTailRecord>,
+}
+
 impl From<PeopleState> for PersonStateRecord {
     fn from(state: PeopleState) -> Self {
         Self {
@@ -147,6 +164,25 @@ pub fn person_log_project(root: String) -> Result<PersonStateRecord, PersonLogEr
     ))
 }
 
+/// Replay complete events and return any ignored torn final lines. Hosts must
+/// surface these diagnostics and must not fall back to a stale local snapshot.
+#[uniffi::export]
+pub fn person_log_project_report(root: String) -> Result<PersonProjectionRecord, PersonLogError> {
+    let report = project_people_report_at(log_root(&root)).map_err(PersonLogError::from)?;
+    Ok(PersonProjectionRecord {
+        state: report.state.into(),
+        torn_tails: report
+            .torn_tails
+            .into_iter()
+            .map(|tail| PersonTornTailRecord {
+                path: tail.path.display().to_string(),
+                offset: tail.offset,
+                detail: tail.detail,
+            })
+            .collect(),
+    })
+}
+
 /// One-shot import of the five UserDefaults keys. Returns events written
 /// (0 once this device has a `person_migrated` marker).
 #[uniffi::export]
@@ -171,10 +207,9 @@ mod tests {
     use std::fs;
 
     fn m2_dump() -> String {
-        fs::read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../../core/localcore-log/tests/fixtures/m2/userdefaults-person-state.json"),
-        )
+        fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../../../../core/localcore-log/tests/fixtures/m2/userdefaults-person-state.json",
+        ))
         .unwrap()
     }
 
@@ -273,5 +308,27 @@ mod tests {
         assert_eq!(state.hidden, vec!["People/Ann Schmidt".to_string()]);
         let raw = person_log_read(root).unwrap();
         assert!(raw.contains("person_renamed"), "{raw}");
+    }
+
+    #[test]
+    fn report_surfaces_torn_tail_with_recovered_projection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let device_dir = tmp.path().join(".gallery/log/phone");
+        fs::create_dir_all(&device_dir).unwrap();
+        let path = device_dir.join("2024-07.ndjson");
+        let complete = concat!(
+            "{\"id\":\"01900000-0000-7000-8000-0000000000f1\",",
+            "\"ts\":\"2024-07-01T10:00:00.000000000Z\",",
+            "\"dev\":\"phone\",\"type\":\"person_hidden\",",
+            "\"body\":{\"path\":\"People/Recovered\"}}\n"
+        );
+        fs::write(&path, format!("{complete}{{\"id\":\"torn\"")).unwrap();
+
+        let report = person_log_project_report(tmp.path().to_string_lossy().into_owned()).unwrap();
+        assert_eq!(report.state.hidden, vec!["People/Recovered".to_string()]);
+        assert_eq!(report.torn_tails.len(), 1);
+        assert_eq!(report.torn_tails[0].path, path.display().to_string());
+        assert_eq!(report.torn_tails[0].offset, complete.len() as u64);
+        assert!(!report.torn_tails[0].detail.is_empty());
     }
 }

@@ -26,7 +26,7 @@ use crate::event::{
     TYPE_PERSON_ME_SET, TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED,
     TYPE_PERSON_UNHIDDEN,
 };
-use crate::{append, read_all, Error, Result};
+use crate::{append, read_report, Error, Result, TornTailDiagnostic};
 
 /// Projected people-rail state after replaying a log.
 ///
@@ -39,6 +39,15 @@ pub struct PeopleState {
     pub me: Option<String>,
     pub featured_photo: BTreeMap<String, String>,
     pub links: BTreeMap<String, String>,
+}
+
+/// Person state recovered from every complete event plus any torn final-line
+/// diagnostics. A torn tail is not a reason to resurrect an older snapshot:
+/// the complete append-only prefix remains authoritative.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PeopleProjection {
+    pub state: PeopleState,
+    pub torn_tails: Vec<TornTailDiagnostic>,
 }
 
 /// A contact-link decision from a pre-M2 UserDefaults dump.
@@ -255,12 +264,32 @@ pub fn append_person(
     if !body.is_object() {
         return Err(Error::Invalid("body must be a JSON object".into()));
     }
+    let root = root.as_ref();
+    let report = read_report(root)?;
+    if let Some(torn) = report.torn_tails.into_iter().next() {
+        return Err(Error::TornTail(torn));
+    }
     append(root, &Event::fresh(device, event_type, body))
 }
 
 /// Read the log at `root` and fold person-state events.
 pub fn project_people_at(root: impl AsRef<Path>) -> Result<PeopleState> {
-    Ok(project_people(&read_all(root)?))
+    Ok(project_people_report_at(root)?.state)
+}
+
+/// Read the log while preserving torn-tail diagnostics. Complete events are
+/// still projected; callers must surface the diagnostic and must not fall
+/// back to a stale snapshot.
+pub fn project_people_report_at(root: impl AsRef<Path>) -> Result<PeopleProjection> {
+    let report = read_report(root)?;
+    Ok(PeopleProjection {
+        state: project_people(&report.events),
+        torn_tails: report
+            .torn_tails
+            .iter()
+            .map(TornTailDiagnostic::from)
+            .collect(),
+    })
 }
 
 /// Import a UserDefaults dump as operations. No-op if `device` already wrote
@@ -288,7 +317,11 @@ pub fn migrate_from_snapshot(
     if !valid_device(device) {
         return Err(Error::Invalid(format!("invalid device {device:?}")));
     }
-    let existing = read_all(root.as_ref())?;
+    let report = read_report(root.as_ref())?;
+    if let Some(torn) = report.torn_tails.into_iter().next() {
+        return Err(Error::TornTail(torn));
+    }
+    let existing = report.events;
     if existing
         .iter()
         .any(|e| e.dev == device && e.event_type == TYPE_PERSON_MIGRATED)

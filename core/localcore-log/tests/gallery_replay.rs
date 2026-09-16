@@ -5,9 +5,10 @@
 //! snapshot rewrite of the five keys.
 
 use localcore_log::{
-    append, migrate_from_snapshot_json, project_people, project_people_at, read_all, ts_with_nanos,
-    Event, PersonSnapshot, PeopleState, TYPE_FEATURED_PHOTO_SET, TYPE_PERSON_FEATURED,
-    TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_SET, TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED,
+    append, append_person, migrate_from_snapshot_json, project_people, project_people_at,
+    project_people_report_at, read_all, ts_with_nanos, Error, Event, PeopleState, PersonSnapshot,
+    TYPE_FEATURED_PHOTO_SET, TYPE_PERSON_FEATURED, TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_SET,
+    TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
@@ -90,7 +91,9 @@ fn gallery_person_state_replay() {
         ]
     );
     assert_eq!(
-        evs.iter().map(|e| e.event_type.as_str()).collect::<Vec<_>>(),
+        evs.iter()
+            .map(|e| e.event_type.as_str())
+            .collect::<Vec<_>>(),
         [
             TYPE_PERSON_HIDDEN,
             TYPE_PERSON_FEATURED,
@@ -141,7 +144,10 @@ fn gallery_replay_sorts_across_devices() {
         .map(|e| format!("{}:{}", e.ts, e.id))
         .collect();
     assert_eq!(order_a, order_b);
-    assert_eq!(project_people(&read_all(root_b.path()).unwrap()), expected_people());
+    assert_eq!(
+        project_people(&read_all(root_b.path()).unwrap()),
+        expected_people()
+    );
 
     // One archive, two device files: union still sorts by (ts, id), not walk order.
     let root_c = tempfile::tempdir().unwrap();
@@ -155,7 +161,10 @@ fn gallery_replay_sorts_across_devices() {
         append(root_c.path(), e).unwrap();
     }
     let merged = read_all(root_c.path()).unwrap();
-    let keys: Vec<(String, String)> = merged.iter().map(|e| (e.ts.clone(), e.id.clone())).collect();
+    let keys: Vec<(String, String)> = merged
+        .iter()
+        .map(|e| (e.ts.clone(), e.id.clone()))
+        .collect();
     let mut sorted = keys.clone();
     sorted.sort();
     assert_eq!(keys, sorted);
@@ -322,4 +331,57 @@ fn migrate_retries_partial_file_until_marker() {
     let again = migrate_from_snapshot_json(root.path(), "ios", &dump).unwrap();
     assert_eq!(again, 0, "second call after marker is 0");
     assert_eq!(read_all(root.path()).unwrap().len(), evs.len());
+}
+
+/// ADR 0005 R16: recover complete records, report the torn final fragment,
+/// and never append behind it (which would turn it into mid-file corruption).
+#[test]
+fn torn_tail_projects_complete_state_and_blocks_writes_without_fallback() {
+    let root = tempfile::tempdir().unwrap();
+    let device_dir = root.path().join("log/phone");
+    fs::create_dir_all(&device_dir).unwrap();
+    let path = device_dir.join("2024-07.ndjson");
+    let complete = ev(
+        "01900000-0000-7000-8000-0000000000f1",
+        "2024-07-01T10:00:00.000000000Z",
+        "phone",
+        TYPE_PERSON_HIDDEN,
+        json!({"path": "People/Recovered"}),
+    )
+    .marshal_line()
+    .unwrap();
+    let complete_len = complete.len();
+    let mut bytes = complete;
+    bytes.extend_from_slice(br#"{"id":"torn","ts":"2024"#);
+    fs::write(&path, &bytes).unwrap();
+
+    let report = project_people_report_at(root.path()).unwrap();
+    assert_eq!(
+        report.state.hidden,
+        BTreeSet::from(["People/Recovered".to_string()])
+    );
+    assert_eq!(report.torn_tails.len(), 1);
+    assert_eq!(report.torn_tails[0].path, path);
+    assert_eq!(report.torn_tails[0].offset as usize, complete_len);
+
+    let migration = migrate_from_snapshot_json(root.path(), "ios", &m2_dump());
+    assert!(matches!(migration, Err(Error::TornTail(_))));
+    let mutation = append_person(
+        root.path(),
+        "ios",
+        TYPE_PERSON_FEATURED,
+        r#"{"path":"People/New"}"#,
+    );
+    assert!(matches!(mutation, Err(Error::TornTail(_))));
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        bytes,
+        "failed writes must not append after the torn fragment"
+    );
+    assert!(
+        !fs::read_to_string(&path)
+            .unwrap()
+            .contains(TYPE_PERSON_MIGRATED),
+        "an interrupted import must not consume its one-shot marker"
+    );
 }
