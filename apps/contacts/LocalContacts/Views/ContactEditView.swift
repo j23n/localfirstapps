@@ -374,7 +374,7 @@ struct ContactEditView: View {
         lastComposedName = composed
     }
 
-    static func structuredName(given: String, middle: String, family: String) -> String {
+    nonisolated static func structuredName(given: String, middle: String, family: String) -> String {
         [given, middle, family].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
@@ -426,7 +426,7 @@ struct ContactEditView: View {
         }
     }
 
-    static func initials(from draft: ContactEditDraft) -> String {
+    nonisolated static func initials(from draft: ContactEditDraft) -> String {
         let parts = [draft.givenName, draft.familyName].filter { !$0.isEmpty }
         if parts.isEmpty { return "?" }
         return parts.map { String($0.prefix(1)).uppercased() }.joined()

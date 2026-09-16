@@ -363,7 +363,7 @@ struct ContactCard: View {
     }
 
     /// Mark the first case-insensitive occurrence of `query` in `value`.
-    static func highlighted(_ value: String, query: String) -> AttributedString {
+    nonisolated static func highlighted(_ value: String, query: String) -> AttributedString {
         var text = AttributedString(value)
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty,

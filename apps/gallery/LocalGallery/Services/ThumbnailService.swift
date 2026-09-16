@@ -244,7 +244,11 @@ final class ThumbnailService {
     /// source keeps the last-known image (same contract as the disk JPEG).
     private func isFresh(_ url: URL, stamp: ContentVersion?) -> Bool {
         guard let stamp else { return false }
-        if Self.sourceFileIsMissing(url) { return true }
+        do {
+            if try Self.sourceFileIsMissing(url) { return true }
+        } catch {
+            return false
+        }
         return ContentVersion.sameContent(stamp, Self.sourceStamp(for: url))
     }
 

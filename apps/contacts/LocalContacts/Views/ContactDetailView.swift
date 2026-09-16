@@ -287,7 +287,7 @@ struct ContactDetailView: View {
         }
     }
 
-    static func isHeroField(_ row: FieldRow) -> Bool {
+    nonisolated static func isHeroField(_ row: FieldRow) -> Bool {
         switch row.id {
         case "fn", "org", "title", "nickname", "photo":
             return true
@@ -298,7 +298,7 @@ struct ContactDetailView: View {
         }
     }
 
-    static func sectionTitle(for row: FieldRow) -> String {
+    nonisolated static func sectionTitle(for row: FieldRow) -> String {
         guard let id = row.id else { return row.label }
         if id.hasPrefix("tel:") { return "Phone" }
         if id.hasPrefix("email:") { return "Email" }
@@ -309,7 +309,7 @@ struct ContactDetailView: View {
         return row.label
     }
 
-    static func sections(from rows: [FieldRow]) -> [(title: String, rows: [(offset: Int, row: FieldRow)])] {
+    nonisolated static func sections(from rows: [FieldRow]) -> [(title: String, rows: [(offset: Int, row: FieldRow)])] {
         let order = ["Phone", "Email", "Website", "Address", "Birthday", "Notes"]
         var grouped: [String: [(offset: Int, row: FieldRow)]] = [:]
         for (offset, row) in rows.enumerated() where !isHeroField(row) {

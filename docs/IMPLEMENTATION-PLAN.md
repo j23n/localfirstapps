@@ -46,7 +46,9 @@ Contacts “before” shots live in
 [`docs/screenshots/gtk-before/`](screenshots/gtk-before/). Further
 mutter captures stay optional. Ubuntu 26.04
 (resolute) floor versus Fedora 44 is GTK 4.22.2, libadwaita 1.9.0, Pango
-1.57.0. L6 ToggleGroup / WrapBox fallbacks are not required.
+1.57.0. The `Apps / GTK shells` job runs on `ubuntu-26.04`;
+`ubuntu-24.04` is GTK 4.14 and cannot build the `v4_22` crates.
+L6 ToggleGroup / WrapBox fallbacks are not required.
 
 ---
 
@@ -508,7 +510,7 @@ block C.
 | M3 candidate validation / possible pack swap | **5** | Measure SFace + YuNet alignment, representative clustering and target-device cost first. Keep `PACK_VARIANT` unless evidence supports the swap. |
 | `ImageIOHeicDecoder` | **5** | Decoder seam with the gallery core loop. |
 | R8–R11 for gallery `.xmp` | **5** | Same conflict grammar as contacts, on sidecars. |
-| gallery-ffi R6 rewrite (45 Records) | **in progress (5)** | Windowed `ViewStructure` landed; `conformance/r6/expected.txt` is empty. Remaining Phase 5 is the Linux kit shell (not the leftover GTK), Places unification, and the 20k CI job. |
+| gallery-ffi R6 rewrite (45 Records) | **in progress (5)** | Photo/tag windows landed. 5.2 adds folder/people/collection windows. Remaining: kit shell (5.5–5.6), Places / 20k CI / `.xmp` UI (5.8). |
 | 20k-tree as a CI gate | **5** | Local `e2e_20k.sh` exists now (`#[ignore]`, structural golden under `e2e_baselines/`). The GitHub job lands with the gallery vertical. |
 | HealthKit ingest / FIT / native Health shells | **6** | iOS HealthKit + Linux FIT watch. Do not port Apple `export.xml`. Do not invent a Health accent. |
 | Health Go `internal/log` / `internal/blobs` delete | **6** | After the Rust projection reproduces a real archive. |
@@ -740,22 +742,113 @@ and two-consumer rules: [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md).
 | places, memories rail | Live Photos — no Linux equivalent exists |
 | scan, tagging, face scan | |
 
-Plus: move the residual portable Swift into `gallery-core`; the FFI moves to
-ADR 0003 R4's structure/window split (this is where the 20k-item grid either
-scrolls or does not); media port for video thumbnails.
+`face-review` is named in `screens.toml` so the vocabulary is checked,
+the same way Contacts names `apple-conflict`. Neither Linux shell routes
+it. Slideshow, widgets, and Live Photos stay off the spec as host-only
+gaps, not R4 kinds.
 
-Phase 5 also lands the deferred gallery rows: unify iOS onto
-`run_places`, M2 UserDefaults cutover, M1 thumb / widget /
-`library_cache` rewrite, queue places / thumbs / EXIF, M3 candidate
-measurements and any evidence-backed face-pack decision,
-`ImageIOHeicDecoder`, R8–R11 on `.xmp`, and the 20k e2e GitHub job (the
-local `e2e_20k.sh` suite already exists). `PACK_VARIANT` remains until
-that evidence supports retiring it.
+Plus: residual portable Swift into core; FFI stays on ADR 0003 R4
+structure/window (this is where the 20k grid either scrolls or does
+not); media port for video thumbnails.
+
+Deferred gallery rows still land here: unify iOS onto `run_places`, M2
+UserDefaults cutover, M1 thumb / widget / `library_cache` rewrite,
+queue places / thumbs / EXIF, M3 candidate measurements and any
+evidence-backed face-pack decision, `ImageIOHeicDecoder`, R8–R11 on
+`.xmp`, and the 20k e2e GitHub job (local `e2e_20k.sh` already exists).
+`PACK_VARIANT` remains until that evidence supports retiring it.
 
 That gap list is the difference between roughly 8k and 30k lines of GTK.
-Each row is a decision you can revisit later with a working app in hand.
 
-Size: L–XL. Per-screen agent tasks against the slot vocabulary.
+#### Sequence (do not skip gates)
+
+Windows and the spec come first. `gallery-gtk` must not invent paging,
+folder grouping, or collection grouping. Photo grids reuse
+`photo_window` / `set_photo_view` / `set_photo_ids_view`. New windows
+are for *locations* (folders, people, collection rails), not a second
+photo table.
+
+| Slice | Gate | What lands | Must not |
+|---|---|---|---|
+| **5.1 Spec + R14** | first | `apps/gallery/ui-spec/screens.toml`; `gen_r14.py` emits `GalleryScreen` in `core/localcore-ui` and `apps/gallery/LocalGallery/Generated/Screens.swift`; `localcore-ui` re-exports it; `python3 scripts/gen_r14.py --check` green | new R4 kinds; face-review as a required GTK route |
+| **5.2 Location windows** | before any Folders/Collections UI | `LibraryIndex` grows generation-checked `folder_*` / `people_*` / `collection_*` structure+window APIs; R6 comments on new records; tests for stale generation, `MAX_VIEW_WINDOW`, empty library | shipping `PhotoFolder` by value; GTK-only grouping; a second unbounded photo list |
+| **5.3 Workspace pins** | before `shells/gallery-gtk` depends on `apps/gallery/core` | copy Gallery pins (`image = "=0.25.10"`, `uniffi`; `ort` stays behind `ml`); `cargo tree -d` in `shells/` has no second copy; `cargo test` in `apps/gallery/core` stays green. Split `gallery-view` rlib only if `staticlib`/`cdylib` makes the shells build unusable | relaxing pins; putting view models in the leftover GTK crate |
+| **5.4 Freeze leftover** | with 5.1 | `apps/gallery/linux` README marks `src/ui` frozen. Rename the leftover binary to `localgallery-reference` / `com.j23n.LocalGallery.Reference` only when `gallery-gtk` also ships `localgallery` | new features in leftover UI; deleting the reference before kit parity |
+| **5.5 `gallery-gtk` skeleton** | after 5.1+5.2+5.3 | `shells/gallery-gtk`, binary `localgallery`, id `com.j23n.LocalGallery`. Kit chrome: folder-picker, Settings dialog, logs, root switcher Folders · Collections · Photos. Photos tab binds existing `photo_structure` / `photo_window` / `set_photo_view`. Host only: config, XDG thumbs, folder watch, scan/ops via leftover `localgallery` `default-features = false` | FlowBox grids; querying leftover UI-era photo lists; Settings as a tab |
+| **5.6 Remaining screens** | after 5.5 | folders/folder, collections + memory/person/album/event pushes, viewer + photo-info, scan progress. `GtkGridView`/`GtkListView` over a `gio::ListModel` that pages ≤256. Stale generation → re-read structure, never patch across generations | building missing windows in the shell; year scrubber (optional, later) |
+| **5.7 Promotions + font** | after 5.6 uses the same shape | Music `media_item` + `thumb_radius` + `.thumb` → kit (re-snapshot Music). Contacts chips → `chip_bar` + removable variant (re-snapshot Contacts). `grid_gutter` token. Newsreader Italic + ADR 0004 R10/R11 typeface amendment (D5) | promoting Flush unless Gallery uses the same section adapter; inventing tile kinds |
+| **5.8 Core remainder** | parallel after 5.2; not a GTK rewrite | iOS `run_places`; M2 UserDefaults cutover; M1 path-keyed cache rewrite; queue places/thumbs/EXIF; M3 measurements; `ImageIOHeicDecoder` seam; `.xmp` R8–R11 *UI* (`gallery-meta` merge is already pure); 20k GitHub job | copying PeopleStore dual-write; inventing a Health accent; retiring `PACK_VARIANT` without evidence |
+| **5.9 Close-out** | after 5.6 | ADR 0004 GTK/Gallery reuse paragraph; `docs/screenshots/gtk-after/` when mutter captures; README one GTK shot per kit app; this file updated in the same change as findings | claiming three-app reuse for tiles or the mini-player |
+
+#### 5.1 screen inventory (R4 kinds only)
+
+Mirror Contacts/Music: semantic ids, kinds, sections, affordances.
+Comments record chrome (primary menu → Settings), not geometry.
+
+| id | kind | Linux route | Window |
+|---|---|---|---|
+| `folder-picker` | detail | 5.5 | none (host folder chooser) |
+| `folders` | list | 5.6 | `folder_structure` / `folder_window` |
+| `folder` | grid | 5.6 | folder children + `set_photo_ids_view` |
+| `photos` | grid | 5.5 | existing `photo_*` / `set_photo_view` + `tag_*` |
+| `collections` | list | 5.6 | `collection_structure` / `collection_window` |
+| `memory` | grid | 5.6 | memory ids → `set_photo_ids_view` |
+| `people` | grid | 5.6 | `people_structure` / `people_window` |
+| `person` | grid | 5.6 | `photo_ids_for_tag` → `set_photo_ids_view` |
+| `events` | list | 5.6 | collection section or event rows |
+| `album` | grid | 5.6 | tag/album ids → `set_photo_ids_view` |
+| `viewer` | viewer | 5.6 | photo id + host decode |
+| `photo-info` | detail | 5.6 | scanner metadata + tags/people |
+| `settings` | settings | 5.5 | Folder, Scan (`progress-row`), Diagnostics, Info last |
+| `logs` | list | 5.5 | kit `ListScreen` |
+| `sync-conflict-group` | detail | 5.8 UI | `gallery-meta` sidecar merge (already pure) |
+| `face-review` | list | **unbound gap** | none until the core-loop table changes |
+
+#### 5.2 window rules
+
+Already landed: `ViewStructure` / `ViewError` / `MAX_VIEW_WINDOW`,
+`photo_structure` / `photo_window` / `set_photo_view` /
+`set_photo_ids_view`, `tag_structure` / `tag_window`.
+
+Add (same generation, same bound, same stale refusal):
+
+1. **Folders.** Scanner already returns a flat `ScannedFolderHost` list
+   (`parent_index`, `photo_start`, `photo_count`) so the recursive
+   `PhotoFolder` never crosses the wire twice. `LibraryIndex` must take
+   that flat tree (extend `build` or add `set_folders`) and expose
+   `folder_structure(parent_id)` + `folder_window(...)` as
+   `GalleryTextRow` (name, count). Photo cells of a folder go through
+   `set_photo_ids_view`, not a new media window. Do not return
+   `PhotoFolder` from FFI.
+2. **People.** `LibraryIndex` already caches the `People/…` suggestion
+   list. `people_structure` / `people_window` are `GalleryTextRow`
+   (name, count). Person photos: `photo_ids_for_tag` +
+   `set_photo_ids_view`.
+3. **Collections hub.** Move leftover `collection_groups` /
+   `leaf_tags` / event-folder grouping from
+   `apps/gallery/linux/src/host.rs` into `gallery-ffi` (or a core crate
+   it already depends on). `collection_structure` sections are
+   Memories / People / Events / Albums (and other tag namespaces).
+   Rows are ids + `GalleryTextRow`. Memories stay
+   `generate_memories` / `compute_scheduled_memories`; the index may
+   cache the last produced id list, but GTK does not cluster.
+
+iOS should grow callers for new windows or the slice comment must say
+**explicit iOS deferral**. Do not leave a GTK-only projection.
+
+#### 5.5–5.6 shell rules
+
+- Root tabs: Folders, Collections, Photos (that order). Settings is the
+  primary-menu dialog, not a tab.
+- Compact/wide layout: [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md)
+  Phase 5 table.
+- Thumbnails: resolve `thumbnail_ref` in factory `bind`, cancel in
+  `unbind`. Host XDG cache stays in leftover `localgallery` lib.
+- Reuse target after 5.6: measure with `measure_reuse`; promote only
+  when Gallery is the second production consumer (5.7).
+
+Size: L–XL. Each slice is one work item: one fixture or `--check`, one
+review question.
 
 ---
 
@@ -899,8 +992,10 @@ without a Health shell. Next engineering moves, in parallel:
 - **Phase 4 remainder** — **done (4.s1–4.s4).** Swift kit seam is
   measured for Settings/list/filter/confirm. Do not extract
   media/grid/viewer here; that is Gallery.
-- **Phase 5 remainder** — leftover Gallery GTK stays frozen; windowed
-  FFI is in; Places / 20k CI / `.xmp` R8–R11 / M1–M3 still land here.
+- **Phase 5** — sequenced 5.1–5.9 above. Next engineering: spec +
+  location windows (5.1, 5.2), then pins + `gallery-gtk` (5.3, 5.5).
+  Leftover GTK stays frozen (5.4). Places / 20k CI / `.xmp` / M1–M3
+  are 5.8, not a reason to restyle `apps/gallery/linux`.
 - **Phase 6 remainder** — HealthKit, FIT, native shells, retire Go.
   Do not invent a Health accent.
 
