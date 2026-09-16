@@ -1,0 +1,19 @@
+<x:xmpmeta xmlns:x='adobe:ns:meta/'>
+<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>
+ <rdf:Description rdf:about=''
+  xmlns:dc='http://purl.org/dc/elements/1.1/'
+  xmlns:digiKam='http://www.digikam.org/ns/1.0/'
+  xmlns:lr='http://ns.adobe.com/lightroom/1.0/'
+  xmlns:phototools='https://github.com/j23n/photo-tools/ns/1.0/'
+  xmlns:acme='https://example.invalid/acme/1.0/'>
+  <dc:subject><rdf:Bag><rdf:li>Favorite</rdf:li><rdf:li>Dog</rdf:li></rdf:Bag></dc:subject>
+  <digiKam:TagsList><rdf:Seq><rdf:li>Albums/Favorites</rdf:li><rdf:li>Objects/Animal/Dog</rdf:li></rdf:Seq></digiKam:TagsList>
+  <lr:hierarchicalSubject><rdf:Bag><rdf:li>Albums|Favorites</rdf:li><rdf:li>Objects|Animal|Dog</rdf:li></rdf:Bag></lr:hierarchicalSubject>
+  <phototools:CoreModelPack>new-pack</phototools:CoreModelPack>
+  <phototools:CoreTags><rdf:Bag><rdf:li>Objects/Animal/Dog</rdf:li></rdf:Bag></phototools:CoreTags>
+  <phototools:CoreSubjects><rdf:Bag><rdf:li>Dog</rdf:li></rdf:Bag></phototools:CoreSubjects>
+  <phototools:CoreHierarchical><rdf:Bag><rdf:li>Objects|Animal|Dog</rdf:li></rdf:Bag></phototools:CoreHierarchical>
+  <acme:Rating>5</acme:Rating>
+ </rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>

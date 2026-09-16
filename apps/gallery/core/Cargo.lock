@@ -476,6 +476,7 @@ dependencies = [
  "gallery-model",
  "gallery-vfs",
  "kamadak-exif",
+ "localcore-conflict",
  "quick-xml",
  "serde",
  "serde_json",

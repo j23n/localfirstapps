@@ -29,6 +29,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod conflict;
 mod edit;
 pub mod error;
 pub mod faces;
@@ -43,6 +44,7 @@ pub mod tags;
 pub mod write;
 pub mod xml;
 
+pub use conflict::{merge_sidecar_conflicts, SidecarConflictMerge, SidecarVersion};
 pub use error::{MetaError, MetaResult};
 pub use faces::{apply_faces, write_faces, AppliedFaces, Authority, FaceWriteRequest};
 pub use media::{read_image_metadata, read_video_date, ImageMetadata};

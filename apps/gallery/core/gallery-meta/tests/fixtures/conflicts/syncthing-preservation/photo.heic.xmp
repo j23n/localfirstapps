@@ -1,0 +1,20 @@
+<x:xmpmeta xmlns:x='adobe:ns:meta/'>
+<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>
+ <rdf:Description rdf:about=''
+  xmlns:dc='http://purl.org/dc/elements/1.1/'
+  xmlns:digiKam='http://www.digikam.org/ns/1.0/'
+  xmlns:lr='http://ns.adobe.com/lightroom/1.0/'
+  xmlns:phototools='https://github.com/j23n/photo-tools/ns/1.0/'
+  xmlns:acme='https://example.invalid/acme/1.0/'>
+  <dc:subject><rdf:Bag><rdf:li>Travel</rdf:li><rdf:li>Cat</rdf:li></rdf:Bag></dc:subject>
+  <digiKam:TagsList><rdf:Seq><rdf:li>Trips/Italy</rdf:li><rdf:li>Objects/Animal/Cat</rdf:li></rdf:Seq></digiKam:TagsList>
+  <lr:hierarchicalSubject><rdf:Bag><rdf:li>Trips|Italy</rdf:li><rdf:li>Objects|Animal|Cat</rdf:li></rdf:Bag></lr:hierarchicalSubject>
+  <phototools:CoreModelPack>old-pack</phototools:CoreModelPack>
+  <phototools:CoreTags><rdf:Bag><rdf:li>Objects/Animal/Cat</rdf:li></rdf:Bag></phototools:CoreTags>
+  <phototools:CoreSubjects><rdf:Bag><rdf:li>Cat</rdf:li></rdf:Bag></phototools:CoreSubjects>
+  <phototools:CoreHierarchical><rdf:Bag><rdf:li>Objects|Animal|Cat</rdf:li></rdf:Bag></phototools:CoreHierarchical>
+  <acme:Rating>3</acme:Rating>
+  <acme:LensProfile serial='A-17'>hand-tuned</acme:LensProfile>
+ </rdf:Description>
+</rdf:RDF>
+</x:xmpmeta>
