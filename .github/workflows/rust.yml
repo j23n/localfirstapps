@@ -1,7 +1,7 @@
 # Crate gate: cargo test for localcore-* (including localcore-ui) and gallery crates.
 # App shells (gallery Linux/iOS, contacts, music, health log) are
-# `.github/workflows/apps.yml`. The 20k generated-library e2e is
-# local-only (`apps/gallery/scripts/e2e_20k.sh`); it is not a workflow.
+# `.github/workflows/apps.yml`. The Gallery job also owns the required
+# generated 20k scan → enrich → index → memories → bounded-FFI gate.
 name: Rust
 
 on:
@@ -58,6 +58,7 @@ jobs:
   gallery-core:
     name: gallery-core
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -71,17 +72,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential pkg-config libssl-dev
+            build-essential pkg-config libssl-dev python3-venv
 
       - name: cargo test --locked --workspace
         working-directory: apps/gallery/core
         run: cargo test --locked --workspace --all-targets 2>&1 | tee "${GITHUB_WORKSPACE}/gallery-core-test.log"
+
+      - name: Generated 20k scale and bounded FFI
+        env:
+          LOCALGALLERY_E2E_LIBRARY: ${{ runner.temp }}/localgallery-e2e-20k
+        run: apps/gallery/scripts/e2e_20k.sh 2>&1 | tee "${GITHUB_WORKSPACE}/gallery-e2e-20k.log"
 
       - name: Upload cargo test logs
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: gallery-core-test-logs
-          path: gallery-core-test.log
+          path: |
+            gallery-core-test.log
+            gallery-e2e-20k.log
           if-no-files-found: warn
           retention-days: 7

@@ -7,9 +7,10 @@
 //! `.xmp`, then feeds that same `PhotoFile` table into `gallery-index` and
 //! `gallery-memories`. Structural counts are compared to a committed golden
 //! when `--count/--seed/--today` match a file under `tests/e2e_baselines/`.
-//! Timings are compared to `$LOCALGALLERY_E2E_LIBRARY/.e2e-timing.json`
-//! (2× slack) so a machine records its own baseline. Rewrite goldens with
-//! `LOCALGALLERY_E2E_RECORD=1`.
+//! Optional developer timings are compared to
+//! `$LOCALGALLERY_E2E_LIBRARY/.e2e-timing.json` (2× slack) only when
+//! `LOCALGALLERY_E2E_TIMING_BASELINE=1`. CI uses the deterministic structural
+//! assertions and broad absolute ceilings below, never a runner-local file.
 //!
 //! ```sh
 //! LOCALGALLERY_E2E_LIBRARY=/tmp/localgallery-e2e-library \
@@ -93,6 +94,13 @@ fn env_u64(name: &str, default: u64) -> u64 {
 fn recording() -> bool {
     matches!(
         env::var("LOCALGALLERY_E2E_RECORD").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+fn timing_baseline_enabled() -> bool {
+    matches!(
+        env::var("LOCALGALLERY_E2E_TIMING_BASELINE").as_deref(),
         Ok("1") | Ok("true") | Ok("yes")
     )
 }
@@ -532,11 +540,11 @@ fn generated_library_regression() {
     let timing_file = timing_path(&root);
     if recording() {
         // already written
-    } else if timing_file.is_file() {
+    } else if timing_baseline_enabled() && timing_file.is_file() {
         let recorded: Timing =
             serde_json::from_str(&fs::read_to_string(&timing_file).unwrap()).unwrap();
         assert_timing_vs_recorded(&timing, &recorded);
-    } else {
+    } else if timing_baseline_enabled() {
         write_json(&timing_file, &timing);
         println!("wrote first-run timing baseline {}", timing_file.display());
     }

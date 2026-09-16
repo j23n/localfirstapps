@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#   "pillow",
+#   "pillow==12.3.0",
 # ]
 # ///
 """Generate a synthetic test library for LocalGallery.
