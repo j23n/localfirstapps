@@ -1,0 +1,22 @@
+[package]
+name = "music-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Headless music core: folder projection, playlists, and R8-R11 merge"
+
+[dependencies]
+localcore-conflict = { path = "../localcore-conflict" }
+localcore-id = { path = "../localcore-id" }
+localcore-log = { path = "../localcore-log" }
+localcore-vfs = { path = "../localcore-vfs" }
+localcore-walk = { path = "../localcore-walk" }
+serde_json.workspace = true
+sha2.workspace = true
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+serde.workspace = true
+tempfile = "3"

@@ -179,6 +179,26 @@ final class PersistenceManagerTests {
         #expect(track.id == Track.stableID(for: url))
     }
 
+    @Test func migrate_preNFCIDRekeysDisposableProjection() async throws {
+        let url = URL(fileURLWithPath: "/Music/Cafe\u{301}/song.m4a")
+        let json = """
+        [{
+          "id": "00000000-0000-0000-0000-000000000000",
+          "url": "\(url.absoluteString)",
+          "title": "NFC",
+          "artist": "X",
+          "album": "Y",
+          "duration": 1
+        }]
+        """
+        try writeLibraryJSON(json)
+
+        let pm = PersistenceManager(documentsURL: tempDir, userDefaults: defaults)
+        let track = try #require(await pm.loadLibraryAsync().first)
+        #expect(track.id == Track.stableID(for: url))
+        #expect(track.id.uuidString.lowercased() == "487d20a7-3043-57c3-ae34-cbbbb78b602a")
+    }
+
     @Test func migrate_emptyArtworkDataDoesNotCreateCacheFile() async throws {
         let url = URL(fileURLWithPath: "/legacy/empty-art.mp3")
         let json = """

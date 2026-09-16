@@ -24,6 +24,19 @@ struct TrackTests {
         #expect(a == b)
     }
 
+    @Test func stableID_matchesCoreNFCVectors() {
+        let ascii = Track.stableID(for: URL(fileURLWithPath: "/Users/me/Music/song.mp3"))
+        #expect(ascii.uuidString.lowercased() == "b7bb3d74-05c2-5bbf-be83-1a46d3acf800")
+
+        let nfc = Track.stableID(for: URL(fileURLWithPath: "/Music/Caf\u{e9}/song.m4a"))
+        let nfd = Track.stableID(for: URL(fileURLWithPath: "/Music/Cafe\u{301}/song.m4a"))
+        #expect(nfc == nfd)
+        #expect(nfc.uuidString.lowercased() == "487d20a7-3043-57c3-ae34-cbbbb78b602a")
+
+        let hangul = Track.stableID(for: URL(fileURLWithPath: "/Music/한국/노래.flac"))
+        #expect(hangul.uuidString.lowercased() == "b5c629c9-fa10-5a65-95de-8f9eabb76bab")
+    }
+
     @Test func stableID_setsRFC4122Bits() {
         let id = Track.stableID(for: URL(fileURLWithPath: "/x.mp3"))
         let bytes = withUnsafeBytes(of: id.uuid) { Array($0) }

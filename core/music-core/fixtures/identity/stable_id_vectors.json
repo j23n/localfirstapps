@@ -1,0 +1,22 @@
+[
+  {
+    "label": "existing-swift-ascii",
+    "input": "/Users/me/Music/song.mp3",
+    "uuid": "b7bb3d74-05c2-5bbf-be83-1a46d3acf800"
+  },
+  {
+    "label": "nfc-cafe",
+    "input": "/Music/Caf\u00e9/song.m4a",
+    "uuid": "487d20a7-3043-57c3-ae34-cbbbb78b602a"
+  },
+  {
+    "label": "nfd-cafe",
+    "input": "/Music/Cafe\u0301/song.m4a",
+    "uuid": "487d20a7-3043-57c3-ae34-cbbbb78b602a"
+  },
+  {
+    "label": "hangul",
+    "input": "/Music/\ud55c\uad6d/\ub178\ub798.flac",
+    "uuid": "b5c629c9-fa10-5a65-95de-8f9eabb76bab"
+  }
+]

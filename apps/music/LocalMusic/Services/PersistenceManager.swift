@@ -149,7 +149,9 @@ final class PersistenceManager: @unchecked Sendable {
         let hasArtwork = entry.hasArtwork ?? ArtworkCache.hasArtwork(for: entry.url)
         let hasLyrics = entry.hasLyrics ?? LyricsCache.hasLyrics(for: entry.url)
         return Track(
-            id: entry.id ?? Track.stableID(for: entry.url),
+            // `library.json` is a disposable projection. Re-derive on every
+            // load so pre-NFC ids migrate without becoming authoritative.
+            id: Track.stableID(for: entry.url),
             url: entry.url,
             title: entry.title,
             artist: entry.artist,

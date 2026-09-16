@@ -19,9 +19,11 @@ struct Track: Identifiable, Codable, Hashable, Sendable {
     /// Stable UUID derived from the file path: a SHA-256 truncated to 16
     /// bytes with RFC 4122 variant + version-5 nibbles set so the value is
     /// a syntactically valid UUID. (It is not a strict v5 UUID — there's no
-    /// namespace input — but Foundation only cares about the layout.)
+    /// namespace input — but Foundation only cares about the layout.) NFC
+    /// normalization matches `localcore-id` and collapses canonically
+    /// equivalent filesystem spellings.
     static func stableID(for url: URL) -> UUID {
-        let path = url.standardized.path
+        let path = url.standardized.path.precomposedStringWithCanonicalMapping
         let digest = SHA256.hash(data: Data(path.utf8))
         var bytes = Array(digest.prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50
