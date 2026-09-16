@@ -59,10 +59,20 @@ fn generated_library_ffi_windows_are_bounded_and_generation_checked() {
         }
     }
     assert_eq!(crossed, id_count);
-    assert_eq!(
-        largest, 128,
-        "no FFI content allocation may exceed its window"
+    assert!(
+        largest <= 128,
+        "no FFI content allocation may exceed its window: {largest}"
     );
+    if id_count >= 128 {
+        let full = index
+            .photo_window("photos".into(), 0, 128, structure.generation)
+            .expect("flat photos window");
+        assert_eq!(
+            full.len(),
+            128,
+            "a library of {id_count} photos must exercise a full 128-item window"
+        );
+    }
 
     let filtered = index.set_photo_view("anna".into(), Vec::new());
     assert!(filtered.generation > structure.generation);
