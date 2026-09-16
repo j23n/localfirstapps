@@ -1,13 +1,11 @@
 # App suites the nested apps/*/.github workflows cannot run on this
-# monorepo. Required on every push: gallery Linux + iOS, contacts iOS,
-# music iOS, health log/event. Nested copies stay for the old remotes.
+# monorepo. The top-level CI routes app and shared changes here: gallery
+# Linux + iOS, contacts iOS, music iOS, health log/event. Nested copies stay
+# for the old remotes.
 name: Apps
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_call:
 
 permissions:
   contents: read

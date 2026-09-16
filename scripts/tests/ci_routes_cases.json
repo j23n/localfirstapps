@@ -1,0 +1,105 @@
+[
+  {
+    "name": "docs-only",
+    "paths": [
+      "README.md",
+      "docs/spec/README.md",
+      "apps/gallery/docs/storage.md"
+    ],
+    "expected": {
+      "rust": false,
+      "apps": false,
+      "bindings": false,
+      "conformance": false,
+      "docker": false
+    }
+  },
+  {
+    "name": "shared-core",
+    "paths": ["core/localcore-vfs/src/lib.rs"],
+    "expected": {
+      "rust": true,
+      "apps": true,
+      "bindings": true,
+      "conformance": true,
+      "docker": false
+    }
+  },
+  {
+    "name": "ffi",
+    "paths": ["core/contacts-ffi/src/lib.rs"],
+    "expected": {
+      "rust": true,
+      "apps": true,
+      "bindings": true,
+      "conformance": true,
+      "docker": false
+    }
+  },
+  {
+    "name": "app-specific",
+    "paths": ["apps/music/LocalMusic/LibraryView.swift"],
+    "expected": {
+      "rust": false,
+      "apps": true,
+      "bindings": false,
+      "conformance": true,
+      "docker": false
+    }
+  },
+  {
+    "name": "workflow",
+    "paths": [".github/workflows/apps.yml"],
+    "expected": {
+      "rust": true,
+      "apps": true,
+      "bindings": true,
+      "conformance": true,
+      "docker": true
+    }
+  },
+  {
+    "name": "initial-push",
+    "event": "initial-push",
+    "expected": {
+      "rust": true,
+      "apps": true,
+      "bindings": true,
+      "conformance": true,
+      "docker": true
+    }
+  },
+  {
+    "name": "docker",
+    "paths": ["docker/Dockerfile", "docker/entrypoint.sh"],
+    "expected": {
+      "rust": false,
+      "apps": false,
+      "bindings": false,
+      "conformance": false,
+      "docker": true
+    }
+  },
+  {
+    "name": "r14-input",
+    "paths": ["docs/spec/ui/vocabulary.toml"],
+    "expected": {
+      "rust": false,
+      "apps": false,
+      "bindings": false,
+      "conformance": true,
+      "docker": false
+    }
+  },
+  {
+    "name": "unknown-is-conservative",
+    "paths": ["new-shared-area/config.toml"],
+    "expected": {
+      "rust": true,
+      "apps": true,
+      "bindings": true,
+      "conformance": true,
+      "docker": true
+    }
+  }
+]

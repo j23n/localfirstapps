@@ -1,0 +1,31 @@
+# Build the shared agent image without installing the unpinned Cursor CLI.
+name: Docker
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+jobs:
+  image:
+    name: agent image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Build localfiles image
+        run: |
+          docker build \
+            --target localfiles \
+            --build-arg INSTALL_CURSOR=0 \
+            --tag localfiles/agent:ci \
+            docker

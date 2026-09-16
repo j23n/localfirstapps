@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    name: Classify paths
+    runs-on: ubuntu-24.04
+    outputs:
+      rust: ${{ steps.routes.outputs.rust }}
+      apps: ${{ steps.routes.outputs.apps }}
+      bindings: ${{ steps.routes.outputs.bindings }}
+      conformance: ${{ steps.routes.outputs.conformance }}
+      docker: ${{ steps.routes.outputs.docker }}
+      reason: ${{ steps.routes.outputs.reason }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Test path router
+        run: python3 -m unittest scripts/tests/test_ci_routes.py
+
+      - name: Classify changed paths
+        id: routes
+        run: |
+          python3 scripts/ci_routes.py github \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --sha "$GITHUB_SHA" \
+            --output "$GITHUB_OUTPUT"
+
+  rust:
+    name: Rust
+    needs: classify
+    if: needs.classify.outputs.rust == 'true'
+    uses: ./.github/workflows/rust.yml
+    permissions:
+      contents: read
+
+  apps:
+    name: Apps
+    needs: classify
+    if: needs.classify.outputs.apps == 'true'
+    uses: ./.github/workflows/apps.yml
+    permissions:
+      contents: read
+
+  bindings:
+    name: Bindings
+    needs: classify
+    if: needs.classify.outputs.bindings == 'true'
+    uses: ./.github/workflows/bindings.yml
+    permissions:
+      contents: read
+
+  conformance:
+    name: Conformance
+    needs: classify
+    if: needs.classify.outputs.conformance == 'true'
+    uses: ./.github/workflows/conformance.yml
+    permissions:
+      contents: read
+
+  docker:
+    name: Docker
+    needs: classify
+    if: needs.classify.outputs.docker == 'true'
+    uses: ./.github/workflows/docker.yml
+    permissions:
+      contents: read
+
+  required:
+    name: CI required
+    if: ${{ always() }}
+    needs:
+      - classify
+      - rust
+      - apps
+      - bindings
+      - conformance
+      - docker
+    runs-on: ubuntu-24.04
+    env:
+      CLASSIFY_RESULT: ${{ needs.classify.result }}
+      RUST_SELECTED: ${{ needs.classify.outputs.rust }}
+      RUST_RESULT: ${{ needs.rust.result }}
+      APPS_SELECTED: ${{ needs.classify.outputs.apps }}
+      APPS_RESULT: ${{ needs.apps.result }}
+      BINDINGS_SELECTED: ${{ needs.classify.outputs.bindings }}
+      BINDINGS_RESULT: ${{ needs.bindings.result }}
+      CONFORMANCE_SELECTED: ${{ needs.classify.outputs.conformance }}
+      CONFORMANCE_RESULT: ${{ needs.conformance.result }}
+      DOCKER_SELECTED: ${{ needs.classify.outputs.docker }}
+      DOCKER_RESULT: ${{ needs.docker.result }}
+    steps:
+      - name: Require every selected suite
+        run: |
+          status=0
+
+          if [[ "$CLASSIFY_RESULT" != "success" ]]; then
+            echo "Path classification did not succeed: $CLASSIFY_RESULT" >&2
+            status=1
+          fi
+
+          check_suite() {
+            local suite="$1"
+            local selected="$2"
+            local result="$3"
+
+            if [[ "$selected" == "true" ]]; then
+              if [[ "$result" != "success" ]]; then
+                echo "$suite was selected but finished with: $result" >&2
+                status=1
+              else
+                echo "$suite: success"
+              fi
+            elif [[ "$result" == "skipped" ]]; then
+              echo "$suite: deliberately skipped"
+            else
+              echo "$suite was not selected but finished with: $result" >&2
+              status=1
+            fi
+          }
+
+          check_suite Rust "$RUST_SELECTED" "$RUST_RESULT"
+          check_suite Apps "$APPS_SELECTED" "$APPS_RESULT"
+          check_suite Bindings "$BINDINGS_SELECTED" "$BINDINGS_RESULT"
+          check_suite Conformance "$CONFORMANCE_SELECTED" "$CONFORMANCE_RESULT"
+          check_suite Docker "$DOCKER_SELECTED" "$DOCKER_RESULT"
+
+          exit "$status"
