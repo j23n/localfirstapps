@@ -65,6 +65,7 @@ services:
       - "ssh:/home/agent/.ssh"          # keys, known_hosts
       - "config:/home/agent/.config"    # gh login, git global config, CLI config
       - "claude:/home/agent/.claude"    # Claude Code state; it does not use XDG
+      - "cursor:/home/agent/.cursor"    # Cursor chats, model prefs, CLI state
       - "cache:/home/agent/.cache"      # cargo, rustup, go, npm, ORT (~GBs)
 
       # Deliberately NOT a volume: /home/agent/.local. It holds pi and
@@ -91,7 +92,7 @@ services:
       #   gh ssh-key add ~/.ssh/id_ed25519.pub
       #   claude                        # /login on first run
       #
-      # All four land in the volumes above and survive restarts and rebuilds.
+      # All of these land in the volumes above and survive restarts and rebuilds.
       # If you do need a token for CI-style non-interactive use, export
       # GH_TOKEN in your shell before `compose up` and add it here — but note
       # that gh ignores its stored login whenever GH_TOKEN is set.
@@ -112,4 +113,5 @@ volumes:
   ssh:
   config:
   claude:
+  cursor:
   cache:

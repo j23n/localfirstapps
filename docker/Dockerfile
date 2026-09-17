@@ -131,17 +131,18 @@ USER ${USERNAME}
 ENV HOME=/home/${USERNAME}
 ENV PATH=${HOME}/.local/bin:${PATH}
 
-# The four persistent directories, created here as `agent` so named volumes
+# The persistent directories, created here as `agent` so named volumes
 # inherit ownership on first use (no root entrypoint chown).
 #
 #   .ssh      keys and known_hosts
 #   .config   gh login, git global config, agent CLI config (XDG)
 #   .claude   Claude Code's own state; it does not use XDG
+#   .cursor   Cursor chats, model prefs, CLI state; also not XDG
 #   .cache    CARGO_HOME/RUSTUP_HOME/GOPATH live under here in stage 2
 #
 # ~/.local is not among them: it holds pi and cursor-agent. A volume there
 # would pin them at first-create and a rebuild would not upgrade them.
-RUN mkdir -p "$HOME/.ssh" "$HOME/.config" "$HOME/.claude" "$HOME/.cache" \
+RUN mkdir -p "$HOME/.ssh" "$HOME/.config" "$HOME/.claude" "$HOME/.cursor" "$HOME/.cache" \
     && chmod 700 "$HOME/.ssh"
 
 ENV GIT_CONFIG_GLOBAL=${HOME}/.config/git/config \

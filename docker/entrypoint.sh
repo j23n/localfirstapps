@@ -15,11 +15,11 @@ fatal() { printf '\033[31mfatal:\033[0m %s\n' "$*" >&2; exit 1; }
 #
 # A named volume mounted over a directory that exists in the image inherits
 # that directory's ownership on first use, which is why the Dockerfile creates
-# all four as `agent` before declaring them. A volume created by an older
+# them as `agent` before declaring them. A volume created by an older
 # compose file, or a host path bind-mounted here instead, will not have been —
 # and the agent user cannot chown its way out. Say so precisely.
 # ---------------------------------------------------------------------------
-for d in "$HOME/.ssh" "$HOME/.config" "$HOME/.claude" "$HOME/.cache"; do
+for d in "$HOME/.ssh" "$HOME/.config" "$HOME/.claude" "$HOME/.cursor" "$HOME/.cache"; do
   [ -d "$d" ] || mkdir -p "$d"
   if ! [ -w "$d" ]; then
     fatal "$d is not writable by $(id -un) (uid $(id -u)).

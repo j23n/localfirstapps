@@ -46,6 +46,7 @@ above `docker/`). If the checkout lives elsewhere, edit `WORKSPACE` in
 | volume `ssh` | `/home/agent/.ssh` | keys, `known_hosts` |
 | volume `config` | `/home/agent/.config` | `gh` login, git global config, agent CLI config |
 | volume `claude` | `/home/agent/.claude` | Claude Code state — it does not use XDG |
+| volume `cursor` | `/home/agent/.cursor` | Cursor chats, model prefs, CLI state — also not XDG |
 | volume `cache` | `/home/agent/.cache` | cargo, rustup, Go, npm, the ORT static lib. Gigabytes. |
 
 **`/home/agent/.local` is deliberately not mounted.** It holds `pi` and
@@ -59,7 +60,7 @@ running container did not have them.
 Named volumes rather than host directories because the container writes these
 as uid 1000 and nothing on the host needs to read them. A named volume
 mounted over a path that exists in the image is initialised from that path,
-*ownership included*, which is why the Dockerfile creates all four as `agent`
+*ownership included*, which is why the Dockerfile creates them as `agent`
 and why no root entrypoint is needed to chown anything.
 
 `docker compose down` keeps the volumes. **`down -v` destroys them** — that is
@@ -155,7 +156,7 @@ anyway.
 
 ## If something is wrong
 
-The entrypoint checks the four volumes on every start and prints a precise fix
+The entrypoint checks the volumes on every start and prints a precise fix
 rather than failing obscurely later. The two you may actually hit:
 
 - **`~/.ssh is not writable`** — the volume was created with the wrong
