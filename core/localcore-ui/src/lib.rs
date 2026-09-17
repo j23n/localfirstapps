@@ -8,7 +8,7 @@ mod screens;
 mod tokens;
 
 pub use kinds::{ActionRole, Affordance, ItemKind, NavIntent, ScreenKind, StatusSeverity};
-pub use screens::{ContactsScreen, HealthScreen, MusicScreen};
+pub use screens::{ContactsScreen, GalleryScreen, HealthScreen, MusicScreen};
 
 pub mod gallery {
     pub use crate::tokens::gallery::*;
@@ -57,6 +57,15 @@ mod tests {
         assert_eq!(ContactsScreen::ContactList.kind(), ScreenKind::List);
         assert_eq!(ContactsScreen::ContactEdit.kind(), ScreenKind::Form);
         assert_eq!(ContactsScreen::SyncConflictGroup.kind(), ScreenKind::Detail);
+    }
+
+    #[test]
+    fn gallery_screens_match_the_spec() {
+        assert_eq!(GalleryScreen::ALL.len(), 16);
+        assert_eq!(GalleryScreen::Photos.as_str(), "photos");
+        assert_eq!(GalleryScreen::Photos.kind(), ScreenKind::Grid);
+        assert_eq!(GalleryScreen::FaceReview.kind(), ScreenKind::List);
+        assert_eq!(GalleryScreen::Viewer.kind(), ScreenKind::Viewer);
     }
 
     #[test]

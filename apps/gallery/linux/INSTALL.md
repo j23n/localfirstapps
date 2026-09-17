@@ -2,7 +2,8 @@
 
 GTK4 / libadwaita desktop build of the same library the iOS app uses.
 One binary: a laptop window (1200×800) or `localgallery --comet`
-(540×620).
+(540×620). This leftover UI is a frozen reference; the Phase 5
+destination is `shells/gallery-gtk`.
 
 ## Dependencies
 

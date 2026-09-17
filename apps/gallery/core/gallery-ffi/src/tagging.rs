@@ -36,7 +36,9 @@ use std::sync::Arc;
 use gallery_ml::{
     engine::iso8601_utc_now, MlError, RunOptions, RunSummary, TaggingEngine, TaggingProgress,
 };
-use gallery_vfs::{StdVfs, VfsError};
+#[cfg(feature = "ml")]
+use gallery_vfs::StdVfs;
+use gallery_vfs::VfsError;
 
 use gallery_meta::MetaError;
 
@@ -602,14 +604,25 @@ fn open_tagging_session(
     model_pack_dir: String,
     decoder: Option<Arc<dyn crate::HeicDecoder>>,
 ) -> Result<Arc<TaggingSession>, TaggingError> {
-    let mut engine = TaggingEngine::open(&cache_db_path, &model_pack_dir, Arc::new(StdVfs::new()))?;
-    if let Some(decoder) = decoder {
-        engine = engine.with_heic_decoder(Arc::new(crate::heic::HeicDecoderAdapter(decoder)));
+    #[cfg(not(feature = "ml"))]
+    {
+        let _ = (cache_db_path, model_pack_dir, decoder);
+        return Err(TaggingError::Inference {
+            detail: "gallery-ffi was built without the ml feature".into(),
+        });
     }
-    Ok(Arc::new(TaggingSession {
-        engine: Arc::new(engine),
-        run: RunLock::new(),
-    }))
+    #[cfg(feature = "ml")]
+    {
+        let mut engine =
+            TaggingEngine::open(&cache_db_path, &model_pack_dir, Arc::new(StdVfs::new()))?;
+        if let Some(decoder) = decoder {
+            engine = engine.with_heic_decoder(Arc::new(crate::heic::HeicDecoderAdapter(decoder)));
+        }
+        Ok(Arc::new(TaggingSession {
+            engine: Arc::new(engine),
+            run: RunLock::new(),
+        }))
+    }
 }
 
 /// Where a resolved pack directory came from.

@@ -126,4 +126,33 @@ fn generated_library_ffi_windows_are_bounded_and_generation_checked() {
         horizon_ms < horizon_ceiling_ms,
         "retained 20k horizon took {horizon_ms:.1}ms (ceiling {horizon_ceiling_ms:.0}ms)"
     );
+
+    index.set_folders(
+        scanned.folders,
+        scanned.flat_photos.iter().map(|p| p.id.clone()).collect(),
+    );
+    let folders = index.folder_structure(None);
+    let folder_rows = index
+        .folder_window("folders".into(), 0, 8, folders.generation)
+        .expect("folder window current generation");
+    assert!(folder_rows.len() <= 8);
+    let people = index.people_structure();
+    let people_rows = index
+        .people_window("people".into(), 0, 8, people.generation)
+        .expect("people window current generation");
+    assert!(people_rows.len() <= 8);
+    let collections = index.collection_structure();
+    assert!(
+        collections
+            .sections
+            .iter()
+            .all(|section| section.id != "people"),
+        "People stay on people_structure, not the collections hub"
+    );
+    if let Some(section) = collections.sections.first() {
+        let collection_rows = index
+            .collection_window(section.id.clone(), 0, 8, collections.generation)
+            .expect("collection window current generation");
+        assert!(collection_rows.len() <= 8);
+    }
 }

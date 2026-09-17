@@ -28,6 +28,7 @@ uniffi::setup_scaffolding!("GalleryCore");
 pub mod faces;
 pub mod heic;
 pub mod library;
+mod locations;
 pub mod person_log;
 pub mod places;
 pub mod scanner;

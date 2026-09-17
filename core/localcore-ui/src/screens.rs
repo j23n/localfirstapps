@@ -59,6 +59,89 @@ impl ContactsScreen {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GalleryScreen {
+    FolderPicker,
+    Folders,
+    Folder,
+    Photos,
+    Collections,
+    Memory,
+    People,
+    Person,
+    Events,
+    Album,
+    Viewer,
+    PhotoInfo,
+    Settings,
+    Logs,
+    SyncConflictGroup,
+    FaceReview,
+}
+
+impl GalleryScreen {
+    pub const ALL: &'static [Self] = &[
+        Self::FolderPicker,
+        Self::Folders,
+        Self::Folder,
+        Self::Photos,
+        Self::Collections,
+        Self::Memory,
+        Self::People,
+        Self::Person,
+        Self::Events,
+        Self::Album,
+        Self::Viewer,
+        Self::PhotoInfo,
+        Self::Settings,
+        Self::Logs,
+        Self::SyncConflictGroup,
+        Self::FaceReview,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FolderPicker => "folder-picker",
+            Self::Folders => "folders",
+            Self::Folder => "folder",
+            Self::Photos => "photos",
+            Self::Collections => "collections",
+            Self::Memory => "memory",
+            Self::People => "people",
+            Self::Person => "person",
+            Self::Events => "events",
+            Self::Album => "album",
+            Self::Viewer => "viewer",
+            Self::PhotoInfo => "photo-info",
+            Self::Settings => "settings",
+            Self::Logs => "logs",
+            Self::SyncConflictGroup => "sync-conflict-group",
+            Self::FaceReview => "face-review",
+        }
+    }
+
+    pub fn kind(self) -> ScreenKind {
+        match self {
+            Self::FolderPicker => ScreenKind::Detail,
+            Self::Folders => ScreenKind::List,
+            Self::Folder => ScreenKind::Grid,
+            Self::Photos => ScreenKind::Grid,
+            Self::Collections => ScreenKind::List,
+            Self::Memory => ScreenKind::Grid,
+            Self::People => ScreenKind::Grid,
+            Self::Person => ScreenKind::Grid,
+            Self::Events => ScreenKind::List,
+            Self::Album => ScreenKind::Grid,
+            Self::Viewer => ScreenKind::Viewer,
+            Self::PhotoInfo => ScreenKind::Detail,
+            Self::Settings => ScreenKind::Settings,
+            Self::Logs => ScreenKind::List,
+            Self::SyncConflictGroup => ScreenKind::Detail,
+            Self::FaceReview => ScreenKind::List,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HealthScreen {
     Today,
     Medicine,

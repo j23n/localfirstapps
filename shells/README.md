@@ -16,10 +16,15 @@ UI toolkit.
 - `music-gtk` — LocalMusic laptop / Comet shell. Links the kit and
   `music-core`; GStreamer and MPRIS remain host ports. Headless tests inject
   a deterministic transport.
+- `gallery-gtk` — Phase 5.3 pin crate (`gallery-ffi` + leftover
+  `localgallery`, both `default-features = false`). Kit UI is Phase 5.5.
+  Workspace pins: `image = "=0.25.10"`, `uniffi` 0.32. `ort` stays behind
+  `ml` (not a crate feature yet, so `--all-features` does not download it).
 
 ```
 cd shells
 cargo test --locked --workspace --all-targets
+cargo tree -d
 cargo run -p contacts-gtk
 cargo run -p contacts-gtk -- --comet
 cargo run -p music-gtk --features gstreamer-playback

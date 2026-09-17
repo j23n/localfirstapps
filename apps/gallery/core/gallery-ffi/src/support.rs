@@ -76,6 +76,7 @@ pub(crate) struct RunLock {
 }
 
 impl RunLock {
+    #[cfg_attr(not(feature = "ml"), allow(dead_code))]
     pub(crate) fn new() -> RunLock {
         RunLock {
             running: Arc::new(AtomicBool::new(false)),

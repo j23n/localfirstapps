@@ -10,14 +10,21 @@ publish.workspace = true
 name = "gallery_ffi"
 # `staticlib` is what the app links (via GalleryCore.xcframework); `cdylib` is
 # what `uniffi-bindgen` reads the interface metadata out of. `lib` keeps the
-# crate usable from Rust tests.
+# crate usable from Rust tests and from `shells/gallery-gtk`.
 crate-type = ["lib", "staticlib", "cdylib"]
+
+[features]
+# iOS / `build_core.sh` keep the historical default (ONNX Runtime).
+# `shells/gallery-gtk` depends with `default-features = false` so `ort`
+# stays behind `ml` in the shells lockfile (Phase 5.3).
+default = ["ml"]
+ml = ["gallery-ml/ort-backend"]
 
 [dependencies]
 gallery-index = { path = "../gallery-index" }
 gallery-memories = { path = "../gallery-memories" }
 gallery-meta = { path = "../gallery-meta" }
-gallery-ml = { path = "../gallery-ml" }
+gallery-ml = { path = "../gallery-ml", default-features = false }
 gallery-session = { path = "../gallery-session" }
 gallery-model = { path = "../gallery-model" }
 gallery-scan = { path = "../gallery-scan" }

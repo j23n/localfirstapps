@@ -481,7 +481,7 @@ block C.
 |---|---|---|
 | R8–R11 merge for contacts `.vcf` | **done (3.1)** | `contacts-core` + `fixtures/r8/`. Not a port of Apple `ContactMerge`. |
 | Delete contacts/music `SyncConflict` twins | **done (3.1)** | One shared `localcore-conflict/support/SyncConflict.swift`. Tests read the grammar files. |
-| Queue / scan cache keys: NFC or `StableId` | **done (3.4 leftover)** | `localcore-queue` NFC-normalises the path key on enqueue and lookup. Contacts still has no queue. Gallery scan-cache leftovers stay Phase 5. |
+| Queue / scan cache keys: NFC or `StableId` | **done (3.4 leftover)** | `localcore-queue` NFC-normalises the path key on enqueue and lookup. Contacts still has no queue. Gallery scan-cache leftovers are **5.8**. |
 | `localcore-log` / blob through `Vfs` | **done (3.4 leftover)** | `append` / `create_dir_all` on `Vfs`. Path wrappers keep health/gallery callers. |
 | Open event-type set | **done (3.4 leftover)** | Envelope stays. `valid_type` is shape-only; `known_type` is not a gate. |
 | iOS contacts FS → FFI + Syncthing sheet | **done (3.4)** | `ContactsSession`; Apple CN sheet unchanged. |
@@ -503,15 +503,21 @@ block C.
 | iOS contacts views parse vCard text | **done** | List/search/detail/edit/export/Syncthing preview bind `TextRow` / `SearchHit` / `FieldRow` / `ContactEditDraft` / `ConflictPreview`. Swift `VCardParser` / `VCardWriter` deleted. Apple CN remains a host port. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **done (4)** | `music-core` + `fixtures/r8/`. Playlist write through `localcore-vfs`. |
-| Unify iOS onto `run_places` | **5** | Two orchestrators. Pack is shipped; collapse the Swift loop. |
-| M2 UserDefaults cutover | **5** | After gallery iOS is green. Do not copy the dual-write into 3.1. |
-| M1 thumb / widget / `library_cache` rewrite | **5** | Path-keyed leftovers. Rewrite them; do not leave orphans as the plan. |
-| Queue places / thumbs / EXIF | **5** | Tagging and faces already use `localcore-queue`. |
-| M3 candidate validation / possible pack swap | **5** | Measure SFace + YuNet alignment, representative clustering and target-device cost first. Keep `PACK_VARIANT` unless evidence supports the swap. |
-| `ImageIOHeicDecoder` | **5** | Decoder seam with the gallery core loop. |
-| R8–R11 for gallery `.xmp` | **5** | Same conflict grammar as contacts, on sidecars. |
-| gallery-ffi R6 rewrite (45 Records) | **in progress (5)** | Photo/tag windows landed. 5.2 adds folder/people/collection windows. Remaining: kit shell (5.5–5.6), Places / 20k CI / `.xmp` UI (5.8). |
-| 20k-tree as a CI gate | **5** | Local `e2e_20k.sh` exists now (`#[ignore]`, structural golden under `e2e_baselines/`). The GitHub job lands with the gallery vertical. |
+| Unify iOS onto `run_places` | **5.8** | Two orchestrators. Pack is shipped; collapse the Swift loop. |
+| M2 UserDefaults cutover | **5.8** | After gallery iOS is green. Do not copy the dual-write into 3.1. |
+| M1 thumb / widget / `library_cache` rewrite | **5.8** | Path-keyed leftovers. Rewrite them; do not leave orphans as the plan. |
+| Queue places / thumbs / EXIF | **5.8** | Tagging and faces already use `localcore-queue`. |
+| M3 candidate validation / possible pack swap | **5.8** | Measure SFace + YuNet alignment, representative clustering and target-device cost first. Keep `PACK_VARIANT` unless evidence supports the swap. |
+| `ImageIOHeicDecoder` | **5.8** | Decoder seam with the gallery core loop. |
+| R8–R11 for gallery `.xmp` | **5.8** | Same conflict grammar as contacts, on sidecars. UI is 5.8; merge is already in `gallery-meta`. |
+| gallery-ffi R6 rewrite (45 Records) | **in progress (5)** | Photo/tag/folder/people/collection windows and shells pins landed. Remaining: kit shell (5.5–5.6), iOS window callers / Places / 20k CI / `.xmp` UI (5.8). |
+| iOS callers for location windows | **5.8** | `folder_*` / `people_*` / `collection_*` FFI landed in 5.2. Swift still uses the old paths. |
+| Memories section on `collection_structure` | **5.6** | Index has no stored `MemoryStructure` id list. Shell caches `generate_memories` and drills in with `set_photo_ids_view`. |
+| leftover binary rename | **5.5** | `localgallery` → `localgallery-reference` / `com.j23n.LocalGallery.Reference` when the kit binary ships. |
+| `gallery-gtk` `ml` feature | **5.5** | Pin crate has none, so `--all-features` does not download `ort`. Add `ml = ["gallery-ffi/ml", "localgallery/ml"]` when Scan Photos needs ONNX. |
+| year scrubber | **5.9 optional** | Not core-loop. If skipped, 5.9 writes it as a gap — do not leave “later”. |
+| leftover GTK removal | **5.9 owner** | After 5.6 kit parity. Not automatic; owner agrees. Keep buildable until then. |
+| 20k-tree as a CI gate | **5.8** | Local `e2e_20k.sh` exists now (`#[ignore]`, structural golden under `e2e_baselines/`). The GitHub job lands with the gallery vertical. |
 | HealthKit ingest / FIT / native Health shells | **6** | iOS HealthKit + Linux FIT watch. Do not port Apple `export.xml`. Do not invent a Health accent. |
 | Health Go `internal/log` / `internal/blobs` delete | **6** | After the Rust projection reproduces a real archive. |
 
@@ -670,7 +676,9 @@ read-only `FieldRow`s (except birthday + age) go through
 `.shellConfirmation`. `ContactEditView` is `ShellForm`; simple name
 and organization strings are editable `ShellFieldRow`s. Repeaters,
 birthday, notes, tags, and photo stay app-owned. `ContactEditDraft`
-stays in the app.
+stays in the app. Static helpers used by unit tests (`initials`,
+`structuredName`, field grouping, search highlight) stay
+`nonisolated` so `@MainActor` kit views do not isolate them.
 
 **4.s2 Filter + confirm, second consumer.** Music playlist delete uses
 `.shellConfirmation`. Both `LogsView`s use `ShellFilterMenu` (empty
@@ -770,15 +778,15 @@ photo table.
 
 | Slice | Gate | What lands | Must not |
 |---|---|---|---|
-| **5.1 Spec + R14** | first | `apps/gallery/ui-spec/screens.toml`; `gen_r14.py` emits `GalleryScreen` in `core/localcore-ui` and `apps/gallery/LocalGallery/Generated/Screens.swift`; `localcore-ui` re-exports it; `python3 scripts/gen_r14.py --check` green | new R4 kinds; face-review as a required GTK route |
-| **5.2 Location windows** | before any Folders/Collections UI | `LibraryIndex` grows generation-checked `folder_*` / `people_*` / `collection_*` structure+window APIs; R6 comments on new records; tests for stale generation, `MAX_VIEW_WINDOW`, empty library | shipping `PhotoFolder` by value; GTK-only grouping; a second unbounded photo list |
-| **5.3 Workspace pins** | before `shells/gallery-gtk` depends on `apps/gallery/core` | copy Gallery pins (`image = "=0.25.10"`, `uniffi`; `ort` stays behind `ml`); `cargo tree -d` in `shells/` has no second copy; `cargo test` in `apps/gallery/core` stays green. Split `gallery-view` rlib only if `staticlib`/`cdylib` makes the shells build unusable | relaxing pins; putting view models in the leftover GTK crate |
-| **5.4 Freeze leftover** | with 5.1 | `apps/gallery/linux` README marks `src/ui` frozen. Rename the leftover binary to `localgallery-reference` / `com.j23n.LocalGallery.Reference` only when `gallery-gtk` also ships `localgallery` | new features in leftover UI; deleting the reference before kit parity |
-| **5.5 `gallery-gtk` skeleton** | after 5.1+5.2+5.3 | `shells/gallery-gtk`, binary `localgallery`, id `com.j23n.LocalGallery`. Kit chrome: folder-picker, Settings dialog, logs, root switcher Folders · Collections · Photos. Photos tab binds existing `photo_structure` / `photo_window` / `set_photo_view`. Host only: config, XDG thumbs, folder watch, scan/ops via leftover `localgallery` `default-features = false` | FlowBox grids; querying leftover UI-era photo lists; Settings as a tab |
-| **5.6 Remaining screens** | after 5.5 | folders/folder, collections + memory/person/album/event pushes, viewer + photo-info, scan progress. `GtkGridView`/`GtkListView` over a `gio::ListModel` that pages ≤256. Stale generation → re-read structure, never patch across generations | building missing windows in the shell; year scrubber (optional, later) |
+| **5.1 Spec + R14** | **landed** | `apps/gallery/ui-spec/screens.toml` (16 screens); `GalleryScreen` in `core/localcore-ui` and `Generated/Screens.swift`; `gen_r14.py --check` green | new R4 kinds; face-review as a required GTK route |
+| **5.2 Location windows** | **landed** | `LibraryIndex` has generation-checked `folder_*` / `people_*` / `collection_*` structure+window APIs; folders via `set_folders`; leftover `host.rs` calls shared `gallery-index` grouping. iOS callers are **5.8**. Memories section is **5.6**. Default `gallery-ffi` (`ml`) still needs `openssl-devel`. | shipping `PhotoFolder` by value; GTK-only grouping; a second unbounded photo list |
+| **5.3 Workspace pins** | **landed** | `shells/` pins `image = "=0.25.10"` and `uniffi` 0.32. `gallery-gtk` is a pin crate over `gallery-ffi` + leftover `localgallery` (`default-features = false`). `gallery-ffi` gained `ml` (default on; shells turns it off) so `ort` is absent from the default shells graph. One `image` / `uniffi` in `cargo tree -d`; no `gallery-view` split (`staticlib`/`cdylib` still fine as a rust dep). Kit UI and the `ml` feature are **5.5**. | relaxing pins; putting view models in the leftover GTK crate |
+| **5.4 Freeze leftover** | **landed** (rename is **5.5**) | `apps/gallery/linux` README + `src/ui/mod.rs` mark the UI frozen. Binary stays `localgallery` until 5.5 ships the kit binary and renames this one. Removal is **5.9 owner**, not 5.5. | new features in leftover UI; deleting the reference before kit parity |
+| **5.5 `gallery-gtk` skeleton** | after 5.1+5.2+5.3 | Kit UI on the pin crate: binary `localgallery`, id `com.j23n.LocalGallery`. Folder-picker, Settings dialog, logs, root switcher Folders · Collections · Photos. Photos tab binds existing `photo_structure` / `photo_window` / `set_photo_view`. Host only: config, XDG thumbs, folder watch, scan/ops via leftover `localgallery` `default-features = false`. Rename leftover binary to `localgallery-reference` / `com.j23n.LocalGallery.Reference`. Add `ml = ["gallery-ffi/ml", "localgallery/ml"]` when Scan Photos needs ONNX (and `libssl-dev` on the GTK shells job). | FlowBox grids; querying leftover UI-era photo lists; Settings as a tab; enabling leftover `ui` |
+| **5.6 Remaining screens** | after 5.5 | folders/folder, collections + memory/person/album/event pushes, viewer + photo-info, scan progress. Memories: shell caches last `generate_memories` id list (index may cache it; GTK does not cluster) and drills in with `set_photo_ids_view`. `GtkGridView`/`GtkListView` over a `gio::ListModel` that pages ≤256. Stale generation → re-read structure, never patch across generations | building missing windows in the shell; year scrubber (that is **5.9 optional**) |
 | **5.7 Promotions + font** | after 5.6 uses the same shape | Music `media_item` + `thumb_radius` + `.thumb` → kit (re-snapshot Music). Contacts chips → `chip_bar` + removable variant (re-snapshot Contacts). `grid_gutter` token. Newsreader Italic + ADR 0004 R10/R11 typeface amendment (D5) | promoting Flush unless Gallery uses the same section adapter; inventing tile kinds |
-| **5.8 Core remainder** | parallel after 5.2; not a GTK rewrite | iOS `run_places`; M2 UserDefaults cutover; M1 path-keyed cache rewrite; queue places/thumbs/EXIF; M3 measurements; `ImageIOHeicDecoder` seam; `.xmp` R8–R11 *UI* (`gallery-meta` merge is already pure); 20k GitHub job | copying PeopleStore dual-write; inventing a Health accent; retiring `PACK_VARIANT` without evidence |
-| **5.9 Close-out** | after 5.6 | ADR 0004 GTK/Gallery reuse paragraph; `docs/screenshots/gtk-after/` when mutter captures; README one GTK shot per kit app; this file updated in the same change as findings | claiming three-app reuse for tiles or the mini-player |
+| **5.8 Core remainder** | parallel after 5.2; not a GTK rewrite | iOS callers for `folder_*` / `people_*` / `collection_*`; iOS `run_places`; M2 UserDefaults cutover; M1 path-keyed cache rewrite; queue places/thumbs/EXIF; gallery scan-cache NFC leftovers; M3 measurements; `ImageIOHeicDecoder` seam; `.xmp` R8–R11 *UI* (`gallery-meta` merge is already pure); 20k GitHub job | copying PeopleStore dual-write; inventing a Health accent; retiring `PACK_VARIANT` without evidence |
+| **5.9 Close-out** | after 5.6 | ADR 0004 GTK/Gallery reuse paragraph; `docs/screenshots/gtk-after/` when mutter captures; README one GTK shot per kit app; this file updated in the same change as findings. Year scrubber here or mark it a written gap. Leftover GTK removal only if the owner agrees after kit parity. | claiming three-app reuse for tiles or the mini-player; deleting leftover without an owner yes |
 
 #### 5.1 screen inventory (R4 kinds only)
 
@@ -833,8 +841,9 @@ Add (same generation, same bound, same stale refusal):
    `generate_memories` / `compute_scheduled_memories`; the index may
    cache the last produced id list, but GTK does not cluster.
 
-iOS should grow callers for new windows or the slice comment must say
-**explicit iOS deferral**. Do not leave a GTK-only projection.
+iOS callers for the new windows land in **5.8**. The FFI is shared
+(not a GTK-only projection); Swift still uses the pre-window paths
+until that slice. Do not add a second grouping algorithm on iOS.
 
 #### 5.5–5.6 shell rules
 
@@ -992,10 +1001,11 @@ without a Health shell. Next engineering moves, in parallel:
 - **Phase 4 remainder** — **done (4.s1–4.s4).** Swift kit seam is
   measured for Settings/list/filter/confirm. Do not extract
   media/grid/viewer here; that is Gallery.
-- **Phase 5** — sequenced 5.1–5.9 above. Next engineering: spec +
-  location windows (5.1, 5.2), then pins + `gallery-gtk` (5.3, 5.5).
-  Leftover GTK stays frozen (5.4). Places / 20k CI / `.xmp` / M1–M3
-  are 5.8, not a reason to restyle `apps/gallery/linux`.
+- **Phase 5** — 5.1–5.4 landed. Next: `shells/gallery-gtk` kit skeleton
+  (5.5) on the existing pin crate (leftover rename + optional `ml`
+  feature). Memories rail is 5.6. iOS location-window callers, Places,
+  20k CI, `.xmp`, M1–M3 are 5.8. Year scrubber / leftover removal are
+  5.9. Do not restyle `apps/gallery/linux`.
 - **Phase 6 remainder** — HealthKit, FIT, native shells, retire Go.
   Do not invent a Health accent.
 

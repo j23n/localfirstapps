@@ -168,6 +168,7 @@ resolves GPS offline.
 
 ## Linux
 
+The leftover GTK UI in `linux/` is a frozen reference; the Phase 5 destination is `shells/gallery-gtk`.
 [linux/README.md](linux/README.md) · [linux/INSTALL.md](linux/INSTALL.md)
 
 ## Contributing

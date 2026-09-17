@@ -12,6 +12,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod collections;
 pub mod search;
 pub mod tags;
 pub mod text;
@@ -20,6 +21,7 @@ use std::collections::HashMap;
 
 use gallery_model::{PhotoFile, StableId};
 
+pub use collections::{collection_groups, leaf_tags, CollectionGroup};
 pub use search::{corpus_entry, corpus_terms, DISTANT_PAST};
 pub use tags::{matches_by_prefix, TagIndex, TagSuggestion};
 

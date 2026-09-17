@@ -40,6 +40,7 @@ RUST_TOKENS = REPO / "core/localcore-ui/src/tokens.rs"
 RUST_SCREENS = REPO / "core/localcore-ui/src/screens.rs"
 
 SCREEN_SWIFT = {
+    "gallery": REPO / "apps/gallery/LocalGallery/Generated/Screens.swift",
     "contacts": REPO / "apps/contacts/LocalContacts/Generated/Screens.swift",
     "music": REPO / "apps/music/LocalMusic/Generated/Screens.swift",
 }

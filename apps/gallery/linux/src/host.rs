@@ -503,61 +503,9 @@ pub fn find_folder(folder: &PhotoFolder, id: StableId) -> Option<&PhotoFolder> {
     folder.subfolders.iter().find_map(|c| find_folder(c, id))
 }
 
-/// A Collections hub section (Objects, Scenes, Places, …).
-#[derive(Debug, Clone, PartialEq)]
-pub struct CollectionGroup {
-    /// First path segment, or `"Other"` for flat tags.
-    pub name: String,
-    /// Photo count credited to the group (max of its buckets, not a unique union).
-    pub count: usize,
-    /// Buckets in this namespace, already sorted by the index.
-    pub tags: Vec<TagSuggestion>,
-}
-
-/// Group aggregated tags for the Collections hub. People are excluded — they
-/// have their own row.
-pub fn collection_groups(tags: &[TagSuggestion]) -> Vec<CollectionGroup> {
-    let mut order: Vec<String> = Vec::new();
-    let mut buckets: HashMap<String, Vec<TagSuggestion>> = HashMap::new();
-    for tag in tags {
-        let ns = tag
-            .namespace
-            .as_deref()
-            .filter(|n| !n.is_empty())
-            .unwrap_or("Other");
-        if ns.eq_ignore_ascii_case("people") {
-            continue;
-        }
-        if !buckets.contains_key(ns) {
-            order.push(ns.to_string());
-        }
-        buckets.entry(ns.to_string()).or_default().push(tag.clone());
-    }
-    order
-        .into_iter()
-        .filter_map(|name| {
-            let tags = buckets.remove(&name)?;
-            let count = tags.iter().map(|t| t.count).max().unwrap_or(0);
-            Some(CollectionGroup { name, count, tags })
-        })
-        .collect()
-}
-
-/// Tags that are not a prefix of another tag in `tags`.
-///
-/// `Places/Italy` drops out when `Places/Italy/Lazio/Rome` exists, so a rail
-/// shows cities rather than every ancestor.
-pub fn leaf_tags(tags: &[TagSuggestion]) -> Vec<TagSuggestion> {
-    tags.iter()
-        .filter(|tag| {
-            let prefix = format!("{}/", tag.full_path);
-            !tags
-                .iter()
-                .any(|other| other.full_path.starts_with(&prefix))
-        })
-        .cloned()
-        .collect()
-}
+/// Collections hub grouping lives in `gallery-index` so leftover GTK and
+/// `gallery-ffi` location windows share one algorithm.
+pub use gallery_index::{collection_groups, leaf_tags, CollectionGroup};
 
 /// Leaf folders that contain photos, newest capture first — iOS `eventFolders`.
 pub fn event_folders(root: &PhotoFolder) -> Vec<PhotoFolder> {

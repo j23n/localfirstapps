@@ -36,14 +36,18 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
-use gallery_index::{LibraryIndex as CoreIndex, TagSuggestion};
+use gallery_index::{collection_groups, leaf_tags, LibraryIndex as CoreIndex, TagSuggestion};
 use gallery_memories::{
     cluster_key, compute_scheduled, generate_cancellable, Contact, GenerationInputs, LeafFolder,
     Memory, MemoryType, PersonLink, UtcOffset, SCHEDULED_MEMORY_HORIZON_DAYS,
 };
 use gallery_model::{AppleDate, CivilDateTime, HierarchicalTag, PhotoFile, StableId};
 
-use crate::scanner::{photo_from_record, ScanPhoto, ScannedMediaHost};
+use crate::locations::{
+    collection_section_id, collection_text_row, folder_text_row, people_text_row,
+    photo_count_label, FolderTable,
+};
+use crate::scanner::{photo_from_record, ScanPhoto, ScannedFolderHost, ScannedMediaHost};
 use crate::view::{
     checked_window, GalleryMediaItem, GalleryTextRow, ViewAction, ViewContentState, ViewError,
     ViewSection, ViewSlotKind, ViewStructure,
@@ -149,6 +153,13 @@ struct Indexed {
     visible_sections: Vec<PhotoViewSection>,
     /// Search/filter intent that produced `visible_photo_ids`.
     visible_key: String,
+    /// Scanner folders plus the photo-id order their slices address.
+    folders: FolderTable,
+    /// Parent last handed to [`LibraryIndex::folder_structure`]. `None` is the
+    /// Folders-tab root listing (children of the scan root).
+    visible_folder_parent: Option<String>,
+    /// Child folder ids for `visible_folder_parent`.
+    visible_folder_ids: Vec<String>,
     /// Platform-resolved UTC offset for each photo at capture time. Parallel
     /// to the index photo table and populated once with the library build so a
     /// scheduled-memory run does not marshal 20,000 offsets again.
@@ -172,6 +183,9 @@ impl Default for LibraryIndex {
                 visible_photo_ids: Vec::new(),
                 visible_sections: Vec::new(),
                 visible_key: String::new(),
+                folders: FolderTable::empty(),
+                visible_folder_parent: None,
+                visible_folder_ids: Vec::new(),
                 photo_time_zone_offsets: Vec::new(),
             }),
         }
@@ -263,6 +277,9 @@ impl LibraryIndex {
         guard.index = index;
         guard.tags = tags;
         guard.people = people;
+        guard.folders = FolderTable::empty();
+        guard.visible_folder_parent = None;
+        guard.visible_folder_ids = Vec::new();
         guard.photo_time_zone_offsets = photo_time_zone_offsets;
         summary
     }
@@ -451,6 +468,214 @@ impl LibraryIndex {
         read(&self.inner).generation
     }
 
+    /// Install the scanner's flat folder list and the photo-id order those
+    /// slices address.
+    ///
+    /// Extending [`Self::build`] would break existing `build(photos)` callers,
+    /// so folders arrive on this second call after a scan or snapshot load.
+    /// The recursive `PhotoFolder` tree is not stored and never returned.
+    ///
+    /// iOS callers land in Phase 5.8. The FFI is shared; Swift still
+    /// uses the pre-window folder paths until that slice.
+    pub fn set_folders(
+        &self,
+        folders: Vec<ScannedFolderHost>,
+        photo_ids_in_scan_order: Vec<String>,
+    ) {
+        let table = FolderTable::new(folders, photo_ids_in_scan_order);
+        let visible_folder_ids = table.listing_ids(None);
+        let mut guard = write(&self.inner);
+        guard.generation = guard.generation.saturating_add(1);
+        guard.folders = table;
+        guard.visible_folder_parent = None;
+        guard.visible_folder_ids = visible_folder_ids;
+    }
+
+    /// Folder listing for one parent. `None` is children of the scan root; a
+    /// single library root is not shown as a row.
+    ///
+    /// Section id is `folders`, slot kind is a text row, item ids are child
+    /// folder ids. Changing `parent_id` bumps [`Self::view_generation`] so a
+    /// window cannot join rows to an older listing.
+    ///
+    /// iOS callers land in Phase 5.8.
+    pub fn folder_structure(&self, parent_id: Option<String>) -> ViewStructure {
+        let mut guard = write(&self.inner);
+        if guard.visible_folder_parent != parent_id {
+            guard.visible_folder_ids = guard.folders.listing_ids(parent_id.as_deref());
+            guard.visible_folder_parent = parent_id;
+            guard.generation = guard.generation.saturating_add(1);
+        }
+        folder_structure_of(&guard)
+    }
+
+    /// Display-ready folder rows for the listing last returned by
+    /// [`Self::folder_structure`].
+    ///
+    /// Title is the folder name. Trailing is the recursive photo count
+    /// (`total_photo_count`) as `"1 photo"` / `"N photos"`. Subtitle is the
+    /// path leaf when it differs from the name.
+    ///
+    /// iOS callers land in Phase 5.8.
+    pub fn folder_window(
+        &self,
+        section_id: String,
+        offset: u64,
+        limit: u64,
+        generation: u64,
+    ) -> Result<Vec<GalleryTextRow>, ViewError> {
+        let guard = read(&self.inner);
+        // Generation wins over section lookup: every section id belongs to
+        // the requested structure, so an absent old id is stale, not unknown.
+        checked_window(generation, guard.generation, 0, 0, 0)?;
+        if section_id != "folders" {
+            return Err(ViewError::SectionNotFound {
+                section_id,
+                message: "That Gallery folder section no longer exists.".into(),
+                user_actionable: true,
+            });
+        }
+        let range = checked_window(
+            generation,
+            guard.generation,
+            offset,
+            limit,
+            guard.visible_folder_ids.len(),
+        )?;
+        Ok(guard.visible_folder_ids[range]
+            .iter()
+            .filter_map(|id| guard.folders.get(id).map(folder_text_row))
+            .collect())
+    }
+
+    /// This folder's own photos (the scan slice), so a shell can
+    /// [`Self::set_photo_ids_view`]. Recursive totals stay on the text-row
+    /// trailing from `total_photo_count`.
+    ///
+    /// iOS callers land in Phase 5.8.
+    pub fn folder_photo_ids(&self, folder_id: String) -> Vec<String> {
+        read(&self.inner).folders.own_photo_ids(&folder_id)
+    }
+
+    /// People listing. Item ids come from the cached `People` suggestions.
+    ///
+    /// Person photos already work via [`Self::photo_ids_for_tag`] (`full_path`)
+    /// plus [`Self::set_photo_ids_view`].
+    ///
+    /// iOS callers land in Phase 5.8.
+    pub fn people_structure(&self) -> ViewStructure {
+        let guard = read(&self.inner);
+        let ids = guard
+            .people
+            .iter()
+            .map(|person| person.id.clone())
+            .collect();
+        ViewStructure {
+            state: content_state(guard.people.len()),
+            sections: vec![ViewSection {
+                id: "people".into(),
+                title: "People".into(),
+                slot_kind: ViewSlotKind::TextRow,
+                item_ids: ids,
+            }],
+            actions: Vec::new(),
+            generation: guard.generation,
+        }
+    }
+
+    /// Display-ready people rows (`display_name`, trailing count).
+    ///
+    /// iOS callers land in Phase 5.8.
+    pub fn people_window(
+        &self,
+        section_id: String,
+        offset: u64,
+        limit: u64,
+        generation: u64,
+    ) -> Result<Vec<GalleryTextRow>, ViewError> {
+        let guard = read(&self.inner);
+        checked_window(generation, guard.generation, 0, 0, 0)?;
+        if section_id != "people" {
+            return Err(ViewError::SectionNotFound {
+                section_id,
+                message: "That Gallery people section no longer exists.".into(),
+                user_actionable: true,
+            });
+        }
+        let range = checked_window(
+            generation,
+            guard.generation,
+            offset,
+            limit,
+            guard.people.len(),
+        )?;
+        Ok(guard.people[range].iter().map(people_text_row).collect())
+    }
+
+    /// Collections hub for non-People tag namespaces (Objects, Scenes, Places,
+    /// Albums, Events, Other — as present). Item ids are tag ids.
+    ///
+    /// People are not a collection section; use [`Self::people_structure`].
+    /// Memories section lands in 5.6: the index does not store a
+    /// `MemoryStructure` id list. The shell caches the last
+    /// [`generate_memories`] / [`MemoryGenerator`] result and drills in with
+    /// [`Self::set_photo_ids_view`].
+    ///
+    /// iOS callers land in Phase 5.8.
+    pub fn collection_structure(&self) -> ViewStructure {
+        let guard = read(&self.inner);
+        // Memories section is 5.6: there is no stored MemoryStructure
+        // id list on the index. The shell caches generate_memories output and
+        // uses set_photo_ids_view.
+        let sections: Vec<ViewSection> = collection_groups(&guard.tags)
+            .into_iter()
+            .map(|group| {
+                let leaves = leaf_tags(&group.tags);
+                ViewSection {
+                    id: collection_section_id(&group.name),
+                    title: group.name,
+                    slot_kind: ViewSlotKind::TextRow,
+                    item_ids: leaves.into_iter().map(|tag| tag.id).collect(),
+                }
+            })
+            .filter(|section| !section.item_ids.is_empty())
+            .collect();
+        let count: usize = sections.iter().map(|section| section.item_ids.len()).sum();
+        ViewStructure {
+            state: content_state(count),
+            sections,
+            actions: Vec::new(),
+            generation: guard.generation,
+        }
+    }
+
+    /// Display-ready collection rows for one namespace section.
+    ///
+    /// iOS callers land in Phase 5.8.
+    pub fn collection_window(
+        &self,
+        section_id: String,
+        offset: u64,
+        limit: u64,
+        generation: u64,
+    ) -> Result<Vec<GalleryTextRow>, ViewError> {
+        let guard = read(&self.inner);
+        checked_window(generation, guard.generation, 0, 0, 0)?;
+        let Some(group) = collection_groups(&guard.tags)
+            .into_iter()
+            .find(|group| collection_section_id(&group.name) == section_id)
+        else {
+            return Err(ViewError::SectionNotFound {
+                section_id,
+                message: "That Gallery collection section no longer exists.".into(),
+                user_actionable: true,
+            });
+        };
+        let leaves = leaf_tags(&group.tags);
+        let range = checked_window(generation, guard.generation, offset, limit, leaves.len())?;
+        Ok(leaves[range].iter().map(collection_text_row).collect())
+    }
+
     /// The date-descending photo order. Backs `store.sortedPhotos`.
     pub fn sorted_photo_ids(&self) -> Vec<String> {
         read(&self.inner)
@@ -581,6 +806,20 @@ fn month_name(month: u32) -> &'static str {
         .unwrap_or("Unknown")
 }
 
+fn folder_structure_of(indexed: &Indexed) -> ViewStructure {
+    ViewStructure {
+        state: content_state(indexed.visible_folder_ids.len()),
+        sections: vec![ViewSection {
+            id: "folders".into(),
+            title: "Folders".into(),
+            slot_kind: ViewSlotKind::TextRow,
+            item_ids: indexed.visible_folder_ids.clone(),
+        }],
+        actions: Vec::new(),
+        generation: indexed.generation,
+    }
+}
+
 fn photo_structure(indexed: &Indexed) -> ViewStructure {
     ViewStructure {
         state: content_state(indexed.visible_photo_ids.len()),
@@ -635,14 +874,6 @@ fn photo_media_item(photo: &PhotoFile) -> GalleryMediaItem {
         label: photo.date_taken.map(AppleDate::to_utc_string),
         accessibility_label: Some(photo.filename.clone()),
         badge,
-    }
-}
-
-fn photo_count_label(count: usize) -> String {
-    if count == 1 {
-        "1 photo".into()
-    } else {
-        format!("{count} photos")
     }
 }
 
@@ -1190,7 +1421,30 @@ pub fn memory_country_name(code: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scanner::ScanTag;
+    use crate::scanner::{ScanTag, ScannedFolderHost};
+    use crate::view::MAX_VIEW_WINDOW;
+
+    fn folder_host(
+        path: &str,
+        name: &str,
+        parent_index: Option<u32>,
+        photo_start: u32,
+        photo_count: u32,
+        total_photo_count: i64,
+    ) -> ScannedFolderHost {
+        ScannedFolderHost {
+            id: StableId::for_folder(path).to_string(),
+            path: path.to_string(),
+            name: name.to_string(),
+            parent_index,
+            photo_start,
+            photo_count,
+            cover_photo_path: None,
+            total_photo_count,
+            date_modified: None,
+            date_created: None,
+        }
+    }
 
     fn photo(path: &str, date: Option<f64>, tags: &[&str]) -> ScanPhoto {
         ScanPhoto {
@@ -1369,6 +1623,198 @@ mod tests {
             .unwrap();
         assert_eq!(tag_rows.len(), 1, "one indexed leaf tag");
         assert!(tag_rows.iter().all(|row| row.trailing.is_some()));
+    }
+
+    fn nested_location_library() -> (LibraryIndex, Vec<ScanPhoto>, Vec<ScannedFolderHost>) {
+        let photos = vec![
+            photo("/lib/2024/rome.jpg", Some(300.0), &["Places/Italy/Rome"]),
+            photo("/lib/2024/paris/alice.jpg", Some(200.0), &["People/Alice"]),
+            photo("/lib/2018/event.jpg", Some(100.0), &[]),
+        ];
+        let folders = vec![
+            folder_host("/lib", "lib", None, 0, 0, 3),
+            folder_host("/lib/2024", "2024", Some(0), 0, 1, 2),
+            folder_host("/lib/2024/paris", "paris", Some(1), 1, 1, 1),
+            folder_host("/lib/2018", "2018", Some(0), 2, 1, 1),
+        ];
+        let index = LibraryIndex::default();
+        index.build(photos.clone());
+        index.set_folders(
+            folders.clone(),
+            photos.iter().map(|p| p.id.clone()).collect(),
+        );
+        (index, photos, folders)
+    }
+
+    #[test]
+    fn location_windows_are_empty_on_an_empty_library() {
+        let index = LibraryIndex::default();
+        let folders = index.folder_structure(None);
+        assert_eq!(folders.state, ViewContentState::Empty);
+        assert_eq!(folders.sections[0].id, "folders");
+        assert!(folders.sections[0].item_ids.is_empty());
+        assert!(index
+            .folder_window("folders".into(), 0, 20, folders.generation)
+            .unwrap()
+            .is_empty());
+
+        let people = index.people_structure();
+        assert_eq!(people.state, ViewContentState::Empty);
+        assert_eq!(people.sections[0].id, "people");
+        assert!(index
+            .people_window("people".into(), 0, 20, people.generation)
+            .unwrap()
+            .is_empty());
+
+        let collections = index.collection_structure();
+        assert_eq!(collections.state, ViewContentState::Empty);
+        assert!(
+            collections.sections.is_empty(),
+            "memories section is 5.6 and no tag namespaces are present"
+        );
+        assert!(matches!(
+            index.collection_window("places".into(), 0, 20, collections.generation),
+            Err(ViewError::SectionNotFound { .. })
+        ));
+        assert!(index.folder_photo_ids("missing".into()).is_empty());
+    }
+
+    #[test]
+    fn location_windows_refuse_stale_generations() {
+        let (index, _, _) = nested_location_library();
+        let folders = index.folder_structure(None);
+        let people = index.people_structure();
+        let collections = index.collection_structure();
+        index.build(vec![photo("/lib/only.jpg", Some(1.0), &[])]);
+
+        assert!(matches!(
+            index.folder_window("folders".into(), 0, 20, folders.generation),
+            Err(ViewError::StaleGeneration {
+                requested,
+                current,
+                ..
+            }) if requested == folders.generation && current > requested
+        ));
+        assert!(matches!(
+            index.people_window("people".into(), 0, 20, people.generation),
+            Err(ViewError::StaleGeneration { .. })
+        ));
+        assert!(matches!(
+            index.collection_window("places".into(), 0, 20, collections.generation),
+            Err(ViewError::StaleGeneration { .. })
+        ));
+    }
+
+    #[test]
+    fn location_windows_are_bounded_before_rows_are_allocated() {
+        let (index, _, _) = nested_location_library();
+        let folders = index.folder_structure(None);
+        let people = index.people_structure();
+        let collections = index.collection_structure();
+        let too_big = MAX_VIEW_WINDOW as u64 + 1;
+        assert!(matches!(
+            index.folder_window("folders".into(), 0, too_big, folders.generation),
+            Err(ViewError::WindowTooLarge { .. })
+        ));
+        assert!(matches!(
+            index.people_window("people".into(), 0, too_big, people.generation),
+            Err(ViewError::WindowTooLarge { .. })
+        ));
+        assert!(matches!(
+            index.collection_window(
+                collections.sections[0].id.clone(),
+                0,
+                too_big,
+                collections.generation
+            ),
+            Err(ViewError::WindowTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn nested_folders_people_and_places_use_location_windows() {
+        let (index, photos, folders) = nested_location_library();
+        let root = index.folder_structure(None);
+        assert_eq!(root.sections[0].id, "folders");
+        assert_eq!(
+            root.sections[0].item_ids,
+            vec![folders[1].id.clone(), folders[3].id.clone()],
+            "the sole library root is not a row"
+        );
+        assert!(!root.sections[0].item_ids.contains(&folders[0].id));
+
+        let rows = index
+            .folder_window("folders".into(), 0, 20, root.generation)
+            .unwrap();
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.title.as_str(), row.trailing.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![("2024", Some("2 photos")), ("2018", Some("1 photo"))]
+        );
+        assert_eq!(
+            index.folder_photo_ids(folders[1].id.clone()),
+            vec![photos[0].id.clone()],
+            "own photos are the scan slice, not the recursive total"
+        );
+        assert_eq!(
+            index.folder_photo_ids(folders[2].id.clone()),
+            vec![photos[1].id.clone()]
+        );
+
+        let year = index.folder_structure(Some(folders[1].id.clone()));
+        assert!(year.generation > root.generation);
+        assert_eq!(year.sections[0].item_ids, vec![folders[2].id.clone()]);
+        assert!(matches!(
+            index.folder_window("folders".into(), 0, 20, root.generation),
+            Err(ViewError::StaleGeneration { .. })
+        ));
+        assert_eq!(
+            index
+                .folder_window("folders".into(), 0, 20, year.generation)
+                .unwrap()[0]
+                .title,
+            "paris"
+        );
+
+        let people = index.people_structure();
+        assert_eq!(people.sections[0].id, "people");
+        assert_eq!(people.sections[0].item_ids.len(), 1);
+        let person_rows = index
+            .people_window("people".into(), 0, 20, people.generation)
+            .unwrap();
+        assert_eq!(person_rows[0].title, "Alice");
+        assert_eq!(person_rows[0].trailing.as_deref(), Some("1 photo"));
+        assert_eq!(
+            index.photo_ids_for_tag("People/Alice".into()),
+            vec![photos[1].id.clone()]
+        );
+
+        let collections = index.collection_structure();
+        assert!(
+            collections
+                .sections
+                .iter()
+                .all(|section| section.id != "people"),
+            "People are not a collection section"
+        );
+        let places = collections
+            .sections
+            .iter()
+            .find(|section| section.id == "places")
+            .expect("Places tag namespace is present");
+        let place_rows = index
+            .collection_window(places.id.clone(), 0, 20, collections.generation)
+            .unwrap();
+        assert!(place_rows.iter().any(|row| row.title == "Rome"));
+        assert!(matches!(
+            index.collection_window("people".into(), 0, 20, collections.generation),
+            Err(ViewError::SectionNotFound { .. })
+        ));
+        assert!(matches!(
+            index.folder_window("photos".into(), 0, 20, year.generation),
+            Err(ViewError::SectionNotFound { .. })
+        ));
     }
 
     #[test]

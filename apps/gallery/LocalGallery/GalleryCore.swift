@@ -2027,6 +2027,27 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
     func buildWithTimeZoneOffsets(photos: [ScannedMediaHost], photoTimeZoneOffsets: [Int32])  -> LibraryBuildStructure
     
     /**
+     * Collections hub for non-People tag namespaces (Objects, Scenes, Places,
+     * Albums, Events, Other — as present). Item ids are tag ids.
+     *
+     * People are not a collection section; use [`Self::people_structure`].
+     * Memories are omitted until 5.6: the index does not store a
+     * `MemoryStructure` id list. The shell caches the last
+     * [`generate_memories`] / [`MemoryGenerator`] result and drills in with
+     * [`Self::set_photo_ids_view`].
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+    func collectionStructure()  -> ViewStructure
+    
+    /**
+     * Display-ready collection rows for one namespace section.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+    func collectionWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryTextRow]
+    
+    /**
      * Compute the widget's scheduled horizon over the library table already
      * retained by this index.
      *
@@ -2034,6 +2055,56 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * capture-time offsets crossed once, at build.
      */
     func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, hiddenMemoryIds: [String])  -> [ScheduledMemoryStructure]
+    
+    /**
+     * This folder's own photos (the scan slice), so a shell can
+     * [`Self::set_photo_ids_view`]. Recursive totals stay on the text-row
+     * trailing from `total_photo_count`.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+    func folderPhotoIds(folderId: String)  -> [String]
+    
+    /**
+     * Folder listing for one parent. `None` is children of the scan root; a
+     * single library root is not shown as a row.
+     *
+     * Section id is `folders`, slot kind is a text row, item ids are child
+     * folder ids. Changing `parent_id` bumps [`Self::view_generation`] so a
+     * window cannot join rows to an older listing.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+    func folderStructure(parentId: String?)  -> ViewStructure
+    
+    /**
+     * Display-ready folder rows for the listing last returned by
+     * [`Self::folder_structure`].
+     *
+     * Title is the folder name. Trailing is the recursive photo count
+     * (`total_photo_count`) as `"1 photo"` / `"N photos"`. Subtitle is the
+     * path leaf when it differs from the name.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+    func folderWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryTextRow]
+    
+    /**
+     * People listing. Item ids come from the cached `People` suggestions.
+     *
+     * Person photos already work via [`Self::photo_ids_for_tag`] (`full_path`)
+     * plus [`Self::set_photo_ids_view`].
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+    func peopleStructure()  -> ViewStructure
+    
+    /**
+     * Display-ready people rows (`display_name`, trailing count).
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+    func peopleWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryTextRow]
     
     /**
      * How many photos the index currently holds. Cheap; used by the app's
@@ -2078,6 +2149,18 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * two to disagree.
      */
     func search(query: String, requiredTagPaths: [String])  -> [String]
+    
+    /**
+     * Install the scanner's flat folder list and the photo-id order those
+     * slices address.
+     *
+     * Extending [`Self::build`] would break existing `build(photos)` callers,
+     * so folders arrive on this second call after a scan or snapshot load.
+     * The recursive `PhotoFolder` tree is not stored and never returned.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+    func setFolders(folders: [ScannedFolderHost], photoIdsInScanOrder: [String]) 
     
     /**
      * Apply an id-only drill-in intent (folder, memory, or saved selection).
@@ -2233,6 +2316,45 @@ open func buildWithTimeZoneOffsets(photos: [ScannedMediaHost], photoTimeZoneOffs
 }
     
     /**
+     * Collections hub for non-People tag namespaces (Objects, Scenes, Places,
+     * Albums, Events, Other — as present). Item ids are tag ids.
+     *
+     * People are not a collection section; use [`Self::people_structure`].
+     * Memories are omitted until 5.6: the index does not store a
+     * `MemoryStructure` id list. The shell caches the last
+     * [`generate_memories`] / [`MemoryGenerator`] result and drills in with
+     * [`Self::set_photo_ids_view`].
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+open func collectionStructure() -> ViewStructure  {
+    return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_collection_structure(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Display-ready collection rows for one namespace section.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+open func collectionWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryTextRow]  {
+    return try  FfiConverterSequenceTypeGalleryTextRow.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_collection_window(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sectionId),
+        FfiConverterUInt64.lower(offset),
+        FfiConverterUInt64.lower(limit),
+        FfiConverterUInt64.lower(generation),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Compute the widget's scheduled horizon over the library table already
      * retained by this index.
      *
@@ -2247,6 +2369,101 @@ open func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, 
         FfiConverterTypeScheduledMemoryContext_lower(context),
         FfiConverterInt64.lower(horizonDays),
         FfiConverterSequenceString.lower(hiddenMemoryIds),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * This folder's own photos (the scan slice), so a shell can
+     * [`Self::set_photo_ids_view`]. Recursive totals stay on the text-row
+     * trailing from `total_photo_count`.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+open func folderPhotoIds(folderId: String) -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_folder_photo_ids(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(folderId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Folder listing for one parent. `None` is children of the scan root; a
+     * single library root is not shown as a row.
+     *
+     * Section id is `folders`, slot kind is a text row, item ids are child
+     * folder ids. Changing `parent_id` bumps [`Self::view_generation`] so a
+     * window cannot join rows to an older listing.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+open func folderStructure(parentId: String?) -> ViewStructure  {
+    return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_folder_structure(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(parentId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Display-ready folder rows for the listing last returned by
+     * [`Self::folder_structure`].
+     *
+     * Title is the folder name. Trailing is the recursive photo count
+     * (`total_photo_count`) as `"1 photo"` / `"N photos"`. Subtitle is the
+     * path leaf when it differs from the name.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+open func folderWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryTextRow]  {
+    return try  FfiConverterSequenceTypeGalleryTextRow.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_folder_window(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sectionId),
+        FfiConverterUInt64.lower(offset),
+        FfiConverterUInt64.lower(limit),
+        FfiConverterUInt64.lower(generation),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * People listing. Item ids come from the cached `People` suggestions.
+     *
+     * Person photos already work via [`Self::photo_ids_for_tag`] (`full_path`)
+     * plus [`Self::set_photo_ids_view`].
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+open func peopleStructure() -> ViewStructure  {
+    return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_people_structure(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Display-ready people rows (`display_name`, trailing count).
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+open func peopleWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryTextRow]  {
+    return try  FfiConverterSequenceTypeGalleryTextRow.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_people_window(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sectionId),
+        FfiConverterUInt64.lower(offset),
+        FfiConverterUInt64.lower(limit),
+        FfiConverterUInt64.lower(generation),uniffiCallStatus
     )
 })
 }
@@ -2351,6 +2568,26 @@ open func search(query: String, requiredTagPaths: [String]) -> [String]  {
         FfiConverterSequenceString.lower(requiredTagPaths),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Install the scanner's flat folder list and the photo-id order those
+     * slices address.
+     *
+     * Extending [`Self::build`] would break existing `build(photos)` callers,
+     * so folders arrive on this second call after a scan or snapshot load.
+     * The recursive `PhotoFolder` tree is not stored and never returned.
+     *
+     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     */
+open func setFolders(folders: [ScannedFolderHost], photoIdsInScanOrder: [String])  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_set_folders(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeScannedFolderHost.lower(folders),
+        FfiConverterSequenceString.lower(photoIdsInScanOrder),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -12796,7 +13033,28 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_libraryindex_build_with_time_zone_offsets() != 59277) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_collection_structure() != 62049) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_collection_window() != 56367) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_compute_scheduled() != 54446) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_photo_ids() != 1532) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_structure() != 17548) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_window() != 24140) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_people_structure() != 61355) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_people_window() != 54126) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_photo_count() != 25523) {
@@ -12818,6 +13076,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_search() != 14207) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_set_folders() != 7784) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_set_photo_ids_view() != 26440) {

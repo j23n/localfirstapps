@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["shell-kit-gtk", "contacts-gtk", "music-gtk"]
+members = ["shell-kit-gtk", "contacts-gtk", "music-gtk", "gallery-gtk"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,3 +8,13 @@ edition = "2021"
 rust-version = "1.97"
 license = "MPL-2.0"
 publish = false
+
+# Phase 5.3: Gallery path deps are resolved by this lockfile, not
+# `apps/gallery/core/Cargo.lock`. Keep these exact. `ort` is not listed
+# here — it stays behind `gallery-ffi` / `localgallery` `ml`.
+[workspace.dependencies]
+uniffi = { version = "0.32.0", default-features = false }
+image = { version = "=0.25.10", default-features = false, features = [
+    "jpeg",
+    "png",
+] }

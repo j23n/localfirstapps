@@ -52,7 +52,9 @@ use gallery_ml::face::{
     SidecarWritePlan,
 };
 use gallery_ml::{ClusterState as CoreClusterState, MlError};
-use gallery_vfs::{StdVfs, VfsError};
+#[cfg(feature = "ml")]
+use gallery_vfs::StdVfs;
+use gallery_vfs::VfsError;
 
 use crate::support::{FinishGuard, RunLock, StartError};
 
@@ -1399,14 +1401,25 @@ fn open_face_session(
     model_pack_dir: String,
     decoder: Option<Arc<dyn crate::HeicDecoder>>,
 ) -> Result<Arc<FaceSession>, FaceError> {
-    let mut engine = FaceEngine::open(&cache_db_path, &model_pack_dir, Arc::new(StdVfs::new()))?;
-    if let Some(decoder) = decoder {
-        engine = engine.with_heic_decoder(Arc::new(crate::heic::HeicDecoderAdapter(decoder)));
+    #[cfg(not(feature = "ml"))]
+    {
+        let _ = (cache_db_path, model_pack_dir, decoder);
+        return Err(FaceError::Inference {
+            detail: "gallery-ffi was built without the ml feature".into(),
+        });
     }
-    Ok(Arc::new(FaceSession {
-        engine: Arc::new(engine),
-        run: RunLock::new(),
-    }))
+    #[cfg(feature = "ml")]
+    {
+        let mut engine =
+            FaceEngine::open(&cache_db_path, &model_pack_dir, Arc::new(StdVfs::new()))?;
+        if let Some(decoder) = decoder {
+            engine = engine.with_heic_decoder(Arc::new(crate::heic::HeicDecoderAdapter(decoder)));
+        }
+        Ok(Arc::new(FaceSession {
+            engine: Arc::new(engine),
+            run: RunLock::new(),
+        }))
+    }
 }
 
 #[cfg(test)]

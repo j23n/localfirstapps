@@ -1,7 +1,22 @@
 # LocalGallery for Linux
 
-GTK4 / libadwaita app. Same Rust core as iOS. One binary: GNOME laptop
-layout, or `--comet` for a 540×620 window.
+GTK4 / libadwaita leftover (own lockfile, gtk 0.8). Same Rust core as
+iOS. One binary: GNOME laptop layout, or `--comet` for a 540×620
+window.
+
+**`src/ui` is frozen.** No new features, no design-pass chrome, no kit
+adoption here. New work goes in `apps/gallery/ui-spec/` + `gallery-ffi`
+windows + `shells/gallery-gtk`. `shells/gallery-gtk` path-depends on
+this crate with `default-features = false` (host only; leftover GTK
+stays out of the kit graph). See
+[`docs/IMPLEMENTATION-PLAN.md`](../../../docs/IMPLEMENTATION-PLAN.md)
+Phase 5 and
+[`docs/GTK-DESIGN-PLAN.md`](../../../docs/GTK-DESIGN-PLAN.md)
+Phase 5.
+
+The binary stays `localgallery` until the kit shell ships, then this
+binary becomes `localgallery-reference` /
+`com.j23n.LocalGallery.Reference`.
 
 Install and package notes: [INSTALL.md](INSTALL.md).
 

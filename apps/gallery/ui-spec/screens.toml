@@ -1,0 +1,179 @@
+# localgallery screens. Semantic only (ADR 0004 R2).
+# Identifiers are generated into GalleryScreen (Rust + Swift).
+# Chrome: root switcher Folders · Collections · Photos; Settings is a
+# sheet from the primary menu, not a tab (ADR 0007).
+# face-review is an unbound Linux gap (like contacts apple-conflict).
+# Do not claim GTK routes it. A missing kind still fails the kit
+# build; an unbound later screen is a gap, not a missing widget.
+
+app = "gallery"
+
+[[screens]]
+id = "folder-picker"
+kind = "detail"
+title = "LocalGallery"
+affordances = ["primary-action"]
+# No folder chosen (ADR 0007 R3). Primary action opens the host folder picker.
+sections = [
+    { id = "welcome", item = "status-row" },
+]
+
+[[screens]]
+id = "folders"
+kind = "list"
+title = "Folders"
+affordances = ["search", "sort"]
+item_nav = { intent = "push", destination = "folder" }
+sections = [
+    { id = "folders", item = "text-row" },
+]
+
+[[screens]]
+id = "folder"
+kind = "grid"
+title = "Folder"
+item_nav = { intent = "push", destination = "viewer" }
+sections = [
+    { id = "subfolders", item = "text-row" },
+    { id = "photos", item = "media-item" },
+]
+
+[[screens]]
+id = "photos"
+kind = "grid"
+title = "Photos"
+affordances = ["search", "filter", "overflow"]
+item_nav = { intent = "push", destination = "viewer" }
+# Filter: tags.
+sections = [
+    { id = "photos", item = "media-item" },
+]
+
+[[screens]]
+id = "collections"
+kind = "list"
+title = "Collections"
+item_nav = { intent = "push" }
+# Destinations: memory, people, events, album (person from People).
+sections = [
+    { id = "memories", item = "media-item" },
+    { id = "people", item = "media-item" },
+    { id = "events", item = "text-row" },
+    { id = "albums", item = "text-row" },
+]
+
+[[screens]]
+id = "memory"
+kind = "grid"
+title = "Memory"
+item_nav = { intent = "push", destination = "viewer" }
+sections = [
+    { id = "photos", item = "media-item" },
+]
+
+[[screens]]
+id = "people"
+kind = "grid"
+title = "People"
+item_nav = { intent = "push", destination = "person" }
+# Rows may be text-row or media-item; this inventory uses media-item.
+sections = [
+    { id = "people", item = "media-item" },
+]
+
+[[screens]]
+id = "person"
+kind = "grid"
+title = "Person"
+item_nav = { intent = "push", destination = "viewer" }
+sections = [
+    { id = "photos", item = "media-item" },
+]
+
+[[screens]]
+id = "events"
+kind = "list"
+title = "Events"
+item_nav = { intent = "push", destination = "folder" }
+# An event may also push an album-like grid (`album`).
+sections = [
+    { id = "events", item = "text-row" },
+]
+
+[[screens]]
+id = "album"
+kind = "grid"
+title = "Album"
+item_nav = { intent = "push", destination = "viewer" }
+sections = [
+    { id = "photos", item = "media-item" },
+]
+
+[[screens]]
+id = "viewer"
+kind = "viewer"
+title = "Photo"
+affordances = ["overflow"]
+# Overflow: info → photo-info, open-with, show-in-folder.
+sections = [
+    { id = "photo", item = "media-item" },
+]
+
+[[screens]]
+id = "photo-info"
+kind = "detail"
+title = "Info"
+# Date, Camera, Location, Tags, People.
+sections = [
+    { id = "date", item = "field-row" },
+    { id = "camera", item = "field-row" },
+    { id = "location", item = "field-row" },
+    { id = "tags", item = "field-row" },
+    { id = "people", item = "field-row" },
+]
+
+[[screens]]
+id = "settings"
+kind = "settings"
+title = "Settings"
+# Folder first, Scan, Diagnostics, Info last (ADR 0007 R2).
+sections = [
+    { id = "folder", item = "action-row" },
+    { id = "scan", item = "progress-row" },
+    { id = "diagnostics", item = "nav-row" },
+    { id = "info", item = "text-row" },
+]
+item_nav = { intent = "push", destination = "logs" }
+
+[[screens]]
+id = "logs"
+kind = "list"
+title = "Logs"
+affordances = ["search", "filter", "overflow"]
+sections = [
+    { id = "entries", item = "text-row" },
+]
+
+[[screens]]
+id = "sync-conflict-group"
+kind = "detail"
+title = "Sync Conflict"
+affordances = ["confirm"]
+# ADR 0005 R8–R11 on .xmp. Merge is already in gallery-meta
+# (union of human keywords; newest wins for core-owned fields).
+# Image bytes are never rewritten. The 5.8 slice is the UI only.
+sections = [
+    { id = "fields", item = "field-row" },
+    { id = "actions", item = "action-row" },
+]
+
+[[screens]]
+id = "face-review"
+kind = "list"
+title = "Face Review"
+affordances = ["selection", "confirm"]
+# Unbound Linux gap (like contacts apple-conflict). Named so the
+# vocabulary is checked. Do not claim GTK routes it.
+sections = [
+    { id = "faces", item = "media-item" },
+]

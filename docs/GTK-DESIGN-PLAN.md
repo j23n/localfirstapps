@@ -1,6 +1,7 @@
 # GTK design pass — plan
 
-Status: HIG chrome pass landed (kit + Contacts + Music stage). Written 2026-09-16; revised the same day
+Status: HIG chrome pass landed (kit + Contacts + Music stage). Phase 5
+5.1–5.4 landed; next is the `gallery-gtk` kit skeleton (5.5). Written 2026-09-16; revised the same day
 (kit-first sequence, two-consumer rule, builders as the derivation
 lever); revised again against `main` @ `9082c72` (Phase 2 split into
 2a/2b/2c, accent-text rule for apps without ink, filter controls,
@@ -748,7 +749,10 @@ should take it (needs a second consumer).
 
 ### Phase 5 — Gallery on the kit
 
-1. **Spec first**: write `apps/gallery/ui-spec/screens.toml` from the
+Living slices and gates: [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
+§Phase 5 (5.1–5.9). 5.1–5.4 landed (`gallery-gtk` is a pin crate; kit UI is 5.5).
+
+1. **Spec first (5.1)**: write `apps/gallery/ui-spec/screens.toml` from the
    hand-built UI and iOS IA, R4 kinds only. Extend `gen_r14.py` →
    `GalleryScreen`. Proposed ids and kinds:
    - `folder-picker` (detail)
@@ -846,7 +850,8 @@ should take it (needs a second consumer).
    over the `gio::ListModel` adapter from step 2 (ADR 0003 R4). No
    `FlowBox`. Thumbnails resolve `thumbnail_ref` in factory `bind` and
    cancel in `unbind`.
-8. Deferred, optional: year scrubber on the photos timeline.
+8. Year scrubber on the photos timeline is **5.9 optional**. If it
+   does not ship, 5.9 records it as a written gap — not “later”.
 
 Exit:
 - Every screen in `screens.toml` routed, each backed by a `gallery-ffi`
@@ -912,12 +917,16 @@ and is re-snapshotted in every consumer.
   face review) turn Phase 5 into core work shared with iOS. Estimate it
   as such.
 - Dependency resolution of `apps/gallery/core` under the `shells/`
-  lockfile (pins, `gallery-ffi` crate types). Checked before any
-  Gallery UI.
+  lockfile (pins, `gallery-ffi` crate types). **Checked in 5.3:** one
+  `image` 0.25.10, one `uniffi` 0.32, no default-graph `ort`;
+  `staticlib`/`cdylib` still usable as a rust dep (no `gallery-view`
+  split).
 - gtk4 0.8→0.11 and libadwaita 0.6→0.9 **landed**; Phase 2a structure
   **landed**; Phase 2b typed builders **landed**; Phase 2c row polish
   **landed**. Contacts `gtk-before/` baselines are in tree; further
-  mutter captures stay optional. Next is Phase 3 Contacts.
+  mutter captures stay optional. Contacts and Music kit stages landed.
+  Phase 5 Gallery 5.1–5.4 landed (spec, location windows, leftover
+  freeze, shells pins). Next is the `gallery-gtk` kit skeleton (5.5).
 - Headless mutter in CI may not be available. Snapshots stay a local
   script; unit tests must not require them.
 - `GtkSectionModel` adapters, if Music needs Flush, stay in `music-gtk`
