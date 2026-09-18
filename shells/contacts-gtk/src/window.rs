@@ -16,7 +16,7 @@ use contacts_core::{
     detail_rows, export_vcard_text, list_rows_filtered, load_edit_draft, new_edit_draft,
     remove_tag_logged, rename_tag_logged, resolve_logged, save_contact_logged, search_hits,
     tag_rows, BirthdayDraft, ConfinedVfs, ContactEditDraft, LabeledAddressDraft, LabeledValueDraft,
-    MergeKind, SaveContactCommand, StdVfs, Store, Vfs, TEMP_PREFIX,
+    MergeKind, SaveContactCommand, Store, Vfs, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
     about_dialog, action_row, apply_progress_row, chip_bar, chrome_progress, confirm_dialog,
@@ -63,7 +63,7 @@ struct Inner {
     selected_ids: RefCell<BTreeSet<String>>,
     settings_dialog: RefCell<Option<adw::PreferencesDialog>>,
     toast: adw::ToastOverlay,
-    vfs: StdVfs,
+    vfs: RefCell<Option<ConfinedVfs>>,
     device: String,
     paths: Paths,
     store: RefCell<Option<Store>>,
@@ -345,7 +345,7 @@ impl Window {
             selected_ids: RefCell::new(BTreeSet::new()),
             settings_dialog: RefCell::new(None),
             toast,
-            vfs: StdVfs::new(TEMP_PREFIX),
+            vfs: RefCell::new(None),
             device,
             paths,
             store: RefCell::new(None),
@@ -525,10 +525,14 @@ impl Window {
         }
     }
 
+    fn folder_vfs(&self) -> Option<ConfinedVfs> {
+        self.inner.vfs.borrow().clone()
+    }
+
     fn with_store_mut<T>(&self, f: impl FnOnce(&dyn Vfs, &mut Store) -> T) -> Option<T> {
+        let vfs = self.folder_vfs()?;
         let mut slot = self.inner.store.borrow_mut();
-        slot.as_mut()
-            .map(|store| f(&self.inner.vfs as &dyn Vfs, store))
+        slot.as_mut().map(|store| f(&vfs as &dyn Vfs, store))
     }
 
     fn refill_list(&self) {
@@ -616,24 +620,26 @@ impl Window {
                 }
             }
         }
-        match conflict_rows(&self.inner.vfs, &store) {
-            Ok(groups) => {
-                if groups.is_empty() {
-                    self.inner.banner.set_revealed(false);
-                } else {
-                    self.inner
-                        .banner
-                        .set_title(&format!("{} Sync Conflicts", groups.len()));
-                    self.inner.banner.set_revealed(true);
+        if let Some(vfs) = self.folder_vfs() {
+            match conflict_rows(&vfs, &store) {
+                Ok(groups) => {
+                    if groups.is_empty() {
+                        self.inner.banner.set_revealed(false);
+                    } else {
+                        self.inner
+                            .banner
+                            .set_title(&format!("{} Sync Conflicts", groups.len()));
+                        self.inner.banner.set_revealed(true);
+                    }
                 }
-            }
-            Err(err) => {
-                self.record(
-                    LogLevel::Error,
-                    "conflict",
-                    "Could not inspect sync conflicts",
-                );
-                self.toast(&err.to_string());
+                Err(err) => {
+                    self.record(
+                        LogLevel::Error,
+                        "conflict",
+                        "Could not inspect sync conflicts",
+                    );
+                    self.toast(&err.to_string());
+                }
             }
         }
     }
@@ -883,7 +889,26 @@ impl Window {
     }
 
     fn finish_folder_open(&self, folder: String, store: Store) {
+        let vfs = match ConfinedVfs::new(TEMP_PREFIX, &folder) {
+            Ok(vfs) => vfs,
+            Err(error) => {
+                self.inner.work_busy.set(false);
+                if let Ok(mut work) = self.inner.work.lock() {
+                    *work = None;
+                }
+                self.inner.work_cancel.replace(None);
+                self.sync_chrome_progress();
+                self.record(
+                    LogLevel::Error,
+                    "folder",
+                    "Could not confine contacts folder",
+                );
+                self.toast(&error.to_string());
+                return;
+            }
+        };
         let count = list_rows_filtered(&store, "", None).len();
+        self.inner.vfs.replace(Some(vfs));
         self.inner.store.replace(Some(store));
         self.inner.folder.replace(Some(folder.clone()));
         self.inner.paths.save_folder(&folder);
@@ -1197,7 +1222,7 @@ impl Window {
     }
 
     fn present_conflicts(&self) {
-        let Some(store) = self.inner.store.borrow().clone() else {
+        let Some((store, vfs)) = self.inner.store.borrow().clone().zip(self.folder_vfs()) else {
             self.record(
                 LogLevel::Warning,
                 "conflict",
@@ -1205,7 +1230,7 @@ impl Window {
             );
             return;
         };
-        let groups = match conflict_rows(&self.inner.vfs, &store) {
+        let groups = match conflict_rows(&vfs, &store) {
             Ok(groups) => groups,
             Err(err) => {
                 self.record(LogLevel::Error, "conflict", "Could not load sync conflicts");
@@ -1262,10 +1287,10 @@ impl Window {
     }
 
     fn present_conflict_diff(&self, canonical: &str, parent: Option<&adw::Dialog>) {
-        let Some(store) = self.inner.store.borrow().clone() else {
+        let Some((store, vfs)) = self.inner.store.borrow().clone().zip(self.folder_vfs()) else {
             return;
         };
-        let preview = match conflict_preview(&self.inner.vfs, &store, canonical) {
+        let preview = match conflict_preview(&vfs, &store, canonical) {
             Ok(preview) => preview,
             Err(err) => {
                 self.record(LogLevel::Error, "conflict", "Could not load conflict diff");

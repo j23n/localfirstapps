@@ -40,7 +40,7 @@ const TOKEN_CSS: &str = include_str!("../../../design/tokens/generated/music.css
 const DIAGNOSTIC_CAPACITY: usize = 5_000;
 const NOW_PLAYING_WIDTH: i32 = 400;
 
-type AppSession = Session<StdVfs, Box<dyn crate::TransportPort>>;
+type AppSession = Session<Box<dyn crate::TransportPort>>;
 
 #[derive(Clone, Default, PartialEq, Eq)]
 enum Drill {
@@ -830,8 +830,26 @@ impl Window {
         };
         match rx.try_recv() {
             Ok(LibraryWork::Ready { folder, store }) => {
+                let vfs = match ConfinedVfs::new(TEMP_PREFIX, &folder) {
+                    Ok(vfs) => vfs,
+                    Err(error) => {
+                        self.inner.work_busy.set(false);
+                        if let Ok(mut work) = self.inner.work.lock() {
+                            *work = None;
+                        }
+                        self.inner.work_cancel.replace(None);
+                        self.sync_chrome_progress();
+                        self.record(LogLevel::Error, "folder", "Could not confine music folder");
+                        self.toast(&error.to_string());
+                        return;
+                    }
+                };
                 self.inner.paths.save_folder(&folder);
-                self.inner.session.borrow_mut().install_store(store, folder);
+                {
+                    let mut session = self.inner.session.borrow_mut();
+                    session.replace_vfs(vfs);
+                    session.install_store(store, folder);
+                }
                 self.inner.root_stack.set_visible_child_name("music");
                 self.inner.work_busy.set(false);
                 if self.inner.session.borrow().pending_metadata_count() == 0 {

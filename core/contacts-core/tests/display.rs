@@ -3,9 +3,10 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use contacts_core::{
-    apply_draft, assign_tag_logged, choice_rows, conflict_rows, delete_logged, draft_from_card,
-    field_rows, list_rows, read_ops, resolve_logged, save_logged, write, Birthday, Card,
-    ContactDraft, MemVfs, MergeKind, Store, TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
+    assign_tag_logged, choice_rows, conflict_rows, delete_logged, edit_draft_from_card, field_rows,
+    list_rows, new_edit_draft, read_ops, resolve_logged, save_contact_logged, save_logged, write,
+    Birthday, Card, ContactEditDraft, LabeledValueDraft, MemVfs, MergeKind, SaveContactCommand,
+    Store, TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
 };
 use localcore_vfs::{Entry, ReadSeek, Stat, Vfs, VfsError, VfsResult};
 
@@ -13,22 +14,24 @@ use localcore_vfs::{Entry, ReadSeek, Stat, Vfs, VfsError, VfsResult};
 fn list_and_fields_match_ffi_copy() {
     let vfs = MemVfs::new();
     let mut store = Store::open(&vfs, "/lib").unwrap();
-    let mut card = Card::new("");
-    apply_draft(
-        &mut card,
-        &ContactDraft {
-            given: "Ada".into(),
-            family: "Lovelace".into(),
+    let saved = save_named(
+        &vfs,
+        &mut store,
+        ContactEditDraft {
+            given_name: "Ada".into(),
+            family_name: "Lovelace".into(),
             organization: "Analytical".into(),
-            email: "ada@example".into(),
-            ..ContactDraft::default()
+            emails: vec![LabeledValueDraft {
+                label: "home".into(),
+                value: "ada@example".into(),
+            }],
+            ..new_edit_draft()
         },
     );
-    let saved = save_logged(&vfs, &mut store, "linux-test", card).unwrap();
     let rows = list_rows(&store, "ada");
     assert_eq!(rows[0].title, "Ada Lovelace");
     assert_eq!(rows[0].subtitle.as_deref(), Some("Analytical"));
-    let fields = field_rows(store.get(&saved.local_id).unwrap());
+    let fields = field_rows(store.get(saved.id.as_deref().unwrap()).unwrap());
     assert_eq!(fields[0].label, "Name");
     assert_eq!(fields[0].value, "Ada Lovelace");
     assert_eq!(
@@ -86,27 +89,34 @@ fn conflict_row_trailing_is_needs_choice() {
 fn draft_round_trip_and_delete_log() {
     let vfs = MemVfs::new();
     let mut store = Store::open(&vfs, "/lib").unwrap();
-    let mut card = Card::new("");
-    apply_draft(
-        &mut card,
-        &ContactDraft {
-            given: "Ada".into(),
-            family: "Lovelace".into(),
-            phone: "555".into(),
-            ..ContactDraft::default()
+    let saved = save_named(
+        &vfs,
+        &mut store,
+        ContactEditDraft {
+            given_name: "Ada".into(),
+            family_name: "Lovelace".into(),
+            phones: vec![LabeledValueDraft {
+                label: "cell".into(),
+                value: "555".into(),
+            }],
+            ..new_edit_draft()
         },
     );
-    let saved = save_logged(&vfs, &mut store, "linux-test", card).unwrap();
-    let draft = draft_from_card(store.get(&saved.local_id).unwrap());
-    assert_eq!(draft.given, "Ada");
-    assert_eq!(draft.family, "Lovelace");
-    assert_eq!(draft.phone, "555");
-    delete_logged(&vfs, &mut store, "linux-test", &saved.local_id).unwrap();
-    assert!(store.get(&saved.local_id).is_none());
+    let draft = edit_draft_from_card(store.get(&saved.id.as_deref().unwrap()).unwrap());
+    assert_eq!(draft.given_name, "Ada");
+    assert_eq!(draft.family_name, "Lovelace");
+    assert_eq!(draft.phones[0].value, "555");
+    let id = saved.id.clone().unwrap();
+    delete_logged(&vfs, &mut store, "linux-test", &id).unwrap();
+    assert!(store.get(&id).is_none());
     assert!(read_ops(&vfs, "/lib")
         .unwrap()
         .iter()
         .any(|op| op.event_type == TYPE_CONTACT_DELETED));
+}
+
+fn save_named(vfs: &dyn Vfs, store: &mut Store, draft: ContactEditDraft) -> ContactEditDraft {
+    save_contact_logged(vfs, store, "linux-test", SaveContactCommand { draft }).unwrap()
 }
 
 struct AppendFails {

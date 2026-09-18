@@ -68,8 +68,8 @@ pub struct PlaylistDetailRows {
     pub actions: Vec<music_core::ActionRow>,
 }
 
-pub struct Session<V: Vfs, P: TransportPort> {
-    vfs: V,
+pub struct Session<P: TransportPort> {
+    vfs: Box<dyn Vfs>,
     device: String,
     store: Option<Store>,
     folder: Option<String>,
@@ -80,11 +80,16 @@ pub struct Session<V: Vfs, P: TransportPort> {
     diagnostics: LogStore,
 }
 
-impl<V: Vfs, P: TransportPort> Session<V, P> {
+impl<P: TransportPort> Session<P> {
     #[must_use]
-    pub fn new(vfs: V, device: String, transport: P, diagnostic_capacity: usize) -> Self {
+    pub fn new(
+        vfs: impl Vfs + 'static,
+        device: String,
+        transport: P,
+        diagnostic_capacity: usize,
+    ) -> Self {
         Self {
-            vfs,
+            vfs: Box::new(vfs),
             device,
             store: None,
             folder: None,
@@ -96,9 +101,14 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         }
     }
 
+    /// Swap the filesystem used for later playlist and conflict writes.
+    pub fn replace_vfs(&mut self, vfs: impl Vfs + 'static) {
+        self.vfs = Box::new(vfs);
+    }
+
     pub fn open_folder(&mut self, folder: &str) -> Result<(), ShellError> {
         let _span = localcore_trace::span_always("music", "open_folder");
-        let store = Store::open(&self.vfs, folder)?;
+        let store = Store::open(self.vfs(), folder)?;
         self.install_store(store, folder.to_owned());
         Ok(())
     }
@@ -120,7 +130,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
     }
 
     pub fn reload(&mut self) -> Result<(), ShellError> {
-        let vfs = &self.vfs;
+        let vfs = self.vfs.as_ref();
         self.store
             .as_mut()
             .ok_or(ShellError::NoFolder)?
@@ -176,9 +186,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
 
     #[must_use]
     pub fn pending_metadata_count(&self) -> usize {
-        self.store()
-            .map(Store::pending_metadata_count)
-            .unwrap_or(0)
+        self.store().map(Store::pending_metadata_count).unwrap_or(0)
     }
 
     #[must_use]
@@ -195,8 +203,8 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         &mut self,
         updates: Vec<music_core::MetadataUpdate>,
     ) -> Result<(), ShellError> {
-        let _span = localcore_trace::span_always("music", "apply_metadata_batch")
-            .extra("n", updates.len());
+        let _span =
+            localcore_trace::span_always("music", "apply_metadata_batch").extra("n", updates.len());
         self.store_mut()?.apply_metadata_batch(updates)?;
         Ok(())
     }
@@ -275,7 +283,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
 
     pub fn create_playlist(&mut self, name: String) -> Result<String, ShellError> {
         let device = self.device.clone();
-        let vfs = &self.vfs;
+        let vfs = self.vfs.as_ref();
         let store = self.store.as_mut().ok_or(ShellError::NoFolder)?;
         let id = create_playlist_logged(vfs, store, &device, CreatePlaylistCommand { name })?;
         self.diagnostics
@@ -290,7 +298,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         track_ids: Vec<String>,
     ) -> Result<String, ShellError> {
         let device = self.device.clone();
-        let vfs = &self.vfs;
+        let vfs = self.vfs.as_ref();
         let store = self.store.as_mut().ok_or(ShellError::NoFolder)?;
         let token = add_tracks_logged(
             vfs,
@@ -314,7 +322,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         entry_ids: Vec<String>,
     ) -> Result<String, ShellError> {
         let device = self.device.clone();
-        let vfs = &self.vfs;
+        let vfs = self.vfs.as_ref();
         let store = self.store.as_mut().ok_or(ShellError::NoFolder)?;
         let token = remove_entries_logged(
             vfs,
@@ -339,7 +347,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         before_entry_id: Option<String>,
     ) -> Result<String, ShellError> {
         let device = self.device.clone();
-        let vfs = &self.vfs;
+        let vfs = self.vfs.as_ref();
         let store = self.store.as_mut().ok_or(ShellError::NoFolder)?;
         let token = move_entry_logged(
             vfs,
@@ -363,7 +371,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         content_token: String,
     ) -> Result<(), ShellError> {
         let device = self.device.clone();
-        let vfs = &self.vfs;
+        let vfs = self.vfs.as_ref();
         let store = self.store.as_mut().ok_or(ShellError::NoFolder)?;
         delete_playlist_logged(
             vfs,
@@ -388,11 +396,11 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
     }
 
     pub fn conflict_rows(&self) -> Result<Vec<music_core::ConflictRow>, ShellError> {
-        Ok(conflict_rows(&self.vfs, self.store()?)?)
+        Ok(conflict_rows(self.vfs(), self.store()?)?)
     }
 
     pub fn conflict_choice_rows(&self, group_id: &str) -> Result<Vec<TextRow>, ShellError> {
-        Ok(conflict_choice_rows(&self.vfs, self.store()?, group_id)?)
+        Ok(conflict_choice_rows(self.vfs(), self.store()?, group_id)?)
     }
 
     pub fn resolve_conflict(
@@ -401,7 +409,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         selected_source: Option<String>,
     ) -> Result<(), ShellError> {
         let device = self.device.clone();
-        let vfs = &self.vfs;
+        let vfs = self.vfs.as_ref();
         let store = self.store.as_mut().ok_or(ShellError::NoFolder)?;
         resolve_conflict_logged(
             vfs,
@@ -588,5 +596,9 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
 
     fn store_mut(&mut self) -> Result<&mut Store, ShellError> {
         self.store.as_mut().ok_or(ShellError::NoFolder)
+    }
+
+    fn vfs(&self) -> &dyn Vfs {
+        self.vfs.as_ref()
     }
 }

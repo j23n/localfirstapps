@@ -36,9 +36,8 @@ pub use display::{
     ConflictPreview, ConflictRow, FieldMatch, FieldRow, SearchHit, TextRow,
 };
 pub use draft::{
-    apply_draft, apply_edit_draft, content_token, draft_from_card, edit_draft_from_card,
-    new_edit_draft, BirthdayDraft, ContactDraft, ContactEditDraft, LabeledAddressDraft,
-    LabeledValueDraft, SaveContactCommand,
+    apply_edit_draft, content_token, edit_draft_from_card, new_edit_draft, BirthdayDraft,
+    ContactEditDraft, LabeledAddressDraft, LabeledValueDraft, SaveContactCommand,
 };
 pub use folder_log::{
     append_deleted, append_group_resolved, append_saved, log_root, read_ops, STATE_DIR,
