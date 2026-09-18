@@ -128,7 +128,7 @@ final class LocationWindowTests: XCTestCase {
         XCTAssertEqual(photos.count, 3)
     }
 
-    func testFolderDestinationIsIdentityNotAListingTree() async {
+    func testFolderDestinationIsIdentityNotAListingTree() async throws {
         let (index, _, root) = await builtIndex()
         let year = try XCTUnwrap(index.folderDestination(id: root.subfolders[0].id.uuidString))
         XCTAssertEqual(year.id, root.subfolders[0].id)
@@ -167,7 +167,7 @@ final class LocationWindowTests: XCTestCase {
         )
     }
 
-    func testAppRouterDeepLinkUsesFolderWindows() async {
+    func testAppRouterDeepLinkUsesFolderWindows() async throws {
         let lib = nestedLibrary()
         let harness = TestGalleryStore.make()
         defer { harness.teardown() }
