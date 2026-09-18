@@ -203,7 +203,14 @@ final class LibraryStoreTests {
             documentsURL: tempDir.appendingPathComponent("documents"),
             userDefaults: defaults
         )
-        return LibraryStore(persistence: persistence, defaults: defaults)
+        let snapshotCache = LibrarySnapshotCache(
+            cachesDirectory: tempDir.appendingPathComponent("caches/localmusic", isDirectory: true)
+        )
+        return LibraryStore(
+            persistence: persistence,
+            snapshotCache: snapshotCache,
+            defaults: defaults
+        )
     }
 
     private func touch(_ relativePath: String, makeDirectories: Bool = false) throws {

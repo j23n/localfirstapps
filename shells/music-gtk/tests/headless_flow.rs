@@ -1,4 +1,4 @@
-use music_core::{ConflictDisposition, MemVfs, SortOption};
+use music_core::{ConflictDisposition, MemVfs, MetadataUpdate, SortOption};
 use music_gtk::{MockTransport, Session, TransportCommand};
 
 #[test]
@@ -87,4 +87,40 @@ fn folder_to_list_to_playlist_save_to_conflict_choice_is_headless() {
             TransportCommand::Play
         ]
     ));
+}
+
+#[test]
+fn warm_path_installs_cached_store_before_a_walk() {
+    let vfs = MemVfs::new();
+    vfs.insert("/music/song.mp3", b"audio");
+    let mut cold = Session::new(vfs, "linux-test".into(), MockTransport::default(), 32);
+    cold.open_folder("/music").unwrap();
+    let request = cold.pending_metadata(1).unwrap().remove(0);
+    cold.apply_metadata_batch(vec![MetadataUpdate {
+        id: request.id,
+        title: "Warm Title".into(),
+        artist: "Ada".into(),
+        album: "Notes".into(),
+        duration_ms: 61_000,
+        has_artwork: true,
+        has_lyrics: false,
+    }])
+    .unwrap();
+    let snapshot = cold.clone_store().unwrap().to_cache();
+
+    let empty = MemVfs::new();
+    let mut warm = Session::new(empty, "linux-test".into(), MockTransport::default(), 32);
+    warm.install_from_snapshot("/music", snapshot).unwrap();
+    let library = warm.library_rows(String::new(), SortOption::Title).unwrap();
+    assert_eq!(
+        library.sections[0].items[0].label.as_deref(),
+        Some("Warm Title")
+    );
+    assert!(library.sections[0].items[0]
+        .badge
+        .as_deref()
+        .unwrap()
+        .contains("1:01"));
+    assert_eq!(warm.pending_metadata_count(), 0);
+    assert!(!warm.try_install_cache("/music", "/no/such/music-warm-cache.json"));
 }

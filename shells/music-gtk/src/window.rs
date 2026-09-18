@@ -735,9 +735,69 @@ impl Window {
 
     fn open_folder(&self, folder: &str, wait: bool) {
         let _span = localcore_trace::span_always("music", "window.open_folder");
-        self.start_library_work(folder.to_string(), None);
+        if self.try_warm_start(folder) {
+            let existing = self.inner.session.borrow().clone_store();
+            self.start_library_work(folder.to_string(), existing);
+        } else {
+            self.start_library_work(folder.to_string(), None);
+        }
         if wait {
             self.drain_library_work();
+        }
+    }
+
+    /// Cache hit: install + paint + switch page before the background walk.
+    fn try_warm_start(&self, folder: &str) -> bool {
+        let Some(cache_path) = self
+            .inner
+            .paths
+            .library_cache_path(folder)
+            .to_str()
+            .map(str::to_owned)
+        else {
+            return false;
+        };
+        let host = StdVfs::new(TEMP_PREFIX);
+        let Some(store) = Store::load_cache(&host, &cache_path, folder) else {
+            return false;
+        };
+        let vfs = match ConfinedVfs::new(TEMP_PREFIX, folder) {
+            Ok(vfs) => vfs,
+            Err(_) => return false,
+        };
+        self.inner.paths.save_folder(folder);
+        {
+            let mut session = self.inner.session.borrow_mut();
+            session.replace_vfs(vfs);
+            session.install_store(store, folder.to_owned());
+        }
+        self.inner.root_stack.set_visible_child_name("music");
+        self.refill_all();
+        true
+    }
+
+    fn persist_library_cache(&self) {
+        let folder = self.inner.session.borrow().folder().map(str::to_owned);
+        let store = self.inner.session.borrow().clone_store();
+        let (Some(folder), Some(store)) = (folder, store) else {
+            return;
+        };
+        let Some(path) = self
+            .inner
+            .paths
+            .library_cache_path(&folder)
+            .to_str()
+            .map(str::to_owned)
+        else {
+            return;
+        };
+        let host = StdVfs::new(TEMP_PREFIX);
+        if let Err(error) = store.save_cache(&host, &path) {
+            self.record(
+                LogLevel::Warning,
+                "folder",
+                format!("Could not write library cache: {error}"),
+            );
         }
     }
 
@@ -858,6 +918,7 @@ impl Window {
                 }
                 self.inner.root_stack.set_visible_child_name("music");
                 self.inner.work_busy.set(false);
+                self.persist_library_cache();
                 if self.inner.session.borrow().pending_metadata_count() == 0 {
                     if let Ok(mut work) = self.inner.work.lock() {
                         *work = None;
@@ -968,6 +1029,7 @@ impl Window {
                     *work = None;
                 }
                 this.sync_chrome_progress();
+                this.persist_library_cache();
                 this.refill_browse();
                 this.update_now_playing();
                 return gtk::glib::ControlFlow::Break;

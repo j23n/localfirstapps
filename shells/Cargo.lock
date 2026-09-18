@@ -1471,6 +1471,7 @@ dependencies = [
  "localcore-trace",
  "localcore-vfs",
  "localcore-walk",
+ "serde",
  "serde_json",
  "sha2",
  "unicode-normalization",

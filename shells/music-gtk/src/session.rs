@@ -7,9 +7,10 @@ use music_core::{
     delete_playlist_logged, media_item, move_entry_logged, playlist_action_rows,
     playlist_art_track_id, playlist_entry_rows, playlist_rows, remove_entries_logged,
     resolve_conflict_logged, search_hits, set_library_view, settings_info_rows, AddTracksCommand,
-    CreatePlaylistCommand, DeletePlaylistCommand, LibraryContentState, MediaItem, MediaSource,
-    MovePlaylistEntryCommand, RemovePlaylistEntriesCommand, ResolveConflictCommand, SearchHit,
-    SetLibraryViewCommand, SortOption, StatusRow, Store, StoreError, TextRow, Vfs,
+    CreatePlaylistCommand, DeletePlaylistCommand, LibraryContentState, LibrarySnapshot, MediaItem,
+    MediaSource, MovePlaylistEntryCommand, RemovePlaylistEntriesCommand, ResolveConflictCommand,
+    SearchHit, SetLibraryViewCommand, SortOption, StatusRow, StdVfs, Store, StoreError, TextRow,
+    Vfs, TEMP_PREFIX,
 };
 use shell_kit_gtk::{LogLevel, LogStore};
 
@@ -127,6 +128,33 @@ impl<P: TransportPort> Session<P> {
             "folder",
             format!("Opened Folder with {count} tracks"),
         );
+    }
+
+    /// Paint from a disposable snapshot without walking. Returns whether it hit.
+    pub fn try_install_cache(&mut self, folder: &str, cache_path: &str) -> bool {
+        let host = StdVfs::new(TEMP_PREFIX);
+        let Some(store) = Store::load_cache(&host, cache_path, folder) else {
+            return false;
+        };
+        self.install_store(store, folder.to_owned());
+        true
+    }
+
+    /// Install snapshot tracks so the first paint happens before a walk.
+    pub fn install_from_snapshot(
+        &mut self,
+        folder: &str,
+        snapshot: LibrarySnapshot,
+    ) -> Result<(), ShellError> {
+        self.install_store(Store::from_cache(snapshot)?, folder.to_owned());
+        Ok(())
+    }
+
+    /// Rewrite the private cache after a walk / host metadata.
+    pub fn persist_library_cache(&self, cache_path: &str) -> Result<(), ShellError> {
+        let host = StdVfs::new(TEMP_PREFIX);
+        self.store()?.save_cache(&host, cache_path)?;
+        Ok(())
     }
 
     pub fn reload(&mut self) -> Result<(), ShellError> {

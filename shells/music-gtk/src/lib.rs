@@ -192,6 +192,7 @@ pub fn hostname() -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
     pub config_dir: PathBuf,
+    pub cache_dir: PathBuf,
 }
 
 impl Paths {
@@ -199,11 +200,23 @@ impl Paths {
     pub fn from_env() -> Self {
         Self {
             config_dir: xdg_config_home().join(CONFIG_DIR_NAME),
+            cache_dir: PathBuf::from(music_core::default_cache_dir()),
         }
     }
 
     fn ensure(&self) {
         let _ = std::fs::create_dir_all(&self.config_dir);
+        let _ = std::fs::create_dir_all(&self.cache_dir);
+    }
+
+    /// `$XDG_CACHE_HOME/localmusic/library-<hash>.json` for the selected folder.
+    #[must_use]
+    pub fn library_cache_path(&self, folder: &str) -> PathBuf {
+        self.ensure();
+        PathBuf::from(music_core::library_cache_path(
+            &self.cache_dir.to_string_lossy(),
+            folder,
+        ))
     }
 
     pub fn load_or_create_device_id(&self, hostname: &str) -> String {
@@ -289,7 +302,12 @@ mod tests {
         ));
         let paths = Paths {
             config_dir: directory.clone(),
+            cache_dir: directory.join("cache"),
         };
+        let cache_a = paths.library_cache_path("/music/A");
+        let cache_b = paths.library_cache_path("/music/B");
+        assert_ne!(cache_a, cache_b);
+        assert!(cache_a.starts_with(&paths.cache_dir));
         assert_eq!(
             paths.load_or_create_device_id("Music Box"),
             "linux-Music-Box"

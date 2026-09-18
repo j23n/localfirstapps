@@ -135,6 +135,41 @@ impl Track {
         track
     }
 
+    /// Restore a projection row from a disposable snapshot (ADR 0005 R3).
+    pub(crate) fn from_cached(
+        path: String,
+        source_size: u64,
+        source_mtime: Option<FileTime>,
+        title: String,
+        artist: String,
+        album: String,
+        duration_ms: u64,
+        has_artwork: bool,
+        has_lyrics: bool,
+        metadata_loaded: bool,
+    ) -> Self {
+        let mut track = Self::from_file(crate::path::standardize(&path), source_size, source_mtime);
+        if !title.trim().is_empty() {
+            track.title = title.trim().to_owned();
+        }
+        track.artist = if artist.trim().is_empty() {
+            "Unknown Artist".into()
+        } else {
+            artist.trim().to_owned()
+        };
+        track.album = if album.trim().is_empty() {
+            "Unknown Album".into()
+        } else {
+            album.trim().to_owned()
+        };
+        track.duration_ms = duration_ms;
+        track.has_artwork = has_artwork;
+        track.has_lyrics = has_lyrics;
+        track.metadata_loaded = metadata_loaded;
+        track.refresh_display_keys();
+        track
+    }
+
     /// Refresh cached NFC/lowercase display keys after title/artist/album change.
     pub(crate) fn refresh_display_keys(&mut self) {
         self.title_key = display_key(&self.title);

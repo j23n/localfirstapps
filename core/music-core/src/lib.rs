@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod actions;
+pub mod cache;
 pub mod display;
 pub mod folder_log;
 pub mod merge;
@@ -23,6 +24,10 @@ pub use actions::{
     CreatePlaylistCommand, DeletePlaylistCommand, MovePlaylistEntryCommand,
     RemovePlaylistEntriesCommand, ResolveConflictCommand, SetLibraryViewCommand,
 };
+pub use cache::{
+    canonical_library_root, default_cache_dir, library_cache_file_name, library_cache_path,
+    parse_library_snapshot, CachedFileTime, CachedTrack, LibrarySnapshot, LIBRARY_CACHE_VERSION,
+};
 pub use display::{
     album_art_track_id, album_rows, album_track_items, artist_art_track_id, artist_rows,
     artist_track_items, conflict_choice_rows, conflict_rows, playlist_action_rows,
@@ -37,7 +42,7 @@ pub use folder_log::{
 };
 pub use localcore_conflict::{is_conflict_name, ConflictCopy, ConflictGroup};
 pub use localcore_log::valid_device;
-pub use localcore_vfs::{ConfinedVfs, MemVfs, StdVfs, Vfs};
+pub use localcore_vfs::{ConfinedVfs, FileTime, MemVfs, StdVfs, Vfs};
 pub use merge::{apply_merge, plan_merge, ConflictDisposition, MergePlan};
 pub use model::{
     classify_name, FileClass, MetadataUpdate, Playlist, PlaylistEntry, PlaylistFormat, Track,

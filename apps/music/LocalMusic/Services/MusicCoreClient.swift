@@ -66,6 +66,38 @@ actor MusicCoreClient {
         return try metadataRequests()
     }
 
+    /// Hydrate from the private Caches snapshot. `nil` is a cold miss.
+    func tryOpenCached(root: String, device: String, cachePath: String) throws -> [LibraryPaintRow]? {
+        do {
+            session = try MusicSession.openCached(root: root, device: device, cachePath: cachePath)
+            self.root = root
+            return try libraryPaintRows()
+        } catch let error as MusicError {
+            if case .Io(let message, let userActionable) = error,
+               !userActionable,
+               message == "Library cache is unavailable" {
+                return nil
+            }
+            throw error
+        }
+    }
+
+    func reload() throws {
+        try requireSession().reload()
+    }
+
+    func libraryPaintRows() throws -> [LibraryPaintRow] {
+        try requireSession().libraryPaintRows()
+    }
+
+    func pendingMetadataRequests() throws -> [MetadataRequest] {
+        try metadataRequests()
+    }
+
+    func saveLibraryCache(cachePath: String) throws {
+        try requireSession().saveLibraryCache(cachePath: cachePath)
+    }
+
     func applyMetadata(_ results: [MetadataResult]) throws {
         let session = try requireSession()
         for start in stride(from: 0, to: results.count, by: Int(Self.windowSize)) {

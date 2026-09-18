@@ -7,6 +7,9 @@ use localcore_vfs::{Vfs, VfsError};
 use localcore_walk::{walk_with_hooks_and_policy, FileSymlinkPolicy, WalkOutcome};
 use unicode_normalization::UnicodeNormalization;
 
+use crate::cache::{
+    read_library_cache, write_library_cache, CachedTrack, LibrarySnapshot, LIBRARY_CACHE_VERSION,
+};
 use crate::display::{StatusRow, StatusSeverity, TextRow};
 use crate::model::{classify_name, FileClass, MetadataUpdate, Playlist, Track};
 use crate::playlist::{
@@ -331,6 +334,105 @@ impl Store {
         next.set_library_view(query, sort);
         *self = next;
         Ok(Some(()))
+    }
+
+    /// Install cached tracks so the projection can paint before a folder walk.
+    ///
+    /// Playlists are not restored from the snapshot; the next walk hydrates
+    /// `.m3u` files as authority.
+    pub fn from_cache(snapshot: LibrarySnapshot) -> Result<Self, StoreError> {
+        if snapshot.version != LIBRARY_CACHE_VERSION {
+            return Err(StoreError::InvalidCommand(
+                "Unsupported library cache version".into(),
+            ));
+        }
+        if snapshot.root.trim().is_empty() {
+            return Err(StoreError::InvalidCommand(
+                "Library cache is missing a folder root".into(),
+            ));
+        }
+        let root = crate::cache::canonical_library_root(&snapshot.root);
+        let mut tracks = snapshot
+            .tracks
+            .into_iter()
+            .map(|row| {
+                Track::from_cached(
+                    row.path,
+                    row.source_size,
+                    row.source_mtime.map(Into::into),
+                    row.title,
+                    row.artist,
+                    row.album,
+                    row.duration_ms,
+                    row.has_artwork,
+                    row.has_lyrics,
+                    row.metadata_loaded,
+                )
+            })
+            .collect::<Vec<_>>();
+        tracks.sort_by(|left, right| left.id.cmp(&right.id));
+        let projection = LibraryProjection::new(&tracks);
+        let mut store = Self {
+            root,
+            tracks,
+            playlists: Vec::new(),
+            track_by_id: BTreeMap::new(),
+            playlist_by_id: BTreeMap::new(),
+            conflict_groups: Vec::new(),
+            scan_issues: Vec::new(),
+            projection,
+        };
+        store.reindex_tracks();
+        store.reindex_playlists();
+        Ok(store)
+    }
+
+    /// Replace this store from a snapshot, keeping the current query/sort.
+    pub fn hydrate(&mut self, snapshot: LibrarySnapshot) -> Result<(), StoreError> {
+        let query = self.projection.query.clone();
+        let sort = self.projection.sort;
+        let mut next = Self::from_cache(snapshot)?;
+        next.set_library_view(query, sort);
+        *self = next;
+        Ok(())
+    }
+
+    /// Disposable JSON document for the next warm launch.
+    #[must_use]
+    pub fn to_cache(&self) -> LibrarySnapshot {
+        LibrarySnapshot {
+            version: LIBRARY_CACHE_VERSION,
+            root: crate::cache::canonical_library_root(&self.root),
+            tracks: self
+                .tracks
+                .iter()
+                .map(|track| CachedTrack {
+                    id: track.id.clone(),
+                    path: track.path.clone(),
+                    source_size: track.source_size,
+                    source_mtime: track.source_mtime.map(Into::into),
+                    title: track.title.clone(),
+                    artist: track.artist.clone(),
+                    album: track.album.clone(),
+                    duration_ms: track.duration_ms,
+                    has_artwork: track.has_artwork,
+                    has_lyrics: track.has_lyrics,
+                    metadata_loaded: track.metadata_loaded,
+                })
+                .collect(),
+        }
+    }
+
+    /// Load a private cache file. Version / payload / root mismatch evicts it.
+    #[must_use]
+    pub fn load_cache(vfs: &dyn Vfs, path: &str, expected_root: &str) -> Option<Self> {
+        let snapshot = read_library_cache(vfs, path, expected_root)?;
+        Self::from_cache(snapshot).ok()
+    }
+
+    /// Write the private cache after a walk and host metadata.
+    pub fn save_cache(&self, vfs: &dyn Vfs, path: &str) -> Result<(), StoreError> {
+        write_library_cache(vfs, path, &self.to_cache())
     }
 
     /// Projected tracks, in stable-id order. Shells use windowed rows instead.
