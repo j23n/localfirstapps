@@ -30,6 +30,10 @@ pub struct ExifFacts {
     /// surfaced here so the enrichment path has it without a second parse, and
     /// nothing in the conformance dump compares it.
     pub orientation: Option<u16>,
+    /// TIFF `Make` (camera manufacturer).
+    pub make: Option<String>,
+    /// TIFF `Model` (camera model).
+    pub model: Option<String>,
 }
 
 /// Read everything above out of a whole image file.
@@ -65,6 +69,7 @@ pub fn read_exif_facts(bytes: &[u8]) -> ExifFacts {
 
     let (gps_latitude, gps_longitude) = read_gps(&exif);
 
+    let nonempty = |tag: Tag| ascii(tag).filter(|value| !value.is_empty());
     ExifFacts {
         capture_wall_clock,
         gps_latitude,
@@ -73,6 +78,8 @@ pub fn read_exif_facts(bytes: &[u8]) -> ExifFacts {
             .get_field(Tag::Orientation, In::PRIMARY)
             .and_then(|f| f.value.get_uint(0))
             .map(|v| v as u16),
+        make: nonempty(Tag::Make),
+        model: nonempty(Tag::Model),
     }
 }
 
@@ -245,6 +252,41 @@ mod tests {
     fn a_file_with_no_exif_reports_defaults_rather_than_failing() {
         assert_eq!(read_exif_facts(b""), ExifFacts::default());
         assert_eq!(read_exif_facts(b"not an image"), ExifFacts::default());
+    }
+
+    fn tiff_with_make_model(make: &str, model: &str) -> Vec<u8> {
+        let make_bytes = format!("{make}\0").into_bytes();
+        let model_bytes = format!("{model}\0").into_bytes();
+        let ifd0 = 8u32;
+        let mut out = Vec::new();
+        out.extend_from_slice(b"II");
+        out.extend_from_slice(&0x002Au16.to_le_bytes());
+        out.extend_from_slice(&ifd0.to_le_bytes());
+        out.extend_from_slice(&2u16.to_le_bytes());
+        let values_at = 10 + 2 * 12 + 4;
+        let make_at = values_at as u32;
+        let model_at = make_at + make_bytes.len() as u32;
+        let entry = |tag: u16, count: u32, value: u32, out: &mut Vec<u8>| {
+            out.extend_from_slice(&tag.to_le_bytes());
+            out.extend_from_slice(&2u16.to_le_bytes()); // ASCII
+            out.extend_from_slice(&count.to_le_bytes());
+            out.extend_from_slice(&value.to_le_bytes());
+        };
+        entry(0x010F, make_bytes.len() as u32, make_at, &mut out); // Make
+        entry(0x0110, model_bytes.len() as u32, model_at, &mut out); // Model
+        out.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(out.len() as u32, make_at);
+        out.extend_from_slice(&make_bytes);
+        assert_eq!(out.len() as u32, model_at);
+        out.extend_from_slice(&model_bytes);
+        out
+    }
+
+    #[test]
+    fn tiff_make_and_model_are_read() {
+        let facts = read_exif_facts(&tiff_with_make_model("Canon", "EOS R5"));
+        assert_eq!(facts.make.as_deref(), Some("Canon"));
+        assert_eq!(facts.model.as_deref(), Some("EOS R5"));
     }
 
     /// One coordinate as EXIF stores it: degrees, minutes and seconds, each a

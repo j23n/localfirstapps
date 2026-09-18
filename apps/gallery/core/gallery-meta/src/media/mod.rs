@@ -48,6 +48,10 @@ pub struct ImageMetadata {
     /// TIFF orientation. Not part of the Swift reader's output; see
     /// [`ExifFacts::orientation`].
     pub orientation: Option<u16>,
+    /// EXIF / TIFF `Make`.
+    pub make: Option<String>,
+    /// EXIF / TIFF `Model`.
+    pub model: Option<String>,
 }
 
 /// Read `path` and its `.xmp` sidecar.
@@ -114,6 +118,8 @@ fn merge(exif: ExifFacts, sidecar: SwiftXmpParse) -> ImageMetadata {
             })
             .collect(),
         orientation: exif.orientation,
+        make: exif.make,
+        model: exif.model,
     }
 }
 

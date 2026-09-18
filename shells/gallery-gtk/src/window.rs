@@ -36,13 +36,15 @@ use crate::paging::{
     same_item_ids, view_item_from_object, years_from_structure, PageCache, ViewItem, ViewList,
     ViewListModel, YearMark,
 };
-use crate::routing::{folder_stack_pop_policy, route_id, FolderStackPop};
+use crate::routing::{
+    folder_stack_pop_policy, nav_key_policy, route_id, FolderStackPop, NavKey, NavKeyAction,
+};
 use crate::session::{EventFolder, PhotoIntent, PreparedHub, PreparedUi, Session, TextPage};
 use crate::thumbs::ThumbCache;
 use crate::year_rail;
 use crate::{
     events_hub_preview_limit, people_hub_preview_limit, APP_TITLE, COMPACT_WIDTH, EVENT_GAP_PX,
-    EVENT_TILE_PX, PERSON_GAP_PX, PERSON_TILE_PX,
+    EVENT_TILE_PX, PERSON_GAP_PX, PERSON_TILE_PX, VIEWER_SHORT_HEIGHT,
 };
 use select::{
     select_scope_actions, selection_actions, set_tile_select_badge, tile_photo_id, MoveUi,
@@ -285,8 +287,8 @@ struct Inner {
     photos_scroll: gtk::ScrolledWindow,
     photos_grid: gtk::GridView,
     photos_year_rail: gtk::Box,
-    #[allow(dead_code)]
     photos_search: gtk::SearchEntry,
+    logs_search: RefCell<Option<gtk::SearchEntry>>,
     photos_hits: gtk::ListBox,
     photos_chips: gtk::Box,
     collections_box: gtk::Box,
@@ -309,7 +311,7 @@ struct Inner {
     explorer_fill: RefCell<Option<ExplorerFill>>,
     folder_stack: RefCell<Vec<Option<String>>>,
     last_viewer_host: Cell<ViewerHost>,
-    scan_rx: RefCell<Option<mpsc::Receiver<Result<(PreparedUi, PathBuf), String>>>>,
+    scan_rx: RefCell<Option<mpsc::Receiver<ScanWire>>>,
     photos_rx: RefCell<Option<mpsc::Receiver<PreparedPhotos>>>,
     drill_rx: RefCell<Option<mpsc::Receiver<(u64, ViewList)>>>,
     memories_rx: RefCell<Option<mpsc::Receiver<Vec<gallery_ffi::MemoryStructure>>>>,
@@ -342,6 +344,12 @@ struct Inner {
     watch_ignore_ticks: Cell<u32>,
     mutate_rx: RefCell<Option<mpsc::Receiver<MutateOutcome>>>,
     move_ui: RefCell<Option<MoveUi>>,
+}
+
+struct ScanWire {
+    folder: PathBuf,
+    toasts: Vec<String>,
+    result: Result<PreparedUi, String>,
 }
 
 enum AnalysisEvent {
@@ -763,6 +771,7 @@ impl Window {
             photos_grid: photos_grid.clone(),
             photos_year_rail,
             photos_search: photos_search.clone(),
+            logs_search: RefCell::new(None),
             photos_hits: photos_hits.clone(),
             photos_chips,
             collections_box,
@@ -876,18 +885,40 @@ impl Window {
             let deleting = this.clone();
             deleter.connect_clicked(move |_| deleting.delete_selected());
         }
-        let escape = gtk::EventControllerKey::new();
-        let escaper = this.clone();
-        escape.connect_key_pressed(move |_, keyval, _, _| {
-            if keyval == gtk::gdk::Key::Escape {
-                if escaper.inner.session.borrow().is_selecting() {
-                    escaper.cancel_select_mode();
-                    return glib::Propagation::Stop;
+        let keys = gtk::EventControllerKey::new();
+        let keyed = this.clone();
+        keys.connect_key_pressed(move |_, key, _, mods| {
+            let alt = mods.contains(gtk::gdk::ModifierType::ALT_MASK);
+            let nav_key = if key == gtk::gdk::Key::Escape {
+                Some(NavKey::Escape)
+            } else if alt && key == gtk::gdk::Key::Left {
+                Some(NavKey::AltLeft)
+            } else {
+                None
+            };
+            let Some(nav_key) = nav_key else {
+                return glib::Propagation::Proceed;
+            };
+            match nav_key_policy(
+                keyed.inner.session.borrow().is_selecting(),
+                keyed.search_entry_focused(),
+                nav_key,
+            ) {
+                NavKeyAction::CancelSelect => {
+                    keyed.cancel_select_mode();
+                    glib::Propagation::Stop
                 }
+                NavKeyAction::Pop => {
+                    if keyed.pop_visible_nav() {
+                        glib::Propagation::Stop
+                    } else {
+                        glib::Propagation::Proceed
+                    }
+                }
+                NavKeyAction::Ignore => glib::Propagation::Proceed,
             }
-            glib::Propagation::Proceed
         });
-        this.inner.window.add_controller(escape);
+        this.inner.window.add_controller(keys);
         let tabbed = this.clone();
         let last_tab = RefCell::new(
             this.inner
@@ -1475,7 +1506,11 @@ impl Window {
         self.inner.scan_rx.replace(Some(rx));
         thread::spawn(move || {
             let persist_folder = persist.then(|| folder.clone());
-            let cache = persist.then(|| Session::load_scan_cache(&folder)).flatten();
+            let loaded = persist.then(|| Session::load_scan_cache(&folder));
+            let snapshot_toast = loaded
+                .as_ref()
+                .and_then(|load| load.reuse.recovery_message());
+            let cache = loaded.and_then(|load| load.document);
             if let Some(snap) = &cache {
                 let warmed = Session::prepare_ui(
                     &index,
@@ -1484,54 +1519,83 @@ impl Window {
                     persist_folder.as_deref(),
                     &status,
                 );
-                if tx.send(Ok((warmed, folder.clone()))).is_err() {
+                if tx
+                    .send(ScanWire {
+                        folder: folder.clone(),
+                        toasts: Vec::new(),
+                        result: Ok(warmed),
+                    })
+                    .is_err()
+                {
                     return;
                 }
             }
-            let result = Session::scan_with(scanner, status.clone(), &folder, cache.as_ref())
-                .and_then(|mut catalog| {
-                    Session::mark_changed_sidecars(&mut catalog, cache.as_ref());
-                    if cache.is_none() {
-                        let first = Session::prepare_ui(
-                            &index,
-                            catalog.clone(),
-                            false,
-                            persist_folder.as_deref(),
-                            &status,
-                        );
-                        if tx.send(Ok((first, folder.clone()))).is_err() {
-                            return Ok(());
-                        }
+            let walk = Session::scan_with(scanner, status.clone(), &folder, cache.as_ref());
+            let unsupported = gallery_vfs::take_unsupported_names();
+            let mut walk_toasts = Vec::new();
+            if let Some(msg) = snapshot_toast {
+                walk_toasts.push(msg);
+            }
+            if let Some(msg) = localgallery::row::unsupported_names_message(&unsupported) {
+                walk_toasts.push(msg);
+            }
+            let result = walk.and_then(|mut catalog| {
+                Session::mark_changed_sidecars(&mut catalog, cache.as_ref());
+                let mut toasts = std::mem::take(&mut walk_toasts);
+                if cache.is_none() {
+                    let first = Session::prepare_ui(
+                        &index,
+                        catalog.clone(),
+                        false,
+                        persist_folder.as_deref(),
+                        &status,
+                    );
+                    if tx
+                        .send(ScanWire {
+                            folder: folder.clone(),
+                            toasts,
+                            result: Ok(first),
+                        })
+                        .is_err()
+                    {
+                        return Ok(());
                     }
-                    if enrich_after {
-                        if catalog.needs_enrichment {
-                            Session::enrich_catalog(&mut catalog);
-                        }
-                        if persist {
-                            if let Err(error) = Session::persist_scan_snapshot(&folder, &catalog) {
-                                localcore_trace::event(
-                                    "catalog",
-                                    format!("snapshot persist: {error}"),
-                                );
-                            }
-                        }
-                        let second = Session::prepare_ui(
-                            &index,
-                            catalog,
-                            true,
-                            persist_folder.as_deref(),
-                            &status,
-                        );
-                        let _ = tx.send(Ok((second, folder)));
-                    } else if persist {
+                    toasts = Vec::new();
+                }
+                if enrich_after {
+                    if catalog.needs_enrichment {
+                        Session::enrich_catalog(&mut catalog);
+                    }
+                    if persist {
                         if let Err(error) = Session::persist_scan_snapshot(&folder, &catalog) {
                             localcore_trace::event("catalog", format!("snapshot persist: {error}"));
                         }
                     }
-                    Ok(())
-                });
+                    let second = Session::prepare_ui(
+                        &index,
+                        catalog,
+                        true,
+                        persist_folder.as_deref(),
+                        &status,
+                    );
+                    let _ = tx.send(ScanWire {
+                        folder: folder.clone(),
+                        toasts,
+                        result: Ok(second),
+                    });
+                } else if persist {
+                    if let Err(error) = Session::persist_scan_snapshot(&folder, &catalog) {
+                        localcore_trace::event("catalog", format!("snapshot persist: {error}"));
+                    }
+                }
+                Ok(())
+            });
             if let Err(error) = result {
-                let _ = tx.send(Err(error.to_string()));
+                let _ = tx.send(ScanWire {
+                    folder,
+                    toasts: walk_toasts,
+                    result: Err(error.to_string()),
+                });
             }
         });
     }
@@ -1982,10 +2046,13 @@ impl Window {
             return;
         };
         match rx.try_recv() {
-            Ok(result) => {
+            Ok(packet) => {
                 self.inner.scan_rx.replace(Some(rx));
-                match result {
-                    Ok((prepared, folder)) => self.finish_scan(prepared, folder),
+                for message in &packet.toasts {
+                    self.toast(message);
+                }
+                match packet.result {
+                    Ok(prepared) => self.finish_scan(prepared, packet.folder),
                     Err(error) => {
                         self.inner.scan_rx.replace(None);
                         self.inner.scan_busy.set(false);
@@ -2917,15 +2984,27 @@ impl Window {
     ) {
         set_cover_captions(root, title, subtitle);
         if let Some((id, path)) = photo {
-            self.bind_cover_photo(root, id, path);
+            self.bind_cover_photo(root, id, path, None);
         }
     }
 
-    fn bind_cover_photo(&self, root: &gtk::Widget, id: &str, path: &str) {
+    fn bind_cover_photo(
+        &self,
+        root: &gtk::Widget,
+        id: &str,
+        path: &str,
+        region: Option<&gallery_model::photo::FaceRegion>,
+    ) {
         if let Some(picture) = find_named_widget::<gtk::Picture>(root, "cover-pic") {
-            self.inner
-                .thumbs
-                .bind_grid(&picture, path, id, self.cover_scale());
+            if let Some(region) = region {
+                self.inner
+                    .thumbs
+                    .bind_face(&picture, path, id, self.cover_scale(), region);
+            } else {
+                self.inner
+                    .thumbs
+                    .bind_grid(&picture, path, id, self.cover_scale());
+            }
         }
     }
 
@@ -3453,7 +3532,7 @@ impl Window {
             }
             if let Some(stack) = &column {
                 let card = self.person_hub_card(row);
-                covers.push((card.clone(), row.id.clone()));
+                covers.push((card.clone(), row.id.clone(), row.title.clone()));
                 stack.append(&card);
             }
         }
@@ -3461,18 +3540,18 @@ impl Window {
         clip_hub_rail(rail)
     }
 
-    fn schedule_person_covers(&self, jobs: Vec<(gtk::Widget, String)>) {
+    fn schedule_person_covers(&self, jobs: Vec<(gtk::Widget, String, String)>) {
         self.pump_person_covers(jobs, 0);
     }
 
-    fn pump_person_covers(&self, jobs: Vec<(gtk::Widget, String)>, start: usize) {
+    fn pump_person_covers(&self, jobs: Vec<(gtk::Widget, String, String)>, start: usize) {
         const CHUNK: usize = 4;
         if start >= jobs.len() {
             return;
         }
         let end = (start + CHUNK).min(jobs.len());
-        for (card, id) in &jobs[start..end] {
-            self.bind_person_cover(card, id);
+        for (card, id, title) in &jobs[start..end] {
+            self.bind_person_cover(card, id, title);
         }
         if end < jobs.len() {
             let this = self.clone();
@@ -3516,7 +3595,7 @@ impl Window {
         btn.upcast()
     }
 
-    fn bind_person_cover(&self, root: &gtk::Widget, tag_id: &str) {
+    fn bind_person_cover(&self, root: &gtk::Widget, tag_id: &str, title: &str) {
         let Some(id) = self.inner.session.borrow().person_cover_photo_id(tag_id) else {
             return;
         };
@@ -3529,7 +3608,8 @@ impl Window {
         let Some(path) = path else {
             return;
         };
-        self.bind_cover_photo(root, &id, &path);
+        let region = self.inner.session.borrow().named_cover_region(&id, title);
+        self.bind_cover_photo(root, &id, &path, region.as_ref());
     }
 
     fn people_tiles(&self, rows: &[gallery_ffi::GalleryTextRow]) -> gtk::Widget {
@@ -3570,12 +3650,20 @@ impl Window {
                         .path_for_photo(id)
                         .map(ToOwned::to_owned)
                 });
-                this.bind_cover(
+                let region = cover.as_ref().and_then(|id| {
+                    this.inner
+                        .session
+                        .borrow()
+                        .named_cover_region(id, &row.title)
+                });
+                set_cover_captions(
                     &root,
                     &row.title,
                     row.trailing.as_deref().unwrap_or_default(),
-                    cover.as_deref().zip(path.as_deref()),
                 );
+                if let Some((id, path)) = cover.as_deref().zip(path.as_deref()) {
+                    this.bind_cover_photo(&root, id, path, region.as_ref());
+                }
                 this.set_person_badges(&root, &row.id, &row.title);
             }
         });
@@ -3848,6 +3936,29 @@ impl Window {
         self.inner.collections_nav.push(&page);
     }
 
+    fn search_entry_focused(&self) -> bool {
+        if self.inner.photos_search.has_focus() {
+            return true;
+        }
+        self.inner
+            .logs_search
+            .borrow()
+            .as_ref()
+            .is_some_and(|entry| entry.has_focus())
+    }
+
+    fn visible_nav(&self) -> &adw::NavigationView {
+        match self.inner.shell.stack.visible_child_name().as_deref() {
+            Some("folders") => &self.inner.folders_nav,
+            Some("collections") => &self.inner.collections_nav,
+            _ => &self.inner.photos_nav,
+        }
+    }
+
+    fn pop_visible_nav(&self) -> bool {
+        self.visible_nav().pop()
+    }
+
     fn viewer_nav(&self, host: ViewerHost) -> &adw::NavigationView {
         match host {
             ViewerHost::Photos => &self.inner.photos_nav,
@@ -3915,7 +4026,7 @@ impl Window {
             self.inner.window.height().max(1) as u32,
             self.inner.window.scale_factor().max(1) as u32,
         );
-        let media =
+        let (media, still) =
             viewer_media_surface(&self.inner.thumbs, &id, path.as_deref(), is_video, max_side);
         let overlay = gtk::Overlay::new();
         overlay.set_child(Some(&media));
@@ -3935,11 +4046,51 @@ impl Window {
         }
         let overflow = overflow(&menu);
         overflow.add_css_class("osd");
-        overflow.set_halign(gtk::Align::End);
-        overflow.set_valign(gtk::Align::Start);
-        overflow.set_margin_top(8);
-        overflow.set_margin_end(8);
-        overlay.add_overlay(&overflow);
+        let chrome = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        chrome.set_halign(gtk::Align::End);
+        chrome.set_valign(gtk::Align::Start);
+        chrome.set_margin_top(8);
+        chrome.set_margin_end(8);
+        if viewer_shows_sequence_osd(ids.len(), self.inner.window.height()) {
+            let prev = gtk::Button::from_icon_name("go-previous-symbolic");
+            let next = gtk::Button::from_icon_name("go-next-symbolic");
+            prev.add_css_class("circular");
+            prev.add_css_class("osd");
+            next.add_css_class("circular");
+            next.add_css_class("osd");
+            prev.set_tooltip_text(Some("Previous"));
+            next.set_tooltip_text(Some("Next"));
+            let this_p = self.clone();
+            let ids_p = ids.to_vec();
+            prev.connect_clicked(move |_| {
+                if index > 0 {
+                    let host = this_p.inner.last_viewer_host.get();
+                    this_p.replace_viewer(&ids_p, index - 1, host);
+                }
+            });
+            let this_n = self.clone();
+            let ids_n = ids.to_vec();
+            next.connect_clicked(move |_| {
+                if index + 1 < ids_n.len() {
+                    let host = this_n.inner.last_viewer_host.get();
+                    this_n.replace_viewer(&ids_n, index + 1, host);
+                }
+            });
+            chrome.append(&prev);
+            chrome.append(&next);
+        }
+        chrome.append(&overflow);
+        overlay.add_overlay(&chrome);
+        let mut hideables = vec![chrome.upcast::<gtk::Widget>()];
+        if viewer_shows_sequence_osd(ids.len(), self.inner.window.height()) {
+            let strip = self.filmstrip(ids, index);
+            overlay.add_overlay(&strip);
+            hideables.push(strip);
+        }
+        attach_tap_to_hide(&media, hideables);
+        if let Some(still) = still {
+            attach_still_pinch_zoom(&still);
+        }
 
         let group = gio::SimpleActionGroup::new();
         let info = gio::SimpleAction::new("info", None);
@@ -4039,6 +4190,109 @@ impl Window {
         page
     }
 
+    fn filmstrip(&self, ids: &[String], idx: usize) -> gtk::Widget {
+        #[derive(Clone)]
+        struct FilmstripItem {
+            id: String,
+            path: String,
+            is_video: bool,
+            current: bool,
+        }
+        let session = self.inner.session.borrow();
+        let items: Vec<FilmstripItem> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let host = session.host_for_photo(id);
+                FilmstripItem {
+                    id: id.clone(),
+                    path: host.map(|host| host.path.clone()).unwrap_or_default(),
+                    is_video: viewer_is_video(host, host.map(|h| h.path.as_str())),
+                    current: i == idx,
+                }
+            })
+            .collect();
+        drop(session);
+        let store = gio::ListStore::new::<glib::BoxedAnyObject>();
+        for item in &items {
+            store.append(&glib::BoxedAnyObject::new(item.clone()));
+        }
+        let factory = gtk::SignalListItemFactory::new();
+        let thumbs = self.inner.thumbs.clone();
+        let scale = self.inner.window.scale_factor().max(1) as u32;
+        factory.connect_setup(move |_, obj| {
+            let item = obj
+                .downcast_ref::<gtk::ListItem>()
+                .expect("factory item")
+                .clone();
+            let picture = gtk::Picture::new();
+            picture.set_content_fit(gtk::ContentFit::Cover);
+            picture.set_size_request(48, 48);
+            item.set_child(Some(&picture));
+        });
+        factory.connect_bind({
+            let thumbs = thumbs.clone();
+            move |_, obj| {
+                let item = obj
+                    .downcast_ref::<gtk::ListItem>()
+                    .expect("factory item")
+                    .clone();
+                let Some(boxed) = item.item().and_downcast::<glib::BoxedAnyObject>() else {
+                    return;
+                };
+                let Some(picture) = item.child().and_downcast::<gtk::Picture>() else {
+                    return;
+                };
+                let cell = boxed.borrow::<FilmstripItem>().clone();
+                if cell.current {
+                    picture.add_css_class("suggested-action");
+                } else {
+                    picture.remove_css_class("suggested-action");
+                }
+                if cell.is_video || cell.path.is_empty() {
+                    picture.set_paintable(Option::<&gtk::gdk::Paintable>::None);
+                } else {
+                    thumbs.bind_grid(&picture, &cell.path, &cell.id, scale);
+                }
+            }
+        });
+        let thumbs_unbind = thumbs.clone();
+        factory.connect_unbind(move |_, obj| {
+            let item = obj
+                .downcast_ref::<gtk::ListItem>()
+                .expect("factory item")
+                .clone();
+            if let Some(picture) = item.child().and_downcast::<gtk::Picture>() {
+                thumbs_unbind.recycle(&picture);
+            }
+        });
+        let sel = gtk::SingleSelection::new(Some(store));
+        sel.set_selected(idx as u32);
+        let list = gtk::ListView::new(Some(sel), Some(factory));
+        list.set_orientation(gtk::Orientation::Horizontal);
+        list.set_single_click_activate(true);
+        list.add_css_class("osd");
+        let this = self.clone();
+        let ids = ids.to_vec();
+        list.connect_activate(move |_, pos| {
+            let host = this.inner.last_viewer_host.get();
+            this.replace_viewer(&ids, pos as usize, host);
+        });
+        let list_scroll = list.clone();
+        let target = idx as u32;
+        glib::idle_add_local_once(move || {
+            list_scroll.scroll_to(target, gtk::ListScrollFlags::NONE, None::<gtk::ScrollInfo>);
+        });
+        let sw = gtk::ScrolledWindow::new();
+        sw.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+        sw.set_propagate_natural_height(true);
+        sw.set_halign(gtk::Align::Fill);
+        sw.set_valign(gtk::Align::End);
+        sw.add_css_class("osd");
+        sw.set_child(Some(&list));
+        sw.upcast()
+    }
+
     fn replace_viewer(&self, ids: &[String], index: usize, host: ViewerHost) {
         self.inner.last_viewer_host.set(host);
         self.viewer_nav(host).pop();
@@ -4063,6 +4317,8 @@ impl Window {
         let _span = localcore_trace::span_always("viewer", "photo_info").extra("id", id);
         let session = self.inner.session.borrow();
         let path = session.path_for_photo(id).map(str::to_string);
+        let host = session.host_for_photo(id).cloned();
+        let regions = session.face_regions_for(id);
         drop(session);
         localcore_trace::event(
             "viewer",
@@ -4090,10 +4346,50 @@ impl Window {
             editable: false,
         }));
         group.append(&field_row(&FieldRowData {
-            label: "Camera".into(),
-            value: "—".into(),
+            label: "File".into(),
+            value: host
+                .as_ref()
+                .map(|host| host.filename.clone())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| "—".into()),
             editable: false,
         }));
+        if host.as_ref().is_some_and(|host| host.is_video) {
+            group.append(&field_row(&FieldRowData {
+                label: "Type".into(),
+                value: "Video".into(),
+                editable: false,
+            }));
+        }
+        group.append(&field_row(&FieldRowData {
+            label: "Camera".into(),
+            value: camera_label(
+                meta.as_ref().and_then(|meta| meta.make.as_deref()),
+                meta.as_ref().and_then(|meta| meta.model.as_deref()),
+            ),
+            editable: false,
+        }));
+        if let (Some(lat), Some(lon)) = (
+            meta.as_ref().and_then(|meta| meta.gps_latitude),
+            meta.as_ref().and_then(|meta| meta.gps_longitude),
+        ) {
+            group.append(&field_row(&FieldRowData {
+                label: "GPS".into(),
+                value: format!("{lat:.5}, {lon:.5}"),
+                editable: false,
+            }));
+        }
+        if let Some(country) = meta
+            .as_ref()
+            .and_then(|meta| meta.country_code.as_deref())
+            .filter(|code| !code.is_empty())
+        {
+            group.append(&field_row(&FieldRowData {
+                label: "Country".into(),
+                value: country.to_string(),
+                editable: false,
+            }));
+        }
         let location = meta
             .as_ref()
             .and_then(|meta| {
@@ -4108,6 +4404,22 @@ impl Window {
         group.append(&field_row(&FieldRowData {
             label: "Location".into(),
             value: location,
+            editable: false,
+        }));
+        let named_faces: Vec<_> = regions
+            .iter()
+            .filter_map(|region| region.name.as_deref())
+            .collect();
+        let faces = if !named_faces.is_empty() {
+            named_faces.join(", ")
+        } else if !regions.is_empty() {
+            format!("{} unnamed", regions.len())
+        } else {
+            "—".into()
+        };
+        group.append(&field_row(&FieldRowData {
+            label: "Faces".into(),
+            value: faces,
             editable: false,
         }));
         let tags = meta
@@ -4150,6 +4462,19 @@ impl Window {
         group.append(&field_row(&FieldRowData {
             label: "People".into(),
             value: people_value,
+            editable: false,
+        }));
+        let sidecar = match path.as_deref() {
+            Some(path) => match gallery_meta::sidecar_exists(&gallery_vfs::StdVfs::new(), path) {
+                Ok(true) => gallery_meta::sidecar_path(path),
+                Ok(false) => "No sidecar on disk".into(),
+                Err(_) => "Sidecar unavailable".into(),
+            },
+            None => "Sidecar unavailable".into(),
+        };
+        group.append(&field_row(&FieldRowData {
+            label: "Sidecar".into(),
+            value: sidecar,
             editable: false,
         }));
         let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -5005,6 +5330,7 @@ impl Window {
         });
         let search = ui.search.clone().expect("logs search");
         search.set_placeholder_text(Some("Message or category"));
+        self.inner.logs_search.replace(Some(search.clone()));
         let level = match ui.filter.clone().expect("logs filter") {
             shell_kit_gtk::FilterControl::Scope(group) => group,
             shell_kit_gtk::FilterControl::Choice(_) => {
@@ -5907,6 +6233,26 @@ fn photo_tile() -> gtk::AspectFrame {
 
 /// iOS `PhotoPageView`: movies play inline. Host flag wins; the path
 /// extension is the fallback when a row was not in the host map.
+fn viewer_height_is_short(height: i32) -> bool {
+    height > 0 && height <= VIEWER_SHORT_HEIGHT
+}
+
+fn viewer_shows_sequence_osd(count: usize, height: i32) -> bool {
+    count > 1 && !viewer_height_is_short(height)
+}
+
+fn camera_label(make: Option<&str>, model: Option<&str>) -> String {
+    match (
+        make.map(str::trim).filter(|value| !value.is_empty()),
+        model.map(str::trim).filter(|value| !value.is_empty()),
+    ) {
+        (Some(make), Some(model)) => format!("{make} {model}"),
+        (Some(make), None) => make.to_string(),
+        (None, Some(model)) => model.to_string(),
+        (None, None) => "—".into(),
+    }
+}
+
 fn viewer_is_video(host: Option<&crate::session::PhotoHost>, path: Option<&str>) -> bool {
     host.is_some_and(|host| host.is_video) || path.is_some_and(localgallery::video::is_video_path)
 }
@@ -5917,7 +6263,7 @@ fn viewer_media_surface(
     path: Option<&str>,
     is_video: bool,
     max_side: u32,
-) -> gtk::Widget {
+) -> (gtk::Widget, Option<gtk::Picture>) {
     let stage = gtk::Overlay::new();
     stage.set_hexpand(true);
     stage.set_vexpand(true);
@@ -5960,7 +6306,86 @@ fn viewer_media_surface(
             stage.add_overlay(&play);
         }
     }
-    stage.upcast()
+    let still = (!is_video).then(|| picture.clone());
+    (stage.upcast(), still)
+}
+
+const VIEWER_MAX_ZOOM: f64 = 4.0;
+
+thread_local! {
+    static STILL_ZOOM_CSS: Cell<u32> = const { Cell::new(0) };
+}
+
+fn clamp_viewer_zoom(current: f64, factor: f64) -> f64 {
+    (current * factor).clamp(1.0, VIEWER_MAX_ZOOM)
+}
+
+fn attach_tap_to_hide(target: &impl IsA<gtk::Widget>, hideables: Vec<gtk::Widget>) {
+    if hideables.is_empty() {
+        return;
+    }
+    let shown = Rc::new(Cell::new(true));
+    let origin = Rc::new(Cell::new((0.0, 0.0)));
+    let tap = gtk::GestureClick::new();
+    tap.set_button(1);
+    tap.connect_pressed({
+        let origin = origin.clone();
+        move |_, _, x, y| origin.set((x, y))
+    });
+    tap.connect_released(move |_, n_press, x, y| {
+        if n_press != 1 {
+            return;
+        }
+        let (ox, oy) = origin.get();
+        if (x - ox).hypot(y - oy) > 16.0 {
+            return;
+        }
+        let next = !shown.get();
+        shown.set(next);
+        for widget in &hideables {
+            widget.set_visible(next);
+        }
+    });
+    target.add_controller(tap);
+}
+
+fn attach_still_pinch_zoom(picture: &gtk::Picture) {
+    let token = STILL_ZOOM_CSS.with(|cell| {
+        let next = cell.get().wrapping_add(1);
+        cell.set(next);
+        next
+    });
+    let class = format!("gallery-zoom-{token}");
+    picture.add_css_class(&class);
+    let scale = Rc::new(Cell::new(1.0_f64));
+    let begin = Rc::new(Cell::new(1.0_f64));
+    let provider = gtk::CssProvider::new();
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+    let apply = {
+        let provider = provider.clone();
+        let class = class.clone();
+        move |value: f64| {
+            provider.load_from_string(&format!(".{class} {{ transform: scale({value}); }}"));
+        }
+    };
+    let zoom = gtk::GestureZoom::new();
+    zoom.connect_begin({
+        let scale = scale.clone();
+        let begin = begin.clone();
+        move |_, _| begin.set(scale.get())
+    });
+    zoom.connect_scale_changed(move |_, factor| {
+        let next = clamp_viewer_zoom(begin.get(), factor);
+        scale.set(next);
+        apply(next);
+    });
+    picture.add_controller(zoom);
 }
 
 fn viewer_play_button() -> gtk::Button {
@@ -6114,12 +6539,44 @@ mod tests {
     }
 
     #[test]
+    fn pinch_zoom_is_capped_on_the_existing_still() {
+        assert_eq!(super::clamp_viewer_zoom(1.0, 2.0), 2.0);
+        assert_eq!(super::clamp_viewer_zoom(3.0, 2.0), 4.0);
+        assert_eq!(super::clamp_viewer_zoom(1.0, 0.2), 1.0);
+    }
+
+    #[test]
+    fn filmstrip_and_arrows_follow_leftover_short_rule() {
+        assert!(super::viewer_shows_sequence_osd(2, 800));
+        assert!(!super::viewer_shows_sequence_osd(2, 700));
+        assert!(!super::viewer_shows_sequence_osd(2, 540));
+        assert!(!super::viewer_shows_sequence_osd(1, 800));
+        assert!(
+            super::viewer_shows_sequence_osd(3, 0),
+            "unallocated height is not short"
+        );
+    }
+
+    #[test]
+    fn camera_label_joins_make_and_model() {
+        assert_eq!(
+            super::camera_label(Some("Canon"), Some("EOS R5")),
+            "Canon EOS R5"
+        );
+        assert_eq!(super::camera_label(Some("Canon"), None), "Canon");
+        assert_eq!(super::camera_label(None, Some("EOS R5")), "EOS R5");
+        assert_eq!(super::camera_label(None, None), "—");
+        assert_eq!(super::camera_label(Some("  "), Some("")), "—");
+    }
+
+    #[test]
     fn movies_use_the_inline_player() {
         let host = PhotoHost {
             path: "/lib/Clip.MOV".into(),
             filename: "Clip.MOV".into(),
             is_video: true,
             live_photo_video_path: None,
+            face_regions: Vec::new(),
         };
         assert!(viewer_is_video(Some(&host), Some(&host.path)));
         assert!(viewer_is_video(None, Some("/lib/a.mp4")));
@@ -6129,6 +6586,7 @@ mod tests {
             filename: "a.jpg".into(),
             is_video: false,
             live_photo_video_path: None,
+            face_regions: Vec::new(),
         };
         assert!(!viewer_is_video(Some(&still), Some(&still.path)));
     }

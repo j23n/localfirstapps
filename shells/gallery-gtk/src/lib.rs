@@ -35,6 +35,8 @@ pub const APP_ID: &str = "com.j23n.LocalGallery";
 pub const APP_TITLE: &str = "LocalGallery";
 /// Width at or below which the GTK shell uses Comet chrome (bottom nav).
 pub const COMPACT_WIDTH: i32 = 550;
+/// Leftover viewer `short` breakpoint: hide filmstrip / prev-next at or below.
+pub const VIEWER_SHORT_HEIGHT: i32 = 700;
 /// Person card edge on the Collections hub (iOS `PersonCard` is 128).
 pub const PERSON_TILE_PX: i32 = 128;
 /// Gutter between person cards in the two-row hub preview.

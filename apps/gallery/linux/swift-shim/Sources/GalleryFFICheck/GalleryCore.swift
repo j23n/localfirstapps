@@ -7788,6 +7788,14 @@ public struct HostImageMetadata: Equatable, Hashable {
      * Face regions from the sidecar.
      */
     public var faceRegions: [HostFaceRegion]
+    /**
+     * EXIF / TIFF `Make`.
+     */
+    public var make: String?
+    /**
+     * EXIF / TIFF `Model`.
+     */
+    public var model: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7809,13 +7817,21 @@ public struct HostImageMetadata: Equatable, Hashable {
          */gpsLongitude: Double?, 
         /**
          * Face regions from the sidecar.
-         */faceRegions: [HostFaceRegion]) {
+         */faceRegions: [HostFaceRegion],
+        /**
+         * EXIF / TIFF `Make`.
+         */make: String?,
+        /**
+         * EXIF / TIFF `Model`.
+         */model: String?) {
         self.captureWallClock = captureWallClock
         self.hierarchicalTags = hierarchicalTags
         self.countryCode = countryCode
         self.gpsLatitude = gpsLatitude
         self.gpsLongitude = gpsLongitude
         self.faceRegions = faceRegions
+        self.make = make
+        self.model = model
     }
 
     
@@ -7839,7 +7855,9 @@ public struct FfiConverterTypeHostImageMetadata: FfiConverterRustBuffer {
                 countryCode: FfiConverterOptionString.read(from: &buf), 
                 gpsLatitude: FfiConverterOptionDouble.read(from: &buf), 
                 gpsLongitude: FfiConverterOptionDouble.read(from: &buf), 
-                faceRegions: FfiConverterSequenceTypeHostFaceRegion.read(from: &buf)
+                faceRegions: FfiConverterSequenceTypeHostFaceRegion.read(from: &buf),
+                make: FfiConverterOptionString.read(from: &buf),
+                model: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -7850,6 +7868,8 @@ public struct FfiConverterTypeHostImageMetadata: FfiConverterRustBuffer {
         FfiConverterOptionDouble.write(value.gpsLatitude, into: &buf)
         FfiConverterOptionDouble.write(value.gpsLongitude, into: &buf)
         FfiConverterSequenceTypeHostFaceRegion.write(value.faceRegions, into: &buf)
+        FfiConverterOptionString.write(value.make, into: &buf)
+        FfiConverterOptionString.write(value.model, into: &buf)
     }
 }
 
