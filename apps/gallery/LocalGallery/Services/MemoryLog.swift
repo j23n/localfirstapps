@@ -266,14 +266,16 @@ enum MemoryLog {
         return formatter
     }()
 
-    private static let isoFractional: ISO8601DateFormatter = {
+    /// Apple documents `ISO8601DateFormatter` as thread-safe; this matches
+    /// `WidgetSnapshotExporter.dayKeyFormatter`.
+    private nonisolated(unsafe) static let isoFractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         return formatter
     }()
 
-    private static let isoBasic: ISO8601DateFormatter = {
+    private nonisolated(unsafe) static let isoBasic: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)

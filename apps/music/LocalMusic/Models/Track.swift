@@ -19,6 +19,26 @@ struct Track: Identifiable, Codable, Hashable, Sendable {
     /// Opaque identity used by `MusicSession` commands.
     var coreID: String { id.uuidString.lowercased() }
 
+    init(
+        id: UUID,
+        url: URL,
+        title: String,
+        artist: String,
+        album: String,
+        duration: Double,
+        hasArtwork: Bool,
+        hasLyrics: Bool
+    ) {
+        self.id = id
+        self.url = url
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.duration = duration
+        self.hasArtwork = hasArtwork
+        self.hasLyrics = hasLyrics
+    }
+
     /// Host adapter for a warm-start paint row from `MusicSession`.
     init(paint: LibraryPaintRow) {
         let url = URL(fileURLWithPath: paint.path)
