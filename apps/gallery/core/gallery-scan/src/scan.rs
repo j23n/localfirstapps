@@ -6,10 +6,11 @@
 //! metadata is still carried forward for unchanged files so enrichment does
 //! not re-run.
 //!
-//! **Light** (`reuse_cached: true`) reuses the cached `PhotoFile` verbatim
-//! when the listing's size and mtime still match the cache, refreshing only
-//! `filename` and the live-photo pairing. Those two listing fields are
-//! already on the directory row — the light path must not `stat` per file.
+//! **Light** (`reuse_cached: true`) reuses the cached `PhotoFile` metadata
+//! when the listing's size and mtime still match the cache, refreshing
+//! `filename`, the live-photo pairing, and `url` (the listing's on-disk
+//! spelling). Those fields are already on the directory row — the light
+//! path must not `stat` per file.
 //!
 //! # What a light scan can and cannot see
 //!
@@ -403,11 +404,14 @@ impl<'a> Walk<'a> {
         let unchanged = file.unchanged;
 
         let photo = if file.reusable(self.input) {
-            // Verbatim, except for the two things that can change without the
-            // photo's own bytes changing.
+            // Verbatim metadata, except listing fields that can change
+            // without the photo's own bytes changing. `url` is restored
+            // from this pass's listing so an NFC cache key cannot rewrite
+            // an NFD on-disk spelling (Swift `pathNormalization`).
             let mut photo = cached.expect("unchanged implies cached").clone();
             photo.filename = filename;
             photo.live_photo_video_url = live.map(gallery_model::photo::FileUrl::new);
+            photo.url = gallery_model::photo::FileUrl::new(file.path.clone());
             self.stats.cache_hits += 1;
             photo
         } else {
@@ -873,6 +877,11 @@ mod tests {
         assert!(light.modified_paths.is_empty());
         assert!(light.removed_paths.is_empty());
         assert_eq!(light.flat_photos.len(), 1);
+        assert_eq!(
+            light.flat_photos[0].url.path(),
+            nfd,
+            "NFC cache key must not replace the listing path on PhotoFile.url"
+        );
     }
 
     #[test]

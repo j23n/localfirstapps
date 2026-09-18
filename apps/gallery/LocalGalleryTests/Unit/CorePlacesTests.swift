@@ -51,8 +51,11 @@ final class CorePlacesTests: XCTestCase {
 
         outcomes.removeAll()
         let second = await service.geocode([photo])
-        XCTAssertEqual(second.processed, 1)
-        XCTAssertEqual(second.skipped, 1)
-        XCTAssertEqual(outcomes, [.skipped])
+        // Same session keeps the places_work row Done. A later pass is a
+        // no-op unless `force` (see `done_row_is_not_reprocessed_on_the_next_run`).
+        XCTAssertEqual(second.processed, 0, "processed; lastError=\(service.lastError ?? "nil")")
+        XCTAssertEqual(second.written, 0)
+        XCTAssertEqual(second.skipped, 0)
+        XCTAssertEqual(outcomes, [])
     }
 }

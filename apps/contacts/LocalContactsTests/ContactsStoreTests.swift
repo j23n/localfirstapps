@@ -174,21 +174,25 @@ struct ContactsStoreComputedTests {
 
     // MARK: - groupedContacts
 
-    @Test("groupedContacts groups by list title letter and sorts A→Z then #")
+    @Test("groupedContacts groups by first alphabetic list-title letter")
     func grouped() {
         let store = makeStore([
             contact(given: "Alice", family: "Wonder"),
             contact(given: "Bob", family: "Builder"),
             contact(given: "Anne", family: "Apple"),
             contact(given: "1Numeric"),
+            contact(given: "123"),
         ])
         let result = store.groupedContacts
         let letters = result.map(\.letter)
-        // '#' (0x23) sorts before letters by codepoint.
-        #expect(letters == ["#", "A", "B"])
+        // `1Numeric` sections under N (first alphabetic rune). `#` (0x23)
+        // still sorts before letters when a title has no letters at all.
+        #expect(letters == ["#", "A", "B", "N"])
         let aGroup = result.first { $0.letter == "A" }
         #expect(aGroup?.contacts.contains { $0.givenName == "Anne" } == true)
         #expect(aGroup?.contacts.contains { $0.givenName == "Alice" } == true)
+        #expect(result.first { $0.letter == "N" }?.contacts.contains { $0.givenName == "1Numeric" } == true)
+        #expect(result.first { $0.letter == "#" }?.contacts.contains { $0.givenName == "123" } == true)
     }
 
     @Test("storedDeviceId keeps valid ids and replaces invalid ones")

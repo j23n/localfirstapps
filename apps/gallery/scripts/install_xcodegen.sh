@@ -15,7 +15,10 @@ mkdir -p "${BIN_DIR}"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/xcodegen.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
-curl --fail --location --retry 5 --retry-delay 2 --output "${TMP}/xcodegen.zip" "${URL}"
+# GitHub release CDN 504s are common; --fail alone does not retry HTTP
+# errors on the macOS image curl, so --retry-all-errors is required.
+curl --fail --location --retry 8 --retry-delay 3 --retry-all-errors \
+    --output "${TMP}/xcodegen.zip" "${URL}"
 if command -v sha256sum >/dev/null 2>&1; then
     echo "${SHA256}  ${TMP}/xcodegen.zip" | sha256sum -c -
 else
