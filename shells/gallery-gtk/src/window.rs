@@ -44,7 +44,7 @@ use crate::thumbs::ThumbCache;
 use crate::year_rail;
 use crate::{
     events_hub_preview_limit, people_hub_preview_limit, APP_TITLE, COMPACT_WIDTH, EVENT_GAP_PX,
-    EVENT_TILE_PX, PERSON_GAP_PX, PERSON_TILE_PX,
+    EVENT_TILE_PX, PERSON_GAP_PX, PERSON_TILE_PX, VIEWER_SHORT_HEIGHT,
 };
 use select::{
     select_scope_actions, selection_actions, set_tile_select_badge, tile_photo_id, MoveUi,
@@ -4046,11 +4046,44 @@ impl Window {
         }
         let overflow = overflow(&menu);
         overflow.add_css_class("osd");
-        overflow.set_halign(gtk::Align::End);
-        overflow.set_valign(gtk::Align::Start);
-        overflow.set_margin_top(8);
-        overflow.set_margin_end(8);
-        overlay.add_overlay(&overflow);
+        let chrome = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        chrome.set_halign(gtk::Align::End);
+        chrome.set_valign(gtk::Align::Start);
+        chrome.set_margin_top(8);
+        chrome.set_margin_end(8);
+        if viewer_shows_sequence_osd(ids.len(), self.inner.window.height()) {
+            let prev = gtk::Button::from_icon_name("go-previous-symbolic");
+            let next = gtk::Button::from_icon_name("go-next-symbolic");
+            prev.add_css_class("circular");
+            prev.add_css_class("osd");
+            next.add_css_class("circular");
+            next.add_css_class("osd");
+            prev.set_tooltip_text(Some("Previous"));
+            next.set_tooltip_text(Some("Next"));
+            let this_p = self.clone();
+            let ids_p = ids.to_vec();
+            prev.connect_clicked(move |_| {
+                if index > 0 {
+                    let host = this_p.inner.last_viewer_host.get();
+                    this_p.replace_viewer(&ids_p, index - 1, host);
+                }
+            });
+            let this_n = self.clone();
+            let ids_n = ids.to_vec();
+            next.connect_clicked(move |_| {
+                if index + 1 < ids_n.len() {
+                    let host = this_n.inner.last_viewer_host.get();
+                    this_n.replace_viewer(&ids_n, index + 1, host);
+                }
+            });
+            chrome.append(&prev);
+            chrome.append(&next);
+        }
+        chrome.append(&overflow);
+        overlay.add_overlay(&chrome);
+        if viewer_shows_sequence_osd(ids.len(), self.inner.window.height()) {
+            overlay.add_overlay(&self.filmstrip(ids, index));
+        }
 
         let group = gio::SimpleActionGroup::new();
         let info = gio::SimpleAction::new("info", None);
@@ -4148,6 +4181,109 @@ impl Window {
         let page = page(&title, &content, PageChrome::pushed());
         page.set_widget_name(route_id(GalleryScreen::Viewer));
         page
+    }
+
+    fn filmstrip(&self, ids: &[String], idx: usize) -> gtk::Widget {
+        #[derive(Clone)]
+        struct FilmstripItem {
+            id: String,
+            path: String,
+            is_video: bool,
+            current: bool,
+        }
+        let session = self.inner.session.borrow();
+        let items: Vec<FilmstripItem> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let host = session.host_for_photo(id);
+                FilmstripItem {
+                    id: id.clone(),
+                    path: host.map(|host| host.path.clone()).unwrap_or_default(),
+                    is_video: viewer_is_video(host, host.map(|h| h.path.as_str())),
+                    current: i == idx,
+                }
+            })
+            .collect();
+        drop(session);
+        let store = gio::ListStore::new::<glib::BoxedAnyObject>();
+        for item in &items {
+            store.append(&glib::BoxedAnyObject::new(item.clone()));
+        }
+        let factory = gtk::SignalListItemFactory::new();
+        let thumbs = self.inner.thumbs.clone();
+        let scale = self.inner.window.scale_factor().max(1) as u32;
+        factory.connect_setup(move |_, obj| {
+            let item = obj
+                .downcast_ref::<gtk::ListItem>()
+                .expect("factory item")
+                .clone();
+            let picture = gtk::Picture::new();
+            picture.set_content_fit(gtk::ContentFit::Cover);
+            picture.set_size_request(48, 48);
+            item.set_child(Some(&picture));
+        });
+        factory.connect_bind({
+            let thumbs = thumbs.clone();
+            move |_, obj| {
+                let item = obj
+                    .downcast_ref::<gtk::ListItem>()
+                    .expect("factory item")
+                    .clone();
+                let Some(boxed) = item.item().and_downcast::<glib::BoxedAnyObject>() else {
+                    return;
+                };
+                let Some(picture) = item.child().and_downcast::<gtk::Picture>() else {
+                    return;
+                };
+                let cell = boxed.borrow::<FilmstripItem>().clone();
+                if cell.current {
+                    picture.add_css_class("suggested-action");
+                } else {
+                    picture.remove_css_class("suggested-action");
+                }
+                if cell.is_video || cell.path.is_empty() {
+                    picture.set_paintable(Option::<&gtk::gdk::Paintable>::None);
+                } else {
+                    thumbs.bind_grid(&picture, &cell.path, &cell.id, scale);
+                }
+            }
+        });
+        let thumbs_unbind = thumbs.clone();
+        factory.connect_unbind(move |_, obj| {
+            let item = obj
+                .downcast_ref::<gtk::ListItem>()
+                .expect("factory item")
+                .clone();
+            if let Some(picture) = item.child().and_downcast::<gtk::Picture>() {
+                thumbs_unbind.recycle(&picture);
+            }
+        });
+        let sel = gtk::SingleSelection::new(Some(store));
+        sel.set_selected(idx as u32);
+        let list = gtk::ListView::new(Some(sel), Some(factory));
+        list.set_orientation(gtk::Orientation::Horizontal);
+        list.set_single_click_activate(true);
+        list.add_css_class("osd");
+        let this = self.clone();
+        let ids = ids.to_vec();
+        list.connect_activate(move |_, pos| {
+            let host = this.inner.last_viewer_host.get();
+            this.replace_viewer(&ids, pos as usize, host);
+        });
+        let list_scroll = list.clone();
+        let target = idx as u32;
+        glib::idle_add_local_once(move || {
+            list_scroll.scroll_to(target, gtk::ListScrollFlags::NONE, None::<gtk::ScrollInfo>);
+        });
+        let sw = gtk::ScrolledWindow::new();
+        sw.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+        sw.set_propagate_natural_height(true);
+        sw.set_halign(gtk::Align::Fill);
+        sw.set_valign(gtk::Align::End);
+        sw.add_css_class("osd");
+        sw.set_child(Some(&list));
+        sw.upcast()
     }
 
     fn replace_viewer(&self, ids: &[String], index: usize, host: ViewerHost) {
@@ -6090,6 +6226,14 @@ fn photo_tile() -> gtk::AspectFrame {
 
 /// iOS `PhotoPageView`: movies play inline. Host flag wins; the path
 /// extension is the fallback when a row was not in the host map.
+fn viewer_height_is_short(height: i32) -> bool {
+    height > 0 && height <= VIEWER_SHORT_HEIGHT
+}
+
+fn viewer_shows_sequence_osd(count: usize, height: i32) -> bool {
+    count > 1 && !viewer_height_is_short(height)
+}
+
 fn camera_label(make: Option<&str>, model: Option<&str>) -> String {
     match (
         make.map(str::trim).filter(|value| !value.is_empty()),
@@ -6306,6 +6450,18 @@ mod tests {
         assert_eq!(filter_chip_icon("Vacation"), "tag-symbolic");
         assert_eq!(display_filter_label("People/Ada"), "Ada");
         assert_eq!(display_filter_label("date:2024-06"), "2024-06");
+    }
+
+    #[test]
+    fn filmstrip_and_arrows_follow_leftover_short_rule() {
+        assert!(super::viewer_shows_sequence_osd(2, 800));
+        assert!(!super::viewer_shows_sequence_osd(2, 700));
+        assert!(!super::viewer_shows_sequence_osd(2, 540));
+        assert!(!super::viewer_shows_sequence_osd(1, 800));
+        assert!(
+            super::viewer_shows_sequence_osd(3, 0),
+            "unallocated height is not short"
+        );
     }
 
     #[test]
