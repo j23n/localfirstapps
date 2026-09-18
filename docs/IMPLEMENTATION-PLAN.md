@@ -48,7 +48,8 @@ Contacts “before” shots live in
 [`docs/screenshots/gtk-before/`](screenshots/gtk-before/). Further
 mutter captures stay optional. Ubuntu 26.04
 (resolute) floor versus Fedora 44 is GTK 4.22.2, libadwaita 1.9.0, Pango
-1.57.0. The `Apps / GTK shells` job runs on `ubuntu-26.04`;
+1.57.0. The `Apps / GTK shells compile` and `Apps / GTK shells test`
+jobs run on `ubuntu-26.04`;
 `ubuntu-24.04` is GTK 4.14 and cannot build the `v4_22` crates.
 L6 ToggleGroup / WrapBox fallbacks are not required.
 

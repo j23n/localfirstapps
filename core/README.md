@@ -18,11 +18,12 @@ with `python3 scripts/gen_r14.py`; CI runs `--check`. GTK lives in
 Gallery remains at `apps/gallery/core`, including its Gallery-only
 `localcore-geo` package, until later verticals move here.
 
-`.github/workflows/rust.yml` is the crate gate: `cargo test --locked
---workspace --all-targets` on this workspace (`localcore` job) and on
-`apps/gallery/core` (`gallery-core` job). Gallery Linux GTK, iOS
-`xcodebuild`, contacts, music, and the health log suite are
-`.github/workflows/apps.yml`.
+`.github/workflows/rust.yml` is the crate gate: compile
+(`cargo test --no-run`), then test (`cargo test --locked
+--workspace --all-targets`) on this workspace (`localcore compile` /
+`localcore test`) and on `apps/gallery/core` (`gallery-core compile` /
+`gallery-core test`). Gallery Linux GTK, iOS `xcodebuild`, contacts,
+music, and the health log suite are `.github/workflows/apps.yml`.
 
 ## 20k scan harness
 

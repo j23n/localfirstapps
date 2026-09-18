@@ -1,6 +1,6 @@
-# Crate gate: cargo test for localcore-* (including localcore-ui) and gallery crates.
+# Crate gate: compile, then test, for localcore-* and gallery crates.
 # App shells (gallery Linux/iOS, contacts, music, health log) are
-# `.github/workflows/apps.yml`. The Gallery job also owns the required
+# `.github/workflows/apps.yml`. The Gallery test job also owns the
 # generated 20k scan → enrich → index → memories → bounded-FFI gate.
 name: Rust
 
@@ -23,8 +23,8 @@ defaults:
     shell: bash --noprofile --norc -euo pipefail {0}
 
 jobs:
-  localcore:
-    name: localcore
+  localcore-compile:
+    name: localcore compile
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -32,6 +32,40 @@ jobs:
           lfs: true
 
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
+
+      - name: OS dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential
+
+      - name: cargo test --no-run
+        working-directory: core
+        run: cargo test --locked --workspace --all-targets --no-run 2>&1 | tee "${GITHUB_WORKSPACE}/localcore-compile.log"
+
+      - name: Upload compile logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: localcore-compile-logs
+          path: localcore-compile.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  localcore-test:
+    name: localcore test
+    needs: localcore-compile
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          lfs: true
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
 
       - name: OS dependencies
         run: |
@@ -52,8 +86,40 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  gallery-core:
-    name: gallery-core
+  gallery-core-compile:
+    name: gallery-core compile
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          lfs: true
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
+
+      - name: OS dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev python3-venv
+
+      - name: cargo test --no-run
+        working-directory: apps/gallery/core
+        run: cargo test --locked --workspace --all-targets --no-run 2>&1 | tee "${GITHUB_WORKSPACE}/gallery-core-compile.log"
+
+      - name: Upload compile logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: gallery-core-compile-logs
+          path: gallery-core-compile.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  gallery-core-test:
+    name: gallery-core test
+    needs: gallery-core-compile
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -62,6 +128,8 @@ jobs:
           lfs: true
 
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
 
       - name: OS dependencies
         run: |

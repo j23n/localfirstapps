@@ -3,6 +3,9 @@
 # gallery Linux + iOS, contacts iOS, music iOS, and the Health root Go
 # module. Nested
 # copies stay for the old remotes.
+#
+# Cargo and Go/Swift app jobs compile first, then test, so a missing
+# toolchain or a build break is not reported as a test failure.
 name: Apps
 
 on:
@@ -30,8 +33,8 @@ defaults:
     shell: bash --noprofile --norc -euo pipefail {0}
 
 jobs:
-  gallery-linux:
-    name: gallery linux
+  gallery-linux-compile:
+    name: gallery linux compile
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -39,6 +42,53 @@ jobs:
           lfs: true
 
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
+
+      - name: OS dependencies (OpenSSL, GTK)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            cmake \
+            clang \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libgdk-pixbuf-2.0-dev \
+            locales
+          sudo locale-gen en_US.UTF-8
+
+      - name: cargo test --no-run --no-default-features
+        working-directory: apps/gallery/linux
+        run: cargo test --locked --no-default-features --all-targets --no-run 2>&1 | tee "${GITHUB_WORKSPACE}/gallery-linux-compile.log"
+
+      - name: cargo check --locked
+        working-directory: apps/gallery/linux
+        run: cargo check --locked 2>&1 | tee -a "${GITHUB_WORKSPACE}/gallery-linux-compile.log"
+
+      - name: Upload compile logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: gallery-linux-compile-logs
+          path: gallery-linux-compile.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  gallery-linux-test:
+    name: gallery linux test
+    needs: gallery-linux-compile
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          lfs: true
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
 
       - name: OS dependencies (OpenSSL, GTK)
         run: |
@@ -57,10 +107,6 @@ jobs:
         working-directory: apps/gallery/linux
         run: cargo test --locked --no-default-features --all-targets 2>&1 | tee "${GITHUB_WORKSPACE}/gallery-linux-test.log"
 
-      - name: cargo check --locked --features ui
-        working-directory: apps/gallery/linux
-        run: cargo check --locked --features ui 2>&1 | tee -a "${GITHUB_WORKSPACE}/gallery-linux-test.log"
-
       - name: Upload linux test logs
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -70,21 +116,67 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  shell-kit:
-    name: GTK shells
+  shell-kit-compile:
+    name: GTK shells compile
     # Kit crates require gtk4 >= 4.21 (v4_22 feature). Ubuntu 24.04 is 4.14.
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
 
-      - name: OS dependencies (GTK, GStreamer)
+      - name: OS dependencies (GTK, GStreamer, OpenSSL for ORT)
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential \
             pkg-config \
+            libssl-dev \
+            cmake \
+            clang \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libgstreamer1.0-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good
+
+      - name: cargo test --no-run --locked --workspace --all-features
+        working-directory: shells
+        run: cargo test --locked --workspace --all-targets --all-features --no-run 2>&1 | tee "${GITHUB_WORKSPACE}/shell-kit-compile.log"
+        # Covers shell-kit-gtk, contacts-gtk, music-gtk, the gallery-gtk
+        # pin crate (default `ml` downloads `ort`), and GStreamer.
+
+      - name: Upload compile logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: shell-kit-compile-logs
+          path: shell-kit-compile.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  shell-kit-test:
+    name: GTK shells test
+    needs: shell-kit-compile
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
+
+      - name: OS dependencies (GTK, GStreamer, OpenSSL for ORT)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            cmake \
+            clang \
             libgtk-4-dev \
             libadwaita-1-dev \
             libgstreamer1.0-dev \
@@ -94,9 +186,6 @@ jobs:
       - name: cargo test --locked --workspace --all-features
         working-directory: shells
         run: cargo test --locked --workspace --all-targets --all-features 2>&1 | tee "${GITHUB_WORKSPACE}/shell-kit-test.log"
-        # Covers shell-kit-gtk, contacts-gtk, music-gtk, the gallery-gtk
-        # pin crate, and real GStreamer compilation. gallery-gtk has no
-        # `ml` feature yet, so this does not download `ort`.
 
       - name: Upload shell-kit test logs
         if: always()
@@ -107,8 +196,24 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  shell-kit-swift:
-    name: shell-kit-swift
+  shell-kit-swift-compile:
+    name: shell-kit-swift compile
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "${{ env.XCODE_VERSION }}"
+
+      - name: Swift package compile
+        working-directory: shells/shell-kit-swift
+        run: swift build
+
+  shell-kit-swift-test:
+    name: shell-kit-swift test
+    needs: shell-kit-swift-compile
     runs-on: macos-26
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -122,8 +227,8 @@ jobs:
         working-directory: shells/shell-kit-swift
         run: swift test
 
-  gallery-ios:
-    name: gallery iOS
+  gallery-ios-compile:
+    name: gallery iOS compile
     runs-on: macos-26
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -140,6 +245,7 @@ jobs:
       - name: Rust toolchain (iOS targets)
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
+          toolchain: 1.97.1
           components: rustfmt, clippy
           targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
 
@@ -150,6 +256,71 @@ jobs:
           cargo --version
           git rev-parse --is-shallow-repository
           git rev-list --count HEAD
+
+      - name: Install XcodeGen
+        run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
+
+      - name: Stage model pack (optional)
+        working-directory: apps/gallery
+        run: /bin/bash scripts/prepare_pack.sh --optional
+
+      - name: Build Rust bindings and xcframework
+        working-directory: apps/gallery
+        run: /bin/bash scripts/build_core.sh
+
+      - name: Generate Xcode project
+        working-directory: apps/gallery
+        run: xcodegen
+
+      - name: Pick a simulator
+        id: pick
+        run: |
+          NAME="$(/bin/bash apps/gallery/scripts/pick_ios_simulator.sh)"
+          echo "device_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "using simulator: $NAME"
+
+      - name: xcodebuild build
+        working-directory: apps/gallery
+        run: |
+          xcodebuild build \
+            -project LocalGallery.xcodeproj \
+            -scheme LocalGallery \
+            -destination "platform=iOS Simulator,name=${{ steps.pick.outputs.device_name }}" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild-build.log
+
+      - name: Upload compile logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: gallery-ios-compile-logs
+          path: apps/gallery/xcodebuild-build.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  gallery-ios-test:
+    name: gallery iOS test
+    needs: gallery-ios-compile
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "${{ env.XCODE_VERSION }}"
+
+      - name: Rust toolchain (iOS targets)
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+          targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
 
       - name: Install XcodeGen
         run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
@@ -199,8 +370,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  contacts:
-    name: contacts iOS
+  contacts-compile:
+    name: contacts iOS compile
     runs-on: macos-26
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -215,6 +386,66 @@ jobs:
       - name: Rust toolchain (iOS targets)
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
+          toolchain: 1.97.1
+          targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Install XcodeGen
+        run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
+
+      - name: Build contacts-ffi
+        working-directory: apps/contacts
+        run: /bin/bash scripts/build_ffi.sh
+
+      - name: Generate Xcode project
+        working-directory: apps/contacts
+        run: xcodegen
+
+      - name: Pick a simulator
+        id: pick
+        run: |
+          NAME="$(/bin/bash apps/gallery/scripts/pick_ios_simulator.sh)"
+          echo "device_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "using simulator: $NAME"
+
+      - name: xcodebuild build
+        working-directory: apps/contacts
+        run: |
+          xcodebuild build \
+            -project LocalContacts.xcodeproj \
+            -scheme LocalContacts \
+            -destination "platform=iOS Simulator,name=${{ steps.pick.outputs.device_name }},OS=latest" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild-build.log
+
+      - name: Upload compile logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: contacts-ios-compile-logs
+          path: apps/contacts/xcodebuild-build.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  contacts-test:
+    name: contacts iOS test
+    needs: contacts-compile
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "${{ env.XCODE_VERSION }}"
+
+      - name: Rust toolchain (iOS targets)
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
           targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
 
       - name: Install XcodeGen
@@ -259,8 +490,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  music:
-    name: music iOS
+  music-compile:
+    name: music iOS compile
     runs-on: macos-26
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -275,6 +506,69 @@ jobs:
       - name: Rust toolchain (iOS targets)
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
+          toolchain: 1.97.1
+          targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Install XcodeGen
+        run: /bin/bash apps/gallery/scripts/install_xcodegen.sh
+
+      - name: Check MusicSession shell boundary
+        run: python3 apps/music/scripts/check_ios_session.py
+
+      - name: Build music-ffi
+        working-directory: apps/music
+        run: /bin/bash scripts/build_ffi.sh
+
+      - name: Generate Xcode project
+        working-directory: apps/music
+        run: xcodegen
+
+      - name: Pick a simulator
+        id: pick
+        run: |
+          NAME="$(/bin/bash apps/gallery/scripts/pick_ios_simulator.sh)"
+          echo "device_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "using simulator: $NAME"
+
+      - name: xcodebuild build
+        working-directory: apps/music
+        run: |
+          xcodebuild build \
+            -project LocalMusic.xcodeproj \
+            -scheme LocalMusic \
+            -destination "platform=iOS Simulator,name=${{ steps.pick.outputs.device_name }}" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild-build.log
+
+      - name: Upload compile logs
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: music-ios-compile-logs
+          path: apps/music/xcodebuild-build.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  music-test:
+    name: music iOS test
+    needs: music-compile
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "${{ env.XCODE_VERSION }}"
+
+      - name: Rust toolchain (iOS targets)
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
+        with:
+          toolchain: 1.97.1
           targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
 
       - name: Install XcodeGen
@@ -319,8 +613,30 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  health:
-    name: health Go
+  health-compile:
+    name: health Go compile
+    runs-on: ubuntu-24.04
+    env:
+      CGO_ENABLED: "1"
+      GOFLAGS: "-mod=vendor"
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: apps/health/go.mod
+          cache: false
+
+      - name: C compiler
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential
+
+      - name: go build root module
+        working-directory: apps/health
+        run: go build ./...
+
+  health-test:
+    name: health Go test
+    needs: health-compile
     runs-on: ubuntu-24.04
     env:
       CGO_ENABLED: "1"
