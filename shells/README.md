@@ -19,9 +19,9 @@ UI toolkit.
 - `gallery-gtk` — LocalGallery kit shell (Phase 5.9 year rail). Binary
   `localgallery`, id `com.j23n.LocalGallery`. Path-depends on
   `gallery-ffi` + leftover `localgallery`, both `default-features =
-  false`. Workspace pins: `image = "=0.25.10"`, `uniffi` 0.32. `ort`
-  stays behind `ml` (not a crate feature, so `--all-features` does not
-  download it). Settings is a primary-menu dialog; leftover `ui` stays
+  false`, with gallery-gtk default `ml` on. Workspace pins:
+  `image = "=0.25.10"`, `uniffi` 0.32. Default `ml` downloads `ort`.
+  Settings is a primary-menu dialog; leftover `ui` stays
   off. Folders, collections, viewer, photo-info, and the memories
   rail are routed. Second consumer of kit `media_item` (folder 64px
   covers) and `chip_bar` (photos tags). Newsreader Italic loads for

@@ -174,7 +174,7 @@ struct ContactsStoreComputedTests {
 
     // MARK: - groupedContacts
 
-    @Test("groupedContacts groups by sortLetter and sorts A→Z then #")
+    @Test("groupedContacts groups by list title letter and sorts A→Z then #")
     func grouped() {
         let store = makeStore([
             contact(given: "Alice", family: "Wonder"),
@@ -185,10 +185,25 @@ struct ContactsStoreComputedTests {
         let result = store.groupedContacts
         let letters = result.map(\.letter)
         // '#' (0x23) sorts before letters by codepoint.
-        #expect(letters == ["#", "A", "B", "W"])
-        // A group should contain Anne (family Apple).
+        #expect(letters == ["#", "A", "B"])
         let aGroup = result.first { $0.letter == "A" }
         #expect(aGroup?.contacts.contains { $0.givenName == "Anne" } == true)
+        #expect(aGroup?.contacts.contains { $0.givenName == "Alice" } == true)
+    }
+
+    @Test("storedDeviceId keeps valid ids and replaces invalid ones")
+    func storedDeviceIdValidates() {
+        let suite = "com.localcontacts.device-tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set("bad device", forKey: ContactsStore.deviceIdKey)
+        let replaced = ContactsStore.storedDeviceId(defaults: defaults)
+        #expect(validDevice(name: replaced))
+        #expect(replaced != "bad device")
+
+        let kept = ContactsStore.storedDeviceId(defaults: defaults)
+        #expect(kept == replaced)
+        defaults.removePersistentDomain(forName: suite)
     }
 
     // MARK: - hasConflicts

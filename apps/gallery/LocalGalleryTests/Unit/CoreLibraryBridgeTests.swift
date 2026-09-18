@@ -257,6 +257,40 @@ final class CoreLibraryBridgeTests: XCTestCase {
         XCTAssertTrue(index.sortedPhotos.isEmpty)
     }
 
+    /// Delete must use `LibraryIndex.removePhotos`, not another `build`.
+    /// A rebuild empties the folder table; remove rewrites slices in place
+    /// so a sibling in the same folder stays addressable.
+    func testRemovePhotosDropsIdsAndKeepsFolderSlices() async {
+        let keep = PhotoFile.fixture(
+            url: URL(fileURLWithPath: "/lib/keep.jpg"),
+            dateTaken: date(2024, 6, 2),
+            tags: ["People/Alice"]
+        )
+        let drop = PhotoFile.fixture(
+            url: URL(fileURLWithPath: "/lib/drop.jpg"),
+            dateTaken: date(2024, 6, 1),
+            tags: ["People/Bob"]
+        )
+        let root = PhotoFolder.fixture(
+            url: URL(fileURLWithPath: "/lib"),
+            photos: [keep, drop]
+        )
+        let index = CoreLibraryIndex()
+        index.build(allPhotos: [keep, drop], rootFolder: root)
+        await index.settle()
+        XCTAssertEqual(Set(index.folderPhotoIDs(root.id)), [keep.id, drop.id])
+
+        index.removePhotos([drop.id])
+        await index.settle()
+
+        XCTAssertEqual(index.search(query: "").map(\.id), [keep.id])
+        XCTAssertNil(index.photo(byID: drop.id))
+        XCTAssertEqual(index.sortedPhotos.map(\.id), [keep.id])
+        XCTAssertTrue(index.allTags.contains { $0.fullPath == "People/Alice" })
+        XCTAssertFalse(index.allTags.contains { $0.fullPath == "People/Bob" })
+        XCTAssertEqual(index.folderPhotoIDs(root.id), [keep.id])
+    }
+
     /// Search latency, at the scale the do-not-regress list cares about.
     ///
     /// Not a benchmark — a smoke test with a deliberately loose bound, because
@@ -473,6 +507,8 @@ final class CoreLibraryBridgeTests: XCTestCase {
         )
         defer { harness.teardown() }
         let coordinator = harness.store.memories
+        harness.store.index.build(allPhotos: f.photos)
+        await harness.store.index.settle()
         coordinator.makeInputs = {
             MemoryCoordinator.GenerationInputs(
                 photos: f.photos,
@@ -483,12 +519,8 @@ final class CoreLibraryBridgeTests: XCTestCase {
                 hiddenPeople: []
             )
         }
-        coordinator.forceRegenerate()
-        // `forceRegenerate` is fire-and-forget; give the detached generation a
-        // turn to land rather than asserting on a race.
-        for _ in 0..<200 where coordinator.all.isEmpty {
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
+        // `generate` reads the retained index, not `makeInputs.photos`.
+        await coordinator.runScheduledRefresh()
         guard let event = coordinator.all.first(where: { $0.type == .folderEvent }) else {
             return XCTFail("the coordinator dropped the folder event: \(coordinator.all.map(\.id))")
         }

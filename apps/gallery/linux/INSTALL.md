@@ -28,12 +28,13 @@ Rust: rustup reads `rust-toolchain.toml` at the repo root. First
 
 ```bash
 cd linux
-cargo run --features ui --bin localgallery-reference
-cargo run --features ui --bin localgallery-reference -- --comet
+cargo run --bin localgallery-reference
+cargo run --bin localgallery-reference -- --comet
 cargo test --no-default-features
 ```
 
-Tagging and faces need a model pack **and** `--features ml`:
+Default compilation includes `ui` and `ml`. Tagging and faces also
+need a model pack:
 
 ```bash
 # pack search order:
@@ -41,7 +42,7 @@ Tagging and faces need a model pack **and** `--features ml`:
 #   ~/.local/share/localgallery/pack
 #   /usr/share/localgallery/pack
 #   <repo>/build/pack
-cargo run --features ml
+cargo run --bin localgallery-reference
 ```
 
 Build a pack with
@@ -56,7 +57,7 @@ Places uses the bundled gazetteer. GPS coordinates stay on the machine.
 
 ```bash
 cd linux
-cargo build --release --features ui
+cargo build --release
 install -Dm755 target/release/localgallery-reference ~/.local/bin/localgallery-reference
 install -Dm644 data/com.j23n.LocalGallery.Reference.desktop \
   ~/.local/share/applications/com.j23n.LocalGallery.Reference.desktop

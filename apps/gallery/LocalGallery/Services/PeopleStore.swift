@@ -202,6 +202,27 @@ final class PeopleStore {
         mePersonPath = state.me
         personContactLinks = state.personLinks()
         onLinksProjected?(personContactLinks)
+        publishPersonState()
+    }
+
+    /// Same `LibraryIndex.setPersonState` GTK calls after attach / mutate.
+    private func publishPersonState() {
+        index.setPersonState(PersonStateStructure(
+            hidden: Array(hiddenPeople),
+            featured: featuredPeople,
+            me: mePersonPath,
+            featuredPhoto: featuredPhotoByPerson.map {
+                PersonStatePair(path: $0.key, value: $0.value.uuidString)
+            },
+            links: personContactLinks.map { path, link in
+                switch link {
+                case .manual(let id):
+                    return PersonStatePair(path: path, value: id)
+                case .disabled:
+                    return PersonStatePair(path: path, value: "")
+                }
+            }
+        ))
     }
 
     @discardableResult
@@ -231,6 +252,7 @@ final class PeopleStore {
         }
         hiddenPeople.insert(path)
         featuredPeople.removeAll { $0 == path }
+        publishPersonState()
         onWidgetAffectingChange?()
         return true
     }
@@ -241,6 +263,7 @@ final class PeopleStore {
             return false
         }
         hiddenPeople.remove(path)
+        publishPersonState()
         onWidgetAffectingChange?()
         return true
     }
@@ -264,6 +287,7 @@ final class PeopleStore {
         }
         // Featured ordering floats people to the front of the rail, which
         // the widget mirrors.
+        publishPersonState()
         onWidgetAffectingChange?()
         return true
     }
@@ -278,6 +302,7 @@ final class PeopleStore {
             return false
         }
         mePersonPath = path
+        publishPersonState()
         return true
     }
 
@@ -285,6 +310,7 @@ final class PeopleStore {
     func unmarkAsMe() -> Bool {
         guard appendPersonEvent("person_me_clear", []) else { return false }
         mePersonPath = ""
+        publishPersonState()
         return true
     }
 
@@ -297,6 +323,7 @@ final class PeopleStore {
             return false
         }
         featuredPhotoByPerson[personPath] = photoID
+        publishPersonState()
         onWidgetAffectingChange?()
         return true
     }
@@ -321,6 +348,7 @@ final class PeopleStore {
         }
         personContactLinks[personPath] = link
         onLinksProjected?(personContactLinks)
+        publishPersonState()
         onMemoryAffectingChange?()
         return true
     }
@@ -335,6 +363,7 @@ final class PeopleStore {
         }
         personContactLinks.removeValue(forKey: personPath)
         onLinksProjected?(personContactLinks)
+        publishPersonState()
         onMemoryAffectingChange?()
         return true
     }
@@ -356,6 +385,7 @@ final class PeopleStore {
         }
         if next != featuredPhotoByPerson {
             featuredPhotoByPerson = next
+            publishPersonState()
         }
     }
 
@@ -397,6 +427,7 @@ final class PeopleStore {
             }
             onLinksProjected?(personContactLinks)
         }
+        publishPersonState()
         onWidgetAffectingChange?()
         return true
     }

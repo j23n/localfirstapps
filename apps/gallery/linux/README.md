@@ -21,10 +21,10 @@ This leftover binary is `localgallery-reference` /
 Install and package notes: [INSTALL.md](INSTALL.md).
 
 ```bash
-sudo apt install libgtk-4-dev libadwaita-1-dev pkg-config
+sudo apt install libgtk-4-dev libadwaita-1-dev pkg-config libssl-dev
 cd linux
-cargo run --features ui --bin localgallery-reference -- --comet
-cargo run --features ui --bin localgallery-reference
+cargo run --bin localgallery-reference -- --comet
+cargo run --bin localgallery-reference
 cargo test --no-default-features
 ```
 
@@ -40,11 +40,11 @@ folder. Image bytes are not rewritten.
 Places uses the bundled `localcore-geo` gazetteer (same source as iOS).
 GPS coordinates stay on the device.
 
-Tagging and faces need a model pack **and** `--features ml`. The pack
-is optional and manual:
+Tagging and faces need a model pack. Default compilation includes `ui`
+and `ml` (ONNX Runtime). The pack is optional and manual:
 
 ```bash
-cargo run --features ml
+cargo run --bin localgallery-reference
 # $LOCALGALLERY_PACK, ~/.local/share/localgallery/pack,
 # /usr/share/localgallery/pack, then source-tree build/pack
 ```

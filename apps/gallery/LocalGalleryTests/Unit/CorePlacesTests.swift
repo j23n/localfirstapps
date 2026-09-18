@@ -44,8 +44,8 @@ final class CorePlacesTests: XCTestCase {
         service.onPlaceRecorded = { _, _, outcome in outcomes.append(outcome) }
 
         let first = await service.geocode([photo])
-        XCTAssertEqual(first.processed, 1)
-        XCTAssertEqual(first.written, 1)
+        XCTAssertEqual(first.processed, 1, "processed; lastError=\(service.lastError ?? "nil")")
+        XCTAssertEqual(first.written, 1, "written; lastError=\(service.lastError ?? "nil")")
         XCTAssertEqual(outcomes, [.written])
         XCTAssertTrue(FileManager.default.fileExists(atPath: image.path + ".xmp"))
 

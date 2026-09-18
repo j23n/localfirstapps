@@ -8,7 +8,7 @@ publish = false
 description = "LocalGallery Linux UI — GNOME laptop and Mecha Comet"
 
 [features]
-default = ["ui"]
+default = ["ui", "ml"]
 # Crate names are `gtk` / `adw` so `use gtk::…` / `use adw::…` resolve.
 # The packages on crates.io are gtk4 and libadwaita.
 ui = ["dep:gtk", "dep:adw"]

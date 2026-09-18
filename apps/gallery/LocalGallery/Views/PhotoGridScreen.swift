@@ -85,6 +85,7 @@ struct PhotoGridScreen: View {
 
     // Settings sheet (root only)
     @State private var showSettings = false
+    @State private var showSyncConflicts = false
 
     // Slideshow navigation
     @State private var goToSlideshow = false
@@ -432,6 +433,26 @@ struct PhotoGridScreen: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selectMode { selectBottomBar }
         }
+        .safeAreaInset(edge: .top) {
+            if isRoot, store.hasSyncConflictGroups, !selectMode {
+                Button {
+                    showSyncConflicts = true
+                } label: {
+                    Label(
+                        "\(store.syncConflictGroups.count) Sync Conflicts",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                .accessibilityIdentifier(GalleryScreen.syncConflictGroup.rawValue)
+            }
+        }
+        .task {
+            if isRoot { store.refreshSyncConflicts() }
+        }
         .task(id: filterKey) {
             // Seed only once per deep-link mount. Using a flag rather than
             // `activeTags.isEmpty` prevents re-seeding when the user removes
@@ -458,6 +479,7 @@ struct PhotoGridScreen: View {
                 .navigationTransition(.zoom(sourceID: viewerCurrentPhotoID, in: zoomNamespace))
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showSyncConflicts) { SyncConflictGroupSheet() }
         .photoShareSheet(request: $shareRequest)
         .alert(PhotoDeletePrompt.title(for: pendingDelete), isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) { pendingDelete = [] }

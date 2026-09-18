@@ -168,6 +168,9 @@ final class GalleryStore {
         }
     }
     var lastSyncedAt: Date?
+    /// Syncthing `.xmp` and image-file groups (ADR 0005 R8). Not Apple CN.
+    var syncConflictGroups: [ConflictRow] = []
+    var hasSyncConflictGroups: Bool { !syncConflictGroups.isEmpty }
     /// Timestamp of the most recent FULL scan completion. Persisted so the
     /// `fullScanInterval` `.auto`-mode promotion survives relaunch.
     /// Written only by the scan pipeline (GalleryStore+Scanning).
@@ -355,7 +358,9 @@ final class GalleryStore {
         self.analysis = LibraryAnalysis(
             tagging: self.tagging,
             faces: self.faces,
-            places: self.geocoding
+            places: self.geocoding,
+            mlCacheURL: paths.mlCacheDatabaseURL,
+            geoCacheURL: paths.geocodeCacheURL
         )
         self.analysis.onChromeProgress = { [weak self] in
             self?.syncProgressReveal()
@@ -788,9 +793,10 @@ final class GalleryStore {
     ///     snapshot is not replaced by an empty library (`saveCache()` also
     ///     no-ops when `rootFolder` is nil). A completed empty walk persists.
     ///   - `.sidecarsMerged` rebuilds indexes and persists.
-    ///   - `.photosRemoved` rebuilds indexes and updates availability.
-    ///     Persistence is the caller's job (`deletePhotos` trims the sidecar
-    ///     manifest first so one cache write covers both).
+    ///   - `.photosRemoved` drops ids through `LibraryIndex.removePhotos`
+    ///     (same core call GTK uses) and updates availability. Persistence
+    ///     is the caller's job (`deletePhotos` trims the sidecar manifest
+    ///     first so one cache write covers both).
     ///   - `.photosRelocated` drops the old ids, inserts the moved
     ///     `PhotoFile`s (new path, new stable id) into `destFolderID`, and
     ///     rebuilds indexes. Persistence is `movePhotos`'s job.
@@ -825,7 +831,8 @@ final class GalleryStore {
                 rootFolder = root.removingPhotos(ids)
             }
             libraryEpoch += 1
-            rebuildSortAndIndex()
+            index.removePhotos(ids)
+            refreshFolderCaches()
             if allPhotos.isEmpty {
                 libraryAvailability = rootFolder == nil ? .noneSelected : .empty
             } else {
@@ -1020,10 +1027,13 @@ final class GalleryStore {
     /// the id table and the two folder lists below are computed here, and none
     /// of them sorts or matches anything.
     internal func rebuildSortAndIndex() {
-        index.build(allPhotos: allPhotos)
+        index.build(allPhotos: allPhotos, rootFolder: rootFolder)
+        refreshFolderCaches()
+    }
 
-        // Cache leaf folders and pre-compute event folders. Not index work —
-        // this is a walk of the folder tree the Store owns.
+    /// Cache leaf folders and pre-compute event folders. Not index work —
+    /// this is a walk of the folder tree the Store owns.
+    private func refreshFolderCaches() {
         _cachedLeafFolders = rootFolder.map { Self.collectLeafFolders($0) } ?? []
         eventFolders = _cachedLeafFolders.sorted { a, b in
             let aDate = a.photos.compactMap(\.dateTaken).max() ?? .distantPast
@@ -1236,6 +1246,43 @@ final class GalleryStore {
     func clearSidecarCache() {
         sidecarCache.clear()
         apply(.sidecarCacheCleared)
+    }
+
+    // MARK: - Syncthing groups
+
+    func refreshSyncConflicts() {
+        guard let url = resolveBookmark() else {
+            syncConflictGroups = []
+            return
+        }
+        let session = ConflictSession.open(root: url.path)
+        syncConflictGroups = (try? session.conflictRows()) ?? []
+    }
+
+    func conflictPreview(groupId: String) throws -> ConflictPreview {
+        try conflictSession().conflictPreview(groupId: groupId)
+    }
+
+    func imagePreview(groupId: String) throws -> ImageConflictPreview {
+        try conflictSession().imagePreview(groupId: groupId)
+    }
+
+    func resolveSyncGroup(groupId: String) async throws {
+        try conflictSession().resolveGroup(groupId: groupId)
+        refreshSyncConflicts()
+    }
+
+    func keepImageCopy(groupId: String, surviving: String) async throws {
+        try conflictSession().keepImageCopy(groupId: groupId, surviving: surviving)
+        refreshSyncConflicts()
+        await rescan(kind: .light, silent: true)
+    }
+
+    private func conflictSession() throws -> ConflictSession {
+        guard let url = resolveBookmark() else {
+            throw ConflictError.Io(message: "Choose a Folder first", userActionable: true)
+        }
+        return ConflictSession.open(root: url.path)
     }
 }
 

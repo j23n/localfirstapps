@@ -44,6 +44,20 @@ struct SettingsView: View {
 
                 sidecarSection
 
+                Section("Sync") {
+                    NavigationLink {
+                        SyncConflictGroupSheet()
+                    } label: {
+                        LabeledContent {
+                            Text(store.syncConflictGroups.isEmpty ? "None" : "\(store.syncConflictGroups.count)")
+                                .foregroundStyle(.secondary)
+                        } label: {
+                            Label("Sync Conflicts", systemImage: "exclamationmark.triangle")
+                        }
+                    }
+                    .accessibilityIdentifier(GalleryScreen.syncConflictGroup.rawValue)
+                }
+
                 Section("People") {
                     Toggle(isOn: $memories.birthdaysEnabled) {
                         Label("Birthday Memories", systemImage: "birthday.cake")
@@ -137,6 +151,7 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { store.refreshSyncConflicts() }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }

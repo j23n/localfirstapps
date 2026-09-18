@@ -34,6 +34,7 @@ struct CoreLibrarySnapshot: Sendable {
     let allTrackIDs: [String]
     let contentState: LibraryContentState
     let sections: [CoreLibrarySection]
+    let searchHits: [SearchHit]
 
     var visibleTrackIDs: [String] {
         sections.flatMap(\.trackIDs)
@@ -44,6 +45,7 @@ struct CoreSessionRows: Sendable {
     let playlists: [Playlist]
     let conflicts: [ConflictRow]
     let scanIssues: [StatusRow]
+    let settingsInfo: [TextRow]
 }
 
 /// Serializes access to the generated, internally locked `MusicSession` and
@@ -89,10 +91,12 @@ actor MusicCoreClient {
             ).ids
         }
         let visible = try projectedTrackIDs(session: session, query: query, sort: sort)
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return CoreLibrarySnapshot(
             allTrackIDs: allTrackIDs,
             contentState: try session.libraryContentState(),
-            sections: visible.sections
+            sections: visible.sections,
+            searchHits: needle.isEmpty ? [] : try session.searchHits(query: needle)
         )
     }
 
@@ -132,7 +136,8 @@ actor MusicCoreClient {
         return CoreSessionRows(
             playlists: playlists,
             conflicts: try session.conflictRows(),
-            scanIssues: try session.scanIssueRows()
+            scanIssues: try session.scanIssueRows(),
+            settingsInfo: try session.settingsInfoRows()
         )
     }
 
@@ -205,6 +210,21 @@ actor MusicCoreClient {
     }
 
     private func projectedTrackIDs(
+        session: MusicSession,
+        query: String,
+        sort: SortOption
+    ) throws -> (ids: [String], sections: [CoreLibrarySection]) {
+        do {
+            return try fetchProjectedTrackIDs(session: session, query: query, sort: sort)
+        } catch let error as MusicError {
+            if case .StaleGeneration = error {
+                return try fetchProjectedTrackIDs(session: session, query: query, sort: sort)
+            }
+            throw error
+        }
+    }
+
+    private func fetchProjectedTrackIDs(
         session: MusicSession,
         query: String,
         sort: SortOption

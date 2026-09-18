@@ -658,6 +658,758 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 /**
  * Callbacks into the host app during a run.
  *
+ * Implementations are called from the core's worker thread and must not
+ * block — on Swift the implementation hands off to the main actor and
+ * returns.
+ */
+public protocol AnalysisProgressListener: AnyObject, Sendable {
+    
+    /**
+     * Current phase counts. Fires as `run_analysis` hops progress.
+     */
+    func onProgress(phase: AnalysisPhase, done: UInt32, total: UInt32) 
+    
+    /**
+     * Exactly once per `start` / `start_one`, after the run lock is released.
+     */
+    func onFinished(summary: AnalysisRunSummary) 
+    
+}
+/**
+ * Callbacks into the host app during a run.
+ *
+ * Implementations are called from the core's worker thread and must not
+ * block — on Swift the implementation hands off to the main actor and
+ * returns.
+ */
+open class AnalysisProgressListenerImpl: AnalysisProgressListener, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_gallery_ffi_fn_clone_analysisprogresslistener(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_gallery_ffi_fn_free_analysisprogresslistener(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Current phase counts. Fires as `run_analysis` hops progress.
+     */
+open func onProgress(phase: AnalysisPhase, done: UInt32, total: UInt32)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_analysisprogresslistener_on_progress(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeAnalysisPhase_lower(phase),
+        FfiConverterUInt32.lower(done),
+        FfiConverterUInt32.lower(total),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Exactly once per `start` / `start_one`, after the run lock is released.
+     */
+open func onFinished(summary: AnalysisRunSummary)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_analysisprogresslistener_on_finished(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeAnalysisRunSummary_lower(summary),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceAnalysisProgressListener {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceAnalysisProgressListener = UniffiVTableCallbackInterfaceAnalysisProgressListener(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeAnalysisProgressListener.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface AnalysisProgressListener: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeAnalysisProgressListener.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface AnalysisProgressListener: handle missing in uniffiClone")
+            }
+        },
+        onProgress: { (
+            uniffiHandle: UInt64,
+            phase: RustBuffer,
+            done: UInt32,
+            total: UInt32,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeAnalysisProgressListener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onProgress(
+                     phase: try FfiConverterTypeAnalysisPhase_lift(phase),
+                     done: try FfiConverterUInt32.lift(done),
+                     total: try FfiConverterUInt32.lift(total)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        },
+        onFinished: { (
+            uniffiHandle: UInt64,
+            summary: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeAnalysisProgressListener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onFinished(
+                     summary: try FfiConverterTypeAnalysisRunSummary_lift(summary)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceAnalysisProgressListener> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceAnalysisProgressListener>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitAnalysisProgressListener() {
+    uniffi_gallery_ffi_fn_init_callback_vtable_analysisprogresslistener(UniffiCallbackInterfaceAnalysisProgressListener.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAnalysisProgressListener: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<AnalysisProgressListener>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = AnalysisProgressListener
+
+    public static func lift(_ handle: UInt64) throws -> AnalysisProgressListener {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return AnalysisProgressListenerImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: AnalysisProgressListener) -> UInt64 {
+         if let rustImpl = value as? AnalysisProgressListenerImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AnalysisProgressListener {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: AnalysisProgressListener, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisProgressListener_lift(_ handle: UInt64) throws -> AnalysisProgressListener {
+    return try FfiConverterTypeAnalysisProgressListener.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisProgressListener_lower(_ value: AnalysisProgressListener) -> UInt64 {
+    return FfiConverterTypeAnalysisProgressListener.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Cancellable coarse-grained entry point to [`gallery_session::run_analysis`].
+ */
+public protocol AnalysisSessionProtocol: AnyObject, Sendable {
+    
+    /**
+     * Ask the in-flight run to stop. Returns immediately.
+     */
+    func cancel() 
+    
+    /**
+     * Whether a run is in flight.
+     */
+    func isRunning()  -> Bool
+    
+    /**
+     * Summary of the last finished run, if any.
+     */
+    func lastSummary()  -> AnalysisRunSummary?
+    
+    /**
+     * Latest progress hop, if the worker has published one.
+     */
+    func progress()  -> AnalysisProgress?
+    
+    /**
+     * Start tagging → faces → places on a core-owned thread and return at once.
+     *
+     * `pack_dir` is the host-resolved pack (already verified). `None` is a
+     * Places-only run — a pack is not required. `ml_cache_path` is the
+     * shared `gallery-cache.sqlite`; Places uses it as the queue file when
+     * present.
+     */
+    func start(photos: [ScannedMediaHost], packDir: String?, mlCachePath: String?, geoCachePath: String, phases: AnalysisPhases, force: Bool, decoder: HeicDecoder?, progress: AnalysisProgressListener?) throws 
+    
+    /**
+     * Force one photo through `phases`. Does not reset library-wide ML queues.
+     */
+    func startOne(photo: ScannedMediaHost, packDir: String?, mlCachePath: String?, geoCachePath: String, phases: AnalysisPhases, decoder: HeicDecoder?, progress: AnalysisProgressListener?) throws 
+    
+}
+/**
+ * Cancellable coarse-grained entry point to [`gallery_session::run_analysis`].
+ */
+open class AnalysisSession: AnalysisSessionProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_gallery_ffi_fn_clone_analysissession(self.handle, $0) }
+    }
+    /**
+     * Create an idle session.
+     */
+public convenience init() {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_constructor_analysissession_new(uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_gallery_ffi_fn_free_analysissession(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Ask the in-flight run to stop. Returns immediately.
+     */
+open func cancel()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_analysissession_cancel(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Whether a run is in flight.
+     */
+open func isRunning() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_analysissession_is_running(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Summary of the last finished run, if any.
+     */
+open func lastSummary() -> AnalysisRunSummary?  {
+    return try!  FfiConverterOptionTypeAnalysisRunSummary.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_analysissession_last_summary(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Latest progress hop, if the worker has published one.
+     */
+open func progress() -> AnalysisProgress?  {
+    return try!  FfiConverterOptionTypeAnalysisProgress.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_analysissession_progress(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Start tagging → faces → places on a core-owned thread and return at once.
+     *
+     * `pack_dir` is the host-resolved pack (already verified). `None` is a
+     * Places-only run — a pack is not required. `ml_cache_path` is the
+     * shared `gallery-cache.sqlite`; Places uses it as the queue file when
+     * present.
+     */
+open func start(photos: [ScannedMediaHost], packDir: String?, mlCachePath: String?, geoCachePath: String, phases: AnalysisPhases, force: Bool, decoder: HeicDecoder?, progress: AnalysisProgressListener?)throws   {try rustCallWithError(FfiConverterTypeAnalysisError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_analysissession_start(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeScannedMediaHost.lower(photos),
+        FfiConverterOptionString.lower(packDir),
+        FfiConverterOptionString.lower(mlCachePath),
+        FfiConverterString.lower(geoCachePath),
+        FfiConverterTypeAnalysisPhases_lower(phases),
+        FfiConverterBool.lower(force),
+        FfiConverterOptionTypeHeicDecoder.lower(decoder),
+        FfiConverterOptionTypeAnalysisProgressListener.lower(progress),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Force one photo through `phases`. Does not reset library-wide ML queues.
+     */
+open func startOne(photo: ScannedMediaHost, packDir: String?, mlCachePath: String?, geoCachePath: String, phases: AnalysisPhases, decoder: HeicDecoder?, progress: AnalysisProgressListener?)throws   {try rustCallWithError(FfiConverterTypeAnalysisError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_analysissession_start_one(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeScannedMediaHost_lower(photo),
+        FfiConverterOptionString.lower(packDir),
+        FfiConverterOptionString.lower(mlCachePath),
+        FfiConverterString.lower(geoCachePath),
+        FfiConverterTypeAnalysisPhases_lower(phases),
+        FfiConverterOptionTypeHeicDecoder.lower(decoder),
+        FfiConverterOptionTypeAnalysisProgressListener.lower(progress),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAnalysisSession: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = AnalysisSession
+
+    public static func lift(_ handle: UInt64) throws -> AnalysisSession {
+        return AnalysisSession(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: AnalysisSession) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AnalysisSession {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: AnalysisSession, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisSession_lift(_ handle: UInt64) throws -> AnalysisSession {
+    return try FfiConverterTypeAnalysisSession.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisSession_lower(_ value: AnalysisSession) -> UInt64 {
+    return FfiConverterTypeAnalysisSession.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Coarse-grained handle on Syncthing groups under one library root.
+ *
+ * The session stores the root only. Every call re-walks and re-merges; it
+ * does not cache a plan, attach to [`crate::ScannerSession`], or rebuild
+ * [`crate::LibraryIndex`].
+ */
+public protocol ConflictSessionProtocol: AnyObject, Sendable {
+    
+    /**
+     * Confirmation DTO. Does not write or delete. Image groups are
+     * [`ConflictError::NotAnXmpGroup`].
+     */
+    func conflictPreview(groupId: String) throws  -> ConflictPreview
+    
+    /**
+     * `.xmp` and image-file groups. Unparseable XMP groups are omitted.
+     * [`MergeKind::Choice`] is never returned.
+     */
+    func conflictRows() throws  -> [ConflictRow]
+    
+    /**
+     * Keep-one candidates. Does not write or delete. XMP groups are
+     * [`ConflictError::NotAnImageGroup`].
+     */
+    func imagePreview(groupId: String) throws  -> ImageConflictPreview
+    
+    /**
+     * Keep one image file and delete the others. VFS `rename` / `remove`
+     * only. Does not read or rewrite image bytes.
+     *
+     * `surviving` is a basename, folder-relative path, or absolute path of
+     * the surviving file or one conflict copy. XMP groups are
+     * [`ConflictError::NotAnImageGroup`].
+     */
+    func keepImageCopy(groupId: String, surviving: String) throws 
+    
+    /**
+     * Re-read, merge, write the surviving sidecar, then delete copies.
+     *
+     * Does not touch the paired image or any `photo.heic` conflict group.
+     */
+    func resolveGroup(groupId: String) throws 
+    
+}
+/**
+ * Coarse-grained handle on Syncthing groups under one library root.
+ *
+ * The session stores the root only. Every call re-walks and re-merges; it
+ * does not cache a plan, attach to [`crate::ScannerSession`], or rebuild
+ * [`crate::LibraryIndex`].
+ */
+open class ConflictSession: ConflictSessionProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_gallery_ffi_fn_clone_conflictsession(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_gallery_ffi_fn_free_conflictsession(handle, $0) }
+    }
+
+    
+    /**
+     * Store `root`. The path is not opened until a method runs.
+     */
+public static func `open`(root: String) -> ConflictSession  {
+    return try!  FfiConverterTypeConflictSession_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_constructor_conflictsession_open(
+        FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+    /**
+     * Confirmation DTO. Does not write or delete. Image groups are
+     * [`ConflictError::NotAnXmpGroup`].
+     */
+open func conflictPreview(groupId: String)throws  -> ConflictPreview  {
+    return try  FfiConverterTypeConflictPreview_lift(try rustCallWithError(FfiConverterTypeConflictError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_conflictsession_conflict_preview(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(groupId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * `.xmp` and image-file groups. Unparseable XMP groups are omitted.
+     * [`MergeKind::Choice`] is never returned.
+     */
+open func conflictRows()throws  -> [ConflictRow]  {
+    return try  FfiConverterSequenceTypeConflictRow.lift(try rustCallWithError(FfiConverterTypeConflictError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_conflictsession_conflict_rows(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Keep-one candidates. Does not write or delete. XMP groups are
+     * [`ConflictError::NotAnImageGroup`].
+     */
+open func imagePreview(groupId: String)throws  -> ImageConflictPreview  {
+    return try  FfiConverterTypeImageConflictPreview_lift(try rustCallWithError(FfiConverterTypeConflictError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_conflictsession_image_preview(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(groupId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Keep one image file and delete the others. VFS `rename` / `remove`
+     * only. Does not read or rewrite image bytes.
+     *
+     * `surviving` is a basename, folder-relative path, or absolute path of
+     * the surviving file or one conflict copy. XMP groups are
+     * [`ConflictError::NotAnImageGroup`].
+     */
+open func keepImageCopy(groupId: String, surviving: String)throws   {try rustCallWithError(FfiConverterTypeConflictError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_conflictsession_keep_image_copy(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(groupId),
+        FfiConverterString.lower(surviving),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Re-read, merge, write the surviving sidecar, then delete copies.
+     *
+     * Does not touch the paired image or any `photo.heic` conflict group.
+     */
+open func resolveGroup(groupId: String)throws   {try rustCallWithError(FfiConverterTypeConflictError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_conflictsession_resolve_group(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(groupId),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictSession: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = ConflictSession
+
+    public static func lift(_ handle: UInt64) throws -> ConflictSession {
+        return ConflictSession(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: ConflictSession) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictSession {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: ConflictSession, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictSession_lift(_ handle: UInt64) throws -> ConflictSession {
+    return try FfiConverterTypeConflictSession.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictSession_lower(_ value: ConflictSession) -> UInt64 {
+    return FfiConverterTypeConflictSession.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Callbacks into the host app during a run.
+ *
  * Implementations are called from the core's worker threads and must not
  * block — on Swift the implementation hands off to the main actor and returns.
  * `on_progress` is already throttled in Rust (250 ms) and the path batches are
@@ -2005,9 +2757,11 @@ public func FfiConverterTypeHeicDecoder_lower(_ value: HeicDecoder) -> UInt64 {
  * The photo table and every index over it: the sorted order, the search
  * corpus, and the tag buckets.
  *
- * One instance per Store, rebuilt wholesale from `allPhotos` after every
- * `apply(_:)` — the same contract `SearchIndex.build(allPhotos:)` and
- * `TagIndex.build(allPhotos:)` had. Partial updates were never part of it.
+ * One instance per Store. `build` replaces the table wholesale after a scan
+ * or snapshot load — the same contract `SearchIndex.build(allPhotos:)` and
+ * `TagIndex.build(allPhotos:)` had. [`Self::remove_photos`] is the delete
+ * path: drop ids, `CoreIndex::build` the remaining table, rewrite folder
+ * slices. Sparse in-place patches are still not part of the contract.
  */
 public protocol LibraryIndexProtocol: AnyObject, Sendable {
     
@@ -2034,19 +2788,19 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * Albums, Events, Other — as present). Item ids are tag ids.
      *
      * People are not a collection section; use [`Self::people_structure`].
-     * Memories are omitted until 5.6: the index does not store a
+     * Memories section lands in 5.6: the index does not store a
      * `MemoryStructure` id list. The shell caches the last
      * [`generate_memories`] / [`MemoryGenerator`] result and drills in with
      * [`Self::set_photo_ids_view`].
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS callers land in Phase 5.8.
      */
     func collectionStructure()  -> ViewStructure
     
     /**
      * Display-ready collection rows for one namespace section.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS callers land in Phase 5.8.
      */
     func collectionWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryTextRow]
     
@@ -2060,11 +2814,21 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
     func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, hiddenMemoryIds: [String])  -> [ScheduledMemoryStructure]
     
     /**
+     * Scanner folder rows currently attached to this table.
+     */
+    func exportFolders()  -> [ScannedFolderHost]
+    
+    /**
+     * Cover photo id from the person log, if the user set one.
+     */
+    func featuredPhotoId(personPath: String)  -> String?
+    
+    /**
      * This folder's own photos (the scan slice), so a shell can
      * [`Self::set_photo_ids_view`]. Recursive totals stay on the text-row
      * trailing from `total_photo_count`.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS folder UI still walks `PhotoFolder` (Phase 5.8).
      */
     func folderPhotoIds(folderId: String)  -> [String]
     
@@ -2076,7 +2840,7 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * folder ids. Changing `parent_id` bumps [`Self::view_generation`] so a
      * window cannot join rows to an older listing.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS folder UI still walks `PhotoFolder` (Phase 5.8).
      */
     func folderStructure(parentId: String?)  -> ViewStructure
     
@@ -2088,26 +2852,44 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * (`total_photo_count`) as `"1 photo"` / `"N photos"`. Subtitle is the
      * path leaf when it differs from the name.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS folder UI still walks `PhotoFolder` (Phase 5.8).
      */
     func folderWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryTextRow]
     
     /**
-     * People listing. Item ids come from the cached `People` suggestions.
+     * Collections-rail people (featured-first, recency gate).
+     */
+    func peopleRailStructure()  -> ViewStructure
+    
+    /**
+     * Window over [`Self::people_rail_structure`].
+     */
+    func peopleRailWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryTextRow]
+    
+    /**
+     * See-all people listing. Item ids are canonical `People/…` paths.
      *
-     * Person photos already work via [`Self::photo_ids_for_tag`] (`full_path`)
-     * plus [`Self::set_photo_ids_view`].
-     *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * Featured float to the front after [`Self::set_person_state`]; hidden
+     * people are appended at the end. The Collections rail uses
+     * [`Self::people_rail_structure`]. Person photos already work via
+     * [`Self::photo_ids_for_tag`] plus [`Self::set_photo_ids_view`].
      */
     func peopleStructure()  -> ViewStructure
     
     /**
      * Display-ready people rows (`display_name`, trailing count).
-     *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
      */
     func peopleWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64) throws  -> [GalleryTextRow]
+    
+    /**
+     * Canonical `People/…` path for a row id or any spelling of the path.
+     */
+    func personFullPath(idOrPath: String)  -> String?
+    
+    /**
+     * Last [`Self::set_person_state`] projection (empty before attach).
+     */
+    func personState()  -> PersonStateStructure
     
     /**
      * How many photos the index currently holds. Cheap; used by the app's
@@ -2138,6 +2920,22 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
     func rebuild(photos: [ScannedMediaHost], photoTimeZoneOffsets: [Int32])  -> LibraryBuildStructure
     
     /**
+     * Drop `ids` from the photo table the way iOS `photosRemoved` does:
+     * filter, `CoreIndex::build` the remainder, rewrite folder slices, bump
+     * generation. Does **not** call [`Self::rebuild`] — that would empty the
+     * folder table.
+     *
+     * Unknown ids are ignored. An empty or no-op request leaves generation
+     * and folders alone.
+     */
+    func removePhotos(ids: [String])  -> RemovePhotosResult
+    
+    /**
+     * Photo ids in scan order — the array folder slices address.
+     */
+    func scanOrderPhotoIds()  -> [String]
+    
+    /**
      * Number of photos the scheduled-horizon reuse path currently owns.
      */
     func scheduledPhotoCount()  -> UInt32
@@ -2161,9 +2959,18 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      * so folders arrive on this second call after a scan or snapshot load.
      * The recursive `PhotoFolder` tree is not stored and never returned.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * Both shells attach folders here after `build` so
+     * [`Self::remove_photos`] can rewrite slices. Folder *windows*
+     * (`folder_structure` / `folder_window`) stay GTK-only until
+     * Phase 5.8; iOS still walks its own `PhotoFolder` tree for UI.
      */
     func setFolders(folders: [ScannedFolderHost], photoIdsInScanOrder: [String]) 
+    
+    /**
+     * Project `.gallery/log` onto the people lists. Bumps generation.
+     * Both shells call this after attach and after every person mutation.
+     */
+    func setPersonState(state: PersonStateStructure, now: Double) 
     
     /**
      * Apply an id-only drill-in intent (folder, memory, or saved selection).
@@ -2208,14 +3015,23 @@ public protocol LibraryIndexProtocol: AnyObject, Sendable {
      */
     func viewGeneration()  -> UInt64
     
+    /**
+     * Current photo projection in list order.
+     *
+     * Cheaper than [`Self::photo_structure`]: no month sections, one id list.
+     */
+    func visiblePhotoIds()  -> [String]
+    
 }
 /**
  * The photo table and every index over it: the sorted order, the search
  * corpus, and the tag buckets.
  *
- * One instance per Store, rebuilt wholesale from `allPhotos` after every
- * `apply(_:)` — the same contract `SearchIndex.build(allPhotos:)` and
- * `TagIndex.build(allPhotos:)` had. Partial updates were never part of it.
+ * One instance per Store. `build` replaces the table wholesale after a scan
+ * or snapshot load — the same contract `SearchIndex.build(allPhotos:)` and
+ * `TagIndex.build(allPhotos:)` had. [`Self::remove_photos`] is the delete
+ * path: drop ids, `CoreIndex::build` the remaining table, rewrite folder
+ * slices. Sparse in-place patches are still not part of the contract.
  */
 open class LibraryIndex: LibraryIndexProtocol, @unchecked Sendable {
     fileprivate let handle: UInt64
@@ -2323,12 +3139,12 @@ open func buildWithTimeZoneOffsets(photos: [ScannedMediaHost], photoTimeZoneOffs
      * Albums, Events, Other — as present). Item ids are tag ids.
      *
      * People are not a collection section; use [`Self::people_structure`].
-     * Memories are omitted until 5.6: the index does not store a
+     * Memories section lands in 5.6: the index does not store a
      * `MemoryStructure` id list. The shell caches the last
      * [`generate_memories`] / [`MemoryGenerator`] result and drills in with
      * [`Self::set_photo_ids_view`].
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS callers land in Phase 5.8.
      */
 open func collectionStructure() -> ViewStructure  {
     return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
@@ -2342,7 +3158,7 @@ open func collectionStructure() -> ViewStructure  {
     /**
      * Display-ready collection rows for one namespace section.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS callers land in Phase 5.8.
      */
 open func collectionWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryTextRow]  {
     return try  FfiConverterSequenceTypeGalleryTextRow.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
@@ -2377,11 +3193,36 @@ open func computeScheduled(context: ScheduledMemoryContext, horizonDays: Int64, 
 }
     
     /**
+     * Scanner folder rows currently attached to this table.
+     */
+open func exportFolders() -> [ScannedFolderHost]  {
+    return try!  FfiConverterSequenceTypeScannedFolderHost.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_export_folders(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Cover photo id from the person log, if the user set one.
+     */
+open func featuredPhotoId(personPath: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_featured_photo_id(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(personPath),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * This folder's own photos (the scan slice), so a shell can
      * [`Self::set_photo_ids_view`]. Recursive totals stay on the text-row
      * trailing from `total_photo_count`.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS folder UI still walks `PhotoFolder` (Phase 5.8).
      */
 open func folderPhotoIds(folderId: String) -> [String]  {
     return try!  FfiConverterSequenceString.lift(try! rustCall() {
@@ -2401,7 +3242,7 @@ open func folderPhotoIds(folderId: String) -> [String]  {
      * folder ids. Changing `parent_id` bumps [`Self::view_generation`] so a
      * window cannot join rows to an older listing.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS folder UI still walks `PhotoFolder` (Phase 5.8).
      */
 open func folderStructure(parentId: String?) -> ViewStructure  {
     return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
@@ -2421,7 +3262,7 @@ open func folderStructure(parentId: String?) -> ViewStructure  {
      * (`total_photo_count`) as `"1 photo"` / `"N photos"`. Subtitle is the
      * path leaf when it differs from the name.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * iOS folder UI still walks `PhotoFolder` (Phase 5.8).
      */
 open func folderWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryTextRow]  {
     return try  FfiConverterSequenceTypeGalleryTextRow.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
@@ -2437,12 +3278,40 @@ open func folderWindow(sectionId: String, offset: UInt64, limit: UInt64, generat
 }
     
     /**
-     * People listing. Item ids come from the cached `People` suggestions.
+     * Collections-rail people (featured-first, recency gate).
+     */
+open func peopleRailStructure() -> ViewStructure  {
+    return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_people_rail_structure(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Window over [`Self::people_rail_structure`].
+     */
+open func peopleRailWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryTextRow]  {
+    return try  FfiConverterSequenceTypeGalleryTextRow.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_people_rail_window(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sectionId),
+        FfiConverterUInt64.lower(offset),
+        FfiConverterUInt64.lower(limit),
+        FfiConverterUInt64.lower(generation),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * See-all people listing. Item ids are canonical `People/…` paths.
      *
-     * Person photos already work via [`Self::photo_ids_for_tag`] (`full_path`)
-     * plus [`Self::set_photo_ids_view`].
-     *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * Featured float to the front after [`Self::set_person_state`]; hidden
+     * people are appended at the end. The Collections rail uses
+     * [`Self::people_rail_structure`]. Person photos already work via
+     * [`Self::photo_ids_for_tag`] plus [`Self::set_photo_ids_view`].
      */
 open func peopleStructure() -> ViewStructure  {
     return try!  FfiConverterTypeViewStructure_lift(try! rustCall() {
@@ -2455,8 +3324,6 @@ open func peopleStructure() -> ViewStructure  {
     
     /**
      * Display-ready people rows (`display_name`, trailing count).
-     *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
      */
 open func peopleWindow(sectionId: String, offset: UInt64, limit: UInt64, generation: UInt64)throws  -> [GalleryTextRow]  {
     return try  FfiConverterSequenceTypeGalleryTextRow.lift(try rustCallWithError(FfiConverterTypeViewError_lift) {
@@ -2467,6 +3334,31 @@ open func peopleWindow(sectionId: String, offset: UInt64, limit: UInt64, generat
         FfiConverterUInt64.lower(offset),
         FfiConverterUInt64.lower(limit),
         FfiConverterUInt64.lower(generation),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Canonical `People/…` path for a row id or any spelling of the path.
+     */
+open func personFullPath(idOrPath: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_person_full_path(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(idOrPath),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Last [`Self::set_person_state`] projection (empty before attach).
+     */
+open func personState() -> PersonStateStructure  {
+    return try!  FfiConverterTypePersonStateStructure_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_person_state(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -2542,6 +3434,37 @@ open func rebuild(photos: [ScannedMediaHost], photoTimeZoneOffsets: [Int32]) -> 
 }
     
     /**
+     * Drop `ids` from the photo table the way iOS `photosRemoved` does:
+     * filter, `CoreIndex::build` the remainder, rewrite folder slices, bump
+     * generation. Does **not** call [`Self::rebuild`] — that would empty the
+     * folder table.
+     *
+     * Unknown ids are ignored. An empty or no-op request leaves generation
+     * and folders alone.
+     */
+open func removePhotos(ids: [String]) -> RemovePhotosResult  {
+    return try!  FfiConverterTypeRemovePhotosResult_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_remove_photos(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(ids),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Photo ids in scan order — the array folder slices address.
+     */
+open func scanOrderPhotoIds() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_scan_order_photo_ids(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Number of photos the scheduled-horizon reuse path currently owns.
      */
 open func scheduledPhotoCount() -> UInt32  {
@@ -2581,7 +3504,10 @@ open func search(query: String, requiredTagPaths: [String]) -> [String]  {
      * so folders arrive on this second call after a scan or snapshot load.
      * The recursive `PhotoFolder` tree is not stored and never returned.
      *
-     * iOS has no Swift caller for this window yet (Phase 5.2 explicit deferral).
+     * Both shells attach folders here after `build` so
+     * [`Self::remove_photos`] can rewrite slices. Folder *windows*
+     * (`folder_structure` / `folder_window`) stay GTK-only until
+     * Phase 5.8; iOS still walks its own `PhotoFolder` tree for UI.
      */
 open func setFolders(folders: [ScannedFolderHost], photoIdsInScanOrder: [String])  {try! rustCall() {
         uniffiCallStatus in
@@ -2589,6 +3515,20 @@ open func setFolders(folders: [ScannedFolderHost], photoIdsInScanOrder: [String]
             self.uniffiCloneHandle(),
         FfiConverterSequenceTypeScannedFolderHost.lower(folders),
         FfiConverterSequenceString.lower(photoIdsInScanOrder),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Project `.gallery/log` onto the people lists. Bumps generation.
+     * Both shells call this after attach and after every person mutation.
+     */
+open func setPersonState(state: PersonStateStructure, now: Double)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_set_person_state(
+            self.uniffiCloneHandle(),
+        FfiConverterTypePersonStateStructure_lower(state),
+        FfiConverterDouble.lower(now),uniffiCallStatus
     )
 }
 }
@@ -2690,6 +3630,20 @@ open func viewGeneration() -> UInt64  {
     return try!  FfiConverterUInt64.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_method_libraryindex_view_generation(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Current photo projection in list order.
+     *
+     * Cheaper than [`Self::photo_structure`]: no month sections, one id list.
+     */
+open func visiblePhotoIds() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_method_libraryindex_visible_photo_ids(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -4401,6 +5355,663 @@ public func FfiConverterTypeTaggingSession_lower(_ value: TaggingSession) -> UIn
 
 
 /**
+ * Which Scan Photos workers to run.
+ *
+ * R6 role: command DTO.
+ */
+public struct AnalysisPhases: Equatable, Hashable {
+    /**
+     * MobileCLIP objects / scenes / landmarks.
+     */
+    public var tagging: Bool
+    /**
+     * Detect / embed / cluster people.
+     */
+    public var faces: Bool
+    /**
+     * Offline gazetteer + Places tags.
+     */
+    public var places: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * MobileCLIP objects / scenes / landmarks.
+         */tagging: Bool, 
+        /**
+         * Detect / embed / cluster people.
+         */faces: Bool, 
+        /**
+         * Offline gazetteer + Places tags.
+         */places: Bool) {
+        self.tagging = tagging
+        self.faces = faces
+        self.places = places
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AnalysisPhases: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAnalysisPhases: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AnalysisPhases {
+        return
+            try AnalysisPhases(
+                tagging: FfiConverterBool.read(from: &buf), 
+                faces: FfiConverterBool.read(from: &buf), 
+                places: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AnalysisPhases, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.tagging, into: &buf)
+        FfiConverterBool.write(value.faces, into: &buf)
+        FfiConverterBool.write(value.places, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisPhases_lift(_ buf: RustBuffer) throws -> AnalysisPhases {
+    return try FfiConverterTypeAnalysisPhases.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisPhases_lower(_ value: AnalysisPhases) -> RustBuffer {
+    return FfiConverterTypeAnalysisPhases.lower(value)
+}
+
+
+/**
+ * Live counts for the current phase.
+ *
+ * R6 role: command DTO.
+ */
+public struct AnalysisProgress: Equatable, Hashable {
+    /**
+     * Tagging / faces / places.
+     */
+    public var phase: AnalysisPhase
+    /**
+     * Items finished in this phase.
+     */
+    public var done: UInt32
+    /**
+     * Items queued for this phase.
+     */
+    public var total: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Tagging / faces / places.
+         */phase: AnalysisPhase, 
+        /**
+         * Items finished in this phase.
+         */done: UInt32, 
+        /**
+         * Items queued for this phase.
+         */total: UInt32) {
+        self.phase = phase
+        self.done = done
+        self.total = total
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AnalysisProgress: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAnalysisProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AnalysisProgress {
+        return
+            try AnalysisProgress(
+                phase: FfiConverterTypeAnalysisPhase.read(from: &buf), 
+                done: FfiConverterUInt32.read(from: &buf), 
+                total: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AnalysisProgress, into buf: inout [UInt8]) {
+        FfiConverterTypeAnalysisPhase.write(value.phase, into: &buf)
+        FfiConverterUInt32.write(value.done, into: &buf)
+        FfiConverterUInt32.write(value.total, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisProgress_lift(_ buf: RustBuffer) throws -> AnalysisProgress {
+    return try FfiConverterTypeAnalysisProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisProgress_lower(_ value: AnalysisProgress) -> RustBuffer {
+    return FfiConverterTypeAnalysisProgress.lower(value)
+}
+
+
+/**
+ * What a finished (or cancelled) run did.
+ *
+ * R6 role: command DTO.
+ */
+public struct AnalysisRunSummary: Equatable, Hashable {
+    /**
+     * Eligible stills at the start (library snapshot length).
+     */
+    public var photos: UInt32
+    /**
+     * Tagging sidecar writes. `None` when the phase did not run.
+     */
+    public var tagged: UInt32?
+    /**
+     * Face sidecar writes.
+     */
+    public var faces: UInt32?
+    /**
+     * Places result, when that phase ran.
+     */
+    public var places: PlacesRunSummary?
+    /**
+     * Paths any phase wrote.
+     */
+    public var writtenPaths: [String]
+    /**
+     * Stopped because the user cancelled.
+     */
+    public var cancelled: Bool
+    /**
+     * First error the host should toast.
+     */
+    public var error: String?
+    /**
+     * Why tagging/faces were skipped, if they were.
+     */
+    public var skippedMl: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Eligible stills at the start (library snapshot length).
+         */photos: UInt32, 
+        /**
+         * Tagging sidecar writes. `None` when the phase did not run.
+         */tagged: UInt32?, 
+        /**
+         * Face sidecar writes.
+         */faces: UInt32?, 
+        /**
+         * Places result, when that phase ran.
+         */places: PlacesRunSummary?, 
+        /**
+         * Paths any phase wrote.
+         */writtenPaths: [String], 
+        /**
+         * Stopped because the user cancelled.
+         */cancelled: Bool, 
+        /**
+         * First error the host should toast.
+         */error: String?, 
+        /**
+         * Why tagging/faces were skipped, if they were.
+         */skippedMl: String?) {
+        self.photos = photos
+        self.tagged = tagged
+        self.faces = faces
+        self.places = places
+        self.writtenPaths = writtenPaths
+        self.cancelled = cancelled
+        self.error = error
+        self.skippedMl = skippedMl
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AnalysisRunSummary: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAnalysisRunSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AnalysisRunSummary {
+        return
+            try AnalysisRunSummary(
+                photos: FfiConverterUInt32.read(from: &buf), 
+                tagged: FfiConverterOptionUInt32.read(from: &buf), 
+                faces: FfiConverterOptionUInt32.read(from: &buf), 
+                places: FfiConverterOptionTypePlacesRunSummary.read(from: &buf), 
+                writtenPaths: FfiConverterSequenceString.read(from: &buf), 
+                cancelled: FfiConverterBool.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf), 
+                skippedMl: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AnalysisRunSummary, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.photos, into: &buf)
+        FfiConverterOptionUInt32.write(value.tagged, into: &buf)
+        FfiConverterOptionUInt32.write(value.faces, into: &buf)
+        FfiConverterOptionTypePlacesRunSummary.write(value.places, into: &buf)
+        FfiConverterSequenceString.write(value.writtenPaths, into: &buf)
+        FfiConverterBool.write(value.cancelled, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterOptionString.write(value.skippedMl, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisRunSummary_lift(_ buf: RustBuffer) throws -> AnalysisRunSummary {
+    return try FfiConverterTypeAnalysisRunSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisRunSummary_lower(_ value: AnalysisRunSummary) -> RustBuffer {
+    return FfiConverterTypeAnalysisRunSummary.lower(value)
+}
+
+
+/**
+ * R6 role: command DTO.
+ *
+ * One field that differs across Syncthing copies. Always empty for XMP.
+ */
+public struct ConflictFieldPreview: Equatable, Hashable {
+    /**
+     * Stable field key.
+     */
+    public var field: String
+    /**
+     * Visible sides the shell would offer as a choice.
+     */
+    public var sides: [ConflictSide]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Stable field key.
+         */field: String, 
+        /**
+         * Visible sides the shell would offer as a choice.
+         */sides: [ConflictSide]) {
+        self.field = field
+        self.sides = sides
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ConflictFieldPreview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictFieldPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictFieldPreview {
+        return
+            try ConflictFieldPreview(
+                field: FfiConverterString.read(from: &buf), 
+                sides: FfiConverterSequenceTypeConflictSide.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ConflictFieldPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.field, into: &buf)
+        FfiConverterSequenceTypeConflictSide.write(value.sides, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictFieldPreview_lift(_ buf: RustBuffer) throws -> ConflictFieldPreview {
+    return try FfiConverterTypeConflictFieldPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictFieldPreview_lower(_ value: ConflictFieldPreview) -> RustBuffer {
+    return FfiConverterTypeConflictFieldPreview.lower(value)
+}
+
+
+/**
+ * R6 role: command DTO.
+ *
+ * Field-level preview for an explicit Syncthing-group review.
+ */
+public struct ConflictPreview: Equatable, Hashable {
+    /**
+     * Group id the shell hands back to [`ConflictSession::resolve_group`].
+     */
+    public var id: String
+    /**
+     * Surviving file name.
+     */
+    public var title: String
+    /**
+     * Auto / choice / deleted-versus-modified / keep-one.
+     */
+    public var kind: MergeKind
+    /**
+     * Copy basenames that will be deleted on confirm.
+     */
+    public var discarded: [String]
+    /**
+     * Merged sidecar as the user will see it if they confirm.
+     */
+    public var mergedFields: [GalleryFieldRow]
+    /**
+     * Fields that differ. Empty when [`MergeKind::Auto`] — always empty here.
+     */
+    public var fields: [ConflictFieldPreview]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Group id the shell hands back to [`ConflictSession::resolve_group`].
+         */id: String, 
+        /**
+         * Surviving file name.
+         */title: String, 
+        /**
+         * Auto / choice / deleted-versus-modified / keep-one.
+         */kind: MergeKind, 
+        /**
+         * Copy basenames that will be deleted on confirm.
+         */discarded: [String], 
+        /**
+         * Merged sidecar as the user will see it if they confirm.
+         */mergedFields: [GalleryFieldRow], 
+        /**
+         * Fields that differ. Empty when [`MergeKind::Auto`] — always empty here.
+         */fields: [ConflictFieldPreview]) {
+        self.id = id
+        self.title = title
+        self.kind = kind
+        self.discarded = discarded
+        self.mergedFields = mergedFields
+        self.fields = fields
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ConflictPreview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictPreview {
+        return
+            try ConflictPreview(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeMergeKind.read(from: &buf), 
+                discarded: FfiConverterSequenceString.read(from: &buf), 
+                mergedFields: FfiConverterSequenceTypeGalleryFieldRow.read(from: &buf), 
+                fields: FfiConverterSequenceTypeConflictFieldPreview.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ConflictPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterTypeMergeKind.write(value.kind, into: &buf)
+        FfiConverterSequenceString.write(value.discarded, into: &buf)
+        FfiConverterSequenceTypeGalleryFieldRow.write(value.mergedFields, into: &buf)
+        FfiConverterSequenceTypeConflictFieldPreview.write(value.fields, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictPreview_lift(_ buf: RustBuffer) throws -> ConflictPreview {
+    return try FfiConverterTypeConflictPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictPreview_lower(_ value: ConflictPreview) -> RustBuffer {
+    return FfiConverterTypeConflictPreview.lower(value)
+}
+
+
+/**
+ * Display-ready conflict group plus typed disposition.
+ *
+ * R6 role: command DTO.
+ */
+public struct ConflictRow: Equatable, Hashable {
+    /**
+     * Folder-relative group key handed back to preview / resolve / keep.
+     */
+    public var id: String
+    /**
+     * Same as [`Self::id`].
+     */
+    public var title: String
+    /**
+     * Human-readable number of copies.
+     */
+    public var subtitle: String
+    /**
+     * Human-readable disposition.
+     */
+    public var trailing: String
+    /**
+     * Typed disposition for shell control flow.
+     */
+    public var disposition: MergeKind
+    /**
+     * XMP merge vs image keep-one. The sheet branches on this.
+     */
+    public var kind: ConflictKind
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Folder-relative group key handed back to preview / resolve / keep.
+         */id: String, 
+        /**
+         * Same as [`Self::id`].
+         */title: String, 
+        /**
+         * Human-readable number of copies.
+         */subtitle: String, 
+        /**
+         * Human-readable disposition.
+         */trailing: String, 
+        /**
+         * Typed disposition for shell control flow.
+         */disposition: MergeKind, 
+        /**
+         * XMP merge vs image keep-one. The sheet branches on this.
+         */kind: ConflictKind) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.trailing = trailing
+        self.disposition = disposition
+        self.kind = kind
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ConflictRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictRow {
+        return
+            try ConflictRow(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterString.read(from: &buf), 
+                trailing: FfiConverterString.read(from: &buf), 
+                disposition: FfiConverterTypeMergeKind.read(from: &buf), 
+                kind: FfiConverterTypeConflictKind.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ConflictRow, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.subtitle, into: &buf)
+        FfiConverterString.write(value.trailing, into: &buf)
+        FfiConverterTypeMergeKind.write(value.disposition, into: &buf)
+        FfiConverterTypeConflictKind.write(value.kind, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictRow_lift(_ buf: RustBuffer) throws -> ConflictRow {
+    return try FfiConverterTypeConflictRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictRow_lower(_ value: ConflictRow) -> RustBuffer {
+    return FfiConverterTypeConflictRow.lower(value)
+}
+
+
+/**
+ * R6 role: command DTO.
+ *
+ * One side of a conflicting field. XMP never emits field choices.
+ */
+public struct ConflictSide: Equatable, Hashable {
+    /**
+     * Copy basename or surviving path.
+     */
+    public var source: String
+    /**
+     * Formatted field value on that copy.
+     */
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Copy basename or surviving path.
+         */source: String, 
+        /**
+         * Formatted field value on that copy.
+         */value: String) {
+        self.source = source
+        self.value = value
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ConflictSide: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictSide: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictSide {
+        return
+            try ConflictSide(
+                source: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ConflictSide, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.source, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictSide_lift(_ buf: RustBuffer) throws -> ConflictSide {
+    return try FfiConverterTypeConflictSide.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictSide_lower(_ value: ConflictSide) -> RustBuffer {
+    return FfiConverterTypeConflictSide.lower(value)
+}
+
+
+/**
  * One detection as the last run assigned it. SQLite, not the sidecar.
  *
  * R6 role: command DTO.
@@ -5657,6 +7268,95 @@ public func FfiConverterTypeFaceSplitCommandResult_lower(_ value: FaceSplitComma
 
 
 /**
+ * `field-row` (ADR 0004 R4). Sidecar preview fields are never editable.
+ */
+public struct GalleryFieldRow: Equatable, Hashable {
+    /**
+     * Optional row key (`tags`, `subject`, …).
+     */
+    public var id: String?
+    /**
+     * Field name, already chosen.
+     */
+    public var label: String
+    /**
+     * Field value, already formatted.
+     */
+    public var value: String
+    /**
+     * Always `false` on this surface.
+     */
+    public var editable: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Optional row key (`tags`, `subject`, …).
+         */id: String?, 
+        /**
+         * Field name, already chosen.
+         */label: String, 
+        /**
+         * Field value, already formatted.
+         */value: String, 
+        /**
+         * Always `false` on this surface.
+         */editable: Bool) {
+        self.id = id
+        self.label = label
+        self.value = value
+        self.editable = editable
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GalleryFieldRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGalleryFieldRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GalleryFieldRow {
+        return
+            try GalleryFieldRow(
+                id: FfiConverterOptionString.read(from: &buf), 
+                label: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf), 
+                editable: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GalleryFieldRow, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.id, into: &buf)
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+        FfiConverterBool.write(value.editable, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGalleryFieldRow_lift(_ buf: RustBuffer) throws -> GalleryFieldRow {
+    return try FfiConverterTypeGalleryFieldRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGalleryFieldRow_lower(_ value: GalleryFieldRow) -> RustBuffer {
+    return FfiConverterTypeGalleryFieldRow.lower(value)
+}
+
+
+/**
  * Display-ready ADR 0004 media item.
  */
 public struct GalleryMediaItem: Equatable, Hashable {
@@ -6363,6 +8063,87 @@ public func FfiConverterTypeHostWallClock_lift(_ buf: RustBuffer) throws -> Host
 #endif
 public func FfiConverterTypeHostWallClock_lower(_ value: HostWallClock) -> RustBuffer {
     return FfiConverterTypeHostWallClock.lower(value)
+}
+
+
+/**
+ * Keep-one candidates for an image-file group. Does not write.
+ *
+ * R6 role: command DTO.
+ */
+public struct ImageConflictPreview: Equatable, Hashable {
+    /**
+     * Group id the shell hands back to [`ConflictSession::keep_image_copy`].
+     */
+    public var id: String
+    /**
+     * Surviving file name (`photo.heic`).
+     */
+    public var title: String
+    /**
+     * Candidate names: surviving first when it exists, then conflict copies.
+     */
+    public var copies: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Group id the shell hands back to [`ConflictSession::keep_image_copy`].
+         */id: String, 
+        /**
+         * Surviving file name (`photo.heic`).
+         */title: String, 
+        /**
+         * Candidate names: surviving first when it exists, then conflict copies.
+         */copies: [String]) {
+        self.id = id
+        self.title = title
+        self.copies = copies
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ImageConflictPreview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeImageConflictPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ImageConflictPreview {
+        return
+            try ImageConflictPreview(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                copies: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ImageConflictPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterSequenceString.write(value.copies, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeImageConflictPreview_lift(_ buf: RustBuffer) throws -> ImageConflictPreview {
+    return try FfiConverterTypeImageConflictPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeImageConflictPreview_lower(_ value: ImageConflictPreview) -> RustBuffer {
+    return FfiConverterTypeImageConflictPreview.lower(value)
 }
 
 
@@ -7181,6 +8962,73 @@ public func FfiConverterTypeParsedSidecarHost_lower(_ value: ParsedSidecarHost) 
 
 
 /**
+ * Display-ready link resolution for one `People/…` tag.
+ *
+ * R6 role: command DTO.
+ */
+public struct PersonLinkResolution: Equatable, Hashable {
+    public var kind: PersonLinkKind
+    public var contactId: String?
+    public var givenName: String
+    public var familyName: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: PersonLinkKind, contactId: String?, givenName: String, familyName: String) {
+        self.kind = kind
+        self.contactId = contactId
+        self.givenName = givenName
+        self.familyName = familyName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PersonLinkResolution: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonLinkResolution: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonLinkResolution {
+        return
+            try PersonLinkResolution(
+                kind: FfiConverterTypePersonLinkKind.read(from: &buf), 
+                contactId: FfiConverterOptionString.read(from: &buf), 
+                givenName: FfiConverterString.read(from: &buf), 
+                familyName: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PersonLinkResolution, into buf: inout [UInt8]) {
+        FfiConverterTypePersonLinkKind.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.contactId, into: &buf)
+        FfiConverterString.write(value.givenName, into: &buf)
+        FfiConverterString.write(value.familyName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonLinkResolution_lift(_ buf: RustBuffer) throws -> PersonLinkResolution {
+    return try FfiConverterTypePersonLinkResolution.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonLinkResolution_lower(_ value: PersonLinkResolution) -> RustBuffer {
+    return FfiConverterTypePersonLinkResolution.lower(value)
+}
+
+
+/**
  * Projected state plus non-fatal append-only-log diagnostics.
  *
  * R6 role: structure DTO.
@@ -7649,6 +9497,110 @@ public func FfiConverterTypePlacesRunSummary_lower(_ value: PlacesRunSummary) ->
 
 
 /**
+ * What one [`LibraryIndex::remove_photos`] produced.
+ *
+ * Structure + generation only (ADR 0003). The host already has the photo
+ * records; this names which ids left the table and the new window guard.
+ *
+ * R6 role: structure DTO.
+ */
+public struct RemovePhotosResult: Equatable, Hashable {
+    /**
+     * Canonical ids that were in the table and are now gone.
+     */
+    public var removedIds: [String]
+    /**
+     * Window guard after the rewrite. Old `photo_window` calls are stale.
+     */
+    public var generation: UInt64
+    /**
+     * Photos left in the table.
+     */
+    public var photoCount: UInt32
+    /**
+     * Current Photos-screen projection with the dropped ids filtered out.
+     */
+    public var visiblePhotoIds: [String]
+    /**
+     * True when the table is empty after the call.
+     */
+    public var empty: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Canonical ids that were in the table and are now gone.
+         */removedIds: [String], 
+        /**
+         * Window guard after the rewrite. Old `photo_window` calls are stale.
+         */generation: UInt64, 
+        /**
+         * Photos left in the table.
+         */photoCount: UInt32, 
+        /**
+         * Current Photos-screen projection with the dropped ids filtered out.
+         */visiblePhotoIds: [String], 
+        /**
+         * True when the table is empty after the call.
+         */empty: Bool) {
+        self.removedIds = removedIds
+        self.generation = generation
+        self.photoCount = photoCount
+        self.visiblePhotoIds = visiblePhotoIds
+        self.empty = empty
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RemovePhotosResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRemovePhotosResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemovePhotosResult {
+        return
+            try RemovePhotosResult(
+                removedIds: FfiConverterSequenceString.read(from: &buf), 
+                generation: FfiConverterUInt64.read(from: &buf), 
+                photoCount: FfiConverterUInt32.read(from: &buf), 
+                visiblePhotoIds: FfiConverterSequenceString.read(from: &buf), 
+                empty: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RemovePhotosResult, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.removedIds, into: &buf)
+        FfiConverterUInt64.write(value.generation, into: &buf)
+        FfiConverterUInt32.write(value.photoCount, into: &buf)
+        FfiConverterSequenceString.write(value.visiblePhotoIds, into: &buf)
+        FfiConverterBool.write(value.empty, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemovePhotosResult_lift(_ buf: RustBuffer) throws -> RemovePhotosResult {
+    return try FfiConverterTypeRemovePhotosResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRemovePhotosResult_lower(_ value: RemovePhotosResult) -> RustBuffer {
+    return FfiConverterTypeRemovePhotosResult.lower(value)
+}
+
+
+/**
  * Everything one pass produces.
  *
  * R6 role: host-port DTO.
@@ -7672,16 +9624,16 @@ public struct ScanCatalogHost: Equatable, Hashable {
      */
     public var sidecarManifest: [ScannedSidecarHost]
     /**
-     * Paths seen now and absent from the cache.
+     * Paths seen now and absent from the cache. NFC.
      */
     public var addedPaths: [String]
     /**
      * Paths in the cache and not seen now, excluding anything under a failed
-     * directory.
+     * directory. NFC.
      */
     public var removedPaths: [String]
     /**
-     * Paths whose size or mtime changed.
+     * Paths whose size or mtime changed. NFC.
      */
     public var modifiedPaths: [String]
     /**
@@ -7710,14 +9662,14 @@ public struct ScanCatalogHost: Equatable, Hashable {
          * One row per image that has a `<basename>.xmp` beside it.
          */sidecarManifest: [ScannedSidecarHost], 
         /**
-         * Paths seen now and absent from the cache.
+         * Paths seen now and absent from the cache. NFC.
          */addedPaths: [String], 
         /**
          * Paths in the cache and not seen now, excluding anything under a failed
-         * directory.
+         * directory. NFC.
          */removedPaths: [String], 
         /**
-         * Paths whose size or mtime changed.
+         * Paths whose size or mtime changed. NFC.
          */modifiedPaths: [String], 
         /**
          * Decomposed paths of directories whose listing failed.
@@ -7805,6 +9757,7 @@ public struct ScanCommand: Equatable, Hashable {
     public var reuseCached: Bool
     /**
      * Last pass's photos. Carries EXIF, tags and GPS forward.
+     * Inserted into the scan cache under the NFC form of `path`.
      */
     public var cachedPhotos: [ScannedMediaHost]
     /**
@@ -7821,6 +9774,7 @@ public struct ScanCommand: Equatable, Hashable {
          */reuseCached: Bool, 
         /**
          * Last pass's photos. Carries EXIF, tags and GPS forward.
+         * Inserted into the scan cache under the NFC form of `path`.
          */cachedPhotos: [ScannedMediaHost], 
         /**
          * Last pass's sidecar rows. A hit here is what lets a light scan skip
@@ -9587,6 +11541,189 @@ public func FfiConverterTypeViewStructure_lower(_ value: ViewStructure) -> RustB
 
 
 /**
+ * Why an analysis call failed.
+ */
+public 
+enum AnalysisError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    /**
+     * `start` / `start_one` while a run is already in flight.
+     */
+    case AlreadyRunning
+    /**
+     * A filesystem operation failed, or the OS refused a worker thread.
+     */
+    case Io(
+        /**
+         * The path involved, when there is one.
+         */path: String, 
+        /**
+         * Platform message; for logs only.
+         */detail: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension AnalysisError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAnalysisError: FfiConverterRustBuffer {
+    typealias SwiftType = AnalysisError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AnalysisError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .AlreadyRunning
+        case 2: return .Io(
+            path: try FfiConverterString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AnalysisError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case .AlreadyRunning:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .Io(path,detail):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisError_lift(_ buf: RustBuffer) throws -> AnalysisError {
+    return try FfiConverterTypeAnalysisError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisError_lower(_ value: AnalysisError) -> RustBuffer {
+    return FfiConverterTypeAnalysisError.lower(value)
+}
+
+
+/**
+ * Which phase the banner is showing.
+ */
+
+public enum AnalysisPhase: Equatable, Hashable {
+    
+    /**
+     * MobileCLIP tags.
+     */
+    case tagging
+    /**
+     * Detect / embed / cluster.
+     */
+    case faces
+    /**
+     * Offline gazetteer + Places tags.
+     */
+    case places
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension AnalysisPhase: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAnalysisPhase: FfiConverterRustBuffer {
+    typealias SwiftType = AnalysisPhase
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AnalysisPhase {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .tagging
+        
+        case 2: return .faces
+        
+        case 3: return .places
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AnalysisPhase, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .tagging:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .faces:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .places:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisPhase_lift(_ buf: RustBuffer) throws -> AnalysisPhase {
+    return try FfiConverterTypeAnalysisPhase.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAnalysisPhase_lower(_ value: AnalysisPhase) -> RustBuffer {
+    return FfiConverterTypeAnalysisPhase.lower(value)
+}
+
+
+
+/**
  * Where a cluster stands with the user.
  */
 
@@ -9677,6 +11814,244 @@ public func FfiConverterTypeClusterState_lift(_ buf: RustBuffer) throws -> Clust
 #endif
 public func FfiConverterTypeClusterState_lower(_ value: ClusterState) -> RustBuffer {
     return FfiConverterTypeClusterState.lower(value)
+}
+
+
+
+/**
+ * Typed failures (ADR 0003 R8).
+ */
+public 
+enum ConflictError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    /**
+     * Folder cannot be read or written.
+     */
+    case Io(
+        /**
+         * Log text, not a match key.
+         */message: String, 
+        /**
+         * Whether the shell should offer a retry.
+         */userActionable: Bool
+    )
+    /**
+     * No group with that id, or the keep-one name is not in the group.
+     */
+    case NotFound
+    /**
+     * The id names an image-file group; only `.xmp` groups merge.
+     */
+    case NotAnXmpGroup(
+        /**
+         * Display-ready recovery message.
+         */message: String, 
+        /**
+         * The user can pick a different group.
+         */userActionable: Bool
+    )
+    /**
+     * The id names an `.xmp` group; only image groups keep-one.
+     */
+    case NotAnImageGroup(
+        /**
+         * Display-ready recovery message.
+         */message: String, 
+        /**
+         * The user can pick a different group.
+         */userActionable: Bool
+    )
+    /**
+     * A sidecar could not be parsed or merged.
+     */
+    case Sidecar(
+        /**
+         * Parser or merge message; for logs and recovery copy.
+         */message: String, 
+        /**
+         * The user can fix the sidecar bytes.
+         */userActionable: Bool
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension ConflictError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictError: FfiConverterRustBuffer {
+    typealias SwiftType = ConflictError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Io(
+            message: try FfiConverterString.read(from: &buf), 
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
+        case 2: return .NotFound
+        case 3: return .NotAnXmpGroup(
+            message: try FfiConverterString.read(from: &buf), 
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
+        case 4: return .NotAnImageGroup(
+            message: try FfiConverterString.read(from: &buf), 
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
+        case 5: return .Sidecar(
+            message: try FfiConverterString.read(from: &buf), 
+            userActionable: try FfiConverterBool.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ConflictError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .Io(message,userActionable):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+            
+        
+        case .NotFound:
+            writeInt(&buf, Int32(2))
+        
+        
+        case let .NotAnXmpGroup(message,userActionable):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+            
+        
+        case let .NotAnImageGroup(message,userActionable):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+            
+        
+        case let .Sidecar(message,userActionable):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(message, into: &buf)
+            FfiConverterBool.write(userActionable, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictError_lift(_ buf: RustBuffer) throws -> ConflictError {
+    return try FfiConverterTypeConflictError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictError_lower(_ value: ConflictError) -> RustBuffer {
+    return FfiConverterTypeConflictError.lower(value)
+}
+
+
+/**
+ * Which files a conflict group is about. Shells branch on this before
+ * [`MergeKind`].
+ */
+
+public enum ConflictKind: Equatable, Hashable {
+    
+    /**
+     * `.xmp` sidecar. [`ConflictSession::resolve_group`] merges.
+     */
+    case xmp
+    /**
+     * Image (or other non-`.xmp`) file. [`ConflictSession::keep_image_copy`]
+     * keeps one copy. No merge.
+     */
+    case image
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ConflictKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConflictKind: FfiConverterRustBuffer {
+    typealias SwiftType = ConflictKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConflictKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .xmp
+        
+        case 2: return .image
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ConflictKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .xmp:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .image:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictKind_lift(_ buf: RustBuffer) throws -> ConflictKind {
+    return try FfiConverterTypeConflictKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConflictKind_lower(_ value: ConflictKind) -> RustBuffer {
+    return FfiConverterTypeConflictKind.lower(value)
 }
 
 
@@ -10393,6 +12768,105 @@ public func FfiConverterTypeMemoryKind_lower(_ value: MemoryKind) -> RustBuffer 
 
 
 /**
+ * Semantic conflict disposition. Shells use this for control flow.
+ *
+ * [`MergeKind::Choice`] is part of the Contacts-shaped enum and is never
+ * emitted. XMP is [`MergeKind::Auto`] or [`MergeKind::DeletedVersusModified`].
+ * Image groups are [`MergeKind::KeepOne`].
+ */
+
+public enum MergeKind: Equatable, Hashable {
+    
+    /**
+     * All sidecar fields merge deterministically.
+     */
+    case auto
+    /**
+     * At least one field requires a user choice. Never produced here.
+     */
+    case choice
+    /**
+     * The surviving sidecar disappeared while a copy retains the data.
+     */
+    case deletedVersusModified
+    /**
+     * User must pick one file. Image groups only. Not an XMP field choice.
+     */
+    case keepOne
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension MergeKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMergeKind: FfiConverterRustBuffer {
+    typealias SwiftType = MergeKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MergeKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .auto
+        
+        case 2: return .choice
+        
+        case 3: return .deletedVersusModified
+        
+        case 4: return .keepOne
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MergeKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .auto:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .choice:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .deletedVersusModified:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .keepOne:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMergeKind_lift(_ buf: RustBuffer) throws -> MergeKind {
+    return try FfiConverterTypeMergeKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMergeKind_lower(_ value: MergeKind) -> RustBuffer {
+    return FfiConverterTypeMergeKind.lower(value)
+}
+
+
+
+/**
  * Where a resolved pack directory came from.
  */
 
@@ -10463,6 +12937,89 @@ public func FfiConverterTypePackSource_lift(_ buf: RustBuffer) throws -> PackSou
 #endif
 public func FfiConverterTypePackSource_lower(_ value: PackSource) -> RustBuffer {
     return FfiConverterTypePackSource.lower(value)
+}
+
+
+
+/**
+ * UI link kind. Dangling manual ids are [`Self::Unlinked`].
+ */
+
+public enum PersonLinkKind: Equatable, Hashable {
+    
+    case unlinked
+    case disabled
+    case manual
+    case auto
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PersonLinkKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePersonLinkKind: FfiConverterRustBuffer {
+    typealias SwiftType = PersonLinkKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PersonLinkKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .unlinked
+        
+        case 2: return .disabled
+        
+        case 3: return .manual
+        
+        case 4: return .auto
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PersonLinkKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .unlinked:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .disabled:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .manual:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .auto:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonLinkKind_lift(_ buf: RustBuffer) throws -> PersonLinkKind {
+    return try FfiConverterTypePersonLinkKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePersonLinkKind_lower(_ value: PersonLinkKind) -> RustBuffer {
+    return FfiConverterTypePersonLinkKind.lower(value)
 }
 
 
@@ -11593,6 +14150,54 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeAnalysisProgressListener: FfiConverterRustBuffer {
+    typealias SwiftType = AnalysisProgressListener?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAnalysisProgressListener.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAnalysisProgressListener.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeHeicDecoder: FfiConverterRustBuffer {
+    typealias SwiftType = HeicDecoder?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeHeicDecoder.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeHeicDecoder.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypePlacesProgressListener: FfiConverterRustBuffer {
     typealias SwiftType = PlacesProgressListener?
 
@@ -11633,6 +14238,54 @@ fileprivate struct FfiConverterOptionTypeScanProgressListener: FfiConverterRustB
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeScanProgressListener.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeAnalysisProgress: FfiConverterRustBuffer {
+    typealias SwiftType = AnalysisProgress?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAnalysisProgress.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAnalysisProgress.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeAnalysisRunSummary: FfiConverterRustBuffer {
+    typealias SwiftType = AnalysisRunSummary?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAnalysisRunSummary.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAnalysisRunSummary.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11705,6 +14358,30 @@ fileprivate struct FfiConverterOptionTypeModelPackHostResolution: FfiConverterRu
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeModelPackHostResolution.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePlacesRunSummary: FfiConverterRustBuffer {
+    typealias SwiftType = PlacesRunSummary?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePlacesRunSummary.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePlacesRunSummary.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11884,6 +14561,81 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeConflictFieldPreview: FfiConverterRustBuffer {
+    typealias SwiftType = [ConflictFieldPreview]
+
+    public static func write(_ value: [ConflictFieldPreview], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeConflictFieldPreview.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ConflictFieldPreview] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ConflictFieldPreview]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeConflictFieldPreview.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeConflictRow: FfiConverterRustBuffer {
+    typealias SwiftType = [ConflictRow]
+
+    public static func write(_ value: [ConflictRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeConflictRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ConflictRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ConflictRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeConflictRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeConflictSide: FfiConverterRustBuffer {
+    typealias SwiftType = [ConflictSide]
+
+    public static func write(_ value: [ConflictSide], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeConflictSide.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ConflictSide] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ConflictSide]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeConflictSide.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeFaceAssignmentCommandResult: FfiConverterRustBuffer {
     typealias SwiftType = [FaceAssignmentCommandResult]
 
@@ -12001,6 +14753,31 @@ fileprivate struct FfiConverterSequenceTypeFacePhotoCommandResult: FfiConverterR
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeFacePhotoCommandResult.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGalleryFieldRow: FfiConverterRustBuffer {
+    typealias SwiftType = [GalleryFieldRow]
+
+    public static func write(_ value: [GalleryFieldRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGalleryFieldRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GalleryFieldRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GalleryFieldRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGalleryFieldRow.read(from: &buf))
         }
         return seq
     }
@@ -12532,6 +15309,17 @@ public func stableUuid(input: String) -> String  {
 })
 }
 /**
+ * Syncthing conflict-copy predicate (ADR 0005 R7).
+ */
+public func isConflictName(name: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_is_conflict_name(
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+})
+}
+/**
  * Named beats unnamed, then size, then the lower id. `None` for a self-merge.
  */
 public func faceMergeDirection(a: FaceMergeCommandSide, b: FaceMergeCommandSide) -> FaceMergeCommand?  {
@@ -12577,6 +15365,36 @@ public func scheduledMemoryHorizonDays() -> Int64  {
     return try!  FfiConverterInt64.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_gallery_ffi_fn_func_scheduled_memory_horizon_days(uniffiCallStatus
+    )
+})
+}
+/**
+ * `ContactLinker.linkState` — same indexes memories use.
+ */
+public func personLinkState(personPath: String, displayName: String, contacts: [MemoryContactCommandItem], links: [MemoryPersonCommandItem]) -> PersonLinkResolution  {
+    return try!  FfiConverterTypePersonLinkResolution_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_person_link_state(
+        FfiConverterString.lower(personPath),
+        FfiConverterString.lower(displayName),
+        FfiConverterSequenceTypeMemoryContactCommandItem.lower(contacts),
+        FfiConverterSequenceTypeMemoryPersonCommandItem.lower(links),uniffiCallStatus
+    )
+})
+}
+/**
+ * `PeopleStore.orderedVisiblePeople`.
+ */
+public func visiblePeople(people: [TagStructureItem], hidden: [String], featured: [String], now: Double, recencyGated: Bool, cap: UInt32?) -> [TagStructureItem]  {
+    return try!  FfiConverterSequenceTypeTagStructureItem.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_visible_people(
+        FfiConverterSequenceTypeTagStructureItem.lower(people),
+        FfiConverterSequenceString.lower(hidden),
+        FfiConverterSequenceString.lower(featured),
+        FfiConverterDouble.lower(now),
+        FfiConverterBool.lower(recencyGated),
+        FfiConverterOptionUInt32.lower(cap),uniffiCallStatus
     )
 })
 }
@@ -12871,6 +15689,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_func_stable_uuid() != 60971) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_func_is_conflict_name() != 42895) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_func_face_merge_direction() != 11517) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12881,6 +15702,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_scheduled_memory_horizon_days() != 19202) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_person_link_state() != 34004) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_visible_people() != 13372) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_person_log_append() != 29822) {
@@ -12941,6 +15768,45 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_resolve_model_pack() != 25169) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_analysisprogresslistener_on_progress() != 40414) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_analysisprogresslistener_on_finished() != 30380) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_analysissession_cancel() != 23433) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_analysissession_is_running() != 17291) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_analysissession_last_summary() != 35383) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_analysissession_progress() != 7629) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_analysissession_start() != 30337) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_analysissession_start_one() != 21369) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_conflictsession_conflict_preview() != 59695) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_conflictsession_conflict_rows() != 14913) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_conflictsession_image_preview() != 45359) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_conflictsession_keep_image_copy() != 46274) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_conflictsession_resolve_group() != 58281) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_faceprogresslistener_on_progress() != 64966) {
@@ -13036,28 +15902,46 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_libraryindex_build_with_time_zone_offsets() != 59277) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_collection_structure() != 62049) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_collection_structure() != 4973) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_collection_window() != 56367) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_collection_window() != 22085) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_compute_scheduled() != 54446) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_photo_ids() != 1532) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_export_folders() != 53245) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_structure() != 17548) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_featured_photo_id() != 39730) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_window() != 24140) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_photo_ids() != 48517) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_people_structure() != 61355) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_structure() != 26305) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_people_window() != 54126) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_folder_window() != 32838) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_people_rail_structure() != 52506) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_people_rail_window() != 7787) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_people_structure() != 31709) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_people_window() != 21681) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_person_full_path() != 23276) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_person_state() != 23120) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_photo_count() != 25523) {
@@ -13075,13 +15959,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_libraryindex_rebuild() != 40374) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_remove_photos() != 11097) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_scan_order_photo_ids() != 8082) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_scheduled_photo_count() != 60180) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_search() != 14207) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_gallery_ffi_checksum_method_libraryindex_set_folders() != 7784) {
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_set_folders() != 23884) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_set_person_state() != 36138) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_set_photo_ids_view() != 26440) {
@@ -13103,6 +15996,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_libraryindex_view_generation() != 36832) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_method_libraryindex_visible_photo_ids() != 22375) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_method_memorygenerator_cancel() != 62443) {
@@ -13168,6 +16064,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_gallery_ffi_checksum_method_taggingsession_stats() != 56441) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_gallery_ffi_checksum_constructor_analysissession_new() != 18850) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_constructor_conflictsession_open() != 65298) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_gallery_ffi_checksum_constructor_facesession_new() != 28976) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -13193,6 +16095,7 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
 
+    uniffiCallbackInitAnalysisProgressListener()
     uniffiCallbackInitFaceProgressListener()
     uniffiCallbackInitHeicDecoder()
     uniffiCallbackInitPlacesProgressListener()

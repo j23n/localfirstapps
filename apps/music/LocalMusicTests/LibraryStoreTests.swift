@@ -29,6 +29,8 @@ final class LibraryStoreTests {
         #expect(track.title == "Café")
         #expect(track.coreID == Track.stableID(for: track.url).uuidString.lowercased())
         #expect(store.displayTracks.map(\.id) == store.tracks.map(\.id))
+        #expect(store.settingsInfoRows.map(\.id) == ["tracks", "playlists", "sync-conflicts"])
+        #expect(store.settingsInfoRows.first?.trailing == "1 track")
     }
 
     @Test func searchSortAndSectionsComeFromCoreProjection() async throws {
@@ -45,11 +47,13 @@ final class LibraryStoreTests {
         await store._testWaitForApply()
         #expect(store.displayTracks.map(\.title) == ["apple"])
         #expect(store.contentState == .content)
+        #expect(store.searchHits.contains { $0.kind == .track && $0.title == "apple" })
 
         store.searchText = "missing"
         await store._testWaitForApply()
         #expect(store.displayTracks.isEmpty)
         #expect(store.contentState == .noMatches)
+        #expect(store.searchHits.isEmpty)
     }
 
     @Test func typedPlaylistCreateAddRemoveAndDelete() async throws {

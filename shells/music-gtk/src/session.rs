@@ -177,6 +177,29 @@ impl<P: TransportPort> Session<P> {
         })
     }
 
+    /// Tracks for the add-tracks picker. Does not change the live library view.
+    pub fn picker_track_items(&self, query: &str) -> Result<Vec<MediaItem>, ShellError> {
+        let store = self.store()?;
+        let needle = query.trim().to_lowercase();
+        let mut items = store
+            .tracks()
+            .iter()
+            .filter(|track| {
+                needle.is_empty()
+                    || track.title.to_lowercase().contains(&needle)
+                    || track.artist.to_lowercase().contains(&needle)
+                    || track.album.to_lowercase().contains(&needle)
+            })
+            .map(media_item)
+            .collect::<Vec<_>>();
+        items.sort_by(|left, right| {
+            left.label
+                .cmp(&right.label)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(items)
+    }
+
     pub fn pending_metadata(
         &self,
         limit: usize,

@@ -22,7 +22,13 @@ final class LibraryAnalysisTests: XCTestCase {
             refresh: SidecarRefreshCoalescer(interval: FaceService.refreshInterval)
         )
         let places = CorePlaces(cacheURL: temp.appending("geocode-cache.json"))
-        return LibraryAnalysis(tagging: tagging, faces: faces, places: places)
+        return LibraryAnalysis(
+            tagging: tagging,
+            faces: faces,
+            places: places,
+            mlCacheURL: temp.appending("gallery-cache.sqlite"),
+            geoCacheURL: temp.appending("geocode-cache.json")
+        )
     }
 
     func testStartOneWithNothingEligibleReturnsWithoutRunning() async {
@@ -71,7 +77,13 @@ final class LibraryAnalysisTests: XCTestCase {
         var checks = 0
         faces.ensurePackChecked = { checks += 1 }
         let places = CorePlaces(cacheURL: temp.appending("geocode-cache.json"))
-        let analysis = LibraryAnalysis(tagging: tagging, faces: faces, places: places)
+        let analysis = LibraryAnalysis(
+            tagging: tagging,
+            faces: faces,
+            places: places,
+            mlCacheURL: temp.appending("gallery-cache.sqlite"),
+            geoCacheURL: temp.appending("geocode-cache.json")
+        )
         analysis.photos = { [] }
 
         await analysis.start()
@@ -80,6 +92,7 @@ final class LibraryAnalysisTests: XCTestCase {
         XCTAssertEqual(checks, 1, "a no-op scan never asked faces to refresh")
     }
 
+    /// Places-only Scan Photos goes through `AnalysisSession` (no pack).
     func testPlacesPhaseRunsWithoutAModelPack() async throws {
         let temp = makeTemp()
         let tagging = TaggingService(
@@ -96,7 +109,13 @@ final class LibraryAnalysisTests: XCTestCase {
         let photoURL = temp.appending("eiffel.jpg")
         XCTAssertTrue(FileManager.default.createFile(atPath: photoURL.path, contents: Data("jpeg".utf8)))
         let photo = PhotoFile.fixture(url: photoURL, gps: (lat: 48.8584, lon: 2.2945))
-        let run = LibraryAnalysis(tagging: tagging, faces: faces, places: places)
+        let run = LibraryAnalysis(
+            tagging: tagging,
+            faces: faces,
+            places: places,
+            mlCacheURL: temp.appending("gallery-cache.sqlite"),
+            geoCacheURL: temp.appending("geocode-cache.json")
+        )
         run.photos = { [photo] }
         var refreshed = false
         run.onSidecarsWritten = { refreshed = true }
@@ -137,7 +156,13 @@ final class LibraryAnalysisTests: XCTestCase {
             cacheDatabaseURL: temp.appending("gallery-cache.sqlite"),
             refresh: SidecarRefreshCoalescer(interval: FaceService.refreshInterval)
         )
-        let run = LibraryAnalysis(tagging: tagging, faces: faces, places: places)
+        let run = LibraryAnalysis(
+            tagging: tagging,
+            faces: faces,
+            places: places,
+            mlCacheURL: temp.appending("gallery-cache.sqlite"),
+            geoCacheURL: temp.appending("geocode-cache.json")
+        )
         let photoURL = temp.appending("rome.jpg")
         XCTAssertTrue(FileManager.default.createFile(atPath: photoURL.path, contents: Data("jpeg".utf8)))
         run.photos = {

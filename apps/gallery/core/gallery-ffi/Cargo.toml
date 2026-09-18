@@ -18,7 +18,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 # `shells/gallery-gtk` depends with `default-features = false` so `ort`
 # stays behind `ml` in the shells lockfile (Phase 5.3).
 default = ["ml"]
-ml = ["gallery-ml/ort-backend"]
+ml = ["gallery-ml/ort-backend", "gallery-session/ml"]
 
 [dependencies]
 gallery-index = { path = "../gallery-index" }

@@ -13,7 +13,8 @@ use music_core::{
     is_conflict_name as core_is_conflict_name, move_entry_logged,
     playlist_action_rows as core_playlist_action_rows,
     playlist_entry_rows as core_playlist_entry_rows, playlist_rows as core_playlist_rows,
-    remove_entries_logged, resolve_conflict_logged, set_library_view, ActionRole as CoreActionRole,
+    remove_entries_logged, resolve_conflict_logged, search_hits as core_search_hits,
+    set_library_view, settings_info_rows as core_settings_info_rows, ActionRole as CoreActionRole,
     AddTracksCommand as CoreAddTracksCommand, ConfinedVfs,
     ConflictDisposition as CoreConflictDisposition, CreatePlaylistCommand as CoreCreateCommand,
     DeletePlaylistCommand as CoreDeleteCommand, MetadataUpdate,
@@ -91,6 +92,36 @@ pub struct StatusRow {
     pub message: String,
     /// Semantic severity.
     pub severity: MusicStatusSeverity,
+}
+
+/// Kind of a global music search hit.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchKind {
+    /// One track.
+    Track,
+    /// An album location.
+    Album,
+    /// An artist location.
+    Artist,
+    /// A playlist.
+    Playlist,
+}
+
+/// One global search result. Shells pick an icon from [`SearchHit::symbol`].
+///
+/// R6 role: command DTO.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct SearchHit {
+    /// Track id, `album:{name}`, `artist:{name}`, or playlist id.
+    pub id: String,
+    /// Result kind.
+    pub kind: SearchKind,
+    /// Primary label.
+    pub title: String,
+    /// Secondary label.
+    pub subtitle: Option<String>,
+    /// Symbolic icon name from core `SearchKind::symbol`.
+    pub symbol: String,
 }
 
 /// Library content state after a synchronous folder open.
@@ -558,6 +589,24 @@ impl MusicSession {
             .collect())
     }
 
+    /// Global search across tracks, albums, artists, and playlists.
+    pub fn search_hits(&self, query: String) -> Result<Vec<SearchHit>, MusicError> {
+        let store = self.lock()?;
+        Ok(core_search_hits(&store, &query)
+            .into_iter()
+            .map(to_search)
+            .collect())
+    }
+
+    /// Core-formatted facts for the Settings Info section.
+    pub fn settings_info_rows(&self) -> Result<Vec<TextRow>, MusicError> {
+        let store = self.lock()?;
+        Ok(core_settings_info_rows(&store)
+            .into_iter()
+            .map(to_text)
+            .collect())
+    }
+
     /// Current token for typed playlist edits.
     pub fn playlist_content_token(&self, playlist_id: String) -> Result<String, MusicError> {
         Ok(self
@@ -761,6 +810,21 @@ fn to_text(row: music_core::TextRow) -> TextRow {
         title: row.title,
         subtitle: row.subtitle,
         trailing: row.trailing,
+    }
+}
+
+fn to_search(hit: music_core::SearchHit) -> SearchHit {
+    SearchHit {
+        id: hit.id,
+        kind: match hit.kind {
+            music_core::SearchKind::Track => SearchKind::Track,
+            music_core::SearchKind::Album => SearchKind::Album,
+            music_core::SearchKind::Artist => SearchKind::Artist,
+            music_core::SearchKind::Playlist => SearchKind::Playlist,
+        },
+        title: hit.title,
+        subtitle: hit.subtitle,
+        symbol: hit.kind.symbol().into(),
     }
 }
 

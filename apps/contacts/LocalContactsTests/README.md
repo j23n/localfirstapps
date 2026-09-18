@@ -27,9 +27,9 @@ root `apps.yml` job is canonical in this monorepo.
 
 | Suite | What it covers |
 | --- | --- |
-| `ContactTests` / `PostalAddressTests` | `displayName` / `initials` / `sortLetter`, `age`, `copy()` deep-copies addresses, `formatted` / `isEmpty`. |
+| `ContactTests` / `PostalAddressTests` | `displayName` / `initials` / title-first `sortLetter`, `age`, `copy()` deep-copies addresses, `formatted` / `isEmpty`. |
 | `ContactFieldRowsTests` | Detail grouping of core `FieldRow`s (hero skip, section titles, Phone→Notes order) and edit-draft initials. |
-| `ContactsStoreTests` | `allTags`, search, tag/conflict filters, locale-aware sort, `groupedContacts`, all four `layoutMode` cases, `--contacts-folder` launch-arg parsing. |
+| `ContactsStoreTests` | `allTags`, search, tag/conflict filters, locale-aware sort, title-first `groupedContacts`, `storedDeviceId` validation, all four `layoutMode` cases, `--contacts-folder` launch-arg parsing. |
 | `ContactsStoreFileSystemTests` | Load/save/delete through `ContactsSession`, ID migration, both layouts, filename collision, sibling preservation, disk sibling re-read, mixed-layout solo edit, corrupt-file sibling fallback, `save` with no folder, bulk delete, tag rewrite, Syncthing group list + auto-resolve + preview, folder log on save, `searchHits` / `fieldRows` / export. |
 | `ContactsStoreChangeEventTests` | `applyChangeEvents`: update/delete conflict state (no overwrite), empty list, unknown IDs, added → import + CN claim. |
 | `ContactMergeTests` | Field-by-field Apple/local selection, list replace (not merge-by-index), birthday, photo-only-if-nil, `conflictState` left intact. |

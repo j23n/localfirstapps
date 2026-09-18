@@ -537,8 +537,10 @@ impl LibraryIndex {
     /// so folders arrive on this second call after a scan or snapshot load.
     /// The recursive `PhotoFolder` tree is not stored and never returned.
     ///
-    /// iOS callers land in Phase 5.8. The FFI is shared; Swift still
-    /// uses the pre-window folder paths until that slice.
+    /// Both shells attach folders here after `build` so
+    /// [`Self::remove_photos`] can rewrite slices. Folder *windows*
+    /// (`folder_structure` / `folder_window`) stay GTK-only until
+    /// Phase 5.8; iOS still walks its own `PhotoFolder` tree for UI.
     pub fn set_folders(
         &self,
         folders: Vec<ScannedFolderHost>,
@@ -563,7 +565,7 @@ impl LibraryIndex {
     /// folder ids. Changing `parent_id` bumps [`Self::view_generation`] so a
     /// window cannot join rows to an older listing.
     ///
-    /// iOS callers land in Phase 5.8.
+    /// iOS folder UI still walks `PhotoFolder` (Phase 5.8).
     pub fn folder_structure(&self, parent_id: Option<String>) -> ViewStructure {
         let _span = localcore_trace::span("folders", "folder_structure");
         let mut guard = write(&self.inner);
@@ -582,7 +584,7 @@ impl LibraryIndex {
     /// (`total_photo_count`) as `"1 photo"` / `"N photos"`. Subtitle is the
     /// path leaf when it differs from the name.
     ///
-    /// iOS callers land in Phase 5.8.
+    /// iOS folder UI still walks `PhotoFolder` (Phase 5.8).
     pub fn folder_window(
         &self,
         section_id: String,
@@ -621,7 +623,7 @@ impl LibraryIndex {
     /// [`Self::set_photo_ids_view`]. Recursive totals stay on the text-row
     /// trailing from `total_photo_count`.
     ///
-    /// iOS callers land in Phase 5.8.
+    /// iOS folder UI still walks `PhotoFolder` (Phase 5.8).
     pub fn folder_photo_ids(&self, folder_id: String) -> Vec<String> {
         let _span = localcore_trace::span_always("folders", "folder_photo_ids");
         let ids = read(&self.inner).folders.own_photo_ids(&folder_id);
@@ -742,6 +744,7 @@ impl LibraryIndex {
     }
 
     /// Project `.gallery/log` onto the people lists. Bumps generation.
+    /// Both shells call this after attach and after every person mutation.
     pub fn set_person_state(&self, state: PersonStateStructure, now: f64) {
         let mut guard = write(&self.inner);
         guard.person_state = state;

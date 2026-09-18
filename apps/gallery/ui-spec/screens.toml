@@ -167,10 +167,10 @@ id = "sync-conflict-group"
 kind = "detail"
 title = "Sync Conflict"
 affordances = ["confirm"]
-# ADR 0005 R8–R11 on .xmp. Merge is already in gallery-meta
-# (union of human keywords; newest wins for core-owned fields).
-# Image bytes are never rewritten. FFI is 5.8.4; the sheet is
-# **5.8-xmp-ui**. Image-file groups are **5.8-xmp-image**.
+# ADR 0005 R8–R11 on .xmp and image-file groups. Merge is already in
+# gallery-meta (union of human keywords; newest wins for core-owned
+# fields). Image bytes are never rewritten. Kit routes this sheet;
+# XMP disposition is Auto only. Image groups are keep-one.
 sections = [
     { id = "fields", item = "field-row" },
     { id = "actions", item = "action-row" },

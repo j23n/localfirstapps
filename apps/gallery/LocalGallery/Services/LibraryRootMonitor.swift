@@ -32,7 +32,8 @@ final class LibraryRootMonitor {
     /// Tight enough that a Files deletion appears while Collections is still
     /// on screen; wide enough that a Syncthing burst is one rescan, not one
     /// per file.
-    static let refreshInterval: TimeInterval = 1.5
+    static let refreshInterval: TimeInterval =
+        Double(libraryWatchRefreshIntervalMs()) / 1000.0
 
     /// Separate from the tagging/faces coalescer — see the type comment.
     let coalescer: SidecarRefreshCoalescer

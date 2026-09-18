@@ -123,16 +123,16 @@ actor WidgetSnapshotExporter {
         }
 
         let recent = topRecentPhotos(from: inputs.allPhotos, limit: Self.maxIndexPhotos)
-        let folderIdByPhotoURL = Self.buildFolderIdMap(rootFolder: inputs.rootFolder)
+        let folderIdByPhotoID = Self.buildFolderIdMap(rootFolder: inputs.rootFolder)
         let indexRefs = recent.map { photo -> (PhotoFile, WidgetPhotoRef) in
-            (photo, makeRef(photo: photo, folderIdByURL: folderIdByPhotoURL))
+            (photo, makeRef(photo: photo, folderIdByPhotoID: folderIdByPhotoID))
         }
 
         let memoryItems = buildMemoryItems(
             memories: inputs.memories,
             scheduled: inputs.scheduled,
             allPhotos: inputs.allPhotos,
-            folderIdByURL: folderIdByPhotoURL
+            folderIdByPhotoID: folderIdByPhotoID
         )
 
         let folderEntries = Self.buildFolderCatalog(rootFolder: inputs.rootFolder, leaves: inputs.leafFolders)
@@ -221,7 +221,7 @@ actor WidgetSnapshotExporter {
         let dayKey = dayKeyFormatter.string(from: Calendar.current.startOfDay(for: Date()))
         hasher.update(data: Data("day:\(dayKey)\n".utf8))
 
-        let folderIdByURL = buildFolderIdMap(rootFolder: inputs.rootFolder)
+        let folderIdByPhotoID = buildFolderIdMap(rootFolder: inputs.rootFolder)
         let folderPaths = folderPathMap(rootFolder: inputs.rootFolder)
 
         // Photos: stable identity + everything the widget displays + the
@@ -234,7 +234,7 @@ actor WidgetSnapshotExporter {
             .prefix(maxIndexPhotos)
             .sorted { $0.id.uuidString < $1.id.uuidString }
         for p in recent {
-            hasher.update(data: Data(photoFingerprintLine(p, folderId: folderIdByURL[p.url] ?? "").utf8))
+            hasher.update(data: Data(photoFingerprintLine(p, folderId: folderIdByPhotoID[p.id] ?? "").utf8))
         }
 
         hasher.update(data: Data("tags:\n".utf8))
@@ -288,12 +288,14 @@ actor WidgetSnapshotExporter {
         return Array(sorted.prefix(limit))
     }
 
-    nonisolated private static func buildFolderIdMap(rootFolder: PhotoFolder?) -> [URL: String] {
-        var out: [URL: String] = [:]
+    /// Photo id → containing folder id. Folder identity is `PhotoFolder.id`
+    /// (`pathDescription` stays a human-readable parent chain).
+    nonisolated static func buildFolderIdMap(rootFolder: PhotoFolder?) -> [UUID: String] {
+        var out: [UUID: String] = [:]
         guard let root = rootFolder else { return out }
         func walk(_ folder: PhotoFolder) {
             let id = folder.id.uuidString
-            for photo in folder.photos { out[photo.url] = id }
+            for photo in folder.photos { out[photo.id] = id }
             for sub in folder.subfolders { walk(sub) }
         }
         walk(root)
@@ -312,10 +314,10 @@ actor WidgetSnapshotExporter {
         return parents
     }
 
-    private func makeRef(photo: PhotoFile, folderIdByURL: [URL: String]) -> WidgetPhotoRef {
+    private func makeRef(photo: PhotoFile, folderIdByPhotoID: [UUID: String]) -> WidgetPhotoRef {
         WidgetPhotoRef(
             id: photo.id.uuidString,
-            folderId: folderIdByURL[photo.url] ?? "",
+            folderId: folderIdByPhotoID[photo.id] ?? "",
             date: photo.dateTaken,
             tagPaths: photo.hierarchicalTags.map(\.fullPath),
             thumbnailFilename: photo.id.uuidString + ".jpg"
@@ -355,7 +357,7 @@ actor WidgetSnapshotExporter {
         memories: [Memory],
         scheduled: [ScheduledMemory],
         allPhotos: [PhotoFile],
-        folderIdByURL: [URL: String]
+        folderIdByPhotoID: [UUID: String]
     ) -> [MemorySnapshotItem] {
         let cal = Calendar.current
         let startOfToday = cal.startOfDay(for: Date())
@@ -365,7 +367,7 @@ actor WidgetSnapshotExporter {
 
         var items: [MemorySnapshotItem] = []
         for memory in memories {
-            let refs = orderedRefs(for: memory, photoByID: photoByID, folderIdByURL: folderIdByURL)
+            let refs = orderedRefs(for: memory, photoByID: photoByID, folderIdByPhotoID: folderIdByPhotoID)
             guard !refs.isEmpty else { continue }
             items.append(MemorySnapshotItem(
                 id: memory.id,
@@ -379,7 +381,7 @@ actor WidgetSnapshotExporter {
             ))
         }
         for entry in scheduled {
-            let refs = orderedRefs(for: entry.memory, photoByID: photoByID, folderIdByURL: folderIdByURL)
+            let refs = orderedRefs(for: entry.memory, photoByID: photoByID, folderIdByPhotoID: folderIdByPhotoID)
             guard !refs.isEmpty else { continue }
             items.append(MemorySnapshotItem(
                 id: entry.memory.id,
@@ -408,7 +410,7 @@ actor WidgetSnapshotExporter {
     private func orderedRefs(
         for memory: Memory,
         photoByID: [UUID: PhotoFile],
-        folderIdByURL: [URL: String]
+        folderIdByPhotoID: [UUID: String]
     ) -> [WidgetPhotoRef] {
         var seen = Set<UUID>()
         var ordered: [PhotoFile] = []
@@ -422,7 +424,7 @@ actor WidgetSnapshotExporter {
             ordered.append(photo)
             if ordered.count >= 12 { break }
         }
-        return ordered.map { makeRef(photo: $0, folderIdByURL: folderIdByURL) }
+        return ordered.map { makeRef(photo: $0, folderIdByPhotoID: folderIdByPhotoID) }
     }
 
     // MARK: - Thumbnails

@@ -10,8 +10,8 @@ license = "MPL-2.0"
 publish = false
 
 # Phase 5.3: Gallery path deps are resolved by this lockfile, not
-# `apps/gallery/core/Cargo.lock`. Keep these exact. `ort` is not listed
-# here — it stays behind `gallery-ffi` / `localgallery` `ml`.
+# `apps/gallery/core/Cargo.lock`. Keep these exact. `ort` comes in
+# through gallery-gtk's default `ml` feature.
 [workspace.dependencies]
 uniffi = { version = "0.32.0", default-features = false }
 image = { version = "=0.25.10", default-features = false, features = [

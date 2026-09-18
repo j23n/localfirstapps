@@ -169,6 +169,30 @@ final class PhotoDeleteTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: keepURL.path))
     }
 
+    func testDeleteGoesThroughTheCoreRemovePath() async {
+        let h = makeHarness()
+        let keepURL = h.tempDir.appending("keep.jpg")
+        let dropURL = h.tempDir.appending("drop.jpg")
+        write(keepURL)
+        write(dropURL)
+        let keep = PhotoFile.fixture(url: keepURL, tags: ["People/Alice"])
+        let drop = PhotoFile.fixture(url: dropURL, tags: ["People/Bob"])
+        h.store.apply(.scanResult(
+            photos: [keep, drop],
+            root: PhotoFolder.fixture(url: h.tempDir.url, photos: [keep, drop]),
+            persistCache: false
+        ))
+        await h.store.settleIndex()
+
+        _ = await h.store.deletePhotos([drop])
+        await h.store.settleIndex()
+
+        XCTAssertEqual(h.store.search(query: "").map(\.id), [keep.id])
+        XCTAssertNil(h.store.photo(byID: drop.id))
+        XCTAssertEqual(h.store.index.folderPhotoIDs(h.store.rootFolder!.id), [keep.id])
+        XCTAssertFalse(h.store.allTags.contains { $0.fullPath == "People/Bob" })
+    }
+
     func testAnAlreadyGonePhotoIsDroppedFromTheLibrary() async {
         let h = makeHarness()
         let jpg = h.tempDir.appending("ghost.jpg")

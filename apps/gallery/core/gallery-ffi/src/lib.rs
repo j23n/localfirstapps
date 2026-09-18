@@ -18,7 +18,7 @@
 //!   functions over an inputs snapshot; [`MemoryGenerator`] holds the
 //!   cancel flag.
 //! * [`places`]: offline place lookup and Places sidecar writes.
-//! * [`conflict`]: [`ConflictSession`] for Syncthing `.xmp` groups.
+//! * [`conflict`]: [`ConflictSession`] for Syncthing `.xmp` and image groups.
 //! * [`person_log`]: person-state append / read / project / UserDefaults migrate.
 //!
 //! Tagging and face sessions share one cache file: [`support`] holds
@@ -26,6 +26,7 @@
 
 uniffi::setup_scaffolding!("GalleryCore");
 
+pub mod analysis;
 pub mod conflict;
 pub mod faces;
 pub mod heic;
@@ -39,9 +40,13 @@ mod support;
 pub mod tagging;
 pub mod view;
 
+pub use analysis::{
+    AnalysisError, AnalysisPhase, AnalysisPhases, AnalysisProgress, AnalysisProgressListener,
+    AnalysisRunSummary, AnalysisSession,
+};
 pub use conflict::{
-    is_conflict_name, ConflictError, ConflictFieldPreview, ConflictPreview, ConflictRow,
-    ConflictSession, ConflictSide, GalleryFieldRow, MergeKind,
+    is_conflict_name, ConflictError, ConflictFieldPreview, ConflictKind, ConflictPreview,
+    ConflictRow, ConflictSession, ConflictSide, GalleryFieldRow, ImageConflictPreview, MergeKind,
 };
 pub use faces::{
     face_merge_direction, ClusterState, FaceAssignKind, FaceAssignmentCommandResult,

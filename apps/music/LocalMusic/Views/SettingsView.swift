@@ -58,18 +58,29 @@ struct SettingsView: View {
                 }
 
                 Section("Stats") {
-                    ShellTextRow(
-                        .init(
-                            title: "Total Songs",
-                            trailingValue: "\(library.tracks.count)"
+                    if library.settingsInfoRows.isEmpty {
+                        ShellTextRow(
+                            .init(
+                                title: "Tracks",
+                                trailingValue: "\(library.tracks.count)"
+                            )
                         )
-                    )
-                    ShellTextRow(
-                        .init(
-                            title: "Total Playlists",
-                            trailingValue: "\(library.playlists.count)"
+                        ShellTextRow(
+                            .init(
+                                title: "Playlists",
+                                trailingValue: "\(library.playlists.count)"
+                            )
                         )
-                    )
+                    } else {
+                        ForEach(library.settingsInfoRows, id: \.id) { row in
+                            ShellTextRow(
+                                .init(
+                                    title: row.title,
+                                    trailingValue: row.trailing
+                                )
+                            )
+                        }
+                    }
                 }
 
                 Section("Diagnostics") {

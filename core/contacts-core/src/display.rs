@@ -65,6 +65,20 @@ pub struct SearchHit {
     pub symbol: &'static str,
 }
 
+/// First alphabetic character of a list title, uppercased. `#` otherwise.
+///
+/// Both shells section the contact list with this so a folder cannot
+/// land under different letters on iOS vs GTK.
+#[must_use]
+pub fn list_section_key(title: &str) -> String {
+    title
+        .chars()
+        .find(|ch| ch.is_alphabetic())
+        .map(|ch| ch.to_uppercase().to_string())
+        .filter(|key| key.chars().next().is_some_and(char::is_alphabetic))
+        .unwrap_or_else(|| "#".into())
+}
+
 /// Sorted contact-list rows for `query` (core search).
 #[must_use]
 pub fn list_rows(store: &Store, query: &str) -> Vec<TextRow> {

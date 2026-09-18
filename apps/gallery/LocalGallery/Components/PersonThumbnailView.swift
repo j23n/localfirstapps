@@ -52,11 +52,17 @@ struct PersonThumbnailView: View {
         }
     }
 
-    /// URL plus the region, so two faces in the same group photo do not
-    /// reuse one view's crop when SwiftUI recycles the cell.
+    /// Photo id plus the region, so two faces in the same group photo do not
+    /// reuse one view's crop when SwiftUI recycles the cell, and NFC/NFD
+    /// spellings of one file share a task.
     private var cropTaskID: String {
-        guard let region else { return url.path }
-        return "\(url.path)#\(region.centerX),\(region.centerY),\(region.width),\(region.height)#\(Int(size))"
+        Self.cropTaskID(url: url, region: region, size: size)
+    }
+
+    static func cropTaskID(url: URL, region: FaceRegion?, size: CGFloat) -> String {
+        let id = PhotoFile.stableID(for: url).uuidString
+        guard let region else { return id }
+        return "\(id)#\(region.centerX),\(region.centerY),\(region.width),\(region.height)#\(Int(size))"
     }
 
     private func load() async {

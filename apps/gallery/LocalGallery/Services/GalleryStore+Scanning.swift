@@ -428,6 +428,7 @@ extension GalleryStore {
         // else misses the cache.
         if result.rootFolder != nil, !rootUnlistable {
             invalidateCachedImages(for: result.modifiedURLs)
+            refreshSyncConflicts()
         }
 
         return result

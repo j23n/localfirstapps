@@ -24,10 +24,10 @@ use shell_kit_gtk::{
     preferences_dialog, primary_action, primary_menu, progress_row, push_settings_subpage,
     search_entry, search_hit_row, settings_screen, sheet, status_row, text_row, ActionRole,
     ActionRowData, AdaptiveShell, ChoiceData, ChromeProgress, ConfirmData, EmptyCopy, EmptyKind,
-    FieldRowData, Filter, FilterControl, FormSheet, Leading, ListScreen, ListScreenBuilt,
-    ListSection, LogLevel, MediaItemData, MenuCommand, MusicScreen, NavRowData, PageChrome,
-    PrimaryMenu, ProgressDisplay, ProgressRowData, RootPage, SettingsGroup, SettingsScreen,
-    SheetSize, StatusRowData, StatusSeverity, TextRowData, WorkProgress,
+    EmptyState, FieldRowData, Filter, FilterControl, FormSheet, Leading, ListScreen,
+    ListScreenBuilt, ListSection, LogLevel, MediaItemData, MenuCommand, MusicScreen, NavRowData,
+    PageChrome, PrimaryMenu, ProgressDisplay, ProgressRowData, RootPage, SettingsGroup,
+    SettingsScreen, SheetSize, StatusRowData, StatusSeverity, TextRowData, WorkProgress,
 };
 
 use crate::mpris::MprisState;
@@ -41,6 +41,12 @@ const DIAGNOSTIC_CAPACITY: usize = 5_000;
 const NOW_PLAYING_WIDTH: i32 = 400;
 
 type AppSession = Session<Box<dyn crate::TransportPort>>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PlaylistEntryRef {
+    playlist_id: String,
+    entry_id: String,
+}
 
 #[derive(Clone, Default, PartialEq, Eq)]
 enum Drill {
@@ -1137,10 +1143,20 @@ impl Window {
     }
 
     fn append_track(&self, list: &gtk::ListBox, item: &music_core::MediaItem) {
+        self.append_track_row(list, item, None);
+    }
+
+    fn append_track_row(
+        &self,
+        list: &gtk::ListBox,
+        item: &music_core::MediaItem,
+        playlist: Option<PlaylistEntryRef>,
+    ) {
         let id = item.id.clone();
         let row = media_item(&to_media_data(item.clone(), self.texture_for(&id)));
         row.set_activatable(true);
         row.set_widget_name(&id);
+        self.attach_track_context_menu(&row, Some(id), playlist);
         list.append(&row);
     }
 
@@ -1329,6 +1345,9 @@ impl Window {
                     );
                     let row = search_hit_row(&hit.title, &subtitle, hit.kind.symbol());
                     row.set_widget_name(&hit.id);
+                    if matches!(hit.kind, music_core::SearchKind::Track) {
+                        self.attach_track_context_menu(&row, Some(hit.id.clone()), None);
+                    }
                     self.inner.search_results.append(&row);
                 }
             }
@@ -1604,12 +1623,27 @@ impl Window {
                     .playlist_entry_track_id(&detail.id, &entry.id);
                 if let Some(track_id) = track_id {
                     if let Some(item) = self.inner.session.borrow().track_item(&track_id) {
-                        self.append_track(&list, &item);
+                        self.append_track_row(
+                            &list,
+                            &item,
+                            Some(PlaylistEntryRef {
+                                playlist_id: detail.id.clone(),
+                                entry_id: entry.id.clone(),
+                            }),
+                        );
                         continue;
                     }
                 }
                 let row = text_row(&to_text_data(entry.clone()));
                 row.set_activatable(false);
+                self.attach_track_context_menu(
+                    &row,
+                    None,
+                    Some(PlaylistEntryRef {
+                        playlist_id: detail.id.clone(),
+                        entry_id: entry.id.clone(),
+                    }),
+                );
                 list.append(&row);
             }
         }
@@ -1687,48 +1721,78 @@ impl Window {
 
     fn present_add_tracks(&self, detail: crate::PlaylistDetailRows) {
         let _span = localcore_trace::span_always("music", "present_add_tracks");
-        let result = self
-            .inner
-            .session
-            .borrow_mut()
-            .library_rows(String::new(), SortOption::Title);
-        let library = match result {
-            Ok(rows) => rows,
-            Err(error) => {
-                self.report("playlist", "Could not load tracks", &error.to_string());
-                return;
-            }
-        };
+        let already_in = detail
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                self.inner
+                    .session
+                    .borrow()
+                    .playlist_entry_track_id(&detail.id, &entry.id)
+            })
+            .collect::<BTreeSet<_>>();
         let selected = Rc::new(RefCell::new(BTreeSet::<String>::new()));
-        let (list_scroll, list) = list_box_page();
-        for item in library
-            .sections
-            .into_iter()
-            .flat_map(|section| section.items)
-        {
-            let id = item.id.clone();
-            let row = media_item(&to_media_data(item.clone(), self.texture_for(&id)));
-            let check = gtk::CheckButton::new();
-            row.add_suffix(&check);
-            let picks = selected.clone();
-            check.connect_toggled(move |check| {
-                if check.is_active() {
-                    picks.borrow_mut().insert(id.clone());
-                } else {
-                    picks.borrow_mut().remove(&id);
-                }
-            });
-            list.append(&row);
+        let built = list_screen(&ListScreen {
+            search: true,
+            filter: None,
+            sections: vec![ListSection { heading: None }],
+            primary: None,
+            selection: None,
+            banner: None,
+            empty: Some(EmptyState {
+                kind: EmptyKind::NoMatches,
+                copy: EmptyCopy {
+                    title: "No tracks match".into(),
+                    description: Some("Try a different search.".into()),
+                    action: None,
+                },
+            }),
+        });
+        built.root.set_hexpand(true);
+        built.root.set_vexpand(true);
+        built.root.set_widget_name(route_id(MusicScreen::AddTracks));
+        if let Some(search) = &built.search {
+            search.set_placeholder_text(Some("Search library"));
         }
-        let save = primary_action("Save");
-        let column = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        column.set_widget_name(route_id(MusicScreen::AddTracks));
-        column.append(&list_scroll);
-        column.append(&save);
-        let dialog = sheet("Add Tracks", &column, SheetSize::Form);
+        let list = built.lists[0].clone();
+        let sheet = form_sheet(FormSheet {
+            title: "Add Tracks".into(),
+            cancel: "Cancel".into(),
+            confirm: "Add".into(),
+            body: built.root.clone().upcast(),
+        });
+        sheet.confirm.set_sensitive(false);
+        self.fill_add_track_list(&list, "", &already_in, &selected, &built, &sheet.confirm);
+        if let Some(search) = built.search.clone() {
+            let this = self.clone();
+            let list = list.clone();
+            let already_in = already_in.clone();
+            let selected = selected.clone();
+            let built = built.clone();
+            let confirm = sheet.confirm.clone();
+            search.connect_search_changed(move |entry| {
+                this.fill_add_track_list(
+                    &list,
+                    &entry.text(),
+                    &already_in,
+                    &selected,
+                    &built,
+                    &confirm,
+                );
+            });
+        }
+        let picks = selected.clone();
+        let confirm = sheet.confirm.clone();
+        list.connect_row_activated(move |_, row| {
+            if let Some(check) = find_widget::<gtk::CheckButton>(row) {
+                check.set_active(!check.is_active());
+                sync_add_confirm(&confirm, picks.borrow().len());
+            }
+        });
+        let dialog = sheet.dialog.clone();
         dialog.present(Some(&self.inner.window));
         let this = self.clone();
-        save.connect_clicked(move |_| {
+        sheet.confirm.connect_clicked(move |_| {
             let ids = selected.borrow().iter().cloned().collect::<Vec<_>>();
             if ids.is_empty() {
                 this.toast("Select at least one track");
@@ -1751,6 +1815,254 @@ impl Window {
                 }
             }
         });
+    }
+
+    fn fill_add_track_list(
+        &self,
+        list: &gtk::ListBox,
+        query: &str,
+        already_in: &BTreeSet<String>,
+        selected: &Rc<RefCell<BTreeSet<String>>>,
+        built: &ListScreenBuilt,
+        confirm: &gtk::Button,
+    ) {
+        clear_list(list);
+        let items = match self.inner.session.borrow().picker_track_items(query) {
+            Ok(items) => items
+                .into_iter()
+                .filter(|item| !already_in.contains(&item.id))
+                .collect::<Vec<_>>(),
+            Err(error) => {
+                self.report("playlist", "Could not load tracks", &error.to_string());
+                return;
+            }
+        };
+        if items.is_empty() {
+            built.show_empty();
+            sync_add_confirm(confirm, selected.borrow().len());
+            return;
+        }
+        built.show_lists();
+        for item in items {
+            let id = item.id.clone();
+            let row = media_item(&to_media_data(item, self.texture_for(&id)));
+            let check = gtk::CheckButton::new();
+            check.set_active(selected.borrow().contains(&id));
+            check.set_can_target(false);
+            row.add_prefix(&check);
+            row.set_activatable(true);
+            row.set_widget_name(&id);
+            let picks = selected.clone();
+            let confirm = confirm.clone();
+            check.connect_toggled(move |check| {
+                if check.is_active() {
+                    picks.borrow_mut().insert(id.clone());
+                } else {
+                    picks.borrow_mut().remove(&id);
+                }
+                sync_add_confirm(&confirm, picks.borrow().len());
+            });
+            list.append(&row);
+        }
+        sync_add_confirm(confirm, selected.borrow().len());
+    }
+
+    fn attach_track_context_menu(
+        &self,
+        widget: &impl IsA<gtk::Widget>,
+        track_id: Option<String>,
+        playlist: Option<PlaylistEntryRef>,
+    ) {
+        let widget = widget.clone().upcast::<gtk::Widget>();
+        let pending = Rc::new(RefCell::new(None::<(f64, f64)>));
+        let click = gtk::GestureClick::new();
+        click.set_button(0);
+        click.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let pending_press = pending.clone();
+        click.connect_pressed(move |gesture, n_press, x, y| {
+            if n_press != 1 {
+                return;
+            }
+            let Some(event) = gesture.current_event() else {
+                return;
+            };
+            if !event.triggers_context_menu() {
+                return;
+            }
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            pending_press.replace(Some((x, y)));
+        });
+        let this = self.clone();
+        let host = widget.clone();
+        let track_id_click = track_id.clone();
+        let playlist_click = playlist.clone();
+        click.connect_released(move |gesture, _, _, _| {
+            let Some((x, y)) = pending.take() else {
+                return;
+            };
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            this.popup_track_menu(
+                &host,
+                x,
+                y,
+                track_id_click.as_deref(),
+                playlist_click.as_ref(),
+            );
+        });
+        widget.add_controller(click);
+
+        let long = gtk::GestureLongPress::new();
+        long.set_touch_only(true);
+        let this = self.clone();
+        let host = widget.clone();
+        let track_id_long = track_id;
+        let playlist_long = playlist;
+        long.connect_pressed(move |gesture, x, y| {
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            this.popup_track_menu(
+                &host,
+                x,
+                y,
+                track_id_long.as_deref(),
+                playlist_long.as_ref(),
+            );
+        });
+        widget.add_controller(long);
+    }
+
+    fn popup_track_menu(
+        &self,
+        parent: &impl IsA<gtk::Widget>,
+        x: f64,
+        y: f64,
+        track_id: Option<&str>,
+        playlist: Option<&PlaylistEntryRef>,
+    ) {
+        let playlists = self
+            .inner
+            .session
+            .borrow()
+            .playlist_rows()
+            .unwrap_or_default();
+        let can_add = track_id.is_some() && !playlists.is_empty();
+        let can_remove = playlist.is_some();
+        if !can_add && !can_remove {
+            return;
+        }
+
+        let menu = gio::Menu::new();
+        let group = gio::SimpleActionGroup::new();
+        if can_add {
+            let submenu = gio::Menu::new();
+            for row in &playlists {
+                if playlist.is_some_and(|entry| entry.playlist_id == row.id) {
+                    continue;
+                }
+                let item = gio::MenuItem::new(Some(&row.title), None);
+                item.set_action_and_target_value(Some("track.add"), Some(&row.id.to_variant()));
+                submenu.append_item(&item);
+            }
+            if submenu.n_items() > 0 {
+                menu.append_submenu(Some("Add to Playlist"), &submenu);
+            }
+            let add = gio::SimpleAction::new("add", Some(glib::VariantTy::STRING));
+            let this = self.clone();
+            let track_id = track_id.expect("can_add requires a track").to_owned();
+            add.connect_activate(move |_, param| {
+                let Some(playlist_id) = param.and_then(|value| value.str().map(str::to_owned))
+                else {
+                    return;
+                };
+                this.add_track_to_playlist(&track_id, &playlist_id);
+            });
+            group.add_action(&add);
+        }
+        if let Some(entry) = playlist {
+            menu.append(Some("Remove from Playlist"), Some("track.remove"));
+            let remove = gio::SimpleAction::new("remove", None);
+            let this = self.clone();
+            let entry = entry.clone();
+            remove.connect_activate(move |_, _| {
+                this.remove_playlist_entry(&entry);
+            });
+            group.add_action(&remove);
+        }
+        if menu.n_items() == 0 {
+            return;
+        }
+
+        let parent = parent.as_ref().clone();
+        let popover = gtk::PopoverMenu::from_model(Some(&menu));
+        popover.insert_action_group("track", Some(&group));
+        popover.set_parent(&parent);
+        popover.set_halign(gtk::Align::Start);
+        popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
+            x.round() as i32,
+            y.round() as i32,
+            1,
+            1,
+        )));
+        popover.connect_closed(move |popover| {
+            popover.unparent();
+        });
+        popover.popup();
+    }
+
+    fn add_track_to_playlist(&self, track_id: &str, playlist_id: &str) {
+        let detail = match self.inner.session.borrow().playlist_detail(playlist_id) {
+            Ok(detail) => detail,
+            Err(error) => {
+                self.report("playlist", "Could not open playlist", &error.to_string());
+                return;
+            }
+        };
+        let name = detail.title.clone();
+        let result = self.inner.session.borrow_mut().add_tracks(
+            playlist_id.to_owned(),
+            detail.content_token,
+            vec![track_id.to_owned()],
+        );
+        match result {
+            Ok(_) => {
+                self.toast(&format!("Added to {name}"));
+                self.refill_playlists();
+                self.refill_settings();
+                if matches!(self.inner.drill.borrow().clone(), Drill::Playlist(id) if id == playlist_id)
+                {
+                    self.open_playlist_detail(playlist_id);
+                }
+            }
+            Err(error) => self.report("playlist", "Could not save playlist", &error.to_string()),
+        }
+    }
+
+    fn remove_playlist_entry(&self, entry: &PlaylistEntryRef) {
+        let detail = match self
+            .inner
+            .session
+            .borrow()
+            .playlist_detail(&entry.playlist_id)
+        {
+            Ok(detail) => detail,
+            Err(error) => {
+                self.report("playlist", "Could not open playlist", &error.to_string());
+                return;
+            }
+        };
+        let result = self.inner.session.borrow_mut().remove_entries(
+            entry.playlist_id.clone(),
+            detail.content_token,
+            vec![entry.entry_id.clone()],
+        );
+        match result {
+            Ok(_) => {
+                self.toast("Removed from playlist");
+                self.refill_playlists();
+                self.refill_settings();
+                self.open_playlist_detail(&entry.playlist_id);
+            }
+            Err(error) => self.report("playlist", "Could not save playlist", &error.to_string()),
+        }
     }
 
     fn present_edit_playlist(&self, detail: crate::PlaylistDetailRows) {
@@ -2291,6 +2603,16 @@ fn track_ids_in(list: &gtk::ListBox) -> Vec<String> {
         child = widget.next_sibling();
     }
     ids
+}
+
+fn sync_add_confirm(confirm: &gtk::Button, count: usize) {
+    if count == 0 {
+        confirm.set_label("Add");
+        confirm.set_sensitive(false);
+    } else {
+        confirm.set_label(&format!("Add ({count})"));
+        confirm.set_sensitive(true);
+    }
 }
 
 fn clear_list(list: &gtk::ListBox) {

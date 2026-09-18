@@ -21,7 +21,7 @@ import os
 ///    once, not once per frame.
 ///
 /// `@Observable` so view reads chained through the Store (`store.sortedPhotos`,
-/// `store.allTags`) re-render when a rebuild lands.
+/// `store.allTags`) re-render when a rebuild or `removePhotos` lands.
 @Observable
 @MainActor
 final class CoreLibraryIndex {
@@ -89,6 +89,22 @@ final class CoreLibraryIndex {
     /// invalidation as `tagPhotoCache`.
     @ObservationIgnored private var searchCache: (key: String, result: [PhotoFile])?
 
+    /// Memoised location-window replies. Views ask these on every body pass;
+    /// the core's `folder_structure` also writes `visible_folder_parent`, so
+    /// a cache miss must not re-cross the boundary just to paint the same list.
+    @ObservationIgnored private var folderListingCache: [String: [GalleryTextRow]] = [:]
+    @ObservationIgnored private var folderPhotoIDCache: [String: [UUID]] = [:]
+    @ObservationIgnored private var exportedFoldersCache: [ScannedFolderHost]?
+    @ObservationIgnored private var peopleListingCache: [GalleryTextRow]?
+    @ObservationIgnored private var peopleRailCache: [GalleryTextRow]?
+    @ObservationIgnored private var collectionListingCache: [String: [GalleryTextRow]] = [:]
+
+    /// Bumps when location memos are dropped so listing views re-render
+    /// without reading `@ObservationIgnored` caches.
+    private(set) var listingEpoch: UInt64 = 0
+
+    private let listingPageSize: UInt64 = 256
+
     // MARK: Build
 
     /// Publish `allPhotos` as the object table and kick off the core rebuild.
@@ -113,7 +129,7 @@ final class CoreLibraryIndex {
     /// longer shows. Awaiting the previous rebuild first makes last-started =
     /// last-swapped, and costs nothing a second concurrent CPU-bound build was
     /// not costing already.
-    func build(allPhotos: [PhotoFile]) {
+    func build(allPhotos: [PhotoFile], rootFolder: PhotoFolder? = nil) {
         generation += 1
         let generation = self.generation
         var table: [UUID: PhotoFile] = [:]
@@ -128,6 +144,7 @@ final class CoreLibraryIndex {
         // build task resolves the core's ids through it.
         let lookup = table
         let fingerprint = LibraryFingerprint(photos: allPhotos)
+        let tree = rootFolder
 
         let previous = pending
         previous?.cancel()
@@ -149,6 +166,16 @@ final class CoreLibraryIndex {
                     photos: records,
                     photoTimeZoneOffsets: offsets
                 )
+                // Same attach GTK does after `index.build`: folder slices
+                // have to be on the table before `remove_photos` can rewrite
+                // them. `rebuild` alone empties that table.
+                if let tree {
+                    let attached = CoreScanner.folderRecords(from: tree)
+                    core.setFolders(
+                        folders: attached.folders,
+                        photoIdsInScanOrder: attached.photoIds
+                    )
+                }
                 // The core's records never reach the main actor: they are not
                 // `Sendable` (UniFFI does not mark them) and resolving them is
                 // 20k `UUID(uuidString:)` parses plus 20k dictionary hits, which
@@ -171,6 +198,7 @@ final class CoreLibraryIndex {
             // between, so no query can observe half of a rebuild.
             self.tagPhotoCache = [:]
             self.searchCache = nil
+            self.clearListingMemos()
             self.sortedPhotos = built.sorted
             self.allTags = built.tags
             self.peopleTags = built.people
@@ -193,6 +221,111 @@ final class CoreLibraryIndex {
     /// `PeopleStore` and re-export the widget snapshot — the two things the old
     /// `Task.detached` tail in `rebuildSortAndIndex` did.
     @ObservationIgnored var onRebuild: (([TagSuggestion], [TagSuggestion]) -> Void)?
+
+    /// Drop `ids` from the core table the way GTK `apply_photos_removed`
+    /// does: `LibraryIndex.removePhotos`, not another `build`. A rebuild
+    /// would empty the folder table `setFolders` just attached.
+    ///
+    /// The id table is updated here so `photo(byID:)` is correct the instant
+    /// `apply(.photosRemoved)` returns. The core call is serialized behind
+    /// `pending` the same way `build` is, so a stale rebuild cannot swap
+    /// the deleted rows back in.
+    func removePhotos(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        generation += 1
+        let generation = self.generation
+        for id in ids {
+            photoByID.removeValue(forKey: id)
+        }
+        if !sortedPhotos.isEmpty {
+            sortedPhotos = sortedPhotos.filter { !ids.contains($0.id) }
+        }
+        tagPhotoCache = [:]
+        searchCache = nil
+        clearListingMemos()
+
+        let lookup = photoByID
+        let idStrings = ids.map(\.uuidString)
+        let previous = pending
+        previous?.cancel()
+        let core = self.core
+        pending = Task { [weak self] in
+            await previous?.value
+            let t = CFAbsoluteTimeGetCurrent()
+            let built = await Task.detached(priority: .userInitiated) { () -> Built in
+                let start = CFAbsoluteTimeGetCurrent()
+                _ = core.removePhotos(ids: idStrings)
+                let suggestions = core.tagSuggestions()
+                let sorted = core.sortedPhotoIds().compactMap {
+                    UUID(uuidString: $0).flatMap { lookup[$0] }
+                }
+                return Built(
+                    sorted: sorted,
+                    tags: suggestions.tags.map(Self.suggestion(from:)),
+                    people: suggestions.people.map(Self.suggestion(from:)),
+                    fingerprint: LibraryFingerprint(photos: sorted),
+                    marshalMillis: 0,
+                    coreMillis: (CFAbsoluteTimeGetCurrent() - start) * 1000
+                )
+            }.value
+            guard !Task.isCancelled, let self, self.generation == generation else { return }
+
+            self.tagPhotoCache = [:]
+            self.searchCache = nil
+            self.clearListingMemos()
+            self.sortedPhotos = built.sorted
+            self.allTags = built.tags
+            self.peopleTags = built.people
+            self.publishedFingerprint = built.fingerprint
+            self.hasEverPublished = true
+            self.onRebuild?(self.allTags, self.peopleTags)
+
+            let total = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - t) * 1000)
+            Log.index.info("""
+                Removed: \(idStrings.count) ids, \(built.sorted.count) photos left \
+                in \(total)ms (core=\(String(format: "%.0f", built.coreMillis))ms)
+                """)
+        }
+    }
+
+    /// Push projected `.gallery/log` state into the core people lists.
+    /// GTK calls the same method after attach and after every person mutation.
+    func setPersonState(_ state: PersonStateStructure, now: Date = Date()) {
+        core.setPersonState(state: state, now: now.timeIntervalSinceReferenceDate)
+        peopleListingCache = nil
+        peopleRailCache = nil
+        listingEpoch += 1
+    }
+
+    /// Last `setPersonState` projection. Tests assert the Store actually
+    /// pushed; production people UI still reads `PeopleStore`.
+    func personState() -> PersonStateStructure {
+        core.personState()
+    }
+
+    /// Re-attach the scanner folder table after a host-only tree edit
+    /// (create-folder) without another photo rebuild.
+    func attachFolders(from root: PhotoFolder) {
+        let attached = CoreScanner.folderRecords(from: root)
+        core.setFolders(
+            folders: attached.folders,
+            photoIdsInScanOrder: attached.photoIds
+        )
+        clearFolderMemos()
+        listingEpoch += 1
+    }
+
+    /// This folder's own photo ids from the core folder table.
+    func folderPhotoIDs(_ folderID: UUID) -> [UUID] {
+        folderPhotoIDs(folderID: folderID.uuidString)
+    }
+
+    func folderPhotoIDs(folderID: String) -> [UUID] {
+        if let cached = folderPhotoIDCache[folderID] { return cached }
+        let ids = core.folderPhotoIds(folderId: folderID).compactMap(UUID.init(uuidString:))
+        folderPhotoIDCache[folderID] = ids
+        return ids
+    }
 
     /// Wait for the in-flight rebuild, if any.
     ///
@@ -360,6 +493,142 @@ final class CoreLibraryIndex {
         ids.compactMap { photoByID[$0] }
     }
 
+    // MARK: Location listings
+
+    /// Children of `parentID`. `nil` is the Folders-tab root (children of
+    /// the scan root; the sole library root is not a row).
+    func folderListing(parentID: String?) -> [GalleryTextRow] {
+        let key = parentID ?? ""
+        if let cached = folderListingCache[key] { return cached }
+        let structure = core.folderStructure(parentId: parentID)
+        let rows = textRows(
+            structure: structure,
+            sectionID: "folders",
+            window: { try core.folderWindow(sectionId: $0, offset: $1, limit: $2, generation: $3) },
+            refresh: { core.folderStructure(parentId: parentID) }
+        )
+        folderListingCache[key] = rows
+        return rows
+    }
+
+    func sortedFolderRows(_ rows: [GalleryTextRow], order: FolderSortOrder) -> [GalleryTextRow] {
+        switch order {
+        case .nameAscending:
+            return rows.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .nameDescending:
+            return rows.sorted { $0.title.localizedStandardCompare($1.title) == .orderedDescending }
+        case .dateModifiedNewest:
+            return rows.sorted { folderTime($0.id, \.dateModified) > folderTime($1.id, \.dateModified) }
+        case .dateModifiedOldest:
+            return rows.sorted { folderTime($0.id, \.dateModified) < folderTime($1.id, \.dateModified) }
+        case .dateCreatedNewest:
+            return rows.sorted { folderTime($0.id, \.dateCreated) > folderTime($1.id, \.dateCreated) }
+        case .dateCreatedOldest:
+            return rows.sorted { folderTime($0.id, \.dateCreated) < folderTime($1.id, \.dateCreated) }
+        }
+    }
+
+    func folderHasChildren(_ folderID: String) -> Bool {
+        let folders = exportedFolders()
+        guard let index = folders.firstIndex(where: { $0.id.caseInsensitiveCompare(folderID) == .orderedSame }) else {
+            return false
+        }
+        let parent = UInt32(index)
+        return folders.contains { $0.parentIndex == parent }
+    }
+
+    func folderHost(_ folderID: String) -> ScannedFolderHost? {
+        exportedFolders().first { $0.id.caseInsensitiveCompare(folderID) == .orderedSame }
+    }
+
+    func folderCoverURL(_ folderID: String) -> URL? {
+        folderHost(folderID)?.coverPhotoPath.map(CoreScanner.fileURL)
+    }
+
+    func folderExists(_ folderID: String) -> Bool {
+        folderHost(folderID) != nil
+    }
+
+    /// Destination identity for navigation / move-to-folder. Not a listing tree.
+    func folderDestination(id: String) -> PhotoFolder? {
+        guard let host = folderHost(id),
+              let uuid = UUID(uuidString: host.id) else { return nil }
+        return PhotoFolder(
+            id: uuid,
+            url: CoreScanner.fileURL(host.path),
+            name: host.name,
+            subfolders: [],
+            photos: [],
+            coverPhotoURL: host.coverPhotoPath.map(CoreScanner.fileURL),
+            totalPhotoCount: Int(host.totalPhotoCount),
+            dateModified: host.dateModified.map(Date.init(timeIntervalSinceReferenceDate:)),
+            dateCreated: host.dateCreated.map(Date.init(timeIntervalSinceReferenceDate:))
+        )
+    }
+
+    /// The hidden scan root when the Folders tab lists its children.
+    func scanRootFolderID() -> UUID? {
+        let folders = exportedFolders()
+        let roots = folders.filter { $0.parentIndex == nil }
+        guard roots.count == 1 else { return nil }
+        return UUID(uuidString: roots[0].id)
+    }
+
+    /// See-all people (`people_structure` / `people_window`).
+    func peopleListing() -> [GalleryTextRow] {
+        if let cached = peopleListingCache { return cached }
+        let structure = core.peopleStructure()
+        let rows = textRows(
+            structure: structure,
+            sectionID: "people",
+            window: { try core.peopleWindow(sectionId: $0, offset: $1, limit: $2, generation: $3) },
+            refresh: { core.peopleStructure() }
+        )
+        peopleListingCache = rows
+        return rows
+    }
+
+    /// Collections-rail people (`people_rail_structure` / `people_rail_window`).
+    func peopleRailListing() -> [GalleryTextRow] {
+        if let cached = peopleRailCache { return cached }
+        let structure = core.peopleRailStructure()
+        let rows = textRows(
+            structure: structure,
+            sectionID: "people",
+            window: { try core.peopleRailWindow(sectionId: $0, offset: $1, limit: $2, generation: $3) },
+            refresh: { core.peopleRailStructure() }
+        )
+        peopleRailCache = rows
+        return rows
+    }
+
+    func collectionListing(sectionID: String) -> [GalleryTextRow] {
+        if let cached = collectionListingCache[sectionID] { return cached }
+        let structure = core.collectionStructure()
+        let rows = textRows(
+            structure: structure,
+            sectionID: sectionID,
+            window: { try core.collectionWindow(sectionId: $0, offset: $1, limit: $2, generation: $3) },
+            refresh: { core.collectionStructure() }
+        )
+        collectionListingCache[sectionID] = rows
+        return rows
+    }
+
+    func tagSuggestion(for idOrPath: String) -> TagSuggestion? {
+        let key = idOrPath.lowercased()
+        return allTags.first { $0.id == key || $0.fullPath.lowercased() == key }
+            ?? peopleTags.first { $0.id == key || $0.fullPath.lowercased() == key }
+    }
+
+    func personSuggestion(for idOrPath: String) -> TagSuggestion? {
+        if let tag = tagSuggestion(for: idOrPath) { return tag }
+        if let path = core.personFullPath(idOrPath: idOrPath) {
+            return tagSuggestion(for: path)
+        }
+        return nil
+    }
+
     // MARK: Bridging
 
     /// One rebuild's results, already in the app's own types.
@@ -403,5 +672,76 @@ final class CoreLibraryIndex {
             count: Int(record.count),
             latestPhotoDate: record.latestPhotoDate.map(Date.init(timeIntervalSinceReferenceDate:))
         )
+    }
+
+    private func exportedFolders() -> [ScannedFolderHost] {
+        if let cached = exportedFoldersCache { return cached }
+        let folders = core.exportFolders()
+        exportedFoldersCache = folders
+        return folders
+    }
+
+    private func folderTime(_ folderID: String, _ keyPath: KeyPath<ScannedFolderHost, Double?>) -> Double {
+        folderHost(folderID)?[keyPath: keyPath] ?? -.greatestFiniteMagnitude
+    }
+
+    private func textRows(
+        structure: ViewStructure,
+        sectionID: String,
+        window: (String, UInt64, UInt64, UInt64) throws -> [GalleryTextRow],
+        refresh: () -> ViewStructure
+    ) -> [GalleryTextRow] {
+        if let rows = pageTextRows(structure: structure, sectionID: sectionID, window: window) {
+            return rows
+        }
+        return pageTextRows(structure: refresh(), sectionID: sectionID, window: window) ?? []
+    }
+
+    private func pageTextRows(
+        structure: ViewStructure,
+        sectionID: String,
+        window: (String, UInt64, UInt64, UInt64) throws -> [GalleryTextRow]
+    ) -> [GalleryTextRow]? {
+        guard let section = structure.sections.first(where: { $0.id == sectionID }) else {
+            return []
+        }
+        let total = section.itemIds.count
+        var rows: [GalleryTextRow] = []
+        rows.reserveCapacity(total)
+        var offset = 0
+        while offset < total {
+            let limit = min(Int(listingPageSize), total - offset)
+            do {
+                let chunk = try window(
+                    sectionID,
+                    UInt64(offset),
+                    UInt64(limit),
+                    structure.generation
+                )
+                if chunk.isEmpty { break }
+                rows.append(contentsOf: chunk)
+                offset += chunk.count
+            } catch let error as ViewError {
+                if case .StaleGeneration = error { return nil }
+                break
+            } catch {
+                break
+            }
+        }
+        return rows
+    }
+
+    private func clearListingMemos() {
+        clearFolderMemos()
+        peopleListingCache = nil
+        peopleRailCache = nil
+        collectionListingCache = [:]
+        listingEpoch += 1
+    }
+
+    private func clearFolderMemos() {
+        folderListingCache = [:]
+        folderPhotoIDCache = [:]
+        exportedFoldersCache = nil
     }
 }

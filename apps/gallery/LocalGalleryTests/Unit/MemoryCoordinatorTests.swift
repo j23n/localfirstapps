@@ -52,6 +52,7 @@ final class MemoryCoordinatorTests: XCTestCase {
         index.build(allPhotos: photos)
 
         let people = PeopleStore(defaults: defaults, clock: clock, index: index)
+        _ = people.attachLibrary(tmp.url, snapshot: .empty)
         let coordinator = MemoryCoordinator(
             defaults: defaults,
             clock: clock,
@@ -172,7 +173,7 @@ final class MemoryCoordinatorTests: XCTestCase {
 
         // Hiding the person retroactively suppresses their cached birthday
         // memory without waiting for a regeneration.
-        h.people.hidePerson("People/Alice Anderson")
+        XCTAssertTrue(h.people.hidePerson("People/Alice Anderson"))
         XCTAssertFalse(h.coordinator.visible.contains { $0.id == birthdayID })
     }
 

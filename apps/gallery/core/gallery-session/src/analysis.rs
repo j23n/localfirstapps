@@ -175,6 +175,18 @@ pub struct AnalysisRequest<'a> {
 
 /// Run the three phases. `pack` / `ml_cache` are ignored when `ml` is off.
 pub fn run_analysis(request: AnalysisRequest<'_>) -> AnalysisSummary {
+    run_analysis_inner(request, false)
+}
+
+/// Force the selected phases on `request.photos` only.
+///
+/// Does not reset library-wide tagging/face queues. Places still honors
+/// `request.force` (Scan Photos one-photo uses `true`).
+pub fn run_analysis_one(request: AnalysisRequest<'_>) -> AnalysisSummary {
+    run_analysis_inner(request, true)
+}
+
+fn run_analysis_inner(request: AnalysisRequest<'_>, one: bool) -> AnalysisSummary {
     let AnalysisRequest {
         photos,
         pack,
@@ -187,6 +199,8 @@ pub fn run_analysis(request: AnalysisRequest<'_>) -> AnalysisSummary {
         on_progress,
         heic_decoder,
     } = request;
+    #[cfg(not(feature = "ml"))]
+    let _ = one;
     let _span =
         localcore_trace::span_always("catalog", "run_analysis").extra("photos", photos.len());
     let mut summary = AnalysisSummary {
@@ -214,6 +228,7 @@ pub fn run_analysis(request: AnalysisRequest<'_>) -> AnalysisSummary {
                         heic_decoder,
                         phases,
                         force,
+                        one,
                         &mut summary,
                     ) {
                         if summary.error.is_none() {
@@ -305,6 +320,7 @@ fn run_ml(
     heic: Option<Arc<dyn gallery_ml::HostHeicDecoder>>,
     phases: AnalysisPhases,
     force: bool,
+    one: bool,
     summary: &mut AnalysisSummary,
 ) -> Result<(), String> {
     use gallery_ml::{FaceEngine, FaceRunOptions, RunOptions, TaggingEngine};
@@ -322,10 +338,16 @@ fn run_ml(
         if let Some(dec) = heic.clone() {
             tagging = tagging.with_heic_decoder(dec);
         }
-        if force {
-            tagging.reset_queue().map_err(|e| e.to_string())?;
+        if one {
+            for path in &paths {
+                tagging.reopen(path).map_err(|e| e.to_string())?;
+            }
+        } else {
+            if force {
+                tagging.reset_queue().map_err(|e| e.to_string())?;
+            }
+            tagging.enqueue(&paths).map_err(|e| e.to_string())?;
         }
-        tagging.enqueue(&paths).map_err(|e| e.to_string())?;
         let progress = PhaseProgress::new(AnalysisPhase::Tagging, on_progress.clone());
         let tag_summary = tagging
             .run_with_options(
@@ -333,7 +355,8 @@ fn run_ml(
                 cancel,
                 &RunOptions {
                     workers: Some(1),
-                    force,
+                    force: force || one,
+                    only_paths: one.then(|| paths.clone()),
                     ..RunOptions::default()
                 },
             )
@@ -365,10 +388,16 @@ fn run_ml(
     if let Some(dec) = heic.clone() {
         faces = faces.with_heic_decoder(dec);
     }
-    if force {
-        faces.reset_queue().map_err(|e| e.to_string())?;
+    if one {
+        for path in &paths {
+            faces.reopen(path).map_err(|e| e.to_string())?;
+        }
+    } else {
+        if force {
+            faces.reset_queue().map_err(|e| e.to_string())?;
+        }
+        faces.enqueue(&paths).map_err(|e| e.to_string())?;
     }
-    faces.enqueue(&paths).map_err(|e| e.to_string())?;
     let progress = PhaseProgress::new(AnalysisPhase::Faces, on_progress);
     let face_summary = faces
         .run_with_options(
@@ -376,7 +405,8 @@ fn run_ml(
             cancel,
             &FaceRunOptions {
                 workers: Some(1),
-                force,
+                force: force || one,
+                only_paths: one.then(|| paths.clone()),
                 ..FaceRunOptions::default()
             },
         )
@@ -564,6 +594,32 @@ mod tests {
             cancel: &cancel,
             on_progress: None,
             heic_decoder: Some(Arc::new(UnusedHeic)),
+        });
+        assert!(summary.places.is_some());
+        assert!(summary.skipped_ml.is_none(), "{:?}", summary.skipped_ml);
+        assert!(summary.tagged.is_none());
+        assert!(summary.faces.is_none());
+    }
+
+    #[test]
+    fn start_one_places_does_not_require_a_pack() {
+        let cancel = AtomicBool::new(false);
+        let mut geo_cache = GeoCache::new();
+        let summary = run_analysis_one(AnalysisRequest {
+            photos: &[],
+            pack: None,
+            ml_cache: None,
+            geo: &Gazetteer,
+            geo_cache: &mut geo_cache,
+            phases: AnalysisPhases {
+                tagging: false,
+                faces: false,
+                places: true,
+            },
+            force: true,
+            cancel: &cancel,
+            on_progress: None,
+            heic_decoder: None,
         });
         assert!(summary.places.is_some());
         assert!(summary.skipped_ml.is_none(), "{:?}", summary.skipped_ml);

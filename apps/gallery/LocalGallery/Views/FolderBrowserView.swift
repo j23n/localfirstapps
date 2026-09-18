@@ -2,20 +2,41 @@ import SwiftUI
 
 struct FolderBrowserView: View {
     @Environment(GalleryStore.self) private var store
+    @Environment(AppRouter.self) private var router
     var folder: PhotoFolder? = nil
     /// Only the root tab should show the gear. Child browsers leave it off.
     var isRoot: Bool = true
 
     @State private var showSettings = false
 
-    private var displayFolder: PhotoFolder? {
-        if let folder {
-            // Pushed screens hold a snapshot from navigation time; re-resolve
-            // against the live tree so a rescan that dropped files updates
-            // counts and photos instead of leaving a stale child on screen.
-            return store.rootFolder?.folder(withID: folder.id)
-        }
-        return store.rootFolder
+    /// Destination identity only — listing comes from folder windows.
+    private var folderID: String? { folder?.id.uuidString }
+
+    private var listingEpoch: UInt64 { store.index.listingEpoch }
+
+    private var childRows: [GalleryTextRow] {
+        _ = listingEpoch
+        return store.index.sortedFolderRows(
+            store.index.folderListing(parentID: folderID),
+            order: store.folderSortOrder
+        )
+    }
+
+    /// Own photos for this screen: the scan root at the tab root, else this node.
+    private var photoFolderID: UUID? {
+        _ = listingEpoch
+        if let folder { return folder.id }
+        return store.index.scanRootFolderID()
+    }
+
+    private var ownPhotoIDs: [UUID] {
+        guard let photoFolderID else { return [] }
+        return store.index.folderPhotoIDs(photoFolderID)
+    }
+
+    private var folderStillExists: Bool {
+        guard let folderID else { return store.rootFolder != nil }
+        return store.index.folderExists(folderID)
     }
 
     var body: some View {
@@ -27,10 +48,7 @@ struct FolderBrowserView: View {
                 rootBody
             }
         }
-        // Live name first; the NavigationLink snapshot covers a child whose
-        // node was deleted mid-drill-in; "Folders" only at the root before
-        // the bookmark resolves, so the large title does not flash "".
-        .navigationTitle(displayFolder?.name ?? folder?.name ?? (isRoot ? "Folders" : ""))
+        .navigationTitle(folder?.name ?? store.rootFolder?.name ?? (isRoot ? "Folders" : ""))
         .navigationBarTitleDisplayMode(isRoot ? .large : .inline)
         .toolbar {
             // Always include the banner — it returns EmptyView when no
@@ -43,7 +61,7 @@ struct FolderBrowserView: View {
                 ScanProgressBanner()
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if displayFolder?.subfolders.isEmpty == false {
+                if !childRows.isEmpty {
                     Menu {
                         Picker("Sort Folders", selection: $store.folderSortOrder) {
                             ForEach(FolderSortOrder.allCases, id: \.self) { order in
@@ -60,6 +78,9 @@ struct FolderBrowserView: View {
             }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
+        .onChange(of: store.hasSortedPhotos) { _, ready in
+            if ready { router.consumePendingIfReady(store: store) }
+        }
     }
 
     /// Root tab only. Unavailable takes the whole screen — the cached tree
@@ -71,10 +92,12 @@ struct FolderBrowserView: View {
     private var rootBody: some View {
         if store.libraryAvailability == .unavailable {
             unavailableState
-        } else if store.isScanning && displayFolder == nil {
+        } else if store.isScanning && store.rootFolder == nil {
             ProgressView("Scanning folder…")
-        } else if let folder = displayFolder {
-            folderContent(folder)
+        } else if !store.hasSortedPhotos && store.rootFolder != nil {
+            ProgressView("Scanning folder…")
+        } else if store.rootFolder != nil || store.hasSortedPhotos {
+            folderContent
         } else if store.libraryAvailability == .empty {
             emptyLibraryState
         } else {
@@ -89,8 +112,10 @@ struct FolderBrowserView: View {
         // child has to as well.
         if store.libraryAvailability == .unavailable {
             unavailableState
-        } else if let folder = displayFolder {
-            folderContent(folder)
+        } else if !store.hasSortedPhotos {
+            ProgressView("Scanning folder…")
+        } else if folderStillExists {
+            folderContent
         } else {
             ContentUnavailableView(
                 "This folder is no longer available",
@@ -115,42 +140,32 @@ struct FolderBrowserView: View {
     }
 
     @ViewBuilder
-    private func folderContent(_ folder: PhotoFolder) -> some View {
-        let sortedSubfolders = store.sortFolders(folder.subfolders)
+    private var folderContent: some View {
+        let rows = childRows
+        let photos = ownPhotoIDs
         List {
-            if !folder.photos.isEmpty {
+            if !photos.isEmpty, let photoFolderID {
                 Section("Photos") {
                     NavigationLink {
                         FolderGridView(
-                            title: folder.name,
-                            folderID: folder.id
+                            title: folder?.name ?? store.rootFolder?.name ?? "Photos",
+                            folderID: photoFolderID
                         )
                     } label: {
-                        Label("\(folder.photos.count) photos in this folder", systemImage: "photo.on.rectangle")
+                        Label("\(photos.count) photos in this folder", systemImage: "photo.on.rectangle")
                     }
                 }
             }
 
-            if !sortedSubfolders.isEmpty {
+            if !rows.isEmpty {
                 Section("Subfolders") {
-                    ForEach(sortedSubfolders) { subfolder in
-                        NavigationLink {
-                            if subfolder.subfolders.isEmpty && !subfolder.photos.isEmpty {
-                                FolderGridView(
-                                    title: subfolder.name,
-                                    folderID: subfolder.id
-                                )
-                            } else {
-                                FolderBrowserView(folder: subfolder, isRoot: false)
-                            }
-                        } label: {
-                            folderRow(subfolder)
-                        }
+                    ForEach(rows, id: \.id) { row in
+                        folderLink(row)
                     }
                 }
             }
 
-            if folder.photos.isEmpty && folder.subfolders.isEmpty {
+            if photos.isEmpty && rows.isEmpty {
                 ContentUnavailableView(
                     "No Photos Found",
                     systemImage: "photo",
@@ -164,9 +179,24 @@ struct FolderBrowserView: View {
         }
     }
 
-    private func folderRow(_ folder: PhotoFolder) -> some View {
+    @ViewBuilder
+    private func folderLink(_ row: GalleryTextRow) -> some View {
+        let hasChildren = store.index.folderHasChildren(row.id)
+        let photoIDs = store.index.folderPhotoIDs(folderID: row.id)
+        NavigationLink {
+            if !hasChildren, !photoIDs.isEmpty, let uuid = UUID(uuidString: row.id) {
+                FolderGridView(title: row.title, folderID: uuid)
+            } else if let dest = store.index.folderDestination(id: row.id) {
+                FolderBrowserView(folder: dest, isRoot: false)
+            }
+        } label: {
+            folderRow(row)
+        }
+    }
+
+    private func folderRow(_ row: GalleryTextRow) -> some View {
         HStack(spacing: 14) {
-            if let coverURL = folder.coverPhotoURL {
+            if let coverURL = store.index.folderCoverURL(row.id) {
                 ThumbnailView(url: coverURL, size: 72, cornerRadius: 8)
             } else {
                 RoundedRectangle(cornerRadius: 8)
@@ -180,11 +210,11 @@ struct FolderBrowserView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(folder.name)
+                Text(row.title)
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(1)
-                Text("\(folder.totalPhotoCount) photos")
+                Text(row.trailing ?? photoCountLabel(0))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

@@ -53,13 +53,14 @@ struct ContactTests {
 
     // MARK: - sortLetter
 
-    @Test("sortLetter uses family name first letter uppercased")
-    func sortLetterFamily() {
+    @Test("sortLetter uses the display-name list section key")
+    func sortLetterDisplayName() {
         let c = Contact(familyName: "wonder", givenName: "Alice")
-        #expect(c.sortLetter == "W")
+        #expect(c.sortLetter == "A")
+        #expect(c.sortLetter == listSectionKey(title: c.displayName))
     }
 
-    @Test("sortLetter falls back to given name when family is empty")
+    @Test("sortLetter uses given name when it is the list title")
     func sortLetterGivenFallback() {
         let c = Contact(givenName: "Alice")
         #expect(c.sortLetter == "A")
@@ -69,7 +70,7 @@ struct ContactTests {
     func sortLetterNonLetter() {
         #expect(Contact(givenName: "123").sortLetter == "#")
         #expect(Contact(givenName: "!!!").sortLetter == "#")
-        #expect(Contact().sortLetter == "#")
+        #expect(Contact().sortLetter == "N")
     }
 
     // MARK: - age

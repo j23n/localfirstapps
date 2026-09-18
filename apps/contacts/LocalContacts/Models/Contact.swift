@@ -87,8 +87,8 @@ final class Contact: Identifiable, @unchecked Sendable {
 
     var displayName: String {
         if !fullName.isEmpty { return fullName }
-        let parts = [givenName, middleName, familyName].filter { !$0.isEmpty }
-        return parts.isEmpty ? "No Name" : parts.joined(separator: " ")
+        let name = structuredName(given: givenName, middle: middleName, family: familyName)
+        return name.isEmpty ? "No Name" : name
     }
 
     var initials: String {
@@ -98,9 +98,7 @@ final class Contact: Identifiable, @unchecked Sendable {
     }
 
     var sortLetter: String {
-        let name = familyName.isEmpty ? givenName : familyName
-        guard let first = name.uppercased().first, first.isLetter else { return "#" }
-        return String(first)
+        listSectionKey(title: displayName)
     }
 
     var age: Int? {

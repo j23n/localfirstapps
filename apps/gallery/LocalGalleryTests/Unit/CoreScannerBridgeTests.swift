@@ -99,6 +99,52 @@ final class CoreScannerBridgeTests: XCTestCase {
         )
     }
 
+    /// Scan / snapshot *keys* are NFC. Persisted `PhotoFile.url` bytes stay
+    /// whatever the URL already held — no LibrarySnapshot bump.
+    func testScanCachePathsAreWrittenNFC() {
+        let nfd = "/lib/café.jpg".decomposedStringWithCanonicalMapping
+        let nfc = nfd.precomposedStringWithCanonicalMapping
+        XCTAssertNotEqual(Array(nfd.unicodeScalars), Array(nfc.unicodeScalars))
+
+        let photo = PhotoFile.fixture(
+            url: CoreScanner.fileURL(nfd),
+            livePhotoVideoURL: CoreScanner.fileURL(nfd.replacingOccurrences(of: ".jpg", with: ".mov"))
+        )
+        let record = CoreScanner.record(of: photo)
+        XCTAssertEqual(Array(record.path.unicodeScalars), Array(nfc.unicodeScalars))
+        XCTAssertEqual(
+            Array((record.livePhotoVideoPath ?? "").unicodeScalars),
+            Array(nfc.replacingOccurrences(of: ".jpg", with: ".mov").unicodeScalars)
+        )
+
+        let sidecar = SidecarCandidate(
+            photoID: photo.id,
+            sidecarURL: CoreScanner.fileURL(nfd + ".xmp"),
+            currentVersion: ContentVersion(size: 1)
+        )
+        XCTAssertEqual(
+            Array(CoreScanner.row(of: sidecar).sidecarPath.unicodeScalars),
+            Array((nfc + ".xmp").unicodeScalars)
+        )
+
+        let folder = PhotoFolder.fixture(
+            url: CoreScanner.fileURL("/lib/café".decomposedStringWithCanonicalMapping),
+            name: "café",
+            photos: [photo],
+            coverPhotoURL: photo.url
+        )
+        let (nodes, _) = CoreScanner.folderRecords(from: folder)
+        XCTAssertEqual(
+            Array(nodes[0].path.unicodeScalars),
+            Array("/lib/café".precomposedStringWithCanonicalMapping.unicodeScalars)
+        )
+        XCTAssertEqual(
+            Array((nodes[0].coverPhotoPath ?? "").unicodeScalars),
+            Array(nfc.unicodeScalars)
+        )
+        XCTAssertEqual(LibrarySnapshot.version, 20)
+    }
+
     /// The core writes `URL.absoluteString` into the snapshot itself, so its
     /// percent-encoding table has to be Foundation's exactly. `:` is the entry
     /// that looks wrong and is not: Foundation leaves it literal, and escaping

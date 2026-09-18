@@ -363,6 +363,21 @@ RustBuffer uniffi_contacts_ffi_fn_method_contactssession_tag_rows(uint64_t ptr, 
 int8_t uniffi_contacts_ffi_fn_func_is_conflict_name(RustBuffer name, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_FUNC_LIST_SECTION_KEY
+#define UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_FUNC_LIST_SECTION_KEY
+RustBuffer uniffi_contacts_ffi_fn_func_list_section_key(RustBuffer title, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_FUNC_STRUCTURED_NAME
+#define UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_FUNC_STRUCTURED_NAME
+RustBuffer uniffi_contacts_ffi_fn_func_structured_name(RustBuffer given, RustBuffer middle, RustBuffer family, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_FUNC_VALID_DEVICE
+#define UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_FN_FUNC_VALID_DEVICE
+int8_t uniffi_contacts_ffi_fn_func_valid_device(RustBuffer name, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_CONTACTS_FFI_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_CONTACTS_FFI_RUSTBUFFER_ALLOC
 RustBuffer ffi_contacts_ffi_rustbuffer_alloc(uint64_t size, RustCallStatus *_Nonnull out_status
@@ -626,6 +641,24 @@ void ffi_contacts_ffi_rust_future_complete_void(uint64_t handle, RustCallStatus 
 #ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_CHECKSUM_FUNC_IS_CONFLICT_NAME
 #define UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_CHECKSUM_FUNC_IS_CONFLICT_NAME
 uint16_t uniffi_contacts_ffi_checksum_func_is_conflict_name(void
+
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_CHECKSUM_FUNC_LIST_SECTION_KEY
+#define UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_CHECKSUM_FUNC_LIST_SECTION_KEY
+uint16_t uniffi_contacts_ffi_checksum_func_list_section_key(void
+
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_CHECKSUM_FUNC_STRUCTURED_NAME
+#define UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_CHECKSUM_FUNC_STRUCTURED_NAME
+uint16_t uniffi_contacts_ffi_checksum_func_structured_name(void
+
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_CHECKSUM_FUNC_VALID_DEVICE
+#define UNIFFI_FFIDEF_UNIFFI_CONTACTS_FFI_CHECKSUM_FUNC_VALID_DEVICE
+uint16_t uniffi_contacts_ffi_checksum_func_valid_device(void
 
 );
 #endif

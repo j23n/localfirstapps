@@ -13,10 +13,10 @@ use gtk::gio;
 
 use contacts_core::{
     assign_tag_logged, bulk_delete_logged, conflict_preview, conflict_rows, delete_logged,
-    detail_rows, export_vcard_text, list_rows_filtered, load_edit_draft, new_edit_draft,
-    remove_tag_logged, rename_tag_logged, resolve_logged, save_contact_logged, search_hits,
-    tag_rows, BirthdayDraft, ConfinedVfs, ContactEditDraft, LabeledAddressDraft, LabeledValueDraft,
-    MergeKind, SaveContactCommand, Store, Vfs, TEMP_PREFIX,
+    detail_rows, export_vcard_text, list_rows_filtered, list_section_key, load_edit_draft,
+    new_edit_draft, remove_tag_logged, rename_tag_logged, resolve_logged, save_contact_logged,
+    search_hits, tag_rows, BirthdayDraft, ConfinedVfs, ContactEditDraft, LabeledAddressDraft,
+    LabeledValueDraft, MergeKind, SaveContactCommand, Store, Vfs, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
     about_dialog, action_row, apply_progress_row, chip_bar, chrome_progress, confirm_dialog,
@@ -2528,10 +2528,5 @@ fn idle_contacts_progress() -> ProgressDisplay {
 }
 
 fn section_key(title: &str) -> String {
-    title
-        .chars()
-        .find(|ch| ch.is_alphabetic())
-        .map(|ch| ch.to_uppercase().to_string())
-        .filter(|key| key.chars().next().is_some_and(char::is_alphabetic))
-        .unwrap_or_else(|| "#".into())
+    list_section_key(title)
 }

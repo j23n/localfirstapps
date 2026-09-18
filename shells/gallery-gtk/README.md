@@ -2,10 +2,11 @@
 
 LocalGallery kit shell (Phase 5.9 year rail). Binary `localgallery`,
 application id `com.j23n.LocalGallery`. View models come from
-`gallery-ffi` (`default-features = false`). Host config, XDG thumbs,
-folder watch, and scan/ops come from leftover `localgallery` with
-leftover GTK (`ui`) off. There is no `ml` feature — Scan Photos is a
-file walk with live progress and does not download ONNX. The Folders tab
+`gallery-ffi` (`default-features = false`, `ml` on by default). Host
+config, XDG thumbs, folder watch, and scan/ops come from leftover
+`localgallery` with leftover GTK (`ui`) off. Default `ml` compiles
+ONNX Runtime; Scan Photos tags and finds faces when a pack is
+installed (Settings → Download ML models). The Folders tab
 is an in-place explorer: sidebar tree, path breadcrumbs, and a full-width
 cover grid. Drill-in does not push pages or bump FFI folder windows.
 Photos tag filters are removable `chip_bar`
@@ -68,8 +69,8 @@ bottom bar has Share (file save), Move (library subfolder), and Delete.
 Right-click or long-press a tile to Open, Share, Move, Delete, or
 Select that photo.
 
-`--route` accepts every `screens.toml` id except `face-review` (unbound)
-and `sync-conflict-group` (**5.8-xmp-ui**). Grids use `GtkGridView` /
+`--route` accepts every `screens.toml` id except `face-review` (unbound).
+`sync-conflict-group` is the Syncthing sheet. Grids use `GtkGridView` /
 `GtkListView` over a `gio::ListModel` that pages ≤256. Memories are a
 shell cache of `MemoryGenerator` (not a `collection_structure` section).
 

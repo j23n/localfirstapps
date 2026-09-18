@@ -4,7 +4,7 @@ import SwiftUI
 /// bindings so widget deep links can land on the right screen.
 ///
 /// Cold-launch resilience: when a deep link fires before the relevant data is
-/// populated (folder tree from `restoreFolder()`, memories from generation),
+/// populated (folder windows from the index publish, memories from generation),
 /// the target id is queued in `pendingFolderId` / `pendingMemoryId` and the
 /// view consumes it once the data appears. Same pattern as the existing
 /// `pendingPhotosTagFilter` for the Photos tab.
@@ -21,7 +21,7 @@ final class AppRouter {
     /// Tag full-paths to apply when AllPhotosView next appears. Cleared after
     /// the view consumes it so subsequent visits don't re-apply the filter.
     var pendingPhotosTagFilter: [String] = []
-    /// Folder id to navigate to when the folder tree finishes loading.
+    /// Folder id to navigate to when the folder windows finish loading.
     var pendingFolderId: String?
     /// Memory id to push as a slideshow when memories finish generating.
     var pendingMemoryId: String?
@@ -42,7 +42,8 @@ final class AppRouter {
     }
 
     /// Re-evaluate any queued deep link now that data may have loaded. Called
-    /// by the views observing `store.rootFolder` / `store.memories`.
+    /// by the views observing `store.rootFolder` / `store.memories` / the
+    /// index publish.
     func consumePendingIfReady(store: GalleryStore) {
         if let id = pendingFolderId {
             applyFolder(id: id, store: store)
@@ -53,22 +54,24 @@ final class AppRouter {
     }
 
     private func applyFolder(id: String, store: GalleryStore) {
-        guard let root = store.rootFolder else {
+        guard store.hasSortedPhotos else {
             pendingFolderId = id
             return
         }
-        guard let folder = Self.findFolder(in: root, id: id) else {
-            // Tree loaded but the folder is gone — drop the pending state so
+        guard let dest = store.index.folderDestination(id: id) else {
+            // Index published but the folder is gone — drop the pending state so
             // we don't keep re-evaluating it.
             pendingFolderId = nil
             foldersPath = []
             return
         }
         pendingFolderId = nil
-        if folder.subfolders.isEmpty && !folder.photos.isEmpty {
-            foldersPath = [.grid(folder)]
+        let hasChildren = store.index.folderHasChildren(id)
+        let hasPhotos = !store.index.folderPhotoIDs(dest.id).isEmpty
+        if !hasChildren && hasPhotos {
+            foldersPath = [.grid(dest)]
         } else {
-            foldersPath = [.browser(folder)]
+            foldersPath = [.browser(dest)]
         }
     }
 
@@ -90,15 +93,14 @@ final class AppRouter {
             pendingMemoryId = id
         }
     }
-
-    private static func findFolder(in folder: PhotoFolder, id: String) -> PhotoFolder? {
-        guard let uuid = UUID(uuidString: id) else { return nil }
-        return folder.folder(withID: uuid)
-    }
 }
 
 /// Typed navigation values for the Folders tab. Hosting the path at the tab
 /// root lets widget deep-links push directly into a folder.
+///
+/// Associated `PhotoFolder` values are destination identity (id / name / url),
+/// not a listing tree — browsers and grids read children and photos from
+/// folder windows.
 enum FolderRoute: Hashable {
     case browser(PhotoFolder)
     case grid(PhotoFolder)

@@ -146,10 +146,7 @@ pub fn fetch_pack(origin: PackFetch) -> Result<PackStatus, PackInstallError> {
 
 /// Copy `source` (a pack directory with `manifest.json`) into `dest_root`
 /// as its version-named child. `dest_root` holds exactly one pack.
-pub fn install_pack_from(
-    source: &Path,
-    dest_root: &Path,
-) -> Result<PackStatus, PackInstallError> {
+pub fn install_pack_from(source: &Path, dest_root: &Path) -> Result<PackStatus, PackInstallError> {
     if !has_manifest(source) {
         return Err(PackInstallError::Io(format!(
             "not a model pack: {}",
@@ -165,9 +162,8 @@ pub fn install_pack_from(
     }
     let dest = dest_root.join(&name);
     copy_tree(source, &dest)?;
-    status_from_dir(dest, PackSource::Imported).ok_or_else(|| {
-        PackInstallError::Io("copied pack has no readable manifest".into())
-    })
+    status_from_dir(dest, PackSource::Imported)
+        .ok_or_else(|| PackInstallError::Io("copied pack has no readable manifest".into()))
 }
 
 /// Delete the XDG install. Distro `/usr/share` is left alone.
@@ -369,13 +365,14 @@ mod tests {
     #[test]
     fn checkout_picks_the_newest_named_pack() {
         let tmp = tempfile::tempdir().unwrap();
-        write_manifest(&tmp.path().join("model_packs").join("pack-v1.9"), "v1.9", false);
+        write_manifest(
+            &tmp.path().join("model_packs").join("pack-v1.9"),
+            "v1.9",
+            false,
+        );
         write_manifest(&tmp.path().join("pack").join("pack-v1.10"), "v1.10", true);
-        let found = newest_pack_dir(&[
-            tmp.path().join("model_packs"),
-            tmp.path().join("pack"),
-        ])
-        .expect("pack");
+        let found = newest_pack_dir(&[tmp.path().join("model_packs"), tmp.path().join("pack")])
+            .expect("pack");
         assert_eq!(file_name(&found), "pack-v1.10");
     }
 

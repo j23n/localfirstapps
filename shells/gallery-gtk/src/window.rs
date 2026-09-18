@@ -12,19 +12,20 @@ use std::thread;
 use std::time::Instant;
 
 use adw::prelude::*;
+use gallery_ffi::{ConflictKind, MergeKind};
 use gtk::gio;
 use gtk::glib;
 use pango::prelude::FontMapExt;
 use shell_kit_gtk::{
     about_dialog, action_row, adaptive_shell, apply_progress_row, chip_bar, chrome_progress,
-    empty_state, field_row, highlight_markup, init_style, list_screen, nav_row, navigation_view,
-    overflow, overflow_button, page, preferences_dialog, primary_menu, progress_row, push_page,
-    push_settings_subpage, search_hit_row, selection_bar, settings_screen, sheet, status_row,
-    text_row, toggle_row, ActionRole, ActionRowData, AdaptiveShell, Chip, ChipMode, ChromeProgress,
-    EmptyCopy, EmptyKind, FieldRowData, GalleryScreen, ListScreen, ListScreenBuilt, ListSection,
-    LogLevel, MenuCommand, NavRowData, PageChrome, PrimaryMenu, ProgressRowData, RootPage,
-    SelectionBar, SettingsGroup, SettingsScreen, SheetSize, StatusRowData, StatusSeverity,
-    TextRowData, ToggleRowData,
+    confirm_dialog, empty_state, field_row, highlight_markup, init_style, list_screen, nav_row,
+    navigation_view, overflow, overflow_button, page, preferences_dialog, primary_menu,
+    progress_row, push_page, push_settings_subpage, search_hit_row, selection_bar, settings_screen,
+    sheet, status_row, text_row, toggle_row, ActionRole, ActionRowData, AdaptiveShell, Chip,
+    ChipMode, ChromeProgress, ConfirmData, EmptyCopy, EmptyKind, FieldRowData, GalleryScreen,
+    ListScreen, ListScreenBuilt, ListSection, LogLevel, MenuCommand, NavRowData, PageChrome,
+    PrimaryMenu, ProgressRowData, RootPage, SelectionBar, SettingsGroup, SettingsScreen, SheetSize,
+    StatusRowData, StatusSeverity, TextRowData, ToggleRowData,
 };
 
 #[path = "select.rs"]
@@ -471,6 +472,7 @@ impl Window {
                 self.present_settings();
                 self.present_logs();
             }
+            "sync-conflict-group" => self.present_conflicts(),
             _ => {}
         }
     }
@@ -4671,6 +4673,311 @@ impl Window {
             .present(Some(&self.inner.window));
     }
 
+    fn present_conflicts(&self) {
+        let result = self.inner.session.borrow().conflict_rows();
+        let rows = match result {
+            Ok(rows) => rows,
+            Err(error) => {
+                self.inner.session.borrow_mut().record(
+                    LogLevel::Error,
+                    "conflict",
+                    "Could not load Sync Conflicts",
+                );
+                self.toast(&error.to_string());
+                return;
+            }
+        };
+        self.inner.session.borrow_mut().record(
+            LogLevel::Info,
+            "conflict",
+            format!("Reviewing {} sync conflict groups", rows.len()),
+        );
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        column.set_margin_top(12);
+        column.set_margin_bottom(12);
+        column.set_margin_start(12);
+        column.set_margin_end(12);
+        let intro = gtk::Label::new(Some(
+            "Two devices wrote the same photo. Sidecar keywords merge automatically. Image copies are keep-one — pick the file that stays. Losing copies are deleted only after you confirm.",
+        ));
+        intro.set_wrap(true);
+        intro.set_xalign(0.0);
+        intro.add_css_class("dim-label");
+        column.append(&intro);
+        if rows.is_empty() {
+            column.append(&status_row(&StatusRowData {
+                message: "No Sync Conflicts".into(),
+                severity: StatusSeverity::Info,
+            }));
+        }
+        let dialog = sheet(
+            "Sync Conflicts",
+            &gtk::ScrolledWindow::builder().child(&column).build(),
+            SheetSize::Picker,
+        );
+        dialog.set_widget_name(route_id(GalleryScreen::SyncConflictGroup));
+        for row in rows {
+            column.append(&text_row(&TextRowData {
+                title: row.title.clone(),
+                subtitle: Some(row.subtitle.clone()),
+                trailing: Some(row.trailing.clone()),
+                leading: None,
+            }));
+            let label = if row.kind == ConflictKind::Image {
+                "Choose Copy…"
+            } else {
+                "Review Diff…"
+            };
+            let review = action_row(&ActionRowData {
+                label: label.into(),
+                role: ActionRole::Normal,
+                enabled: true,
+            });
+            let this = self.clone();
+            let host = dialog.clone();
+            let group_id = row.id.clone();
+            if row.kind == ConflictKind::Image {
+                review.connect_clicked(move |_| {
+                    this.present_image_keep(&group_id, Some(&host));
+                });
+            } else {
+                review.connect_clicked(move |_| {
+                    this.present_xmp_diff(&group_id, Some(&host));
+                });
+            }
+            column.append(&review);
+        }
+        dialog.present(Some(&self.inner.window));
+    }
+
+    fn present_xmp_diff(&self, group_id: &str, parent: Option<&adw::Dialog>) {
+        let preview = match self.inner.session.borrow().conflict_preview(group_id) {
+            Ok(preview) => preview,
+            Err(error) => {
+                self.inner.session.borrow_mut().record(
+                    LogLevel::Error,
+                    "conflict",
+                    "Could not load conflict diff",
+                );
+                self.toast(&error.to_string());
+                return;
+            }
+        };
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        column.set_margin_top(12);
+        column.set_margin_bottom(12);
+        column.set_margin_start(12);
+        column.set_margin_end(12);
+        let discarded = if preview.discarded.is_empty() {
+            "No copies will be deleted.".into()
+        } else {
+            format!("Confirming deletes: {}.", preview.discarded.join(", "))
+        };
+        let intro = gtk::Label::new(Some(&discarded));
+        intro.set_wrap(true);
+        intro.set_xalign(0.0);
+        intro.add_css_class("dim-label");
+        column.append(&intro);
+        let group = adw::PreferencesGroup::new();
+        group.set_title("Merged Sidecar");
+        for field in &preview.merged_fields {
+            group.add(&field_row(&FieldRowData {
+                label: field.label.clone(),
+                value: field.value.clone(),
+                editable: false,
+            }));
+        }
+        let page = adw::PreferencesPage::new();
+        page.add(&group);
+        column.append(&page);
+        let confirm = action_row(&ActionRowData {
+            label: "Keep This Version".into(),
+            role: ActionRole::Normal,
+            enabled: preview.kind != MergeKind::Choice,
+        });
+        column.append(&confirm);
+        let dialog = sheet("Sync Conflict", &column, SheetSize::Picker);
+        dialog.set_widget_name(route_id(GalleryScreen::SyncConflictGroup));
+        let this = self.clone();
+        let group_id = preview.id.clone();
+        let parent = parent.cloned();
+        let host = dialog.clone();
+        confirm.connect_clicked(move |_| {
+            this.confirm_resolve_xmp(group_id.clone(), parent.as_ref(), &host);
+        });
+        dialog.present(Some(&self.inner.window));
+    }
+
+    fn present_image_keep(&self, group_id: &str, parent: Option<&adw::Dialog>) {
+        let preview = match self.inner.session.borrow().image_preview(group_id) {
+            Ok(preview) => preview,
+            Err(error) => {
+                self.inner.session.borrow_mut().record(
+                    LogLevel::Error,
+                    "conflict",
+                    "Could not load image copies",
+                );
+                self.toast(&error.to_string());
+                return;
+            }
+        };
+        let selected = Rc::new(RefCell::new(preview.copies.first().cloned()));
+        let checks = Rc::new(RefCell::new(Vec::<(String, gtk::Image)>::new()));
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        column.set_margin_top(12);
+        column.set_margin_bottom(12);
+        column.set_margin_start(12);
+        column.set_margin_end(12);
+        let intro = gtk::Label::new(Some(
+            "Confirming deletes the copies you do not keep. Image bytes are not rewritten.",
+        ));
+        intro.set_wrap(true);
+        intro.set_xalign(0.0);
+        intro.add_css_class("dim-label");
+        column.append(&intro);
+        for (index, name) in preview.copies.iter().enumerate() {
+            let row = text_row(&TextRowData {
+                title: name.clone(),
+                subtitle: None,
+                trailing: None,
+                leading: None,
+            });
+            row.set_activatable(true);
+            let check = gtk::Image::from_icon_name("object-select-symbolic");
+            check.set_visible(index == 0);
+            row.add_suffix(&check);
+            checks.borrow_mut().push((name.clone(), check));
+            let selected = selected.clone();
+            let checks = checks.clone();
+            let name = name.clone();
+            row.connect_activated(move |_| {
+                selected.replace(Some(name.clone()));
+                for (choice, indicator) in checks.borrow().iter() {
+                    indicator.set_visible(choice == &name);
+                }
+            });
+            column.append(&row);
+        }
+        let confirm = action_row(&ActionRowData {
+            label: "Keep This Copy".into(),
+            role: ActionRole::Normal,
+            enabled: !preview.copies.is_empty(),
+        });
+        column.append(&confirm);
+        let dialog = sheet("Sync Conflict", &column, SheetSize::Picker);
+        dialog.set_widget_name(route_id(GalleryScreen::SyncConflictGroup));
+        let this = self.clone();
+        let group_id = preview.id.clone();
+        let parent = parent.cloned();
+        let host = dialog.clone();
+        confirm.connect_clicked(move |_| {
+            let Some(surviving) = selected.borrow().clone() else {
+                this.toast("Choose one copy");
+                return;
+            };
+            this.confirm_keep_image(group_id.clone(), surviving, parent.as_ref(), &host);
+        });
+        dialog.present(Some(&self.inner.window));
+    }
+
+    fn confirm_resolve_xmp(
+        &self,
+        group_id: String,
+        parent: Option<&adw::Dialog>,
+        host: &adw::Dialog,
+    ) {
+        let dialog = confirm_dialog(&ConfirmData {
+            question: "Merge this sidecar and remove losing copies?".into(),
+            destructive_label: "Resolve".into(),
+        });
+        let this = self.clone();
+        let parent = parent.cloned();
+        let host = host.clone();
+        dialog.connect_response(None, move |_, response| {
+            if response != "confirm" {
+                return;
+            }
+            match this.inner.session.borrow().resolve_group(&group_id) {
+                Ok(()) => {
+                    this.inner.session.borrow_mut().record(
+                        LogLevel::Info,
+                        "conflict",
+                        "Resolved XMP sync conflict",
+                    );
+                    host.close();
+                    this.finish_conflict_review(parent.as_ref());
+                }
+                Err(error) => {
+                    this.inner.session.borrow_mut().record(
+                        LogLevel::Error,
+                        "conflict",
+                        "Could not resolve XMP sync conflict",
+                    );
+                    this.toast(&error.to_string());
+                }
+            }
+        });
+        dialog.present(Some(&self.inner.window));
+    }
+
+    fn confirm_keep_image(
+        &self,
+        group_id: String,
+        surviving: String,
+        parent: Option<&adw::Dialog>,
+        host: &adw::Dialog,
+    ) {
+        let dialog = confirm_dialog(&ConfirmData {
+            question: "Keep this copy and remove the others?".into(),
+            destructive_label: "Keep".into(),
+        });
+        let this = self.clone();
+        let parent = parent.cloned();
+        let host = host.clone();
+        dialog.connect_response(None, move |_, response| {
+            if response != "confirm" {
+                return;
+            }
+            match this
+                .inner
+                .session
+                .borrow()
+                .keep_image_copy(&group_id, &surviving)
+            {
+                Ok(()) => {
+                    this.inner.session.borrow_mut().record(
+                        LogLevel::Info,
+                        "conflict",
+                        "Kept one image copy",
+                    );
+                    host.close();
+                    this.finish_conflict_review(parent.as_ref());
+                    this.reload_folder();
+                }
+                Err(error) => {
+                    this.inner.session.borrow_mut().record(
+                        LogLevel::Error,
+                        "conflict",
+                        "Could not keep image copy",
+                    );
+                    this.toast(&error.to_string());
+                }
+            }
+        });
+        dialog.present(Some(&self.inner.window));
+    }
+
+    fn finish_conflict_review(&self, parent: Option<&adw::Dialog>) {
+        if let Some(parent) = parent {
+            parent.close();
+        }
+        match self.inner.session.borrow().conflict_rows() {
+            Ok(rows) if rows.is_empty() => {}
+            Ok(_) => self.present_conflicts(),
+            Err(error) => self.toast(&error.to_string()),
+        }
+    }
+
     fn present_settings(&self) {
         let dialog = preferences_dialog("Settings", settings_screen(self.settings_spec()));
         dialog.set_widget_name(route_id(GalleryScreen::Settings));
@@ -4810,6 +5117,7 @@ impl Window {
             .as_ref()
             .map(|path| path.display().to_string());
         let hidden = session.person_state().hidden.clone();
+        let conflict_count = session.conflict_rows().map(|rows| rows.len()).unwrap_or(0);
         drop(session);
         let pack = localgallery::installed_pack();
         let pack_summary = match &pack {
@@ -4984,6 +5292,16 @@ impl Window {
         });
         let this = self.clone();
         logs.connect_activated(move |_| this.present_logs());
+        let conflicts = nav_row(&NavRowData {
+            label: "Sync Conflicts".into(),
+            trailing: Some(if conflict_count == 0 {
+                "None".into()
+            } else {
+                conflict_count.to_string()
+            }),
+        });
+        let this = self.clone();
+        conflicts.connect_activated(move |_| this.present_conflicts());
 
         let contacts = adw::ActionRow::builder()
             .title("Contacts folder")
@@ -5061,7 +5379,7 @@ impl Window {
                 SettingsGroup {
                     id: "diagnostics".into(),
                     title: "Diagnostics".into(),
-                    rows: vec![logs.upcast()],
+                    rows: vec![conflicts.upcast(), logs.upcast()],
                 },
                 SettingsGroup {
                     id: "info".into(),

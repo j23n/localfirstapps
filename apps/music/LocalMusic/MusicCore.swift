@@ -669,9 +669,19 @@ public protocol MusicSessionProtocol: AnyObject, Sendable {
     func scanIssueRows() throws  -> [StatusRow]
 
     /**
+     * Global search across tracks, albums, artists, and playlists.
+     */
+    func searchHits(query: String) throws  -> [SearchHit]
+
+    /**
      * Apply search/sort intent and return the new generation.
      */
     func setLibraryView(command: SetLibraryViewCommand) throws  -> UInt64
+
+    /**
+     * Core-formatted facts for the Settings Info section.
+     */
+    func settingsInfoRows() throws  -> [TextRow]
 
 }
 /**
@@ -1037,6 +1047,19 @@ open func scanIssueRows()throws  -> [StatusRow]  {
 }
 
     /**
+     * Global search across tracks, albums, artists, and playlists.
+     */
+open func searchHits(query: String)throws  -> [SearchHit]  {
+    return try  FfiConverterSequenceTypeSearchHit.lift(try rustCallWithError(FfiConverterTypeMusicError_lift) {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_method_musicsession_search_hits(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(query),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Apply search/sort intent and return the new generation.
      */
 open func setLibraryView(command: SetLibraryViewCommand)throws  -> UInt64  {
@@ -1045,6 +1068,18 @@ open func setLibraryView(command: SetLibraryViewCommand)throws  -> UInt64  {
     uniffi_music_ffi_fn_method_musicsession_set_library_view(
             self.uniffiCloneHandle(),
         FfiConverterTypeSetLibraryViewCommand_lower(command),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Core-formatted facts for the Settings Info section.
+     */
+open func settingsInfoRows()throws  -> [TextRow]  {
+    return try  FfiConverterSequenceTypeTextRow.lift(try rustCallWithError(FfiConverterTypeMusicError_lift) {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_method_musicsession_settings_info_rows(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -2163,6 +2198,107 @@ public func FfiConverterTypeResolveConflictCommand_lower(_ value: ResolveConflic
 
 
 /**
+ * One global search result. Shells pick an icon from [`SearchHit::symbol`].
+ *
+ * R6 role: command DTO.
+ */
+public struct SearchHit: Equatable, Hashable {
+    /**
+     * Track id, `album:{name}`, `artist:{name}`, or playlist id.
+     */
+    public var id: String
+    /**
+     * Result kind.
+     */
+    public var kind: SearchKind
+    /**
+     * Primary label.
+     */
+    public var title: String
+    /**
+     * Secondary label.
+     */
+    public var subtitle: String?
+    /**
+     * Symbolic icon name from core `SearchKind::symbol`.
+     */
+    public var symbol: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Track id, `album:{name}`, `artist:{name}`, or playlist id.
+         */id: String,
+        /**
+         * Result kind.
+         */kind: SearchKind,
+        /**
+         * Primary label.
+         */title: String,
+        /**
+         * Secondary label.
+         */subtitle: String?,
+        /**
+         * Symbolic icon name from core `SearchKind::symbol`.
+         */symbol: String) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.subtitle = subtitle
+        self.symbol = symbol
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SearchHit: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchHit: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchHit {
+        return
+            try SearchHit(
+                id: FfiConverterString.read(from: &buf),
+                kind: FfiConverterTypeSearchKind.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                subtitle: FfiConverterOptionString.read(from: &buf),
+                symbol: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchHit, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypeSearchKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.subtitle, into: &buf)
+        FfiConverterString.write(value.symbol, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchHit_lift(_ buf: RustBuffer) throws -> SearchHit {
+    return try FfiConverterTypeSearchHit.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchHit_lower(_ value: SearchHit) -> RustBuffer {
+    return FfiConverterTypeSearchHit.lower(value)
+}
+
+
+/**
  * R6 role: command DTO.
  */
 public struct SetLibraryViewCommand: Equatable, Hashable {
@@ -2976,6 +3112,101 @@ public func FfiConverterTypeMusicStatusSeverity_lower(_ value: MusicStatusSeveri
 
 
 /**
+ * Kind of a global music search hit.
+ */
+
+public enum SearchKind: Equatable, Hashable {
+
+    /**
+     * One track.
+     */
+    case track
+    /**
+     * An album location.
+     */
+    case album
+    /**
+     * An artist location.
+     */
+    case artist
+    /**
+     * A playlist.
+     */
+    case playlist
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SearchKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchKind: FfiConverterRustBuffer {
+    typealias SwiftType = SearchKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .track
+
+        case 2: return .album
+
+        case 3: return .artist
+
+        case 4: return .playlist
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SearchKind, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .track:
+            writeInt(&buf, Int32(1))
+
+
+        case .album:
+            writeInt(&buf, Int32(2))
+
+
+        case .artist:
+            writeInt(&buf, Int32(3))
+
+
+        case .playlist:
+            writeInt(&buf, Int32(4))
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchKind_lift(_ buf: RustBuffer) throws -> SearchKind {
+    return try FfiConverterTypeSearchKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchKind_lower(_ value: SearchKind) -> RustBuffer {
+    return FfiConverterTypeSearchKind.lower(value)
+}
+
+
+
+/**
  * Core-owned sort and section policy.
  */
 
@@ -3271,6 +3502,31 @@ fileprivate struct FfiConverterSequenceTypePlaylistEntryMediaSource: FfiConverte
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSearchHit: FfiConverterRustBuffer {
+    typealias SwiftType = [SearchHit]
+
+    public static func write(_ value: [SearchHit], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSearchHit.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SearchHit] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SearchHit]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSearchHit.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeStatusRow: FfiConverterRustBuffer {
     typealias SwiftType = [StatusRow]
 
@@ -3416,7 +3672,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_music_ffi_checksum_method_musicsession_scan_issue_rows() != 6276) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_music_ffi_checksum_method_musicsession_search_hits() != 2411) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_music_ffi_checksum_method_musicsession_set_library_view() != 2464) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_music_ffi_checksum_method_musicsession_settings_info_rows() != 25264) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_music_ffi_checksum_constructor_musicsession_open() != 52643) {

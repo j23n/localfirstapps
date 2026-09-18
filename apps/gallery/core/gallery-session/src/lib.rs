@@ -27,8 +27,8 @@ pub use geo::{
 };
 pub use pack::{
     checkout_pack_dir, data_pack_root, default_roots, discover_pack, download_pack, fetch_pack,
-    install_pack_from, installed_pack, ml_enabled, remove_installed_pack, remove_pack_at, resolve_in,
-    xdg_pack_present, PackFetch, PackInstallError, PackRoots, PackStatus,
+    install_pack_from, installed_pack, ml_enabled, remove_installed_pack, remove_pack_at,
+    resolve_in, xdg_pack_present, PackFetch, PackInstallError, PackRoots, PackStatus,
 };
 pub use places::{places_queue_db_path, run_places, PlaceOutcome, PlaceRecord, PlacesSummary};
 pub use refresh::{refresh_plan, SidecarRefreshPlan};

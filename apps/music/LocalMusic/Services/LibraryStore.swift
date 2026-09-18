@@ -46,6 +46,8 @@ final class LibraryStore {
     private(set) var syncConflictGroups: [ConflictRow] = []
     private(set) var scanIssues: [StatusRow] = []
     private(set) var contentState: LibraryContentState?
+    private(set) var searchHits: [SearchHit] = []
+    private(set) var settingsInfoRows: [TextRow] = []
     private(set) var folderURL: URL?
     private(set) var lastSynced: Date?
     private(set) var isScanning = false
@@ -170,8 +172,8 @@ final class LibraryStore {
         scanProgress = nil
         progressRevealed = false
         scanRevision += 1
-        Task { await self.revealProgressIfNeeded(revision) }
         let revision = scanRevision
+        Task { await self.revealProgressIfNeeded(revision) }
         let capturedURL = folderURL
         let task = Task<Void, Never> { [weak self] in
             guard let self else { return }
@@ -369,12 +371,14 @@ final class LibraryStore {
             )
         }
         contentState = snapshot.contentState
+        searchHits = snapshot.searchHits
     }
 
     private func apply(_ rows: CoreSessionRows) {
         playlists = rows.playlists
         syncConflictGroups = rows.conflicts
         scanIssues = rows.scanIssues
+        settingsInfoRows = rows.settingsInfo
     }
 
     private func rebuildURLIndex() {

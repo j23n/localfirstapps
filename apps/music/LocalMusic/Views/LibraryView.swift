@@ -17,7 +17,8 @@ struct LibraryView: View {
                     onboardingView
                 } else if library.isScanning && library.tracks.isEmpty {
                     scanningView
-                } else if library.tracks.isEmpty {
+                } else if library.contentState == .emptyFolder
+                            || (library.tracks.isEmpty && library.contentState != .noMatches) {
                     emptyStateView
                 } else {
                     trackListView
@@ -168,35 +169,16 @@ struct LibraryView: View {
         !library.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var playlistHits: [Playlist] {
-        guard isSearching else { return [] }
-        let needle = library.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return library.playlists.filter {
-            $0.name.range(of: needle, options: .caseInsensitive) != nil
-        }
+    private var playlistHits: [SearchHit] {
+        library.searchHits.filter { $0.kind == .playlist }
     }
 
-    private var artistHits: [String] {
-        uniqueNames(matching: \.artist)
+    private var artistHits: [SearchHit] {
+        library.searchHits.filter { $0.kind == .artist }
     }
 
-    private var albumHits: [String] {
-        uniqueNames(matching: \.album)
-    }
-
-    private func uniqueNames(matching keyPath: KeyPath<Track, String>) -> [String] {
-        guard isSearching else { return [] }
-        let needle = library.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        var seen = Set<String>()
-        var names: [String] = []
-        for track in library.tracks {
-            let value = track[keyPath: keyPath]
-            guard value.range(of: needle, options: .caseInsensitive) != nil else { continue }
-            if seen.insert(value.lowercased()).inserted {
-                names.append(value)
-            }
-        }
-        return names
+    private var albumHits: [SearchHit] {
+        library.searchHits.filter { $0.kind == .album }
     }
 
     @ViewBuilder
@@ -221,9 +203,9 @@ struct LibraryView: View {
 
             if total == 0 && playlistHits.isEmpty && artistHits.isEmpty && albumHits.isEmpty {
                 Section {
-                    Text(library.searchText.isEmpty
-                         ? "No tracks."
-                         : "No matches for “\(library.searchText)”")
+                    Text(library.contentState == .noMatches || isSearching
+                         ? "No matches for “\(library.searchText)”"
+                         : "No tracks.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -233,12 +215,12 @@ struct LibraryView: View {
             } else {
                 if !artistHits.isEmpty {
                     Section {
-                        ForEach(artistHits, id: \.self) { artist in
+                        ForEach(artistHits, id: \.id) { hit in
                             SearchLocationButton(
-                                title: artist,
-                                subtitle: "Artist",
-                                symbol: MusicSearchKind.artist.symbol,
-                                tracks: library.tracks.filter { $0.artist == artist }
+                                title: hit.title,
+                                subtitle: hit.subtitle ?? MusicSearchKind.artist.label,
+                                symbol: hit.symbol,
+                                tracks: library.tracks.filter { $0.artist == hit.title }
                             )
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
@@ -253,12 +235,12 @@ struct LibraryView: View {
 
                 if !albumHits.isEmpty {
                     Section {
-                        ForEach(albumHits, id: \.self) { album in
+                        ForEach(albumHits, id: \.id) { hit in
                             SearchLocationButton(
-                                title: album,
-                                subtitle: "Album",
-                                symbol: MusicSearchKind.album.symbol,
-                                tracks: library.tracks.filter { $0.album == album }
+                                title: hit.title,
+                                subtitle: hit.subtitle ?? MusicSearchKind.album.label,
+                                symbol: hit.symbol,
+                                tracks: library.tracks.filter { $0.album == hit.title }
                             )
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
@@ -273,14 +255,14 @@ struct LibraryView: View {
 
                 if !playlistHits.isEmpty {
                     Section {
-                        ForEach(playlistHits) { playlist in
+                        ForEach(playlistHits, id: \.id) { hit in
                             NavigationLink {
-                                PlaylistDetailView(playlistID: playlist.id)
+                                PlaylistDetailView(playlistID: hit.id)
                             } label: {
                                 MusicSearchHitRow(
-                                    title: playlist.name,
-                                    subtitle: playlist.countLabel,
-                                    symbol: MusicSearchKind.playlist.symbol
+                                    title: hit.title,
+                                    subtitle: hit.subtitle,
+                                    symbol: hit.symbol
                                 )
                             }
                             .listRowSeparator(.hidden)

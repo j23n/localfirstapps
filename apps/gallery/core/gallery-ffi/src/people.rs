@@ -24,6 +24,8 @@ pub enum PersonLinkKind {
 }
 
 /// Display-ready link resolution for one `People/…` tag.
+///
+/// R6 role: command DTO.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PersonLinkResolution {
     pub kind: PersonLinkKind,

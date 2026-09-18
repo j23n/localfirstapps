@@ -288,7 +288,7 @@ mod tests {
         assert!(parse_gallery_route("folder").is_ok());
         assert!(parse_gallery_route("people").is_ok());
         assert!(parse_gallery_route("face-review").is_err());
-        assert!(parse_gallery_route("sync-conflict-group").is_err());
+        assert!(parse_gallery_route("sync-conflict-group").is_ok());
         assert!(parse_gallery_route("not-a-screen").is_err());
         assert!(parse_launch_args(["localgallery", "--route"]).is_err());
         assert!(

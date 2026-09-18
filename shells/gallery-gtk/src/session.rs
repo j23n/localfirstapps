@@ -13,8 +13,9 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use gallery_ffi::view::MAX_VIEW_WINDOW;
 use gallery_ffi::{
     load_snapshot, person_link_state, person_log_append, person_log_project_report,
-    photo_file_from_scan, read_image_metadata, read_video_date, save_snapshot, GalleryMediaItem,
-    GalleryTextRow, LibraryIndex, MemoryContactCommandItem, MemoryFolderCommandItem,
+    photo_file_from_scan, read_image_metadata, read_video_date, save_snapshot, ConflictError,
+    ConflictPreview, ConflictRow, ConflictSession, GalleryMediaItem, GalleryTextRow,
+    ImageConflictPreview, LibraryIndex, MemoryContactCommandItem, MemoryFolderCommandItem,
     MemoryGenerator, MemoryPersonCommandItem, MemoryStructure, PersonLinkKind,
     PersonLinkResolution, PersonStateStructure, RemovePhotosResult, ScanCatalogHost, ScanCommand,
     ScanError, ScanMetrics, ScanProgressListener, ScannedFolderHost, ScannedSidecarHost,
@@ -80,6 +81,7 @@ pub enum ShellError {
     Scan(ScanError),
     Host(localgallery::HostError),
     View(ViewError),
+    Conflict(ConflictError),
 }
 
 impl std::fmt::Display for ShellError {
@@ -90,6 +92,7 @@ impl std::fmt::Display for ShellError {
             Self::Scan(error) => error.fmt(formatter),
             Self::Host(error) => error.fmt(formatter),
             Self::View(error) => error.fmt(formatter),
+            Self::Conflict(error) => error.fmt(formatter),
         }
     }
 }
@@ -111,6 +114,12 @@ impl From<localgallery::HostError> for ShellError {
 impl From<ViewError> for ShellError {
     fn from(error: ViewError) -> Self {
         Self::View(error)
+    }
+}
+
+impl From<ConflictError> for ShellError {
+    fn from(error: ConflictError) -> Self {
+        Self::Conflict(error)
     }
 }
 
@@ -1054,6 +1063,35 @@ impl Session {
     #[must_use]
     pub fn folder(&self) -> Option<&Path> {
         self.folder.as_deref()
+    }
+
+    fn conflict_root(&self) -> Result<String, ShellError> {
+        let folder = self.folder().ok_or(ShellError::NoFolder)?;
+        folder
+            .to_str()
+            .map(str::to_owned)
+            .ok_or(ShellError::InvalidPath)
+    }
+
+    pub fn conflict_rows(&self) -> Result<Vec<ConflictRow>, ShellError> {
+        Ok(ConflictSession::open(self.conflict_root()?).conflict_rows()?)
+    }
+
+    pub fn conflict_preview(&self, group_id: &str) -> Result<ConflictPreview, ShellError> {
+        Ok(ConflictSession::open(self.conflict_root()?).conflict_preview(group_id.to_owned())?)
+    }
+
+    pub fn resolve_group(&self, group_id: &str) -> Result<(), ShellError> {
+        Ok(ConflictSession::open(self.conflict_root()?).resolve_group(group_id.to_owned())?)
+    }
+
+    pub fn image_preview(&self, group_id: &str) -> Result<ImageConflictPreview, ShellError> {
+        Ok(ConflictSession::open(self.conflict_root()?).image_preview(group_id.to_owned())?)
+    }
+
+    pub fn keep_image_copy(&self, group_id: &str, surviving: &str) -> Result<(), ShellError> {
+        Ok(ConflictSession::open(self.conflict_root()?)
+            .keep_image_copy(group_id.to_owned(), surviving.to_owned())?)
     }
 
     #[must_use]

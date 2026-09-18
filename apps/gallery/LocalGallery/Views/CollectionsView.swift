@@ -286,7 +286,7 @@ struct CollectionsView: View {
                     memoriesRail(memories)
                 }
 
-                let people = store.people.visiblePeopleForRail
+                let people = peopleRailSuggestions
                 let reviewableCount = store.faces.reviewableClusters.count
                 let scanningPeople = store.analysis.isRunning || store.faces.isRunning
                 if PeopleSectionVisibility.shouldShow(
@@ -298,9 +298,10 @@ struct CollectionsView: View {
                     peopleRail(people, scanning: scanningPeople)
                 }
 
-                if !store.eventFolders.isEmpty {
+                let events = eventRows
+                if !events.isEmpty {
                     sectionHeader("Events")
-                    eventsList
+                    eventsList(events)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 16)
                 }
@@ -422,16 +423,28 @@ struct CollectionsView: View {
         }
     }
 
-    private var eventsList: some View {
+    private var peopleRailSuggestions: [TagSuggestion] {
+        _ = store.index.listingEpoch
+        _ = store.people.featuredPeople
+        _ = store.people.hiddenPeople
+        return store.index.peopleRailListing().compactMap { store.index.personSuggestion(for: $0.id) }
+    }
+
+    private var eventRows: [GalleryTextRow] {
+        _ = store.index.listingEpoch
+        return store.index.collectionListing(sectionID: "events")
+    }
+
+    private func eventsList(_ events: [GalleryTextRow]) -> some View {
         VStack(spacing: 0) {
-            ForEach(Array(store.eventFolders.enumerated()), id: \.element.id) { idx, folder in
+            ForEach(Array(events.enumerated()), id: \.element.id) { idx, row in
                 NavigationLink {
-                    FolderGridView(title: folder.name, folderID: folder.id)
+                    TagGridView(tag: eventTag(for: row))
                 } label: {
-                    eventRow(folder)
+                    eventRow(row)
                 }
                 .buttonStyle(.plain)
-                if idx < store.eventFolders.count - 1 {
+                if idx < events.count - 1 {
                     Divider()
                         .background(Design.separator)
                         .padding(.leading, 96)
@@ -443,9 +456,11 @@ struct CollectionsView: View {
         .shadow(color: Color.black.opacity(0.04), radius: 1, y: 1)
     }
 
-    private func eventRow(_ folder: PhotoFolder) -> some View {
+    private func eventRow(_ row: GalleryTextRow) -> some View {
+        let tag = store.index.tagSuggestion(for: row.id)
+        let coverURL = tag.flatMap { store.photos(forTag: $0).first?.url }
         HStack(spacing: 14) {
-            if let coverURL = folder.coverPhotoURL {
+            if let coverURL {
                 ThumbnailView(url: coverURL, size: 68, cornerRadius: 10)
                     .frame(width: 68, height: 68)
             } else {
@@ -460,14 +475,14 @@ struct CollectionsView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(folder.name)
+                Text(row.title)
                     .font(.system(size: 15.5, weight: .medium))
                     .foregroundStyle(Design.ink)
                     .lineLimit(1)
-                Text("\(folder.photos.count) photos")
+                Text(row.trailing ?? photoCountLabel(tag?.count ?? 0))
                     .font(.system(size: 12.5))
                     .foregroundStyle(Design.ink2)
-                if let range = eventDateRange(folder) {
+                if let range = eventDateRange(tag) {
                     Text(range)
                         .font(.system(size: 11.5))
                         .foregroundStyle(Design.ink3)
@@ -485,12 +500,25 @@ struct CollectionsView: View {
         .contentShape(Rectangle())
     }
 
-    private func eventDateRange(_ folder: PhotoFolder) -> String? {
-        let dates = folder.photos.compactMap(\.dateTaken).sorted()
-        guard let first = dates.first, let last = dates.last else { return nil }
+    private func eventTag(for row: GalleryTextRow) -> TagSuggestion {
+        store.index.tagSuggestion(for: row.id) ?? TagSuggestion(
+            id: row.id,
+            displayName: row.title,
+            fullPath: row.subtitle?.replacingOccurrences(of: " › ", with: "/") ?? row.id,
+            namespace: "Events",
+            count: 0
+        )
+    }
+
+    private func eventDateRange(_ tag: TagSuggestion?) -> String? {
+        guard let tag else { return nil }
+        let dates = store.photos(forTag: tag).compactMap(\.dateTaken).sorted()
         let fmt = DateFormatter()
         fmt.dateStyle = .medium
         fmt.timeStyle = .none
+        guard let first = dates.first, let last = dates.last else {
+            return tag.latestPhotoDate.map { fmt.string(from: $0) }
+        }
         if Calendar.current.isDate(first, inSameDayAs: last) {
             return fmt.string(from: first)
         }

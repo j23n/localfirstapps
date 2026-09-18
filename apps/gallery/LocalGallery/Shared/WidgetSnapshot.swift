@@ -20,9 +20,9 @@ struct WidgetIndex: Codable, Sendable {
 
 /// One entry in the folder picker presented by `FolderWidget`'s configuration intent.
 struct FolderCatalogEntry: Codable, Hashable, Sendable {
-    let id: String              // PhotoFolder.id.uuidString
+    let id: String              // PhotoFolder.id.uuidString — folder identity
     let displayName: String     // leaf name, e.g. "Italy 2024"
-    let pathDescription: String // human-readable parent chain, "Trips › Italy 2024"
+    let pathDescription: String // display only: human-readable parent chain, "Trips › Italy 2024"
 }
 
 struct FolderCatalog: Codable, Sendable {

@@ -22,23 +22,27 @@ private let decodeLimiter = AsyncSemaphore(limit: 4)
 /// type just preserves the existing call shape from the views.
 @MainActor
 final class ThumbnailService {
-    private let thumbnailCache = NSCache<NSURL, UIImage>()
-    private let fullImageCache = NSCache<NSURL, UIImage>()
-    /// Cropped face cells. Keyed by path + region + cell size + source stamp,
-    /// not by photo — two faces in one group shot must not share a bitmap.
+    /// In-memory bitmaps are id-keyed (`PhotoFile.stableID`). `NSURL` path
+    /// identity split NFC/NFD spellings of one photo; the on-disk JPEG is
+    /// already `{stableID}.jpg` and is not renamed here.
+    private let thumbnailCache = NSCache<NSString, UIImage>()
+    private let fullImageCache = NSCache<NSString, UIImage>()
+    /// Cropped face cells. Keyed by photo id + region + cell size + source
+    /// stamp, not by path — two faces in one group shot must not share a
+    /// bitmap, and NFC/NFD URLs of one photo must.
     private let faceCropCache = NSCache<NSString, UIImage>()
 
     /// Source identity recorded when an in-memory thumbnail was stored.
     /// Lookups compare this to the live size/mtime
     /// so a replaced file doesn't keep painting the old JPEG.
-    private var thumbnailStamps: [NSURL: ContentVersion] = [:]
-    private var fullImageStamps: [NSURL: ContentVersion] = [:]
-    /// Pixel-size of the bitmap sitting in `fullImageCache` for that URL.
+    private var thumbnailStamps: [UUID: ContentVersion] = [:]
+    private var fullImageStamps: [UUID: ContentVersion] = [:]
+    /// Pixel-size of the bitmap sitting in `fullImageCache` for that photo.
     /// A 1080 export must not satisfy a later 2000 viewer load.
-    private var fullImagePixelSizes: [NSURL: CGFloat] = [:]
-    /// Face-crop cache keys per source URL, so scan-modified invalidation
+    private var fullImagePixelSizes: [UUID: CGFloat] = [:]
+    /// Face-crop cache keys per photo id, so scan-modified invalidation
     /// can drop every region/size variant without enumerating `NSCache`.
-    private var faceCropKeysByURL: [URL: Set<NSString>] = [:]
+    private var faceCropKeysByPhotoID: [UUID: Set<NSString>] = [:]
 
     private let thumbnailDiskCacheDir: URL
 
@@ -63,9 +67,9 @@ final class ThumbnailService {
     /// disk — used by the viewer to populate an initial bitmap before the
     /// async path loads at full size.
     func cachedThumbnail(for url: URL) -> UIImage? {
-        let key = url as NSURL
-        guard let image = thumbnailCache.object(forKey: key) else { return nil }
-        guard isFresh(url, stamp: thumbnailStamps[key]) else {
+        let id = PhotoFile.stableID(for: url)
+        guard let image = thumbnailCache.object(forKey: Self.memoryCacheKey(id)) else { return nil }
+        guard isFresh(url, stamp: thumbnailStamps[id]) else {
             evictInMemoryThumbnail(for: url)
             return nil
         }
@@ -96,9 +100,9 @@ final class ThumbnailService {
                 return nil
             }
             let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
-            let key = url as NSURL
-            thumbnailStamps[key] = Self.sourceStamp(for: url)
-            thumbnailCache.setObject(image, forKey: key, cost: cost)
+            let id = PhotoFile.stableID(for: url)
+            thumbnailStamps[id] = Self.sourceStamp(for: url)
+            thumbnailCache.setObject(image, forKey: Self.memoryCacheKey(id), cost: cost)
             return image
         } catch is CancellationError {
             Log.thumb.debug("Cancelled: \(Log.r.filename(url.lastPathComponent))")
@@ -123,9 +127,9 @@ final class ThumbnailService {
     /// Drops the in-memory entry for `url` without touching the on-disk JPEG.
     /// Tests use this to force a disk-cache hit after the source file is gone.
     func evictInMemoryThumbnail(for url: URL) {
-        let key = url as NSURL
-        thumbnailCache.removeObject(forKey: key)
-        thumbnailStamps.removeValue(forKey: key)
+        let id = PhotoFile.stableID(for: url)
+        thumbnailCache.removeObject(forKey: Self.memoryCacheKey(id))
+        thumbnailStamps.removeValue(forKey: id)
     }
 
     /// Drops in-memory thumbnails, full images, face crops, and on-disk
@@ -135,11 +139,11 @@ final class ThumbnailService {
     func invalidateCachedImages(for urls: [URL]) {
         for url in urls {
             evictInMemoryThumbnail(for: url)
-            let key = url as NSURL
-            fullImageCache.removeObject(forKey: key)
-            fullImageStamps.removeValue(forKey: key)
-            fullImagePixelSizes.removeValue(forKey: key)
-            if let keys = faceCropKeysByURL.removeValue(forKey: url) {
+            let id = PhotoFile.stableID(for: url)
+            fullImageCache.removeObject(forKey: Self.memoryCacheKey(id))
+            fullImageStamps.removeValue(forKey: id)
+            fullImagePixelSizes.removeValue(forKey: id)
+            if let keys = faceCropKeysByPhotoID.removeValue(forKey: id) {
                 for cropKey in keys {
                     faceCropCache.removeObject(forKey: cropKey)
                 }
@@ -400,7 +404,7 @@ final class ThumbnailService {
         thumbnailStamps.removeAll()
         fullImageStamps.removeAll()
         fullImagePixelSizes.removeAll()
-        faceCropKeysByURL.removeAll()
+        faceCropKeysByPhotoID.removeAll()
         try? FileManager.default.removeItem(at: thumbnailDiskCacheDir)
         try? FileManager.default.createDirectory(at: thumbnailDiskCacheDir, withIntermediateDirectories: true)
         Log.thumb.info("Thumbnail cache cleared")
@@ -429,7 +433,7 @@ final class ThumbnailService {
             let cropped = PersonThumbnailView.crop(source, to: region)
             let cost = cropped.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
             faceCropCache.setObject(cropped, forKey: key, cost: cost)
-            faceCropKeysByURL[url, default: []].insert(key)
+            faceCropKeysByPhotoID[PhotoFile.stableID(for: url), default: []].insert(key)
             return cropped
         } catch is CancellationError {
             await decodeLimiter.release()
@@ -440,30 +444,44 @@ final class ThumbnailService {
         }
     }
 
-    private static func faceCropKey(
+    /// In-memory thumbnail / full-image `NSCache` key. Disk files stay
+    /// `{uuid}.jpg` and are not this string.
+    nonisolated static func memoryCacheKey(for url: URL) -> NSString {
+        memoryCacheKey(PhotoFile.stableID(for: url))
+    }
+
+    nonisolated private static func memoryCacheKey(_ id: UUID) -> NSString {
+        id.uuidString as NSString
+    }
+
+    /// Face-crop identity: photo id + region + cell size + source stamp.
+    /// NFC and NFD spellings of one path share a key because `stableID` does.
+    nonisolated static func faceCropKey(
         url: URL, region: FaceRegion, cellSize: CGFloat,
         stamp: ContentVersion
     ) -> NSString {
         let stampPart = "\(stamp.size ?? 0)|\(stamp.modificationDate?.timeIntervalSince1970 ?? 0)"
-        return "\(url.path)#\(region.centerX),\(region.centerY),\(region.width),\(region.height)#\(Int(cellSize.rounded()))#\(stampPart)" as NSString
+        let id = PhotoFile.stableID(for: url).uuidString
+        return "\(id)#\(region.centerX),\(region.centerY),\(region.width),\(region.height)#\(Int(cellSize.rounded()))#\(stampPart)" as NSString
     }
 
     // MARK: - Full Resolution
 
     func loadFullImage(for url: URL, maxPixelSize: CGFloat = 2000) async -> UIImage? {
-        let key = url as NSURL
+        let id = PhotoFile.stableID(for: url)
+        let key = Self.memoryCacheKey(id)
         if let cached = fullImageCache.object(forKey: key),
-           let cachedSize = fullImagePixelSizes[key],
+           let cachedSize = fullImagePixelSizes[id],
            cachedSize >= maxPixelSize,
-           isFresh(url, stamp: fullImageStamps[key]) {
+           isFresh(url, stamp: fullImageStamps[id]) {
             return cached
         }
         do {
             guard let image = try await Self.generateFullImage(for: url, maxPixelSize: maxPixelSize) else { return nil }
             let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
             fullImageCache.setObject(image, forKey: key, cost: cost)
-            fullImagePixelSizes[key] = maxPixelSize
-            fullImageStamps[key] = Self.sourceStamp(for: url)
+            fullImagePixelSizes[id] = maxPixelSize
+            fullImageStamps[id] = Self.sourceStamp(for: url)
             return image
         } catch is CancellationError {
             Log.thumb.debug("Cancelled full image: \(Log.r.filename(url.lastPathComponent))")

@@ -4,7 +4,7 @@ use shell_kit_gtk::GalleryScreen;
 
 /// Screens assembled by the GTK shell at Phase 5.6.
 ///
-/// `face-review` stays an unbound gap. `sync-conflict-group` is **5.8-xmp-ui**.
+/// `face-review` stays an unbound gap.
 pub const ROUTED_SCREENS: &[GalleryScreen] = &[
     GalleryScreen::FolderPicker,
     GalleryScreen::Folders,
@@ -20,6 +20,7 @@ pub const ROUTED_SCREENS: &[GalleryScreen] = &[
     GalleryScreen::PhotoInfo,
     GalleryScreen::Settings,
     GalleryScreen::Logs,
+    GalleryScreen::SyncConflictGroup,
 ];
 
 /// Keep platform omissions explicit and make a newly generated screen an
@@ -40,8 +41,9 @@ pub const fn gtk_route(screen: GalleryScreen) -> Option<GalleryScreen> {
         | GalleryScreen::Viewer
         | GalleryScreen::PhotoInfo
         | GalleryScreen::Settings
-        | GalleryScreen::Logs => Some(screen),
-        GalleryScreen::SyncConflictGroup | GalleryScreen::FaceReview => None,
+        | GalleryScreen::Logs
+        | GalleryScreen::SyncConflictGroup => Some(screen),
+        GalleryScreen::FaceReview => None,
     }
 }
 
@@ -88,7 +90,11 @@ mod tests {
             .filter_map(gtk_route)
             .collect();
         assert_eq!(routed, ROUTED_SCREENS);
-        assert_eq!(ROUTED_SCREENS.len(), 14);
+        assert_eq!(ROUTED_SCREENS.len(), 15);
+        assert_eq!(
+            route_id(GalleryScreen::SyncConflictGroup),
+            "sync-conflict-group"
+        );
         assert_eq!(route_id(GalleryScreen::Photos), "photos");
         assert_eq!(route_id(GalleryScreen::Logs), "logs");
         assert_eq!(route_id(GalleryScreen::Viewer), "viewer");
@@ -142,9 +148,6 @@ mod tests {
             .copied()
             .filter(|screen| gtk_route(*screen).is_none())
             .collect();
-        assert_eq!(
-            unrouted,
-            [GalleryScreen::SyncConflictGroup, GalleryScreen::FaceReview]
-        );
+        assert_eq!(unrouted, [GalleryScreen::FaceReview]);
     }
 }

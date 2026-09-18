@@ -28,7 +28,7 @@ struct ContactEditView: View {
         self._emails = State(initialValue: draft.emails.map(IdentifiedLabeled.init))
         self._addresses = State(initialValue: draft.addresses.map(IdentifiedAddress.init))
         self._hasBirthday = State(initialValue: draft.birthday != nil)
-        self._lastComposedName = State(initialValue: Self.structuredName(
+        self._lastComposedName = State(initialValue: structuredName(
             given: draft.givenName,
             middle: draft.middleName,
             family: draft.familyName
@@ -363,7 +363,7 @@ struct ContactEditView: View {
     }
 
     private func syncDerivedFullName() {
-        let composed = Self.structuredName(
+        let composed = structuredName(
             given: draft.givenName,
             middle: draft.middleName,
             family: draft.familyName
@@ -374,8 +374,38 @@ struct ContactEditView: View {
         lastComposedName = composed
     }
 
-    nonisolated static func structuredName(given: String, middle: String, family: String) -> String {
-        [given, middle, family].filter { !$0.isEmpty }.joined(separator: " ")
+    private func applyDraft(_ fresh: ContactEditDraft) {
+        draft = fresh
+        urls = fresh.urls.map(IdentifiedLabeled.init)
+        phones = fresh.phones.map(IdentifiedLabeled.init)
+        emails = fresh.emails.map(IdentifiedLabeled.init)
+        addresses = fresh.addresses.map(IdentifiedAddress.init)
+        hasBirthday = fresh.birthday != nil
+        lastComposedName = structuredName(
+            given: fresh.givenName,
+            middle: fresh.middleName,
+            family: fresh.familyName
+        )
+        if let birthday = fresh.birthday,
+           let date = Calendar.current.date(from: DateComponents(
+            year: birthday.year.map(Int.init),
+            month: Int(birthday.month),
+            day: Int(birthday.day)
+           )) {
+            birthdayDate = date
+        }
+    }
+
+    private func recoverStaleEdit(from error: Error) -> Bool {
+        guard let error = error as? ContactsError,
+              case .StaleEdit(let message, let userActionable) = error,
+              userActionable,
+              let id = draft.id else { return false }
+        if let fresh = try? store.contactEditDraft(id: id) {
+            applyDraft(fresh)
+        }
+        saveError = message
+        return true
     }
 
     private func addTag() {
@@ -420,8 +450,12 @@ struct ContactEditView: View {
                     dismiss()
                 }
             } catch {
-                saveError = error.localizedDescription
-                isSaving = false
+                await MainActor.run {
+                    if !recoverStaleEdit(from: error) {
+                        saveError = error.localizedDescription
+                    }
+                    isSaving = false
+                }
             }
         }
     }

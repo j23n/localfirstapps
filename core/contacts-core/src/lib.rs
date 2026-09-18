@@ -32,8 +32,8 @@ pub use actions::{
 pub use card::{structured_name, Birthday, Card, Labeled, LabeledAddress, Layout, PostalAddress};
 pub use display::{
     choice_rows, conflict_preview, conflict_rows, detail_rows, field_rows, list_rows,
-    list_rows_filtered, merge_trailing, search_hits, tag_rows, ConflictFieldPreview,
-    ConflictPreview, ConflictRow, FieldMatch, FieldRow, SearchHit, TextRow,
+    list_rows_filtered, list_section_key, merge_trailing, search_hits, tag_rows,
+    ConflictFieldPreview, ConflictPreview, ConflictRow, FieldMatch, FieldRow, SearchHit, TextRow,
 };
 pub use draft::{
     apply_edit_draft, content_token, edit_draft_from_card, new_edit_draft, BirthdayDraft,

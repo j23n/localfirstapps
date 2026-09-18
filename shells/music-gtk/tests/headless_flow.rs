@@ -64,6 +64,20 @@ fn folder_to_list_to_playlist_save_to_conflict_choice_is_headless() {
     session.resolve_conflict(conflict.id, Some(source)).unwrap();
     assert!(session.conflict_rows().unwrap().is_empty());
 
+    let picker = session.picker_track_items("song").unwrap();
+    assert!(picker.iter().any(|item| item.id == track_id));
+    assert!(
+        session
+            .picker_track_items("no-such-title")
+            .unwrap()
+            .is_empty(),
+        "picker search must not mutate the live library"
+    );
+    let after_picker = session
+        .library_rows(String::new(), SortOption::Title)
+        .unwrap();
+    assert_eq!(after_picker.sections[0].items.len(), 2);
+
     session.play_track(&track_id).unwrap();
     assert!(matches!(
         session.transport().commands(),

@@ -431,6 +431,19 @@ final class PeopleStoreTests: XCTestCase {
         })
     }
 
+    func testHidePushesPersonStateIntoTheCoreIndex() {
+        let index = CoreLibraryIndex()
+        let store = PeopleStore(
+            defaults: defaults,
+            clock: SystemClock(),
+            index: index,
+            log: .live
+        )
+        _ = store.attachLibrary(library.url, snapshot: .empty)
+        XCTAssertTrue(store.hidePerson("People/Anna"))
+        XCTAssertEqual(Set(index.personState().hidden), ["People/Anna"])
+    }
+
     private func writePersonMigratedMarker(library: URL, device: String) throws {
         let dir = library.appendingPathComponent(".gallery/log/\(device)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

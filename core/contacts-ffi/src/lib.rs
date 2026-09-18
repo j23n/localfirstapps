@@ -12,14 +12,16 @@ use contacts_core::{
     conflict_preview as core_conflict_preview, conflict_rows as core_conflict_rows, delete_logged,
     detail_rows as core_detail_rows, export_vcard_text as core_export_vcard_text,
     is_conflict_name as core_is_conflict_name, list_rows as core_list_rows,
-    list_rows_filtered as core_list_rows_filtered, load_edit_draft, remove_tag_logged,
-    rename_tag_logged, resolve_logged, save_contact_logged, search_hits as core_search_hits,
-    tag_rows as core_tag_rows, valid_device, BirthdayDraft as CoreBirthdayDraft, ConfinedVfs,
-    ConflictPreview as CoreConflictPreview, ConflictRow as CoreConflictRow,
-    ContactEditDraft as CoreContactEditDraft, FieldRow as CoreFieldRow,
-    LabeledAddressDraft as CoreLabeledAddressDraft, LabeledValueDraft as CoreLabeledValueDraft,
-    MergeKind as CoreMergeKind, SaveContactCommand as CoreSaveContactCommand,
-    SearchHit as CoreSearchHit, Store, StoreError, TextRow as CoreTextRow, TEMP_PREFIX,
+    list_rows_filtered as core_list_rows_filtered, list_section_key as core_list_section_key,
+    load_edit_draft, remove_tag_logged, rename_tag_logged, resolve_logged, save_contact_logged,
+    search_hits as core_search_hits, structured_name as core_structured_name,
+    tag_rows as core_tag_rows, valid_device as core_valid_device,
+    BirthdayDraft as CoreBirthdayDraft, ConfinedVfs, ConflictPreview as CoreConflictPreview,
+    ConflictRow as CoreConflictRow, ContactEditDraft as CoreContactEditDraft,
+    FieldRow as CoreFieldRow, LabeledAddressDraft as CoreLabeledAddressDraft,
+    LabeledValueDraft as CoreLabeledValueDraft, MergeKind as CoreMergeKind,
+    SaveContactCommand as CoreSaveContactCommand, SearchHit as CoreSearchHit, Store, StoreError,
+    TextRow as CoreTextRow, TEMP_PREFIX,
 };
 use localcore_vfs::VfsError;
 
@@ -304,6 +306,24 @@ pub fn is_conflict_name(name: String) -> bool {
     core_is_conflict_name(&name)
 }
 
+/// Given / middle / family joined with spaces. Empty when none are set.
+#[uniffi::export]
+pub fn structured_name(given: String, middle: String, family: String) -> String {
+    core_structured_name(&given, &middle, &family)
+}
+
+/// Whether `name` is a safe log-directory component.
+#[uniffi::export]
+pub fn valid_device(name: String) -> bool {
+    core_valid_device(&name)
+}
+
+/// First alphabetic character of a list title, uppercased. `#` otherwise.
+#[uniffi::export]
+pub fn list_section_key(title: String) -> String {
+    core_list_section_key(&title)
+}
+
 /// Open a contacts folder on the real filesystem.
 #[derive(uniffi::Object)]
 pub struct ContactsSession {
@@ -320,7 +340,7 @@ impl ContactsSession {
     /// identifier stays off the synced folder.
     #[uniffi::constructor]
     pub fn open(root: String, device: String) -> Result<Self, ContactsError> {
-        if !valid_device(&device) {
+        if !core_valid_device(&device) {
             return Err(ContactsError::InvalidCommand {
                 message: format!("invalid device {device:?}"),
                 user_actionable: true,

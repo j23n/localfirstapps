@@ -8,8 +8,21 @@ struct FolderGridView: View {
 
     @Environment(GalleryStore.self) private var store
 
-    private var liveFolder: PhotoFolder? {
-        store.rootFolder?.folder(withID: folderID)
+    private var listingEpoch: UInt64 { store.index.listingEpoch }
+
+    private var photoIDs: [UUID] {
+        _ = listingEpoch
+        return store.index.folderPhotoIDs(folderID)
+    }
+
+    private var liveName: String? {
+        _ = listingEpoch
+        return store.index.folderHost(folderID.uuidString)?.name
+    }
+
+    private var folderKnown: Bool {
+        _ = listingEpoch
+        return store.index.folderExists(folderID.uuidString) || !photoIDs.isEmpty
     }
 
     var body: some View {
@@ -18,13 +31,15 @@ struct FolderGridView: View {
                 Task { await store.rescan(kind: .light, silent: false) }
             }
             .navigationTitle(title)
-        } else if let liveFolder {
-            let photos = liveFolder.photos
+        } else if !store.hasSortedPhotos {
+            ProgressView()
+                .navigationTitle(title)
+        } else if folderKnown {
             PhotoGridScreen(
-                title: liveFolder.name,
-                subtitle: "\(photos.count) photos",
+                title: liveName ?? title,
+                subtitle: photoCountLabel(photoIDs.count),
                 showSearch: true,
-                fixedPhotoIDs: photos.map(\.id)
+                fixedPhotoIDs: photoIDs
             )
         } else {
             ContentUnavailableView(

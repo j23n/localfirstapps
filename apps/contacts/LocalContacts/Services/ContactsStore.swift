@@ -34,7 +34,7 @@ final class ContactsStore {
     }
 
     static func storedDeviceId(defaults: UserDefaults = .standard) -> String {
-        if let existing = defaults.string(forKey: deviceIdKey), !existing.isEmpty {
+        if let existing = defaults.string(forKey: deviceIdKey), validDevice(name: existing) {
             return existing
         }
         let id = "ios-\(UUID().uuidString)"
@@ -209,9 +209,16 @@ final class ContactsStore {
     @discardableResult
     func save(_ draft: ContactEditDraft) async throws -> ContactEditDraft {
         let session = try openSession()
-        let saved = try session.saveContact(command: SaveContactCommand(draft: draft))
-        try refreshFromSession(session)
-        return saved
+        do {
+            let saved = try session.saveContact(command: SaveContactCommand(draft: draft))
+            try refreshFromSession(session)
+            return saved
+        } catch let error as ContactsError {
+            if case .StaleEdit(_, true) = error {
+                try? refreshFromSession(session)
+            }
+            throw error
+        }
     }
 
     /// The folder's vCard layout, derived from how contacts are distributed across files.
@@ -287,7 +294,6 @@ final class ContactsStore {
         do {
             let opened = try ContactsSession.open(root: url.path, device: deviceId)
             session = opened
-            try opened.reload()
             try refreshFromSession(opened)
         } catch {
             errorMessage = "Failed to read folder: \(error.localizedDescription)"

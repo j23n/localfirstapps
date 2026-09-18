@@ -243,6 +243,20 @@ typedef void (*UniffiForeignFutureCompleteVoid)(uint64_t, UniffiForeignFutureRes
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_ANALYSIS_PROGRESS_LISTENER_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_ANALYSIS_PROGRESS_LISTENER_METHOD0
+typedef void (*UniffiCallbackInterfaceAnalysisProgressListenerMethod0)(uint64_t, RustBuffer, uint32_t, uint32_t, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_ANALYSIS_PROGRESS_LISTENER_METHOD1
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_ANALYSIS_PROGRESS_LISTENER_METHOD1
+typedef void (*UniffiCallbackInterfaceAnalysisProgressListenerMethod1)(uint64_t, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
 #ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_FACE_PROGRESS_LISTENER_METHOD0
 #define UNIFFI_FFIDEF_CALLBACK_INTERFACE_FACE_PROGRESS_LISTENER_METHOD0
 typedef void (*UniffiCallbackInterfaceFaceProgressListenerMethod0)(uint64_t, uint32_t, uint32_t, void* _Nonnull, 
@@ -313,6 +327,16 @@ typedef void (*UniffiCallbackInterfaceTaggingProgressListenerMethod2)(uint64_t, 
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_ANALYSIS_PROGRESS_LISTENER
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_ANALYSIS_PROGRESS_LISTENER
+typedef struct UniffiVTableCallbackInterfaceAnalysisProgressListener {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfaceAnalysisProgressListenerMethod0 _Nonnull onProgress;
+    UniffiCallbackInterfaceAnalysisProgressListenerMethod1 _Nonnull onFinished;
+} UniffiVTableCallbackInterfaceAnalysisProgressListener;
+
+#endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_FACE_PROGRESS_LISTENER
 #define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_FACE_PROGRESS_LISTENER
 typedef struct UniffiVTableCallbackInterfaceFaceProgressListener {
@@ -362,6 +386,117 @@ typedef struct UniffiVTableCallbackInterfaceTaggingProgressListener {
     UniffiCallbackInterfaceTaggingProgressListenerMethod2 _Nonnull onFinished;
 } UniffiVTableCallbackInterfaceTaggingProgressListener;
 
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_ANALYSISPROGRESSLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_ANALYSISPROGRESSLISTENER
+uint64_t uniffi_gallery_ffi_fn_clone_analysisprogresslistener(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_ANALYSISPROGRESSLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_ANALYSISPROGRESSLISTENER
+void uniffi_gallery_ffi_fn_free_analysisprogresslistener(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_INIT_CALLBACK_VTABLE_ANALYSISPROGRESSLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_INIT_CALLBACK_VTABLE_ANALYSISPROGRESSLISTENER
+void uniffi_gallery_ffi_fn_init_callback_vtable_analysisprogresslistener(const UniffiVTableCallbackInterfaceAnalysisProgressListener* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISPROGRESSLISTENER_ON_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISPROGRESSLISTENER_ON_PROGRESS
+void uniffi_gallery_ffi_fn_method_analysisprogresslistener_on_progress(uint64_t ptr, RustBuffer phase, uint32_t done, uint32_t total, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISPROGRESSLISTENER_ON_FINISHED
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISPROGRESSLISTENER_ON_FINISHED
+void uniffi_gallery_ffi_fn_method_analysisprogresslistener_on_finished(uint64_t ptr, RustBuffer summary, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_ANALYSISSESSION
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_ANALYSISSESSION
+uint64_t uniffi_gallery_ffi_fn_clone_analysissession(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_ANALYSISSESSION
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_ANALYSISSESSION
+void uniffi_gallery_ffi_fn_free_analysissession(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CONSTRUCTOR_ANALYSISSESSION_NEW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CONSTRUCTOR_ANALYSISSESSION_NEW
+uint64_t uniffi_gallery_ffi_fn_constructor_analysissession_new(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_CANCEL
+void uniffi_gallery_ffi_fn_method_analysissession_cancel(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_IS_RUNNING
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_IS_RUNNING
+int8_t uniffi_gallery_ffi_fn_method_analysissession_is_running(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_LAST_SUMMARY
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_LAST_SUMMARY
+RustBuffer uniffi_gallery_ffi_fn_method_analysissession_last_summary(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_PROGRESS
+RustBuffer uniffi_gallery_ffi_fn_method_analysissession_progress(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_START
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_START
+void uniffi_gallery_ffi_fn_method_analysissession_start(uint64_t ptr, RustBuffer photos, RustBuffer pack_dir, RustBuffer ml_cache_path, RustBuffer geo_cache_path, RustBuffer phases, int8_t force, RustBuffer decoder, RustBuffer progress, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_START_ONE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_ANALYSISSESSION_START_ONE
+void uniffi_gallery_ffi_fn_method_analysissession_start_one(uint64_t ptr, RustBuffer photo, RustBuffer pack_dir, RustBuffer ml_cache_path, RustBuffer geo_cache_path, RustBuffer phases, RustBuffer decoder, RustBuffer progress, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_CONFLICTSESSION
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_CONFLICTSESSION
+uint64_t uniffi_gallery_ffi_fn_clone_conflictsession(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_CONFLICTSESSION
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FREE_CONFLICTSESSION
+void uniffi_gallery_ffi_fn_free_conflictsession(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CONSTRUCTOR_CONFLICTSESSION_OPEN
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CONSTRUCTOR_CONFLICTSESSION_OPEN
+uint64_t uniffi_gallery_ffi_fn_constructor_conflictsession_open(RustBuffer root, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_CONFLICT_PREVIEW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_CONFLICT_PREVIEW
+RustBuffer uniffi_gallery_ffi_fn_method_conflictsession_conflict_preview(uint64_t ptr, RustBuffer group_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_CONFLICT_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_CONFLICT_ROWS
+RustBuffer uniffi_gallery_ffi_fn_method_conflictsession_conflict_rows(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_IMAGE_PREVIEW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_IMAGE_PREVIEW
+RustBuffer uniffi_gallery_ffi_fn_method_conflictsession_image_preview(uint64_t ptr, RustBuffer group_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_KEEP_IMAGE_COPY
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_KEEP_IMAGE_COPY
+void uniffi_gallery_ffi_fn_method_conflictsession_keep_image_copy(uint64_t ptr, RustBuffer group_id, RustBuffer surviving, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_RESOLVE_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_CONFLICTSESSION_RESOLVE_GROUP
+void uniffi_gallery_ffi_fn_method_conflictsession_resolve_group(uint64_t ptr, RustBuffer group_id, RustCallStatus *_Nonnull out_status
+);
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_FACEPROGRESSLISTENER
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_FACEPROGRESSLISTENER
@@ -599,6 +734,16 @@ RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_collection_window(uint64_t 
 RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_compute_scheduled(uint64_t ptr, RustBuffer context, int64_t horizon_days, RustBuffer hidden_memory_ids, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_EXPORT_FOLDERS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_EXPORT_FOLDERS
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_export_folders(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_FEATURED_PHOTO_ID
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_FEATURED_PHOTO_ID
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_featured_photo_id(uint64_t ptr, RustBuffer person_path, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_FOLDER_PHOTO_IDS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_FOLDER_PHOTO_IDS
 RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_folder_photo_ids(uint64_t ptr, RustBuffer folder_id, RustCallStatus *_Nonnull out_status
@@ -614,6 +759,16 @@ RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_folder_structure(uint64_t p
 RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_folder_window(uint64_t ptr, RustBuffer section_id, uint64_t offset, uint64_t limit, uint64_t generation, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PEOPLE_RAIL_STRUCTURE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PEOPLE_RAIL_STRUCTURE
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_people_rail_structure(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PEOPLE_RAIL_WINDOW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PEOPLE_RAIL_WINDOW
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_people_rail_window(uint64_t ptr, RustBuffer section_id, uint64_t offset, uint64_t limit, uint64_t generation, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PEOPLE_STRUCTURE
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PEOPLE_STRUCTURE
 RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_people_structure(uint64_t ptr, RustCallStatus *_Nonnull out_status
@@ -622,6 +777,16 @@ RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_people_structure(uint64_t p
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PEOPLE_WINDOW
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PEOPLE_WINDOW
 RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_people_window(uint64_t ptr, RustBuffer section_id, uint64_t offset, uint64_t limit, uint64_t generation, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PERSON_FULL_PATH
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PERSON_FULL_PATH
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_person_full_path(uint64_t ptr, RustBuffer id_or_path, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PERSON_STATE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PERSON_STATE
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_person_state(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_PHOTO_COUNT
@@ -649,6 +814,16 @@ RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_photo_window(uint64_t ptr, 
 RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_rebuild(uint64_t ptr, RustBuffer photos, RustBuffer photo_time_zone_offsets, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_REMOVE_PHOTOS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_REMOVE_PHOTOS
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_remove_photos(uint64_t ptr, RustBuffer ids, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SCAN_ORDER_PHOTO_IDS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SCAN_ORDER_PHOTO_IDS
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_scan_order_photo_ids(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SCHEDULED_PHOTO_COUNT
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SCHEDULED_PHOTO_COUNT
 uint32_t uniffi_gallery_ffi_fn_method_libraryindex_scheduled_photo_count(uint64_t ptr, RustCallStatus *_Nonnull out_status
@@ -662,6 +837,11 @@ RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_search(uint64_t ptr, RustBu
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SET_FOLDERS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SET_FOLDERS
 void uniffi_gallery_ffi_fn_method_libraryindex_set_folders(uint64_t ptr, RustBuffer folders, RustBuffer photo_ids_in_scan_order, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SET_PERSON_STATE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SET_PERSON_STATE
+void uniffi_gallery_ffi_fn_method_libraryindex_set_person_state(uint64_t ptr, RustBuffer state, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_SET_PHOTO_IDS_VIEW
@@ -697,6 +877,11 @@ RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_tag_window(uint64_t ptr, Ru
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_VIEW_GENERATION
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_VIEW_GENERATION
 uint64_t uniffi_gallery_ffi_fn_method_libraryindex_view_generation(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_VISIBLE_PHOTO_IDS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_METHOD_LIBRARYINDEX_VISIBLE_PHOTO_IDS
+RustBuffer uniffi_gallery_ffi_fn_method_libraryindex_visible_photo_ids(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_CLONE_MEMORYGENERATOR
@@ -928,6 +1113,11 @@ RustBuffer uniffi_gallery_ffi_fn_func_core_version(RustCallStatus *_Nonnull out_
 RustBuffer uniffi_gallery_ffi_fn_func_stable_uuid(RustBuffer input, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_IS_CONFLICT_NAME
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_IS_CONFLICT_NAME
+int8_t uniffi_gallery_ffi_fn_func_is_conflict_name(RustBuffer name, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_FACE_MERGE_DIRECTION
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_FACE_MERGE_DIRECTION
 RustBuffer uniffi_gallery_ffi_fn_func_face_merge_direction(RustBuffer a, RustBuffer b, RustCallStatus *_Nonnull out_status
@@ -947,6 +1137,16 @@ RustBuffer uniffi_gallery_ffi_fn_func_memory_country_name(RustBuffer code, RustC
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_SCHEDULED_MEMORY_HORIZON_DAYS
 int64_t uniffi_gallery_ffi_fn_func_scheduled_memory_horizon_days(RustCallStatus *_Nonnull out_status
     
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LINK_STATE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LINK_STATE
+RustBuffer uniffi_gallery_ffi_fn_func_person_link_state(RustBuffer person_path, RustBuffer display_name, RustBuffer contacts, RustBuffer links, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_VISIBLE_PEOPLE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_VISIBLE_PEOPLE
+RustBuffer uniffi_gallery_ffi_fn_func_visible_people(RustBuffer people, RustBuffer hidden, RustBuffer featured, double now, int8_t recency_gated, RustBuffer cap, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LOG_APPEND
@@ -1325,6 +1525,12 @@ uint16_t uniffi_gallery_ffi_checksum_func_stable_uuid(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_IS_CONFLICT_NAME
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_IS_CONFLICT_NAME
+uint16_t uniffi_gallery_ffi_checksum_func_is_conflict_name(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_FACE_MERGE_DIRECTION
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_FACE_MERGE_DIRECTION
 uint16_t uniffi_gallery_ffi_checksum_func_face_merge_direction(void
@@ -1346,6 +1552,18 @@ uint16_t uniffi_gallery_ffi_checksum_func_memory_country_name(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_SCHEDULED_MEMORY_HORIZON_DAYS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_SCHEDULED_MEMORY_HORIZON_DAYS
 uint16_t uniffi_gallery_ffi_checksum_func_scheduled_memory_horizon_days(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LINK_STATE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_PERSON_LINK_STATE
+uint16_t uniffi_gallery_ffi_checksum_func_person_link_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_VISIBLE_PEOPLE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_VISIBLE_PEOPLE
+uint16_t uniffi_gallery_ffi_checksum_func_visible_people(void
     
 );
 #endif
@@ -1466,6 +1684,84 @@ uint16_t uniffi_gallery_ffi_checksum_func_inspect_model_pack(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_RESOLVE_MODEL_PACK
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_RESOLVE_MODEL_PACK
 uint16_t uniffi_gallery_ffi_checksum_func_resolve_model_pack(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISPROGRESSLISTENER_ON_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISPROGRESSLISTENER_ON_PROGRESS
+uint16_t uniffi_gallery_ffi_checksum_method_analysisprogresslistener_on_progress(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISPROGRESSLISTENER_ON_FINISHED
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISPROGRESSLISTENER_ON_FINISHED
+uint16_t uniffi_gallery_ffi_checksum_method_analysisprogresslistener_on_finished(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_CANCEL
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_CANCEL
+uint16_t uniffi_gallery_ffi_checksum_method_analysissession_cancel(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_IS_RUNNING
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_IS_RUNNING
+uint16_t uniffi_gallery_ffi_checksum_method_analysissession_is_running(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_LAST_SUMMARY
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_LAST_SUMMARY
+uint16_t uniffi_gallery_ffi_checksum_method_analysissession_last_summary(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_PROGRESS
+uint16_t uniffi_gallery_ffi_checksum_method_analysissession_progress(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_START
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_START
+uint16_t uniffi_gallery_ffi_checksum_method_analysissession_start(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_START_ONE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_ANALYSISSESSION_START_ONE
+uint16_t uniffi_gallery_ffi_checksum_method_analysissession_start_one(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_CONFLICT_PREVIEW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_CONFLICT_PREVIEW
+uint16_t uniffi_gallery_ffi_checksum_method_conflictsession_conflict_preview(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_CONFLICT_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_CONFLICT_ROWS
+uint16_t uniffi_gallery_ffi_checksum_method_conflictsession_conflict_rows(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_IMAGE_PREVIEW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_IMAGE_PREVIEW
+uint16_t uniffi_gallery_ffi_checksum_method_conflictsession_image_preview(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_KEEP_IMAGE_COPY
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_KEEP_IMAGE_COPY
+uint16_t uniffi_gallery_ffi_checksum_method_conflictsession_keep_image_copy(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_RESOLVE_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_CONFLICTSESSION_RESOLVE_GROUP
+uint16_t uniffi_gallery_ffi_checksum_method_conflictsession_resolve_group(void
     
 );
 #endif
@@ -1673,6 +1969,18 @@ uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_compute_scheduled(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_EXPORT_FOLDERS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_EXPORT_FOLDERS
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_export_folders(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_FEATURED_PHOTO_ID
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_FEATURED_PHOTO_ID
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_featured_photo_id(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_FOLDER_PHOTO_IDS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_FOLDER_PHOTO_IDS
 uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_folder_photo_ids(void
@@ -1691,6 +1999,18 @@ uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_folder_window(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PEOPLE_RAIL_STRUCTURE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PEOPLE_RAIL_STRUCTURE
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_people_rail_structure(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PEOPLE_RAIL_WINDOW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PEOPLE_RAIL_WINDOW
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_people_rail_window(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PEOPLE_STRUCTURE
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PEOPLE_STRUCTURE
 uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_people_structure(void
@@ -1700,6 +2020,18 @@ uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_people_structure(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PEOPLE_WINDOW
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PEOPLE_WINDOW
 uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_people_window(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PERSON_FULL_PATH
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PERSON_FULL_PATH
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_person_full_path(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PERSON_STATE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_PERSON_STATE
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_person_state(void
     
 );
 #endif
@@ -1733,6 +2065,18 @@ uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_rebuild(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_REMOVE_PHOTOS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_REMOVE_PHOTOS
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_remove_photos(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_SCAN_ORDER_PHOTO_IDS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_SCAN_ORDER_PHOTO_IDS
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_scan_order_photo_ids(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_SCHEDULED_PHOTO_COUNT
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_SCHEDULED_PHOTO_COUNT
 uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_scheduled_photo_count(void
@@ -1748,6 +2092,12 @@ uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_search(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_SET_FOLDERS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_SET_FOLDERS
 uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_set_folders(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_SET_PERSON_STATE
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_SET_PERSON_STATE
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_set_person_state(void
     
 );
 #endif
@@ -1790,6 +2140,12 @@ uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_tag_window(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_VIEW_GENERATION
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_VIEW_GENERATION
 uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_view_generation(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_VISIBLE_PHOTO_IDS
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_LIBRARYINDEX_VISIBLE_PHOTO_IDS
+uint16_t uniffi_gallery_ffi_checksum_method_libraryindex_visible_photo_ids(void
     
 );
 #endif
@@ -1916,6 +2272,18 @@ uint16_t uniffi_gallery_ffi_checksum_method_taggingsession_start_one(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_TAGGINGSESSION_STATS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_METHOD_TAGGINGSESSION_STATS
 uint16_t uniffi_gallery_ffi_checksum_method_taggingsession_stats(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_CONSTRUCTOR_ANALYSISSESSION_NEW
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_CONSTRUCTOR_ANALYSISSESSION_NEW
+uint16_t uniffi_gallery_ffi_checksum_constructor_analysissession_new(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_CONSTRUCTOR_CONFLICTSESSION_OPEN
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_CONSTRUCTOR_CONFLICTSESSION_OPEN
+uint16_t uniffi_gallery_ffi_checksum_constructor_conflictsession_open(void
     
 );
 #endif

@@ -2837,6 +2837,41 @@ public func isConflictName(name: String) -> Bool  {
     )
 })
 }
+/**
+ * First alphabetic character of a list title, uppercased. `#` otherwise.
+ */
+public func listSectionKey(title: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_func_list_section_key(
+        FfiConverterString.lower(title),uniffiCallStatus
+    )
+})
+}
+/**
+ * Given / middle / family joined with spaces. Empty when none are set.
+ */
+public func structuredName(given: String, middle: String, family: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_func_structured_name(
+        FfiConverterString.lower(given),
+        FfiConverterString.lower(middle),
+        FfiConverterString.lower(family),uniffiCallStatus
+    )
+})
+}
+/**
+ * Whether `name` is a safe log-directory component.
+ */
+public func validDevice(name: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_contacts_ffi_fn_func_valid_device(
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -2854,6 +2889,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.contractVersionMismatch
     }
     if (uniffi_contacts_ffi_checksum_func_is_conflict_name() != 19151) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_contacts_ffi_checksum_func_list_section_key() != 8054) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_contacts_ffi_checksum_func_structured_name() != 4448) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_contacts_ffi_checksum_func_valid_device() != 17462) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_contacts_ffi_checksum_method_contactssession_assign_tag() != 3784) {

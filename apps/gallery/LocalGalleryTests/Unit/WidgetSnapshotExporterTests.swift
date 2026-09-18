@@ -100,6 +100,29 @@ final class WidgetSnapshotExporterTests: XCTestCase {
         )
     }
 
+    /// Folder map identity is photo id → folder id. `pathDescription` may
+    /// still mention the parent chain; it is not the map key.
+    func testFolderMapIdentityIsPhotoAndFolderId() {
+        let nfc = CoreScanner.fileURL("/lib/Trips/Italy/café.jpg".precomposedStringWithCanonicalMapping)
+        let nfd = CoreScanner.fileURL("/lib/Trips/Italy/café.jpg".decomposedStringWithCanonicalMapping)
+        let photo = PhotoFile.fixture(url: nfc)
+        XCTAssertEqual(photo.id, PhotoFile.stableID(for: nfd))
+        let leaf = PhotoFolder.fixture(
+            url: URL(fileURLWithPath: "/lib/Trips/Italy"),
+            name: "Italy",
+            photos: [photo]
+        )
+        let root = PhotoFolder.fixture(
+            url: URL(fileURLWithPath: "/lib/Trips"),
+            name: "Trips",
+            subfolders: [leaf]
+        )
+        let map = WidgetSnapshotExporter.buildFolderIdMap(rootFolder: root)
+        XCTAssertEqual(map[photo.id], leaf.id.uuidString)
+        XCTAssertEqual(map[PhotoFile.stableID(for: nfd)], leaf.id.uuidString)
+        XCTAssertEqual(Set(map.values), [leaf.id.uuidString])
+    }
+
     func testFingerprintIncludesFolderPathAndScheduledWindow() {
         let base = makeInputs()
         let leaf = base.leafFolders[0]

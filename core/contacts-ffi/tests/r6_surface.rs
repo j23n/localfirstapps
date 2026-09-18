@@ -1,8 +1,8 @@
 //! Headless FFI: display rows and command DTOs, never a Contact/Card record.
 
 use contacts_ffi::{
-    is_conflict_name, ContactsError, ContactsSession, LabeledValueDraft, MergeKind,
-    SaveContactCommand,
+    is_conflict_name, list_section_key, structured_name, valid_device, ContactsError,
+    ContactsSession, LabeledValueDraft, MergeKind, SaveContactCommand,
 };
 use std::fs;
 use std::io::Write;
@@ -30,6 +30,18 @@ fn conflict_name_matches_grammar() {
         "alice.sync-conflict-20200901-120000-PHONE01.vcf".into()
     ));
     assert!(!is_conflict_name("alice.vcf".into()));
+}
+
+#[test]
+fn name_device_and_section_helpers_match_core() {
+    assert_eq!(
+        structured_name("Ada".into(), String::new(), "Lovelace".into()),
+        "Ada Lovelace"
+    );
+    assert_eq!(list_section_key("Ada Lovelace".into()), "A");
+    assert_eq!(list_section_key("123".into()), "#");
+    assert!(valid_device("ios-abc".into()));
+    assert!(!valid_device("bad device".into()));
 }
 
 #[test]

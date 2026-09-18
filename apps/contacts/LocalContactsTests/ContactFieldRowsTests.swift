@@ -60,7 +60,7 @@ struct ContactEditDraftViewTests {
             photo: nil
         )
         #expect(ContactEditView.initials(from: draft) == "AL")
-        #expect(ContactEditView.structuredName(given: "Ada", middle: "", family: "Lovelace") == "Ada Lovelace")
+        #expect(structuredName(given: "Ada", middle: "", family: "Lovelace") == "Ada Lovelace")
     }
 
     @Test("search highlight marks the first case-insensitive match")

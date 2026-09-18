@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Destination picker for an on-disk move. Walks the live library tree
-/// (the same folders the Folders tab shows) and can create a subdirectory.
-/// Confirming "Move Here" is what commits the move.
+/// Destination picker for an on-disk move. Lists children through folder
+/// windows (the same listing the Folders tab shows) and can create a
+/// subdirectory. Confirming "Move Here" is what commits the move.
 struct FolderMovePicker: View {
     let photos: [PhotoFile]
     var onMove: (PhotoFolder) -> Void
@@ -12,8 +12,8 @@ struct FolderMovePicker: View {
 
     var body: some View {
         NavigationStack {
-            if let root = store.rootFolder {
-                FolderMoveList(folder: root, photos: photos) { dest in
+            if store.rootFolder != nil {
+                FolderMoveList(parentID: nil, photos: photos) { dest in
                     onMove(dest)
                     dismiss()
                 }
@@ -34,7 +34,7 @@ struct FolderMovePicker: View {
 }
 
 private struct FolderMoveList: View {
-    let folder: PhotoFolder
+    let parentID: String?
     let photos: [PhotoFile]
     var onMove: (PhotoFolder) -> Void
 
@@ -44,28 +44,40 @@ private struct FolderMoveList: View {
     @State private var newFolderName = ""
     @State private var pendingDest: PhotoFolder?
 
-    /// Re-resolve against the live tree so a just-created subfolder appears.
-    private var live: PhotoFolder {
-        store.rootFolder?.folder(withID: folder.id) ?? folder
+    /// Filesystem destination for create / Move Here. Listing does not use this tree.
+    private var destination: PhotoFolder? {
+        if let parentID, let uuid = UUID(uuidString: parentID) {
+            return store.rootFolder?.folder(withID: uuid)
+        }
+        return store.rootFolder
+    }
+
+    private var rows: [GalleryTextRow] {
+        _ = store.index.listingEpoch
+        return store.index.sortedFolderRows(
+            store.index.folderListing(parentID: parentID),
+            order: store.folderSortOrder
+        )
     }
 
     private var alreadyHere: Bool {
-        photos.allSatisfy { photo in
+        guard let dest = destination else { return true }
+        return photos.allSatisfy { photo in
             !GalleryStore.pathKeys(for: photo.url.deletingLastPathComponent())
-                .isDisjoint(with: GalleryStore.pathKeys(for: live.url))
+                .isDisjoint(with: GalleryStore.pathKeys(for: dest.url))
         }
     }
 
     var body: some View {
         List {
-            let subs = store.sortFolders(live.subfolders)
+            let subs = rows
             if !subs.isEmpty {
                 Section("Subfolders") {
-                    ForEach(subs) { sub in
+                    ForEach(subs, id: \.id) { row in
                         NavigationLink {
-                            FolderMoveList(folder: sub, photos: photos, onMove: onMove)
+                            FolderMoveList(parentID: row.id, photos: photos, onMove: onMove)
                         } label: {
-                            folderRow(sub)
+                            folderRow(row)
                         }
                     }
                 }
@@ -77,7 +89,7 @@ private struct FolderMoveList: View {
             }
         }
         .background(Design.bg)
-        .navigationTitle(live.name)
+        .navigationTitle(destination?.name ?? store.index.folderHost(parentID ?? "")?.name ?? "Folders")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -85,10 +97,10 @@ private struct FolderMoveList: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Move Here") {
-                    pendingDest = live
+                    pendingDest = destination
                 }
                 .fontWeight(.semibold)
-                .disabled(alreadyHere || photos.isEmpty)
+                .disabled(alreadyHere || photos.isEmpty || destination == nil)
             }
             ToolbarItem(placement: .bottomBar) {
                 Button {
@@ -97,6 +109,7 @@ private struct FolderMoveList: View {
                 } label: {
                     Label("New Folder", systemImage: "folder.badge.plus")
                 }
+                .disabled(destination == nil)
             }
         }
         .alert(PhotoMovePrompt.title(for: photos), isPresented: pendingDestBinding) {
@@ -116,12 +129,16 @@ private struct FolderMoveList: View {
             TextField("Name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
             Button("Create") {
-                _ = store.createFolder(named: newFolderName, in: live)
+                if let dest = destination,
+                   store.createFolder(named: newFolderName, in: dest) != nil,
+                   let root = store.rootFolder {
+                    store.index.attachFolders(from: root)
+                }
                 newFolderName = ""
             }
             .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         } message: {
-            Text("Created inside “\(live.name)”.")
+            Text("Created inside “\(destination?.name ?? "")”.")
         }
     }
 
@@ -132,9 +149,9 @@ private struct FolderMoveList: View {
         )
     }
 
-    private func folderRow(_ folder: PhotoFolder) -> some View {
+    private func folderRow(_ row: GalleryTextRow) -> some View {
         HStack(spacing: 14) {
-            if let coverURL = folder.coverPhotoURL {
+            if let coverURL = store.index.folderCoverURL(row.id) {
                 ThumbnailView(url: coverURL, size: 56, cornerRadius: 8)
             } else {
                 RoundedRectangle(cornerRadius: 8)
@@ -147,11 +164,11 @@ private struct FolderMoveList: View {
                     }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(folder.name)
+                Text(row.title)
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(1)
-                Text("\(folder.totalPhotoCount) photos")
+                Text(row.trailing ?? photoCountLabel(0))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

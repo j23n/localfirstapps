@@ -226,6 +226,14 @@ final class CoreScanner: Sendable {
         )
     }
 
+    /// Path spelling used when Swift still writes a filesystem path as a
+    /// scan / snapshot cache key. NFC so NFD rows and live NFC listings
+    /// share one key. Does not bump `LibrarySnapshot` off v20 and does not
+    /// rewrite persisted `PhotoFile.url` bytes on disk.
+    static func nfcPath(_ path: String) -> String {
+        path.precomposedStringWithCanonicalMapping
+    }
+
     /// A file URL whose `path` is byte-for-byte the string it was built from.
     ///
     /// **Not** `URL(fileURLWithPath:)`, which DECOMPOSES its input
@@ -266,6 +274,40 @@ final class CoreScanner: Sendable {
                            width: $0.width, height: $0.height)
             }
         )
+    }
+
+    /// Flatten the live `PhotoFolder` tree back into the scanner rows
+    /// `LibraryIndex.setFolders` expects. Inverse of `folderTree`: nodes
+    /// precede their children, and each folder's own photos are a
+    /// contiguous slice of the returned id list.
+    nonisolated static func folderRecords(from root: PhotoFolder) -> (
+        folders: [ScannedFolderHost],
+        photoIds: [String]
+    ) {
+        var folders: [ScannedFolderHost] = []
+        var photoIds: [String] = []
+        func walk(_ folder: PhotoFolder, parentIndex: UInt32?) {
+            let index = UInt32(folders.count)
+            let start = UInt32(photoIds.count)
+            photoIds.append(contentsOf: folder.photos.map(\.id.uuidString))
+            folders.append(ScannedFolderHost(
+                id: folder.id.uuidString,
+                path: nfcPath(folder.url.path),
+                name: folder.name,
+                parentIndex: parentIndex,
+                photoStart: start,
+                photoCount: UInt32(folder.photos.count),
+                coverPhotoPath: folder.coverPhotoURL.map { nfcPath($0.path) },
+                totalPhotoCount: Int64(folder.totalPhotoCount),
+                dateModified: folder.dateModified?.timeIntervalSinceReferenceDate,
+                dateCreated: folder.dateCreated?.timeIntervalSinceReferenceDate
+            ))
+            for child in folder.subfolders {
+                walk(child, parentIndex: index)
+            }
+        }
+        walk(root, parentIndex: nil)
+        return (folders, photoIds)
     }
 
     /// Rebuild the recursive tree from the core's flat node list.
@@ -321,13 +363,13 @@ final class CoreScanner: Sendable {
     static func record(of photo: PhotoFile) -> ScannedMediaHost {
         ScannedMediaHost(
             id: photo.id.uuidString,
-            path: photo.url.path,
+            path: nfcPath(photo.url.path),
             filename: photo.filename,
             fileSize: photo.fileSize,
             dateTaken: photo.dateTaken?.timeIntervalSinceReferenceDate,
             dateFromMetadata: photo.dateFromMetadata,
             isVideo: photo.isVideo,
-            livePhotoVideoPath: photo.livePhotoVideoURL?.path,
+            livePhotoVideoPath: photo.livePhotoVideoURL.map { nfcPath($0.path) },
             hierarchicalTags: photo.hierarchicalTags.map {
                 HostTagValue(fullPath: $0.fullPath, namespace: $0.namespace, displayName: $0.displayName)
             },
@@ -346,7 +388,7 @@ final class CoreScanner: Sendable {
     static func row(of candidate: SidecarCandidate) -> ScannedSidecarHost {
         ScannedSidecarHost(
             photoId: candidate.photoID.uuidString,
-            sidecarPath: candidate.sidecarURL.path,
+            sidecarPath: nfcPath(candidate.sidecarURL.path),
             currentVersion: HostContentVersion(
                 modificationDate: candidate.currentVersion.modificationDate?
                     .timeIntervalSinceReferenceDate,

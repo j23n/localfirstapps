@@ -4,11 +4,20 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use contacts_core::{
     assign_tag_logged, choice_rows, conflict_rows, delete_logged, edit_draft_from_card, field_rows,
-    list_rows, new_edit_draft, read_ops, resolve_logged, save_contact_logged, save_logged, write,
-    Birthday, Card, ContactEditDraft, LabeledValueDraft, MemVfs, MergeKind, SaveContactCommand,
-    Store, TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
+    list_rows, list_section_key, new_edit_draft, read_ops, resolve_logged, save_contact_logged,
+    save_logged, write, Birthday, Card, ContactEditDraft, LabeledValueDraft, MemVfs, MergeKind,
+    SaveContactCommand, Store, TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
 };
 use localcore_vfs::{Entry, ReadSeek, Stat, Vfs, VfsError, VfsResult};
+
+#[test]
+fn list_section_key_matches_shell_letters() {
+    assert_eq!(list_section_key("Alice Wonder"), "A");
+    assert_eq!(list_section_key("!!!Ada"), "A");
+    assert_eq!(list_section_key("123"), "#");
+    assert_eq!(list_section_key(""), "#");
+    assert_eq!(list_section_key("No Name"), "N");
+}
 
 #[test]
 fn list_and_fields_match_ffi_copy() {

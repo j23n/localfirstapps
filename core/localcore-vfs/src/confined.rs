@@ -165,8 +165,13 @@ impl Vfs for ConfinedVfs {
         self.inner.write_atomic_from(path, reader)
     }
 
+    fn try_exists(&self, path: &str) -> VfsResult<bool> {
+        self.deny_if_outside_resolved(path)?;
+        self.inner.try_exists(path)
+    }
+
     fn exists(&self, path: &str) -> bool {
-        self.deny_if_outside_resolved(path).is_ok() && self.inner.exists(path)
+        self.try_exists(path).unwrap_or(false)
     }
 
     fn remove(&self, path: &str) -> VfsResult<()> {
@@ -213,6 +218,10 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(!vfs.exists(&escaped));
+        match vfs.try_exists(&escaped) {
+            Err(VfsError::InvalidPath { reason, .. }) => assert_eq!(reason, ESCAPE_REASON),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[cfg(unix)]

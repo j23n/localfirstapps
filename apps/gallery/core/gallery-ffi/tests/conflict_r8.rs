@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use gallery_ffi::{
-    is_conflict_name, ConflictError, ConflictSession, MergeKind, ScanCommand, ScannerSession,
+    is_conflict_name, ConflictError, ConflictKind, ConflictSession, MergeKind, ScanCommand,
+    ScannerSession,
 };
 
 fn gallery_minimal() -> PathBuf {
@@ -113,17 +114,23 @@ fn ffi_scan_still_hides_copies_and_does_not_export_groups() {
 }
 
 #[test]
-fn gallery_minimal_lists_one_xmp_row_not_the_image() {
+fn gallery_minimal_lists_image_and_xmp_rows() {
     let dir = parseable_gallery_minimal();
     let session = ConflictSession::open(dir.path().to_str().unwrap().to_string());
     let rows = session.conflict_rows().unwrap();
-    assert_eq!(rows.len(), 1, "{rows:?}");
-    assert_eq!(rows[0].id, "photo.heic.xmp");
-    assert_eq!(rows[0].title, "photo.heic.xmp");
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!(rows[0].id, "photo.heic");
+    assert_eq!(rows[0].title, "photo.heic");
     assert_eq!(rows[0].subtitle, "2 copies");
-    assert_eq!(rows[0].trailing, "auto");
-    assert_eq!(rows[0].disposition, MergeKind::Auto);
-    assert_ne!(rows[0].id, "photo.heic");
+    assert_eq!(rows[0].trailing, "keep one");
+    assert_eq!(rows[0].disposition, MergeKind::KeepOne);
+    assert_eq!(rows[0].kind, ConflictKind::Image);
+    assert_eq!(rows[1].id, "photo.heic.xmp");
+    assert_eq!(rows[1].title, "photo.heic.xmp");
+    assert_eq!(rows[1].subtitle, "2 copies");
+    assert_eq!(rows[1].trailing, "auto");
+    assert_eq!(rows[1].disposition, MergeKind::Auto);
+    assert_eq!(rows[1].kind, ConflictKind::Xmp);
     assert!(!rows.iter().any(|row| row.disposition == MergeKind::Choice));
 }
 
@@ -144,11 +151,14 @@ fn unparseable_omitted_from_rows_preview_is_sidecar() {
     let root = gallery_minimal();
     let session = ConflictSession::open(root.to_str().unwrap().to_string());
     let rows = session.conflict_rows().unwrap();
-    assert!(
-        rows.is_empty(),
-        "dummy gallery-minimal XMP must be omitted: {rows:?}"
+    assert_eq!(
+        rows.len(),
+        1,
+        "dummy XMP omitted; image group listed: {rows:?}"
     );
-    assert!(!rows.iter().any(|row| row.id == "photo.heic"));
+    assert_eq!(rows[0].id, "photo.heic");
+    assert_eq!(rows[0].kind, ConflictKind::Image);
+    assert!(!rows.iter().any(|row| row.id == "photo.heic.xmp"));
     let preview = session
         .conflict_preview("photo.heic.xmp".into())
         .unwrap_err();
@@ -242,7 +252,10 @@ fn auto_resolve_writes_union_and_deletes_copies() {
 
     let text = String::from_utf8(fs::read(dir.path().join("photo.heic.xmp")).unwrap()).unwrap();
     union_tags(&text);
-    assert!(session.conflict_rows().unwrap().is_empty());
+    let rows = session.conflict_rows().unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].kind, ConflictKind::Image);
+    assert_eq!(rows[0].id, "photo.heic");
 }
 
 #[test]
@@ -261,6 +274,7 @@ fn deleted_versus_modified_recreates_surviving() {
     let rows = session.conflict_rows().unwrap();
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(rows[0].id, "photo.heic.xmp");
+    assert_eq!(rows[0].kind, ConflictKind::Xmp);
     assert_eq!(rows[0].disposition, MergeKind::DeletedVersusModified);
     assert_eq!(rows[0].trailing, "keep copy");
     assert_ne!(rows[0].disposition, MergeKind::Choice);
@@ -305,6 +319,16 @@ fn image_group_is_not_an_xmp_group() {
         session.conflict_preview("missing.xmp".into()).unwrap_err(),
         ConflictError::NotFound
     ));
+    assert!(matches!(
+        session.image_preview("photo.heic.xmp".into()).unwrap_err(),
+        ConflictError::NotAnImageGroup { .. }
+    ));
+    assert!(matches!(
+        session
+            .keep_image_copy("photo.heic.xmp".into(), "photo.heic.xmp".into())
+            .unwrap_err(),
+        ConflictError::NotAnImageGroup { .. }
+    ));
 }
 
 #[test]
@@ -332,4 +356,137 @@ fn no_choice_rows_on_parseable_or_r11_groups() {
         .unwrap()
         .iter()
         .all(|row| row.disposition != MergeKind::Choice));
+}
+
+#[test]
+fn image_preview_lists_surviving_and_copies_without_writing() {
+    let root = gallery_minimal();
+    let before: Vec<(String, Vec<u8>)> = fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                fs::read(entry.path()).unwrap(),
+            )
+        })
+        .collect();
+    let session = ConflictSession::open(root.to_str().unwrap().to_string());
+    let preview = session.image_preview("photo.heic".into()).unwrap();
+    assert_eq!(preview.id, "photo.heic");
+    assert_eq!(preview.title, "photo.heic");
+    assert_eq!(
+        preview.copies,
+        [
+            "photo.heic",
+            "photo.sync-conflict-20200901-120000-PHONE01.heic",
+            "photo.sync-conflict-20200902-130000-LAPTOP02.heic",
+        ]
+    );
+    let after: Vec<(String, Vec<u8>)> = fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                fs::read(entry.path()).unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(before, after, "image preview must not touch disk");
+}
+
+#[test]
+fn keep_image_surviving_deletes_copies_and_leaves_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    copy_tree(&gallery_minimal(), dir.path());
+    let photo = dir.path().join("photo.heic");
+    let photo_before = fs::read(&photo).unwrap();
+    let session = ConflictSession::open(dir.path().to_str().unwrap().to_string());
+    session
+        .keep_image_copy("photo.heic".into(), "photo.heic".into())
+        .unwrap();
+
+    assert_eq!(fs::read(&photo).unwrap(), photo_before);
+    assert!(!dir
+        .path()
+        .join("photo.sync-conflict-20200901-120000-PHONE01.heic")
+        .exists());
+    assert!(!dir
+        .path()
+        .join("photo.sync-conflict-20200902-130000-LAPTOP02.heic")
+        .exists());
+    assert!(dir.path().join("photo.heic.xmp").exists());
+    let rows = session.conflict_rows().unwrap();
+    assert!(
+        !rows.iter().any(|row| row.kind == ConflictKind::Image),
+        "{rows:?}"
+    );
+}
+
+#[test]
+fn keep_image_copy_renames_chosen_file_and_does_not_rewrite_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    copy_tree(&gallery_minimal(), dir.path());
+    let chosen_name = "photo.sync-conflict-20200901-120000-PHONE01.heic";
+    let chosen_bytes = fs::read(dir.path().join(chosen_name)).unwrap();
+    let session = ConflictSession::open(dir.path().to_str().unwrap().to_string());
+    session
+        .keep_image_copy("photo.heic".into(), chosen_name.into())
+        .unwrap();
+
+    let surviving = dir.path().join("photo.heic");
+    assert_eq!(fs::read(&surviving).unwrap(), chosen_bytes);
+    assert!(!dir.path().join(chosen_name).exists());
+    assert!(!dir
+        .path()
+        .join("photo.sync-conflict-20200902-130000-LAPTOP02.heic")
+        .exists());
+    assert!(dir.path().join("photo.heic.xmp").exists());
+}
+
+#[test]
+fn keep_image_copy_promotes_when_surviving_is_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    copy_tree(&gallery_minimal(), dir.path());
+    fs::remove_file(dir.path().join("photo.heic")).unwrap();
+    let chosen_name = "photo.sync-conflict-20200902-130000-LAPTOP02.heic";
+    let chosen_bytes = fs::read(dir.path().join(chosen_name)).unwrap();
+    let session = ConflictSession::open(dir.path().to_str().unwrap().to_string());
+    let preview = session.image_preview("photo.heic".into()).unwrap();
+    assert_eq!(
+        preview.copies,
+        [
+            "photo.sync-conflict-20200901-120000-PHONE01.heic",
+            chosen_name,
+        ]
+    );
+    session
+        .keep_image_copy("photo.heic".into(), chosen_name.into())
+        .unwrap();
+    assert_eq!(
+        fs::read(dir.path().join("photo.heic")).unwrap(),
+        chosen_bytes
+    );
+    assert!(!dir.path().join(chosen_name).exists());
+    assert!(!dir
+        .path()
+        .join("photo.sync-conflict-20200901-120000-PHONE01.heic")
+        .exists());
+}
+
+#[test]
+fn keep_image_copy_unknown_name_is_not_found() {
+    let root = gallery_minimal();
+    let session = ConflictSession::open(root.to_str().unwrap().to_string());
+    assert!(matches!(
+        session
+            .keep_image_copy("photo.heic".into(), "missing.heic".into())
+            .unwrap_err(),
+        ConflictError::NotFound
+    ));
+    assert!(matches!(
+        session.image_preview("missing.heic".into()).unwrap_err(),
+        ConflictError::NotFound
+    ));
 }

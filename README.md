@@ -25,7 +25,7 @@ they need a Mac and Xcode.
 - A C compiler (`gcc`)
 - Go 1.25+ only for the Health CLI (`CGO_ENABLED=1`)
 - GStreamer 1.0 plus base/good plugins for Music **playback**
-- OpenSSL headers only if you enable Gallery ML (`--features ml`)
+- OpenSSL headers for Gallery ML (ONNX Runtime; default on leftover and `gallery-gtk`)
 
 Ubuntu 24.04 ships GTK 4.14 and libadwaita 1.5 and is below this floor.
 
@@ -129,15 +129,16 @@ cargo run --locked -p gallery-gtk -- --comet
 cargo run --locked -p gallery-gtk -- --folder /path/to/photos
 cd ../apps/gallery/linux
 cargo test --locked --no-default-features --all-targets
-cargo run --locked --features ui --bin localgallery-reference
+cargo run --locked --bin localgallery-reference
 ```
 
 Kit binary: `shells/target/debug/localgallery`. Leftover reference:
 `apps/gallery/linux/target/debug/localgallery-reference`.
 
-Open a photo folder. The kit walk is file scan + live progress (no ONNX;
-the `ml` feature is not on `gallery-gtk`). Leftover **Scan Photos** still
-writes `.xmp` sidecars when built with `--features ml` and a pack — see
+Open a photo folder. Default compilation includes ONNX (`ml`). Kit
+**Scan Photos** tags, finds faces, and geotags when a pack is installed
+(Settings → Download ML models). Leftover **Scan Photos** writes `.xmp`
+sidecars the same way — see
 [apps/gallery/linux/INSTALL.md](apps/gallery/linux/INSTALL.md). Image
 bytes are not rewritten.
 

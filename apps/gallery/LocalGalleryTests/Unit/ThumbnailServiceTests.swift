@@ -99,6 +99,60 @@ final class ThumbnailServiceTests: XCTestCase {
         )
     }
 
+    /// In-memory thumbnail / full-image identity is `stableID`, so NFC and
+    /// NFD spellings of one file share a bitmap. Disk stays `{stableID}.jpg`.
+    func testInMemoryKeysAreStableIDAndUnifyCompositionForms() async throws {
+        let temp = makeTemp()
+        let thumbDir = temp.appending("thumbs", isDirectory: true)
+        let service = ThumbnailService(thumbnailDir: thumbDir)
+        let nfcName = "café.jpg".precomposedStringWithCanonicalMapping
+        let nfdName = "café.jpg".decomposedStringWithCanonicalMapping
+        XCTAssertNotEqual(
+            Array(nfcName.unicodeScalars), Array(nfdName.unicodeScalars),
+            "vacuous otherwise"
+        )
+        let source = temp.appending(nfcName)
+        try writeTinyJPEG(to: source)
+
+        let first = await service.thumbnail(for: source, size: CGSize(width: 64, height: 64))
+        XCTAssertNotNil(first)
+        _ = await service.loadFullImage(for: source, maxPixelSize: 64)
+
+        let nfcURL = CoreScanner.fileURL(
+            source.deletingLastPathComponent().path + "/" + nfcName
+        )
+        let nfdURL = CoreScanner.fileURL(
+            source.deletingLastPathComponent().path + "/" + nfdName
+        )
+        XCTAssertEqual(PhotoFile.stableID(for: nfcURL), PhotoFile.stableID(for: source))
+        XCTAssertEqual(PhotoFile.stableID(for: nfdURL), PhotoFile.stableID(for: source))
+        XCTAssertNotNil(service.cachedThumbnail(for: nfcURL))
+        XCTAssertNotNil(service.cachedThumbnail(for: nfdURL))
+
+        let key = ThumbnailService.memoryCacheKey(for: source) as String
+        XCTAssertEqual(key, PhotoFile.stableID(for: source).uuidString)
+        XCTAssertFalse(key.contains("/"), "in-memory key must not be a path")
+        let diskJPEGs = try FileManager.default.contentsOfDirectory(atPath: thumbDir.path)
+            .filter { $0.hasSuffix(".jpg") }
+        XCTAssertEqual(diskJPEGs, [PhotoFile.stableID(for: source).uuidString + ".jpg"])
+    }
+
+    /// Face-crop cache identity is photo id + region + size + stamp, not
+    /// `url.path#region#size`.
+    func testFaceCropKeyIsStableIDNotPath() {
+        let nfc = CoreScanner.fileURL("/lib/café.jpg".precomposedStringWithCanonicalMapping)
+        let nfd = CoreScanner.fileURL("/lib/café.jpg".decomposedStringWithCanonicalMapping)
+        let region = FaceRegion(name: nil, centerX: 0.5, centerY: 0.5, width: 0.5, height: 0.5)
+        let stamp = ContentVersion(modificationDate: Date(timeIntervalSince1970: 1), size: 8)
+        let a = ThumbnailService.faceCropKey(url: nfc, region: region, cellSize: 76, stamp: stamp)
+        let b = ThumbnailService.faceCropKey(url: nfd, region: region, cellSize: 76, stamp: stamp)
+        XCTAssertEqual(a, b)
+        let key = a as String
+        XCTAssertTrue(key.hasPrefix(PhotoFile.stableID(for: nfc).uuidString + "#"))
+        XCTAssertFalse(key.contains(nfc.path), "face-crop key must not use url.path")
+        XCTAssertFalse(key.contains("/lib/"), "face-crop key must not be path-shaped")
+    }
+
     /// Face crops go through the decode limiter and keep only the small
     /// bitmap — a second call is a cache hit, not another full-photo decode.
     func testFaceCropReturnsABitmapAndCachesIt() async throws {

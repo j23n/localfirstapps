@@ -51,6 +51,22 @@ final class PersonThumbnailCropTests: XCTestCase {
         XCTAssertEqual(tiny, 450, accuracy: 1)
     }
 
+    /// Cell-recycle identity is photo id + region, not `url.path#region`.
+    func testCropTaskIDIsStableIDNotPath() {
+        let nfc = CoreScanner.fileURL("/lib/café.jpg".precomposedStringWithCanonicalMapping)
+        let nfd = CoreScanner.fileURL("/lib/café.jpg".decomposedStringWithCanonicalMapping)
+        let region = FaceRegion(name: nil, centerX: 0.2, centerY: 0.3, width: 0.1, height: 0.12)
+        let a = PersonThumbnailView.cropTaskID(url: nfc, region: region, size: 76)
+        let b = PersonThumbnailView.cropTaskID(url: nfd, region: region, size: 76)
+        XCTAssertEqual(a, b)
+        XCTAssertTrue(a.hasPrefix(PhotoFile.stableID(for: nfc).uuidString + "#"))
+        XCTAssertFalse(a.contains("/lib/"))
+        XCTAssertEqual(
+            PersonThumbnailView.cropTaskID(url: nfc, region: nil, size: 76),
+            PhotoFile.stableID(for: nfc).uuidString
+        )
+    }
+
     func testAFaceNearTheEdgeShiftsInsteadOfGoingOutOfBounds() {
         let region = FaceRegion(name: nil, centerX: 0.05, centerY: 0.05, width: 0.08, height: 0.08)
         let rect = PersonThumbnailView.cropRect(
