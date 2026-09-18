@@ -4526,71 +4526,27 @@ impl Window {
             ),
         );
 
-        let list = gtk::ListBox::new();
-        list.add_css_class("boxed-list");
-        list.set_selection_mode(gtk::SelectionMode::None);
-        list.set_margin_top(18);
-        list.set_margin_bottom(18);
-        list.set_margin_start(18);
-        list.set_margin_end(18);
-        let choose = if contacts.is_empty() {
-            let message = if folder.is_none() {
-                "Choose a Contacts folder to match people to .vcf files."
-            } else {
-                "No contacts in that folder."
-            };
-            list.append(&status_row(&StatusRowData {
-                message: message.into(),
-                severity: StatusSeverity::Info,
-            }));
-            let choose = link_choice_row("Choose Contacts Folder");
-            list.append(&choose);
-            Some(choose)
-        } else {
-            None
-        };
-        let reset = link_choice_row("Reset to auto-match");
-        let disable = link_choice_row("Don't match a contact");
-        list.append(&reset);
-        list.append(&disable);
-        let mut contact_rows = Vec::new();
-        for contact in &contacts {
-            let name = format!("{} {}", contact.given_name, contact.family_name)
-                .trim()
-                .to_string();
-            let row = link_choice_row(&name);
-            list.append(&row);
-            contact_rows.push((row, contact.id.clone()));
-        }
-
-        let scroll = gtk::ScrolledWindow::new();
-        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-        scroll.set_min_content_height(280);
-        scroll.set_child(Some(&list));
-        let dialog = sheet(&format!("Link {title}"), &scroll, SheetSize::Picker);
+        let this = self.clone();
+        let pick_path = path.to_string();
+        let picker =
+            crate::link_contact::sheet_body(contacts, folder.as_deref(), move |id, dialog| {
+                this.apply_contact_link(&pick_path, Some(Some(id.to_string())), dialog);
+            });
+        let dialog = sheet(&format!("Link {title}"), &picker.body, SheetSize::Picker);
 
         let this = self.clone();
         let reset_path = path.to_string();
         let reset_dialog = dialog.clone();
-        reset.connect_activated(move |_| {
+        picker.reset.connect_activated(move |_| {
             this.apply_contact_link(&reset_path, None, &reset_dialog);
         });
         let this = self.clone();
         let disable_path = path.to_string();
         let disable_dialog = dialog.clone();
-        disable.connect_activated(move |_| {
+        picker.disable.connect_activated(move |_| {
             this.apply_contact_link(&disable_path, Some(None), &disable_dialog);
         });
-
-        for (row, id) in contact_rows {
-            let this = self.clone();
-            let link_path = path.to_string();
-            let link_dialog = dialog.clone();
-            row.connect_activated(move |_| {
-                this.apply_contact_link(&link_path, Some(Some(id.clone())), &link_dialog);
-            });
-        }
-        if let Some(choose) = choose {
+        if let Some(choose) = picker.choose {
             let this = self.clone();
             let choose_dialog = dialog.clone();
             choose.connect_activated(move |_| {
@@ -5763,13 +5719,6 @@ fn person_menu_item(label: &str, activate: impl Fn() + 'static) -> gtk::Button {
     }
     button.connect_clicked(move |_| activate());
     button
-}
-
-fn link_choice_row(title: &str) -> adw::ActionRow {
-    adw::ActionRow::builder()
-        .title(title)
-        .activatable(true)
-        .build()
 }
 
 fn set_named_visible(root: &gtk::Widget, name: &str, visible: bool) {

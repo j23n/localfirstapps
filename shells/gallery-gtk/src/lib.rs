@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use shell_kit_gtk::{BindingId, GalleryScreen};
 
 mod folders;
+mod link_contact;
 mod paging;
 mod routing;
 mod session;
