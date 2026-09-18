@@ -11,7 +11,8 @@ the inventory and sequencing consequences of that pass are recorded here.
 
 The GTK design pass is **landed** for Contacts, Music, and the Gallery
 kit sequence (5.1–5.7 + 5.9 year rail / ADR+docs). Named **5.10**
-leftover-parity GTK slices keep Phase 5 open alongside **5.8**. Leftover
+leftover-parity GTK slices are **landed**. Phase 5 stays open for
+remaining **5.8**. Leftover
 Gallery GTK stays gtk4 0.8 / libadwaita 0.6 until the owner agrees to
 remove it. Phase 0 crate bump is done (`shells/` gtk4 0.11 / libadwaita
 0.9). Phase 1 generator is done (libadwaita accent-fg, authored Gallery
@@ -45,8 +46,8 @@ Artists · Albums · Playlists) with Now Playing as the wide stage
 and a compact mini-player; conflict field diff; `lofty` metadata and
 embedded artwork; HIG search (global, type-to-search, Ctrl+F). Rebuild
 `localmusic` on the host with `--features gstreamer-playback` for actual
-play. Music warm start (**4-warm-start**) is still open: Gallery-shaped
-private JSON so a second launch paints before the walk. Details in
+play. Music warm start (**4-warm-start**) is **landed**: private
+versioned JSON so a second launch paints before `lofty`. Details in
 [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md).
 Contacts “before” shots live in
 [`docs/screenshots/gtk-before/`](screenshots/gtk-before/). Further
@@ -94,7 +95,7 @@ Health has no shell):
 |---|---|---|---|
 | localgallery | 40.5k Swift | `gallery-gtk` (kit); leftover `apps/gallery/linux` | `--comet` |
 | localcontacts | 7.2k Swift | `contacts-gtk` (kit) | `--comet` |
-| localmusic | 7.1k Swift | `music-gtk` (kit; playback needs `gstreamer-playback`; **4-warm-start** open) | `--comet` |
+| localmusic | 7.1k Swift | `music-gtk` (kit; playback needs `gstreamer-playback`; **4-warm-start** landed) | `--comet` |
 | localhealth | — | Go CLI + `health-core` / `health-ffi`; no shell | — |
 
 Honest Swift classification, production only (test targets excluded):
@@ -183,7 +184,7 @@ state.
 | | Migration | Lands | Status |
 |---|---|---|---|
 | **M1** | Stable ids re-key to NFC | Phase 2 changed the id function; id-key migration landed; path-keyed leftovers **5.8-m1-swift-keys** | thumbs disk already `{stableID}.jpg`; snapshot / widget / in-memory keys still path-shaped |
-| **M2** | Tier-2 `UserDefaults` → event log | Phase 2 added replay + dual-write; **person keys cut over** | after attach, `.gallery/log/<dev>/` is authority; five person keys are not written back; memories snapshots still UserDefaults (**5.8-m2-memories**) |
+| **M2** | Tier-2 `UserDefaults` → event log | Phase 2 added replay + dual-write; **person + memory keys cut over** | after attach, `.gallery/log/<dev>/` is authority; five person keys and five memory keys are not written back |
 | **M3** | Face-cluster re-key on a model swap | Phase 2 preflight fixture; Phase 5B rejected swap; evidence **5.8-m3-evidence** | fixture proves XMP survives a cache reset, not a model migration; `PACK_VARIANT` stays |
 | **M4** | `LibrarySnapshot` sidecar identity | Phase 1 | **checked — not a migration.** See Phase 1. |
 | **M5** | Apple Health dated cutover | Phase 6 | real but trivial; a bounded first query, nothing rewritten |
@@ -371,8 +372,7 @@ share-sheet export; it is not a decoder and no ADR retires it. `EXIFService`
 (80) is the iOS info panel's data source and owns `exifDateFormatter`, whose
 missing `timeZone` is deliberate. Do not port the Apple type. The named
 Camera replacement is EXIF Make/Model on `ExifFacts` /
-`HostImageMetadata` — **5.10-photo-info**. Those fields are not in
-`ExifFacts` yet; the kit Camera row is still "—".
+`HostImageMetadata` — **5.10-photo-info landed**.
 
 **Amend, do not retire, `apps/gallery/docs/adr/0002-scan-freshness.md`.** It carries four
 decisions and only one is about provider probes. Decision 3 ("a light pass may
@@ -471,7 +471,7 @@ fixture and a survival assertion):
 | | Migration | Trigger |
 |---|---|---|
 | **M1** | Stable ids re-key NFC→ | ADR 0002 R4. Person state, thumbnails, memory ids and widget deep links are all path-keyed. |
-| **M2** | Tier-2 `UserDefaults` → event log | ADR 0005 R5/R13/R14. Phase 2 added replay + dual-write for the five person keys. Person-key authority later cut over to `.gallery/log/<dev>/`; memories snapshots remain UserDefaults (**5.8-m2-memories**). |
+| **M2** | Tier-2 `UserDefaults` → event log | ADR 0005 R5/R13/R14. Phase 2 added replay + dual-write for the five person keys. Person-key and memory-key authority later cut over to `.gallery/log/<dev>/`. |
 | **M3** | Face-cluster re-key | Survival fixture is B. Candidate measurements and any evidence-backed swap are Phase 5. |
 
 > **Gate (Milestone B)** — closed 2026-09-12 on the amended list. The
@@ -491,8 +491,7 @@ fixture and a survival assertion):
 > - `localcore-log` has a gallery replay test and a health Go↔Rust golden.
 > - M1–M3 **preflight/regression fixtures** pass. M2 **person-key**
 >   authority is cut over (`.gallery/log/<dev>/` after attach). M1
->   path-keyed leftovers, M2 memories snapshots, and M3 evidence /
->   any later swap remain **5.8** (named slices).
+>   M3 evidence / any later swap remain **5.8** (named slices).
 > - 20k: `scan_tree` exists. `e2e_20k.sh` records scan / enrich /
 >   index / memories against `e2e_baselines/` and is a required
 >   `rust.yml` `gallery-core-test` step (no tree in-repo).
@@ -535,12 +534,12 @@ block C.
 | GTK design pass | **done (Music + Gallery kit)** | 2a–2c + HIG chrome + search + artwork; Music is Songs · Artists · Albums · Playlists with a persistent Now Playing column (mini-player when compact). Gallery kit sequence 5.1–5.7 + 5.9 year rail landed. Host rebuild of `localmusic` still needs `--features gstreamer-playback`. Reuse 25 shared of 28 Contacts / 29 Music. See [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md). |
 | Music UI spec | **done (4)** | `apps/music/ui-spec/screens.toml`. |
 | Music GTK shell | **done (4)** | `music-gtk` over `music-core`. Playback is the `gstreamer-playback` feature. MPRIS and `--comet` are present. Density/polish is the design pass, not a second music rewrite. |
-| Music warm-start JSON | **open (4-warm-start)** | Gallery-shaped launch cache. Cold: blocking walk + `lofty` with the existing progress UI, then write a private versioned JSON. Warm: hydrate, paint, walk in the background, size+mtime reuse, enrich only stale rows, rewrite. Same contract as `gallery-gtk` `catalog_from_snapshot` then `scan_with`. Not Documents `library.json`. Not a metadata sqlite. Playback stays the GStreamer host port. |
+| Music warm-start JSON | **landed (4-warm-start)** | Gallery-shaped launch cache. Cold: blocking walk + `lofty` with the existing progress UI, then write a private versioned JSON (`library-<sha256(root)[0..16]>.json` under `$XDG_CACHE_HOME/localmusic` or iOS Caches/`localmusic`). Warm: `Store::from_cache` / `openCached`, paint, walk in the background, size+mtime reuse, enrich only stale rows, rewrite. Same contract as `gallery-gtk` `catalog_from_snapshot` then `scan_with`. Not Documents `library.json`. Not a metadata sqlite. Playback stays the GStreamer host port. Host `xcodebuild` was not run; `music-core` cache tests + `music-ffi` cached session + `music-gtk` warm-path cover the path. |
 | iOS contacts views parse vCard text | **done** | List/search/detail/edit/export/Syncthing preview bind `TextRow` / `SearchHit` / `FieldRow` / `ContactEditDraft` / `ConflictPreview`. Swift `VCardParser` / `VCardWriter` deleted. Apple CN remains a host port. |
 | `allCountries` class `P` + NE admin-0 pack | **done (B)** | Shipped (`pack_geo.py --fetch`). Rebuild if the dump updates. |
 | R8–R11 for music `.m3u` | **done (4)** | `music-core` + `fixtures/r8/`. Playlist write through `localcore-vfs`. |
 | Unify iOS onto `run_places` | **5.8-ios-analysis landed** | Places stays `run_places` inside `run_analysis`. `LibraryAnalysis` is the host adapter over UniFFI `AnalysisSession`. Do not write a second Places loop. |
-| M2 UserDefaults cutover | **person keys landed** | After attach, `.gallery/log/<dev>/` is authority; five person keys are not written back. Do not reopen dual-write. Memories snapshots still UserDefaults (**5.8-m2-memories**). |
+| M2 UserDefaults cutover | **person + memory keys landed** | After attach, `.gallery/log/<dev>/` is authority; five person keys and five memory keys are not written back. Do not reopen dual-write. |
 | M1 thumb / widget / `library_cache` rewrite | **5.8-m1-swift-keys landed** | In-memory thumbs / face-crop keys / widget folder-map identity are id-keyed. Disk thumbs stay `{stableID}.jpg`. `LibrarySnapshot` stays v20. |
 | Queue places / thumbs / EXIF | **5.8** (places landed 5.8.2) | Places uses `places_work` via `localcore-queue` (`Queue::new` + `ensure_table`). Thumbs / EXIF are **5.8-queue-host** (parked until a deferred loop has a consumer). |
 | M3 candidate validation / possible pack swap | **5.8-m3-evidence** | Phase 5B rejected the swap. Measure representative clustering and target-device cost first. Keep `PACK_VARIANT` unless evidence supports a later **5.8-m3-select**. |
@@ -704,10 +703,10 @@ Hosts without `gstreamer-1.0` stay on the mock transport. Rebuild
 `localmusic` on the host with `--features gstreamer-playback` for
 actual play; that is host verification, not remaining kit work.
 
-#### Open — 4-warm-start
+#### Landed — 4-warm-start
 
 20k `lofty` reads on every start is not acceptable. Match Gallery's
-warm launch. This does not reopen the Phase 4 kit close.
+warm launch. This did not reopen the Phase 4 kit close.
 
 - **Cold** (no cache, version mismatch, corrupt file, or a different
   folder): blocking walk + host metadata with the existing chrome /
@@ -718,10 +717,12 @@ warm launch. This does not reopen the Phase 4 kit close.
   already does this in-process). Only stale files call `lofty`.
   Rewrite the cache when the walk finishes.
 - **File**: private, versioned, disposable (ADR 0005 R3).
-  `$XDG_CACHE_HOME/localmusic/…` on Linux; iOS app-cache equivalent.
-  Evict on version / payload / root mismatch. Do not put it in the
-  music folder. Do not revive Documents `library.json` as authority.
-  Tags live on the snapshot rows, as `PhotoFile` does on Gallery.
+  `{cache_dir}/library-<sha256(root)[0..16]>.json`.
+  `$XDG_CACHE_HOME/localmusic` on Linux; iOS
+  Caches/`localmusic` (`LibrarySnapshotCache`). Evict on version /
+  payload / root mismatch. Do not put it in the music folder. Do not
+  revive Documents `library.json` as authority. Tags live on the
+  snapshot rows, as `PhotoFile` does on Gallery.
 - **Not this slice:** enabling `gstreamer-playback` by default, plugin
   packages, or playbin bus errors. Playback is the host port. Do not
   add a metadata sqlite unless artwork/lyrics later need a
@@ -787,8 +788,8 @@ not drop for the package.
 > `check.py` green; claimed shared bindings have two production
 > consumers; ADR 0004 records the intersection; grid/viewer/media
 > remain unclaimed; `progress` / `progress-row` are shared. C does
-> not reopen. **4-warm-start** is leftover library work, not a kit
-> reopen.
+> not reopen. **4-warm-start** landed (private JSON hydrate, not a kit
+> reopen).
 
 Size: M. 4.s1–4.s3 were Mac Swift slices; 4.s4 is the Linux
 `check.py` pin plus the ADR paragraph. Host `xcodebuild` was not
@@ -822,9 +823,9 @@ Review list and `name_cluster`. **`gallery-gtk` does not** — still an
 unbound kit gap until the core-loop table changes. Slideshow, widgets,
 and Live Photos stay off the spec as host-only gaps, not R4 kinds.
 
-Viewer **zoom**, filmstrip, prev/next OSD, and tap-to-hide are in the
-core loop / design table and land in **5.10-viewer-chrome**. Swipe and
-inline video are already in `gallery-gtk`.
+Viewer **zoom**, filmstrip, prev/next OSD, and tap-to-hide landed in
+**5.10-viewer-chrome**. Swipe and inline video were already in
+`gallery-gtk`.
 
 Leftover Collections rails for Objects / Scenes / Places / Albums are
 **dropped from the kit hub** (leftover `src/ui` still paints
@@ -840,9 +841,9 @@ not); media port for video thumbnails.
 
 Deferred gallery rows still land here as **named 5.8 slices** (sequenced
 below): **5.8-ios-windows**, **5.8-ios-analysis**, **5.8-xmp-image**,
-**5.8-xmp-ui**, **5.8-m1-swift-keys**, **5.8-m2-memories**,
+**5.8-xmp-ui**, **5.8-m1-swift-keys**, **5.8-m2-memories** (landed),
 **trace-ios**, **5.8-m3-evidence**. **5.8-queue-host** (thumbs / EXIF)
-is parked. Person-key M2, the 20k `rust.yml` job, **5.8-nfc-emit**,
+is parked. Person-key and memory-key M2, the 20k `rust.yml` job, **5.8-nfc-emit**,
 XMP FFI (**5.8.4**), Places queue (**5.8.2**), and the Linux HEIC
 adapter (**5.8.3**) are **landed** — do not reopen dual-write.
 `PACK_VARIANT` remains until evidence supports retiring it.
@@ -866,22 +867,22 @@ photo table.
 | **5.5 `gallery-gtk` skeleton** | **landed** | Kit UI on the pin crate: binary `localgallery`, id `com.j23n.LocalGallery`. Folder-picker, Settings dialog, logs, root switcher Folders · Collections · Photos. Photos tab binds existing `photo_structure` / `photo_window` / `set_photo_view`. Host only: config, XDG thumbs, folder watch, scan/ops via leftover `localgallery` `default-features = false`. Leftover binary is `localgallery-reference` / `com.j23n.LocalGallery.Reference`. Default `ml` is on; Scan Photos without a pack is still a progress/status row (models optional). | FlowBox grids; querying leftover UI-era photo lists; Settings as a tab; enabling leftover `ui` |
 | **5.6 Remaining screens** | **landed** | Folders tab is an in-place explorer (sidebar tree + breadcrumbs + `folder_stack`; drill-in does not push a second root page). Collections + memory/person/album/event pushes, viewer + photo-info, scan progress. Memories: shell caches last `MemoryGenerator` id list (index may cache it; GTK does not cluster) and drills in with `set_photo_ids_view`. `GtkGridView`/`GtkListView` over a `gio::ListModel` that pages ≤256. Stale generation → re-read structure, never patch across generations. Viewer pushes the visible nav and stale refill targets the visible grid. | building missing windows in the shell; year scrubber (**landed 5.9**) |
 | **5.7 Promotions + font** | **landed** | Gallery is the second consumer of Music `media_item` (48px default; folders 64px) and Contacts `chip_bar` (Display + Removable). `grid_gutter` / `thumb_radius` tokens. Newsreader Italic + ADR 0004 R10/R11 typeface amendment (D5). Kit `.thumb` only; `.memory-title` only in `gallery-gtk`. Flush not promoted. | promoting Flush unless Gallery uses the same section adapter; inventing tile kinds |
-| **5.8 Core remainder** | parallel after 5.2; not a GTK rewrite | Named leftovers only (see below). Person-state M2 and the 20k `rust.yml` job are **landed**. | copying PeopleStore dual-write; inventing a Health accent; retiring `PACK_VARIANT` without evidence; claiming Places or 20k CI are unstarted |
-| **5.9 Close-out** | **landed** (ADR + docs + year rail) | ADR 0004 GTK/Gallery reuse paragraph: three GTK apps consume the kit; reuse is **pairwise**. Year rail is `gallery-gtk` chrome (`years_from_structure` from month sections), not a kit kind. `docs/screenshots/gtk-after/` is a **written gap** (mutter absent; no placeholder PNGs). Leftover GTK removal is **5.9 owner — owner has not agreed**. Phase 5 kit sequence landed; Phase 5 as a whole stays open because named 5.8 leftovers and **5.10** remain. | claiming three-app reuse for tiles or the mini-player; deleting leftover without an owner yes |
-| **5.10 Leftover-parity GTK** | open (named slices below) | Face-crop people tiles, photo-info fields leftover still shows, scan recovery toasts, viewer chrome (filmstrip / prev-next; zoom + tap-to-hide from the design table), `Alt+Left` back. One slice, one PR. | leftover Objects/Scenes/Places/Albums hub rails; pack discovery roots; routing `face-review`; restyling leftover `src/ui`; new R4 kinds |
+| **5.8 Core remainder** | parallel after 5.2; not a GTK rewrite | Named leftovers only (see below). Person-state and memory-state M2 and the 20k `rust.yml` job are **landed**. | copying PeopleStore dual-write; inventing a Health accent; retiring `PACK_VARIANT` without evidence; claiming Places or 20k CI are unstarted |
+| **5.9 Close-out** | **landed** (ADR + docs + year rail) | ADR 0004 GTK/Gallery reuse paragraph: three GTK apps consume the kit; reuse is **pairwise**. Year rail is `gallery-gtk` chrome (`years_from_structure` from month sections), not a kit kind. `docs/screenshots/gtk-after/` is a **written gap** (mutter absent; no placeholder PNGs). Leftover GTK removal is **5.9 owner — owner has not agreed**. Phase 5 kit sequence landed; Phase 5 as a whole stays open because named 5.8 leftovers remain. | claiming three-app reuse for tiles or the mini-player; deleting leftover without an owner yes |
+| **5.10 Leftover-parity GTK** | **landed** | Face-crop people tiles, photo-info fields leftover still shows, scan recovery toasts, viewer chrome (filmstrip / prev-next; zoom + tap-to-hide from the design table), `Alt+Left` back. One slice, one PR. | leftover Objects/Scenes/Places/Albums hub rails; pack discovery roots; routing `face-review`; restyling leftover `src/ui`; new R4 kinds |
 
 #### 5.8 named leftovers
 
-Person-state M2 and the 20k GitHub job are **landed**. Do not reopen
-dual-write. Do not invent a second 20k job. Remaining work stays
-named (one slice, one PR). Leftover GTK removal is **5.9 owner —
-owner has not agreed**, not a 5.8 slice. Kit leftover-parity is
-**5.10**, not 5.8.
+Person-state and memory-state M2 and the 20k GitHub job are
+**landed**. Do not reopen dual-write. Do not invent a second 20k
+job. Remaining work stays named (one slice, one PR). Leftover GTK
+removal is **5.9 owner — owner has not agreed**, not a 5.8 slice.
+Kit leftover-parity is **5.10** (landed), not 5.8.
 
-Three leftovers are still open (`m2-memories`, `trace-ios`,
-`m3-evidence`). Three tracks may run in parallel; inside a track, do
-not skip the gate. **5.8-ios-windows**, **5.8-ios-analysis**,
-**5.8-m1-swift-keys**, **5.8-xmp-image**, and **5.8-xmp-ui** are landed.
+Two leftovers are still open (`trace-ios`, `m3-evidence`). Tracks may
+run in parallel; inside a track, do not skip the gate.
+**5.8-ios-windows**, **5.8-ios-analysis**, **5.8-m1-swift-keys**,
+**5.8-m2-memories**, **5.8-xmp-image**, and **5.8-xmp-ui** are landed.
 
 **Track A — iOS callers (Mac).** Windows first so folder/people/event
 lists stop walking `PhotoFolder`. Analysis is a different file set and
@@ -903,7 +904,7 @@ exists. Do not open a PR.
 | **5.8-xmp-image** | **landed.** One `conflict_rows` list. Image groups are `ConflictKind::Image` + `MergeKind::KeepOne`. `image_preview` lists candidates without writing. `keep_image_copy` uses VFS `rename` / `remove` only (basename, relative, or absolute). `resolve_group` / `conflict_preview` stay XMP-only (`NotAnXmpGroup` on image ids). `keep_image_copy` on an XMP group is `NotAnImageGroup`. `Choice` is never emitted. `cargo test -p gallery-ffi --test conflict_r8` covers keep-one. | Merging or rewriting image bytes; treating an image group as `.xmp`; leftover UI edits |
 | **5.8-xmp-ui** | **landed.** iOS `SyncConflictGroupSheet` (Contacts shape): Settings → Sync and the Photos-root banner. XMP Review Diff → `resolve_group` (merged fields only, no Choice). Image Choose Copy → `keep_image_copy`, then a light silent rescan. Kit Settings → Diagnostics and `--route sync-conflict-group`. Kit confirm_dialog before write; keep-one reloads the folder scan. Leftover `src/ui` has no sheet. `face-review` stays unbound. Host `xcodebuild` was not run. | Leftover `src/ui` edits; new R4 kinds; a second merge; claiming Choice exists for XMP |
 | **5.8-m1-swift-keys** | **landed.** In-memory thumbs and face-crop keys use `stableID` (disk already `{stableID}.jpg`). Widget folder-map identity is `photo.id` → folder id (`pathDescription` stays display). Scan-cache path keys from Swift are NFC (`CoreScanner.nfcPath`); persisted `PhotoFile.url` bytes stay v20. Host `xcodebuild` was not run. | Bumping `LibrarySnapshot` off v20; a forced rescan; renaming disk thumbs; treating **5.10-face-crops** as this work |
-| **5.8-m2-memories** | The five memory keys (`hiddenMemories`, `seenMemoryIDs`, `surfacedClusters`, `birthdayMemoriesEnabled`, `memoriesGeneratedDay`) cut over like person keys: one-shot migrate into `.gallery/log/<dev>/`, then stop writing UserDefaults. New event types (open set). `MemoryCoordinator` reads the projection after attach. | Reopening person dual-write; putting memories on `person_*` types; changing `MemoryGenerator` |
+| **5.8-m2-memories** | **landed.** The five memory keys (`hiddenMemories`, `seenMemoryIDs`, `surfacedClusters`, `birthdayMemoriesEnabled`, `memoriesGeneratedDay`) cut over like person keys: one-shot migrate into `.gallery/log/<dev>/` (`memory_migrated` last), then stop writing UserDefaults. Types: `memory_hidden` / `unhidden`, `memory_seen`, `memory_cluster_surfaced`, `memory_birthdays_set`, `memory_generated_day` / `_clear` (open set; not `person_*`). `MemoryCoordinator` reads the projection after `attachMemoryLog`. Cursor `galleryMemoryLogMigrationComplete`. Prune seen >12 months / surfaced >7 days in Swift. Host `xcodebuild` was not run; `localcore-log` + `gallery-ffi` + `MemoryLogTests.swift` cover the path. | Reopening person dual-write; putting memories on `person_*` types; changing `MemoryGenerator` |
 | **trace-ios** | iOS sees `lf` spans. Prefer rust `init` from the host at launch (same subscriber feature GTK uses), or a Swift/OSLog subscriber if rust init cannot reach os_log. | Requiring a subscriber in cores; renaming spans; a diagnostics UI; blocking Track A/B |
 | **5.8-m3-evidence** | Measure SFace+YuNet on a representative personal library, the same model/input on arm64, and iPhone + Comet cost / peak RSS. Write the evidence note. Phase 5B x86-64 fixture stays. `PACK_VARIANT` stays. A later **5.8-m3-select** is not scheduled. | Swapping ONNX; retiring `PACK_VARIANT`; treating the x86-64 spike as device evidence |
 | **5.8-queue-host** | **Parked.** Tagging, faces, and Places already use `localcore-queue`. iOS `ThumbnailService` and `EnrichmentService` stay on-demand. Open only when a deferred thumb / EXIF loop has a consumer. | Inventing `thumbs_work` / `exif_work` without a consumer; stealing `places_work`; calling this unstarted Places |
@@ -942,12 +943,17 @@ Landed in this remainder (do not re-implement):
   `LibraryAnalysis` keeps HEIC, the journal, and Settings chrome.
   Places stays `run_places`. Leftover Linux and kit still call
   `run_analysis` directly.
+- **5.8-m2-memories**: after attach, `.gallery/log/<dev>/` is
+  authority for the five memory keys (`memory_*` types, not
+  `person_*`). `MemoryCoordinator` does not write UserDefaults once
+  `logBacked`. Do not reopen dual-write.
 
 #### 5.10 leftover-parity GTK
 
 Host review 2026-09-18: leftover `src/ui` still has chrome the kit
-did not take. These slices put that chrome on `gallery-gtk`. They
-are not 5.8 (iOS / evidence / FFI). They do not restyle leftover.
+did not take. These slices put that chrome on `gallery-gtk` and are
+**landed**. They are not 5.8 (iOS / evidence / FFI). They do not
+restyle leftover.
 
 **Dropped — do not schedule.** Leftover Collections rails for
 Objects / Scenes / Places / Albums. Kit hub stays Memories · People
@@ -967,16 +973,20 @@ reference only. Sync-conflict sheet **landed** (**5.8-xmp-ui** /
 
 | Slice | What lands | Must not |
 |---|---|---|
-| **5.10-keys** | Leftover pops on Escape and `Alt+Left` (leftover has no Select). Kit Escape already cancels Select and does not pop. Land `Alt+Left` pop of the visible `NavigationView` (folders / photos / collections / viewer). Escape: cancel Select first, else pop. Skip when a search entry has focus. | A shortcuts dialog; stealing type-to-search; leftover UI edits |
-| **5.10-scan-toasts** | After a kit walk, toast leftover `unsupported_names_message` (`take_unsupported_names`). When snapshot hydrate discards a file (corrupt / payload / unreadable / version), toast leftover `SnapshotReuse::recovery_message` instead of only tracing. | A second snapshot format; inventing diagnostics UI; claiming leftover `open_library` is the kit catalog |
-| **5.10-face-crops** | People hub / people grid tiles crop the cover at the MWG box. Leftover pool already has `PoolKind::Face`; kit `ThumbCache` adds `bind_face`. Region from leftover `faces::named_region_for` (or sidecar `face_regions` on the cover) matching the person leaf. Featured cover still wins; crop it when a named box exists. | A new kit tile kind; leftover `ui/thumbs.rs`; treating **5.8-m1-swift-keys** as this work |
-| **5.10-photo-info** | Kit info matches leftover facts plus the spec Camera row: File (`PhotoHost.filename`); Type = Video when `is_video`; Camera = EXIF Make / Model (this is the named `EXIFService` replacement — Make/Model only); Location = country and/or GPS (leftover had both rows); Faces = named join or `N unnamed`; Tags stay display names; Sidecar = `sidecar_exists` / `sidecar_path`. Amend `screens.toml` sections (`file`, `sidecar`, `faces`) as `field-row`. `gallery-meta` `ExifFacts` + `HostImageMetadata` grow Make/Model. | A map; rewriting image bytes; porting Apple `EXIFService`; new R4 kinds |
-| **5.10-viewer-chrome** | Leftover has filmstrip + prev/next OSD when `ids.len() > 1` and the window is not short (leftover has no pinch-zoom and no tap-to-hide). Put that filmstrip (`GtkListView` + `bind_grid`) and those arrows on the kit page. Design table also lands tap-to-hide (filmstrip / arrows / overflow) and pinch-zoom on the still (`GtkGestureZoom`, cap the scale). Swipe, overflow actions, and `GtkVideo` stay. Short / compact already collapses the info split. | Promoting filmstrip or zoom to `shell-kit-gtk`; leftover `src/ui` edits; a second decode path |
+| **5.10-keys** | **landed.** Leftover pops on Escape and `Alt+Left` (leftover has no Select). Kit Escape already cancels Select and does not pop. `nav_key_policy`: `Alt+Left` pops the visible `NavigationView` (folders / photos / collections / viewer). Escape: cancel Select first, else pop. Skip when a search entry has focus. | A shortcuts dialog; stealing type-to-search; leftover UI edits |
+| **5.10-scan-toasts** | **landed.** After a kit walk, toast leftover `unsupported_names_message` (`take_unsupported_names`). When snapshot hydrate discards a file (corrupt / payload / unreadable / version — not Missing / RootMismatch), toast leftover `SnapshotReuse::recovery_message` instead of only tracing. | A second snapshot format; inventing diagnostics UI; claiming leftover `open_library` is the kit catalog |
+| **5.10-face-crops** | **landed.** People hub / people grid tiles crop the cover at the MWG box. Leftover pool already has `PoolKind::Face`; kit `ThumbCache` adds `bind_face`. Region from leftover `faces::named_region_for` (or sidecar `face_regions` on the cover) matching the person leaf. Featured cover still wins; crop it when a named box exists. | A new kit tile kind; leftover `ui/thumbs.rs`; treating **5.8-m1-swift-keys** as this work |
+| **5.10-photo-info** | **landed.** Kit info matches leftover facts plus the spec Camera row: File (`PhotoHost.filename`); Type = Video when `is_video`; Camera = EXIF Make / Model (this is the named `EXIFService` replacement — Make/Model only); Location = country and/or GPS (leftover had both rows); Faces = named join or `N unnamed`; Tags stay display names; People; Sidecar = `sidecar_exists` / `sidecar_path`. `screens.toml` sections (`file`, `sidecar`, `faces`) are `field-row`. `gallery-meta` `ExifFacts` + `HostImageMetadata` grow Make/Model. | A map; rewriting image bytes; porting Apple `EXIFService`; new R4 kinds |
+| **5.10-viewer-chrome** | **landed.** Filmstrip + prev/next OSD when `ids.len() > 1` and the window is not short (≤700). Tap hides chrome. Pinch-zoom 1–4 on the still only (`GtkGestureZoom`). Swipe, overflow actions, and `GtkVideo` stay. Short / compact already collapses the info split. | Promoting filmstrip or zoom to `shell-kit-gtk`; leftover `src/ui` edits; a second decode path |
 
 Order: keys → scan-toasts → face-crops → photo-info → viewer-chrome.
-Photo-info can start once Camera EXIF is in `ExifFacts`; it does not
-block keys or toasts. Viewer-chrome is the largest GTK slice; do not
-bundle it with photo-info.
+All five slices landed. Do not restyle leftover `src/ui`.
+
+**Also landed (kit contact link).** `present_link_contact` uses
+`link_contact::sheet_body`: A–Z by display name (case-insensitive;
+nameless after named, then by id) and substring search via kit
+`search_entry`. Matches iOS `ContactLinkSheet`. Reset / Don't match /
+Choose folder stay pinned. Not a 5.8 slice.
 
 #### 5.1 screen inventory (R4 kinds only)
 
@@ -996,7 +1006,7 @@ Comments record chrome (primary menu → Settings), not geometry.
 | `events` | list | 5.6 | collection section or event rows |
 | `album` | grid | 5.6 | tag/album ids → `set_photo_ids_view` |
 | `viewer` | viewer | 5.6 | photo id + host decode |
-| `photo-info` | detail | 5.6 + **5.10-photo-info** | Date, Camera (Make/Model), Location, Tags, People, File, Faces, Sidecar |
+| `photo-info` | detail | 5.6 + **5.10-photo-info landed** | Date, Camera (Make/Model), Location, Tags, People, File, Faces, Sidecar |
 | `settings` | settings | 5.5 | Folder, Scan (`progress-row`), Diagnostics, Info last |
 | `logs` | list | 5.5 | kit `ListScreen` |
 | `sync-conflict-group` | detail | **landed (5.8-xmp-ui)** | iOS sheet + kit route; leftover `src/ui` has no sheet |
@@ -1057,7 +1067,10 @@ algorithm on iOS.
 
 **Already on the kit (not 5.10 gaps):** select + share / move / delete;
 `GtkVideo`; Open With / Show in Folder; people feature / hide / Me /
-featured cover / contact link; logs; Download / Remove ML chrome;
+featured cover / contact link (chooser search + A–Z sort); Escape /
+`Alt+Left` pop; scan recovery toasts; MWG face-crop tiles; photo-info
+Make/Model + File/Type/Faces/Sidecar; viewer filmstrip / prev-next /
+tap-to-hide / pinch-zoom; logs; Download / Remove ML chrome;
 phase toggles; folder explorer; year rail; video badge on tiles.
 `leftover_open` is a worker (snapshot persist; leftover index dropped).
 `--bench` leftover_open_ms must stay ~0.
@@ -1204,24 +1217,25 @@ without a Health shell. Next engineering moves, in parallel:
   Music browse switcher + Now Playing column + cover art. Host rebuild
   of `localmusic` still needs `--features gstreamer-playback`. See
   [`GTK-DESIGN-PLAN.md`](GTK-DESIGN-PLAN.md).
-- **4-warm-start** — Music JSON hydrate + background walk, same shape
-  as Gallery. Private XDG/app-cache file; cold start may block with
-  progress. Host `gstreamer-playback` rebuild stays separate.
-- **Phase 4 remainder** — **done (4.s1–4.s4).** Swift kit seam is
-  measured for Settings/list/filter/confirm. Do not extract
-  media/grid/viewer here; that is Gallery.
-- **Phase 5** — kit sequence 5.1–5.7 + 5.9 year rail / ADR+docs landed.
-  Phase 5 as a whole stays open because named 5.8 leftovers remain
-  **and** named **5.10** leftover-parity GTK slices:
-  **5.10-keys**, **5.10-scan-toasts**, **5.10-face-crops**,
-  **5.10-photo-info**, **5.10-viewer-chrome**. 5.8:
-  Track A **5.8-ios-windows** → **5.8-ios-analysis** →
-  **5.8-m1-swift-keys** → **5.8-m2-memories**. Track B
+- **4-warm-start** — **landed.** Music JSON hydrate + background walk,
+  same shape as Gallery. Private XDG/app-cache file; cold start may
+  block with progress. Host `gstreamer-playback` rebuild stays
+  separate.
+- **Phase 4 remainder** — **done (4.s1–4.s4 + 4-warm-start).** Swift
+  kit seam is measured for Settings/list/filter/confirm. Do not
+  extract media/grid/viewer here; that is Gallery.
+- **Phase 5** — kit sequence 5.1–5.7 + 5.9 year rail / ADR+docs and
+  **5.10** leftover-parity GTK are landed
+  (keys, scan toasts, face crops, photo-info, viewer chrome; kit
+  contact chooser search + A–Z). Phase 5 as a whole stays open
+  because named 5.8 leftovers remain. 5.8 Track A
+  **5.8-ios-windows** → **5.8-ios-analysis** →
+  **5.8-m1-swift-keys** → **5.8-m2-memories** landed. Track B
   **5.8-xmp-image** / **5.8-xmp-ui** landed. Anytime: **trace-ios**,
-  **5.8-m3-evidence**. **5.8-queue-host** is parked. Person-state M2,
-  the 20k `rust.yml` job, **5.8-nfc-emit**, XMP FFI (5.8.4), Places
-  queue (5.8.2), the Linux HEIC adapter (5.8.3), and the
-  sync-conflict sheet are landed. Year
+  **5.8-m3-evidence**. **5.8-queue-host** is parked. Person-state and
+  memory-state M2, the 20k `rust.yml` job, **5.8-nfc-emit**, XMP FFI
+  (5.8.4), Places queue (5.8.2), the Linux HEIC adapter (5.8.3), and
+  the sync-conflict sheet are landed. Year
   scrubber **landed (5.9)**. Leftover GTK removal is **5.9 owner —
   owner has not agreed**.
   `docs/screenshots/gtk-after/` is a written gap (mutter absent; no
@@ -1242,15 +1256,14 @@ without a Health shell. Next engineering moves, in parallel:
 3. The 20k e2e is a required `rust.yml` `gallery-core-test` step
    (`apps/gallery/scripts/e2e_20k.sh`; `LOCALGALLERY_E2E_RECORD=1`
    rewrites the golden). Run it locally the same way.
-4. Remaining Phase 5 work is the **named 5.8 leftovers** (windows →
-   analysis → m1 → m2; parallel xmp-image → xmp-ui; trace-ios;
-   m3-evidence; queue-host parked), **5.10 leftover-parity GTK**
-   (keys, scan toasts, face crops, photo-info, viewer chrome), plus
-   leftover GTK removal when the owner agrees. Phase 6 is Health. The
-   gazetteer pack is `allCountries` class `P`.
+4. Remaining Phase 5 work is the **named 5.8 leftovers**
+   (**trace-ios**, **5.8-m3-evidence**; **5.8-queue-host** parked),
+   plus leftover GTK removal when the owner agrees. Phase 6 is
+   Health. The gazetteer pack is `allCountries` class `P`.
 5. When a review or host run changes what is true (leftover vs kit
    Gallery, GTK 4.22 viewport, two-consumer reuse, chart-row, …),
    edit this file in the same change as the finding.
 6. Music on Fedora: host-rebuild `localmusic` with
    `--features gstreamer-playback` (that is play). **4-warm-start**
-   is the next library slice (JSON hydrate, not a second engine).
+   is landed (JSON hydrate, not a second engine). Host `xcodebuild`
+   was not run for the iOS cache path.

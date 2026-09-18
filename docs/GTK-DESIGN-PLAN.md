@@ -3,9 +3,9 @@
 Status: HIG chrome pass landed (kit + Contacts + Music stage). Phase 5
 kit sequence 5.1–5.7 + 5.9 year rail / ADR+docs landed; leftover GTK
 removal is still owner; `gtk-after/` is a written gap (mutter absent).
-Named 5.8 leftovers and **5.10 leftover-parity GTK** keep Phase 5
-open. Written 2026-09-16; revised 2026-09-17 (5.7 promotions + font;
-5.9 year rail + close-out); revised 2026-09-18 (5.10 named)
+Named 5.8 leftovers keep Phase 5 open. **5.10 leftover-parity GTK**
+is landed. Written 2026-09-16; revised 2026-09-17 (5.7 promotions + font;
+5.9 year rail + close-out); revised 2026-09-18 (5.10 named + landed)
 (kit-first sequence, two-consumer rule, builders as the derivation
 lever); revised again against `main` @ `9082c72` (Phase 2 split into
 2a/2b/2c, accent-text rule for apps without ink, filter controls,
@@ -761,8 +761,9 @@ should take it (needs a second consumer).
 
 Living slices and gates: [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
 §Phase 5 (5.1–5.9). Kit sequence 5.1–5.7 + 5.9 year rail / ADR+docs
-landed. Leftover GTK removal is still **5.9 owner**. Next is named
-5.8 leftovers and **5.10 leftover-parity GTK** (Phase 5 stays open).
+landed. Leftover GTK removal is still **5.9 owner**. **5.10
+leftover-parity GTK** is landed. Next is named 5.8 leftovers
+(Phase 5 stays open).
 
 1. **Spec first (5.1)**: write `apps/gallery/ui-spec/screens.toml` from the
    hand-built UI and iOS IA, R4 kinds only. Extend `gen_r14.py` →
@@ -848,11 +849,11 @@ landed. Leftover GTK removal is still **5.9 owner**. Next is named
 | root tabs | Folders, Collections, Photos (this order), icons `folder-symbolic`, `view-grid-symbolic` (or bundled symbolic), `image-x-generic-symbolic` | same |
 | photos | Root; end: overflow. Search, removable tag chips with typeahead. Timeline grid full bleed, month headings, square cover-fit tiles, 2px gutter, LIVE badge. Column count from width (~110sp compact, ~160sp wide). Activate → viewer | same, more columns |
 | folders | Root; sort as `choice_dropdown`. Inset "Subfolders": 64 `thumb`, name, photo count dim `numeric`, chevron. Below: that folder's photos as a timeline grid | clamp for the list, grid full width |
-| collections | Root. **Memories** carousel of hero cards (scrim, Newsreader Italic title, dim caption) + dots. **People**: card tiles, name + count on scrim (MWG crop in **5.10-face-crops**). **Events** rail. Leftover Objects / Scenes / Places / Albums rails are **dropped** | Memories as a rail of 2–3 hero cards; People 5–6 columns |
+| collections | Root. **Memories** carousel of hero cards (scrim, Newsreader Italic title, dim caption) + dots. **People**: card tiles, name + count on scrim (MWG crop **landed** in **5.10-face-crops**). **Events** rail. Leftover Objects / Scenes / Places / Albums rails are **dropped** | Memories as a rail of 2–3 hero cards; People 5–6 columns |
 | memory / person / album / folder | `page(title)` + timeline grid; memory adds a header subtitle with dates | same |
 | face-review | Inset list with face crops as leading `thumb`, name entry, `selection_bar` | same |
-| viewer | Full bleed, `osd` bars, auto-hide, swipe/zoom. Overflow: Info, Open With, Show in Folder. **5.10-viewer-chrome** lands zoom, filmstrip, prev/next, tap-to-hide (swipe + video already in kit) | `AdwOverlaySplitView` with photo-info sidebar |
-| photo-info | `AdwBottomSheet` (compact): Date, Camera (Make/Model, **5.10-photo-info**), Location (place and/or GPS, no map), Tags, People, File, Faces, Sidecar | sidebar |
+| viewer | Full bleed, `osd` bars, auto-hide, swipe/zoom. Overflow: Info, Open With, Show in Folder. **5.10-viewer-chrome landed**: zoom, filmstrip, prev/next, tap-to-hide (swipe + video already in kit) | `AdwOverlaySplitView` with photo-info sidebar |
+| photo-info | `AdwBottomSheet` (compact): Date, Camera (Make/Model, **5.10-photo-info landed**), Location (place and/or GPS, no map), Tags, People, File, Faces, Sidecar | sidebar |
 | settings | `SettingsScreen` with groups from the new Gallery spec's `settings` sections (proposed: Folder, Scan Photos with `progress_row` + cancel, Diagnostics, Info last). Vocabulary per ADR 0007 R1 | clamped |
 
 7. Windowing: grids and large lists use `GtkGridView` / `GtkListView`
@@ -942,9 +943,9 @@ and is re-snapshotted in every consumer.
   Phase 5 Gallery kit sequence 5.1–5.7 + 5.9 year rail / ADR+docs
   landed (spec, location windows, leftover freeze, shells pins, kit
   skeleton, remaining screens, promotions + font, Photos year rail).
-  Named 5.8 leftovers and **5.10 leftover-parity GTK** keep Phase 5
-  open. Leftover UI removal still needs an owner yes. `gtk-after/` is
-  a gap (mutter absent).
+  Named 5.8 leftovers keep Phase 5 open. **5.10 leftover-parity GTK**
+  is landed. Leftover UI removal still needs an owner yes. `gtk-after/`
+  is a gap (mutter absent).
 - Headless mutter in CI may not be available. Snapshots stay a local
   script; unit tests must not require them.
 - `GtkSectionModel` adapters, if Music needs Flush, stay in `music-gtk`
