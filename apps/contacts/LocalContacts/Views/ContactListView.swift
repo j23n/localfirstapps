@@ -50,6 +50,11 @@ struct ContactListView: View {
                 .allowsHitTesting(false)
             }
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if let progress = store.chromeProgress {
+                        ShellProgressChip(progress)
+                    }
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     HStack {
                         SettingsToolbarButton(isPresented: $showSettings)

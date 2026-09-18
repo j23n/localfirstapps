@@ -1,0 +1,5 @@
+# rustup reads this from any subdirectory. Do not list Apple targets here —
+# Linux rustup would fetch them. mac/bootstrap.sh and iOS CI add those.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]

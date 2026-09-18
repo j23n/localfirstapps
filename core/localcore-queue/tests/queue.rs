@@ -13,6 +13,7 @@ use rusqlite::Connection;
 
 const Q: Queue = Queue::new("ml_work", "tag_count");
 const FACES: Queue = Queue::new("face_work", "face_count");
+const PLACES: Queue = Queue::new("places_work", "place_count");
 
 /// Capability-local "unsupported format" code; the crate stores it blindly.
 const UNSUPPORTED: i64 = 3;
@@ -240,6 +241,25 @@ fn two_queues_in_one_file_are_independent() {
     reset(&conn, Q).unwrap();
     assert_eq!(stats(&conn, Q).unwrap().pending, 0);
     assert_eq!(stats(&conn, FACES).unwrap().pending, 2);
+}
+
+#[test]
+fn places_work_shares_a_file_with_other_queues() {
+    let mut conn = mem();
+    ensure_table(&conn, FACES).unwrap();
+    ensure_table(&conn, PLACES).unwrap();
+    enqueue(&mut conn, Q, &["/a.jpg".into()]).unwrap();
+    enqueue(&mut conn, PLACES, &["/a.jpg".into()]).unwrap();
+    claim_and_finish(&conn, "/a.jpg", "pack-1", 3);
+    assert!(begin(&conn, PLACES, "/a.jpg").unwrap());
+    assert!(finish_done(&conn, PLACES, "/a.jpg", "gazetteer", 1, None).unwrap());
+
+    assert_eq!(stats(&conn, Q).unwrap().done, 1);
+    assert_eq!(stats(&conn, PLACES).unwrap().done, 1);
+    assert_eq!(stats(&conn, FACES).unwrap().pending, 0);
+    reset(&conn, PLACES).unwrap();
+    assert_eq!(stats(&conn, Q).unwrap().done, 1);
+    assert_eq!(stats(&conn, PLACES).unwrap().pending, 0);
 }
 
 #[test]

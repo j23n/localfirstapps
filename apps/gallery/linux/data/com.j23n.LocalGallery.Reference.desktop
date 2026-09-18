@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=LocalGallery (Reference)
+Comment=Browse a folder of photos (frozen leftover UI)
+Exec=localgallery-reference
+Icon=com.j23n.LocalGallery.Reference
+Terminal=false
+Type=Application
+Categories=Graphics;Photography;GTK;
+StartupNotify=true
+# Comet / short window: localgallery-reference --comet
+Keywords=photos;gallery;images;

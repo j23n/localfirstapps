@@ -218,7 +218,7 @@ Crates:
   them, and the generated file stops compiling at the last line.
 
 Plus an in-workspace `uniffi-bindgen` bin so no global install is needed.
-Toolchain pinned in `core/rust-toolchain.toml`.
+Toolchain pinned in the repo-root `rust-toolchain.toml`.
 
 `LocalGallery/GalleryCore.swift` is committed and compiled into the app
 target; `GalleryCore.xcframework` is linked (not embedded — static lib)

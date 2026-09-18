@@ -244,14 +244,63 @@ struct PhotoGridScreen: View {
     }()
 
     private var suggestions: [TagSuggestion] {
-        let q = query.lowercased()
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
+        let needle = q.lowercased()
         let activeIDs = Set((fixedTags + activeTags).map(\.id))
-        return Array(store.allTags.lazy.filter {
+        let tags = store.allTags.filter {
             !activeIDs.contains($0.id) &&
-            ($0.displayName.lowercased().contains(q) || $0.fullPath.lowercased().contains(q))
-        }.prefix(6))
+            ($0.displayName.lowercased().contains(needle) || $0.fullPath.lowercased().contains(needle))
+        }
+        return Array((tags + dateSuggestions(matching: needle))
+            .sorted { $0.count > $1.count }
+            .prefix(6))
     }
+
+    /// Year / month buckets that match `needle`. Ids are `date:YYYY` /
+    /// `date:YYYY-MM` so a tap can become a date-shaped search query.
+    private func dateSuggestions(matching needle: String) -> [TagSuggestion] {
+        var years: [Int: Int] = [:]
+        var months: [String: (title: String, count: Int)] = [:]
+        let calendar = Calendar(identifier: .gregorian)
+        for photo in store.sortedPhotos {
+            guard let date = photo.dateTaken else { continue }
+            let year = calendar.component(.year, from: date)
+            let month = calendar.component(.month, from: date)
+            years[year, default: 0] += 1
+            let key = String(format: "%04d-%02d", year, month)
+            let title = "\(Self.monthNames[max(0, min(month, 12) - 1)]) \(year)"
+            var entry = months[key, default: (title, 0)]
+            entry.count += 1
+            months[key] = entry
+        }
+        var hits: [TagSuggestion] = []
+        for (year, count) in years where String(year).contains(needle) {
+            hits.append(TagSuggestion(
+                id: String(format: "date:%04d", year),
+                displayName: String(year),
+                fullPath: "Date/\(year)",
+                namespace: "Date",
+                count: count
+            ))
+        }
+        for (key, value) in months
+            where value.title.lowercased().contains(needle) || key.contains(needle) {
+            hits.append(TagSuggestion(
+                id: "date:\(key)",
+                displayName: value.title,
+                fullPath: "Date/\(value.title)",
+                namespace: "Date",
+                count: value.count
+            ))
+        }
+        return hits
+    }
+
+    private static let monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ]
 
     var body: some View {
         GeometryReader { geo in
@@ -515,8 +564,12 @@ struct PhotoGridScreen: View {
         VStack(spacing: 0) {
             ForEach(Array(suggestions.enumerated()), id: \.element.id) { idx, tag in
                 Button {
-                    activeTags.append(tag)
-                    query = ""
+                    if tag.namespace?.lowercased() == "date" {
+                        query = String(tag.id.dropFirst("date:".count))
+                    } else {
+                        activeTags.append(tag)
+                        query = ""
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: tag.icon)
@@ -903,7 +956,8 @@ private struct PrincipalToolbarContent: View {
     let onTitleTap: () -> Void
 
     private var isProgressVisible: Bool {
-        store.scanProgress != nil || store.analysis.progress != nil
+        store.progressRevealed
+            && (store.scanProgress != nil || store.analysis.progress != nil)
     }
 
     var body: some View {

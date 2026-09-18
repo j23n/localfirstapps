@@ -1,10 +1,13 @@
 //! Preservation-first merge planning for Syncthing `.xmp` conflict copies.
 //!
-//! This module is deliberately pure: it returns candidate bytes and never
-//! writes or deletes a file. The shell may commit those bytes and remove
-//! losing copies only after an explicit user choice (ADR 0005 R10).
+//! [`merge_sidecar_conflicts`] is pure: it returns candidate bytes and never
+//! writes or deletes a file. [`apply_sidecar_conflict`] is the explicit R10
+//! commit (`write_atomic` of those bytes, then `remove` of losing copies).
+//! Callers must not invent a second merge.
 
 use std::collections::{BTreeMap, BTreeSet};
+
+use gallery_vfs::{Vfs, VfsError};
 
 use crate::edit;
 use crate::error::{MetaError, MetaResult};
@@ -93,6 +96,27 @@ pub fn merge_sidecar_conflicts(
         newest_path: newest.path.to_string(),
         input_paths,
     })
+}
+
+/// Write merged sidecar bytes to the surviving path, then delete copies.
+///
+/// This is the commit step, not a merge. `bytes` must already come from
+/// [`merge_sidecar_conflicts`]. A copy that is already gone is ignored.
+pub fn apply_sidecar_conflict(
+    vfs: &dyn Vfs,
+    surviving_path: &str,
+    copy_paths: &[String],
+    bytes: &[u8],
+) -> MetaResult<()> {
+    vfs.write_atomic(surviving_path, bytes)?;
+    for path in copy_paths {
+        match vfs.remove(path) {
+            Ok(()) => {}
+            Err(VfsError::NotFound { .. }) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]

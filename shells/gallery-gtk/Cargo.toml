@@ -5,21 +5,32 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "LocalGallery GTK shell — pin crate; kit UI is Phase 5.5"
+description = "LocalGallery GTK shell — year rail + 5.9 close-out"
 
 [lib]
 name = "gallery_gtk"
 path = "src/lib.rs"
 
-# `ml` is not a crate feature yet. Phase 5.5 can add
-# `ml = ["gallery-ffi/ml", "localgallery/ml"]` when Scan Photos needs
-# ONNX. Until then `cargo test --all-features` in `shells/` must not
-# download `ort` or need `openssl.pc`.
+[[bin]]
+name = "localgallery"
+path = "src/main.rs"
+
+# `ml` is not a crate feature. Scan Photos without a pack stays a
+# status/progress row. Do not add `ml = ["gallery-ffi/ml", "localgallery/ml"]`
+# until a later slice needs ONNX. `cargo test --all-features` in `shells/`
+# must not download `ort` or need `openssl.pc`.
 
 [dependencies]
+shell-kit-gtk = { path = "../shell-kit-gtk" }
 # View models. `default-features = false` drops `gallery-ffi`'s `ml`
 # (ONNX Runtime). Do not relax the Gallery `image` / `uniffi` pins.
 gallery-ffi = { path = "../../apps/gallery/core/gallery-ffi", default-features = false }
+contacts-core = { path = "../../core/contacts-core" }
 # Host only (config, XDG thumbs, folder watch, scan/ops). Leftover GTK
 # stays off — `ui` is leftover's default and must not enter this graph.
 localgallery = { path = "../../apps/gallery/linux", default-features = false }
+gtk = { package = "gtk4", version = "0.11", features = ["v4_22"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }
+pango = { version = "0.22", features = ["v1_56"] }
+localcore-ui = { path = "../../core/localcore-ui" }
+localcore-trace = { path = "../../core/localcore-trace", features = ["subscriber"] }

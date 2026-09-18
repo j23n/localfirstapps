@@ -45,6 +45,7 @@ pub fn read_update(request: &MetadataRequest) -> Option<HostRead> {
 /// Always produce an update so a failing probe does not retry forever.
 #[must_use]
 pub fn read_or_mark(request: &MetadataRequest) -> HostRead {
+    localcore_trace::detail("music", format!("lofty read id={}", request.id));
     read_update(request).unwrap_or(HostRead {
         update: MetadataUpdate {
             id: request.id.clone(),

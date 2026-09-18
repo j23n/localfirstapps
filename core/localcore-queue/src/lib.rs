@@ -23,7 +23,9 @@
 //! connection: two capabilities share one file, and a second opener cannot
 //! tell an abandoned row from one the other engine is holding.
 //!
-//! Places, thumbnails, and EXIF are not capabilities of this crate.
+//! A capability names its table (`ml_work`, `face_work`, `places_work`, …)
+//! and drives the state machine from its own crate. Thumbnails and EXIF
+//! are not queued yet.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -33,7 +35,7 @@ use unicode_normalization::UnicodeNormalization;
 
 /// NFC-normalise a path key (ADR 0002 R4). Call before every enqueue
 /// and every lookup so NFC and NFD spellings share one row.
-fn nfc_path(path: &str) -> String {
+pub fn nfc_path(path: &str) -> String {
     path.nfc().collect()
 }
 
@@ -204,7 +206,8 @@ pub fn ensure_table(conn: &Connection, q: Queue) -> rusqlite::Result<()> {
 /// A `hashing` row exists because something died holding it. Call at the
 /// start of a run, not when opening the file.
 pub fn reclaim_abandoned(conn: &Connection, q: Queue) -> rusqlite::Result<usize> {
-    conn.execute(
+    let _span = localcore_trace::span("queue", "reclaim_abandoned").extra("table", q.table);
+    let n = conn.execute(
         &format!(
             "UPDATE {} SET state = ?1, updated_at = ?2 WHERE state = ?3",
             ident(q.table)
@@ -214,7 +217,9 @@ pub fn reclaim_abandoned(conn: &Connection, q: Queue) -> rusqlite::Result<usize>
             now_unix(),
             WorkState::Hashing.as_i64()
         ],
-    )
+    )?;
+    localcore_trace::event("queue", format!("reclaim table={} n={n}", q.table));
+    Ok(n)
 }
 
 /// Re-open `skipped` rows decided by a different input-version generation.
@@ -275,6 +280,9 @@ pub fn mark_stale(conn: &Connection, q: Queue, path: &str) -> rusqlite::Result<u
 /// A path already present keeps its state. Returns how many rows were newly
 /// inserted.
 pub fn enqueue(conn: &mut Connection, q: Queue, paths: &[String]) -> rusqlite::Result<usize> {
+    let _span = localcore_trace::span_always("queue", "enqueue")
+        .extra("table", q.table)
+        .extra("n", paths.len());
     let tx = conn.transaction()?;
     let now = now_unix();
     let mut inserted = 0usize;
@@ -289,6 +297,10 @@ pub fn enqueue(conn: &mut Connection, q: Queue, paths: &[String]) -> rusqlite::R
         }
     }
     tx.commit()?;
+    localcore_trace::event(
+        "queue",
+        format!("enqueued table={} inserted={inserted} asked={}", q.table, paths.len()),
+    );
     Ok(inserted)
 }
 
@@ -331,6 +343,9 @@ pub fn claimable(
          LIMIT ?5",
         ident(q.table)
     );
+    let _span = localcore_trace::span("queue", "claimable")
+        .extra("table", q.table)
+        .extra("limit", limit);
     let prefix = root_prefix.map(nfc_path);
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(
@@ -344,7 +359,12 @@ pub fn claimable(
         ],
         row_to_item,
     )?;
-    rows.collect()
+    let items: Vec<WorkItem> = rows.collect::<rusqlite::Result<_>>()?;
+    localcore_trace::event(
+        "queue",
+        format!("claimable table={} n={}", q.table, items.len()),
+    );
+    Ok(items)
 }
 
 /// One row by path.
@@ -512,6 +532,7 @@ pub fn release(conn: &Connection, q: Queue, path: &str) -> rusqlite::Result<()> 
 
 /// Queue counts. A `failed` row with retries left is counted as pending.
 pub fn stats(conn: &Connection, q: Queue) -> rusqlite::Result<Stats> {
+    let _span = localcore_trace::span("queue", "stats").extra("table", q.table);
     let mut stats = Stats::default();
     let mut stmt = conn.prepare(&format!(
         "SELECT state, COUNT(*), SUM({} > 0) FROM {} GROUP BY state",
@@ -547,6 +568,13 @@ pub fn stats(conn: &Connection, q: Queue) -> rusqlite::Result<Stats> {
     )?;
     stats.pending += retryable;
     stats.failed -= retryable.min(stats.failed);
+    localcore_trace::event(
+        "queue",
+        format!(
+            "stats table={} pending={} done={} failed={} skipped={}",
+            q.table, stats.pending, stats.done, stats.failed, stats.skipped
+        ),
+    );
     Ok(stats)
 }
 

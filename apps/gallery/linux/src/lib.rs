@@ -4,12 +4,15 @@ pub mod config;
 pub mod decode;
 pub mod display;
 pub mod faces;
+pub mod heic;
 pub mod host;
+pub mod mutate;
 pub mod ops;
 pub mod persist;
 pub mod row;
 pub mod thumbs;
 pub mod time;
+pub mod video;
 pub mod watch;
 pub mod xdg_thumb;
 
@@ -17,6 +20,7 @@ pub mod xdg_thumb;
 pub mod ui;
 
 pub use config::{Config, ConfigLoad};
+pub use heic::linux_heic_decoder;
 pub use host::{
     collection_groups, commit_analysis_state, event_folders, find_folder, leaf_tags,
     library_availability, open_library, open_library_with_commit, overlay_sidecars, patch_tree,

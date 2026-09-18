@@ -39,10 +39,12 @@ final class KindCoverageTests: XCTestCase {
         XCTAssertEqual(ShellKitCoverage.item(.navRow), .shared)
         XCTAssertEqual(ShellKitCoverage.item(.statusRow), .shared)
         XCTAssertEqual(ShellKitCoverage.item(.mediaItem), .appOwned)
+        XCTAssertEqual(ShellKitCoverage.item(.progressRow), .shared)
 
         XCTAssertEqual(ShellKitCoverage.affordance(.search), .shared)
         XCTAssertEqual(ShellKitCoverage.affordance(.filter), .shared)
         XCTAssertEqual(ShellKitCoverage.affordance(.confirm), .shared)
+        XCTAssertEqual(ShellKitCoverage.affordance(.progress), .shared)
         XCTAssertEqual(ShellKitCoverage.affordance(.sort), .appOwned)
     }
 }

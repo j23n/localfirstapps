@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer); 2026-09-16 (chart-row); 2026-09-16 (GTK design pass 2a/2b reuse); 2026-09-16 (Swift kit measured seam)
+- Revised: 2026-09-11 (r2); 2026-09-13 (Phase 3.2–3.3); 2026-09-14 (Phase 3.5); 2026-09-14 (Milestone C); 2026-09-16 (GTK Contacts completion); 2026-09-16 (GTK Music second consumer); 2026-09-16 (chart-row); 2026-09-16 (GTK design pass 2a/2b reuse); 2026-09-16 (Swift kit measured seam); 2026-09-17 (R10/R11 display typeface; GTK 5.7 promotions); 2026-09-17 (GTK/Gallery 5.9 close-out); 2026-09-17 (progress affordance)
 
 ## Scope
 
@@ -53,7 +53,7 @@ for every kind. Adding a kind is an amendment to this document.
 | `toggle-row` | label, on/off state |
 | `action-row` | label, role (`normal`, `destructive`), enabled state |
 | `nav-row` | label, optional trailing value, destination |
-| `progress-row` | label, determinate fraction or indeterminate, optional cancel |
+| `progress-row` | label, optional detail, determinate fraction or indeterminate, optional cancel |
 | `status-row` | message, severity (`info`, `warning`, `error`) |
 | `chart-row` | title, optional subtitle/unit, preformatted latest value, and a display-unit series the shell sparks natively |
 
@@ -68,6 +68,7 @@ for every kind. Adding a kind is an amendment to this document.
 | `primary-action` | the one prominent action |
 | `overflow` | secondary actions behind a menu |
 | `banner` | transient screen-level status |
+| `progress` | chrome-level ongoing work: phase label, optional detail/fraction, optional cancel |
 | `confirm` | a confirmation gate carrying a question and a destructive label |
 
 *Navigation intents*
@@ -90,14 +91,15 @@ platform's `shell-kit` (ADR 0001 R1), which depends on this vocabulary and on
 no app core. A generated enum arm proves inventory coverage; it does not by
 itself prove that a production-quality reusable binding exists.
 
-As of the GTK Music slice, `shell-kit-gtk` has two product consumers.
-Their checked inventories intersect on 17 public, domain-neutral behaviors.
-That promotes those behaviors from provisional extraction to measured reuse;
-it does not promote Music's media-item behavior, which Contacts does not use.
-`shell-kit-swift` is measured for the Settings/list/filter/confirm
+As of the GTK Gallery 5.7 slice, `shell-kit-gtk` has three product
+consumers. Contacts ∩ Music stays 25 shared of 28 Contacts and 29 Music
+bindings (`ChromeProgress` and `ProgressRow` are shared). Gallery is the second consumer of
+`media_item` (with Music) and `chip_bar` (with Contacts). Flush /
+`GtkSectionModel` stay unpromoted.
+`shell-kit-swift` is measured for the Settings/list/filter/confirm/progress
 seam (Contacts + Music, pinned by `scripts/check.py`). Form/field/status
 have Contacts production only. The package as a whole stays provisional
-for grid, viewer, media, progress, selection, and sort until a second
+for grid, viewer, media, selection, and sort until a second
 consumer exists (Gallery).
 
 **R7.** An R4 **kind** omitted from a vocabulary consumer MUST fail the build
@@ -143,13 +145,17 @@ this document exists to prevent.
 **R10.** Brand is carried by what is shared and portable: the name, the icon,
 the accent colour, the vocabulary (ADR 0007 R1), the information architecture
 in the spec, the copy, and the behavioural promise of no accounts and no
-network. It is NOT carried by control styling.
+network. When an app's token table has `[fonts] display`, brand also includes
+that named display typeface. It is NOT carried by control styling.
 
 **R11.** **Design tokens are data.** One token set per app — accent and
 supporting colours, semantic text and surface roles, spacing steps, corner
 radii — defined once and emitted into each platform's native form. Shells
 consume the emitted form. A colour literal in a shell source file that is not
-a generated token is a defect.
+a generated token is a defect. The token table MAY include one optional
+display typeface `{ family, style, file }`. Only that app's shell loads the
+file. Only the documented class may set `font-family` (Gallery
+`.memory-title`).
 
 **R12.** Where a platform offers a semantic system colour or material that
 fits, shells SHOULD use it in preference to a token. Tokens exist for the
@@ -170,7 +176,10 @@ the platform itself owns.
   prove vocabulary coverage, while tests prove required data and behavior.
 - GTK's domain-neutral bindings live in `shell-kit-gtk`. `contacts-gtk` and
   `music-gtk` publish distinct binding inventories; their test-pinned
-  intersection is 17.
+  intersection is 25 of 28 Contacts / 29 Music after `ChromeProgress`. Gallery ∩
+  Music includes `MediaItem`; Gallery ∩ Contacts includes `ChipBar`.
+- Newsreader and `.memory-title` appear only in `gallery-gtk`.
+  `shell-kit-gtk` `data/style.css` has neither.
 - No shell source contains a hard-coded colour outside generated tokens
   or a platform semantic colour (R12).
 - Shell control flow uses typed actions/dispositions rather than display copy.
@@ -245,12 +254,38 @@ entry.
 | Filter / confirm | Both apps: `ShellFilterMenu` on Logs; `.shellConfirmation` on Contacts Settings+detail and Music playlist delete. |
 | Form / field | Contacts detail+edit production only. Music has no matching form. Not two-app reuse. |
 | Status / chart | `ShellStatusRow` is Contacts Settings only. `ShellChartRow` has no production consumer (Health is Phase 6). |
-| Unclaimed | grid / viewer / media / progress / selection / sort / primary / overflow / banner stay `appOwned`. |
+| Progress | Both apps: `ShellProgressChip` (chrome after 500 ms) and `ShellProgressRow` (Settings, immediate). |
+| Unclaimed | grid / viewer / media / selection / sort / primary / overflow / banner stay `appOwned`. |
 | Native/runtime confidence | Linux `check.py` is the gate. `swift test` and the iOS apps need `macos-26` / local Xcode. |
 
 This promotes the Settings/list/filter/confirm seam. It does not
 promote the package, and it says nothing about media, grids, or
 large collections.
+
+### GTK Gallery promotions + font (2026-09-17)
+
+Gallery is the second production consumer of Music's `media_item` and
+Contacts' chips. That promotes those two kit bindings. Evidence:
+
+| Binding | Consumers | Notes |
+|---|---|---|
+| `media_item` | Music (48px default) + Gallery folders (64px, trailing count, `navigates`) | `.thumb` + `thumb_radius` in the kit stylesheet |
+| `chip_bar` | Contacts detail (Display) + Gallery photos tags (Removable) | `AdwWrapBox`, pill buttons |
+| Flush / `GtkSectionModel` | Music only | Not promoted |
+| Newsreader Italic | Gallery `.memory-title` only | ADR 0004 R10/R11 display typeface |
+
+`face-review` stays unbound. Leftover `ui` stays off.
+
+### GTK/Gallery close-out (2026-09-17)
+
+Three GTK apps consume `shell-kit-gtk`. Reuse is **pairwise**: Contacts ∩
+Music, Gallery ∩ Music (`media_item`), Gallery ∩ Contacts (`chip_bar`).
+That is not three-app reuse for tiles or the mini-player.
+
+The Photos year rail is `gallery-gtk` chrome derived from existing
+`photo_structure` month sections. It is not an R4 kind and not a kit
+binding. Leftover `apps/gallery/linux` `ui` stays until the owner agrees
+to remove it.
 
 ## Rationale
 

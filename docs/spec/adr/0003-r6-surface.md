@@ -70,7 +70,7 @@ key the row; it is not a domain key the shell interprets.
 | `toggle-row` | `label`, and one of `on`, `on_off`, `state` | `id` |
 | `action-row` | `label`, `role`, `enabled` | `id` |
 | `nav-row` | `label`, `destination` | `id`, `trailing`, `trailing_value` |
-| `progress-row` | `label`, and one of `fraction`, `determinate`, `indeterminate` | `id`, `cancel`, and the unused progress aliases |
+| `progress-row` | `label`, and one of `fraction`, `determinate`, `indeterminate` | `id`, `detail`, `cancel`, and the unused progress aliases |
 | `status-row` | `message`, `severity` | `id` |
 
 Field types on a display record are only: strings, booleans, numbers,

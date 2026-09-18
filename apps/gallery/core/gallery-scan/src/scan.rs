@@ -100,12 +100,13 @@ pub struct ScanOutcome {
     pub needs_enrichment: bool,
     /// One row per image that has a `<basename>.xmp` beside it.
     pub sidecar_manifest: Vec<SidecarCandidate>,
-    /// Paths seen now and absent from the cache.
+    /// Paths seen now and absent from the cache. NFC, so an NFD listing
+    /// and its precomposed twin are one added row.
     pub added_paths: Vec<String>,
     /// Paths in the cache and not seen now — **excluding** anything under a
-    /// failed directory.
+    /// failed directory. NFC, matching [`Self::added_paths`].
     pub removed_paths: Vec<String>,
-    /// Paths whose size or mtime changed. Disjoint from `added_paths`.
+    /// Paths whose size or mtime changed. Disjoint from `added_paths`. NFC.
     pub modified_paths: Vec<String>,
     /// **Decomposed** paths of directories whose listing failed with a
     /// transient error (`PermissionDenied`, other I/O). NFD because Swift
@@ -159,6 +160,7 @@ pub fn scan_with_hooks(
     on_progress: Option<&dyn Fn(usize)>,
     cancelled: Option<&dyn Fn() -> bool>,
 ) -> Option<ScanOutcome> {
+    let _span = localcore_trace::span_always("scan", "scan_with_hooks");
     let walked = walk_with_hooks(vfs, root, &is_gallery_content, on_progress, cancelled)?;
     let outcome = Walk::assemble(input, walked);
     // Walk progress counts *content* files (images, videos, sidecars). The
@@ -166,7 +168,27 @@ pub fn scan_with_hooks(
     if let Some(callback) = on_progress {
         callback(outcome.flat_photos.len());
     }
+    localcore_trace::event(
+        "scan",
+        format!(
+            "assembled photos={} added={} removed={} modified={}",
+            outcome.flat_photos.len(),
+            outcome.added_paths.len(),
+            outcome.removed_paths.len(),
+            outcome.modified_paths.len()
+        ),
+    );
     Some(outcome)
+}
+
+/// Syncthing conflict copies under `root`, without classifying photos.
+///
+/// The walk still visits every directory; it does not build `PhotoFile`s
+/// or a sidecar manifest. FFI filters the result to `.xmp` groups.
+pub fn conflict_groups(vfs: &dyn Vfs, root: &str) -> Vec<ConflictGroup> {
+    walk_with_hooks(vfs, root, &|_| false, None, None)
+        .map(|walked| walked.conflict_groups)
+        .unwrap_or_default()
 }
 
 /// Image / video / sidecar — today's tables in [`crate::classify`].
@@ -242,6 +264,10 @@ impl<'a> Walk<'a> {
 
     /// Classify walked files and build `PhotoFile`s / sidecar rows.
     fn assemble(input: &'a ScanInput, walked: WalkOutcome) -> ScanOutcome {
+        let _span = localcore_trace::span_always("scan", "Walk::assemble")
+            .extra("dirs", walked.directories.len())
+            .extra("files", walked.files.len())
+            .extra("cached", input.cached_photos.len());
         let mut walk = Walk::new(input);
         for dir in &walked.directories {
             walk.ingest_directory(dir, &walked.files);
@@ -390,10 +416,10 @@ impl<'a> Walk<'a> {
         };
 
         if cached.is_none() {
-            self.added_paths.push(file.path.clone());
+            self.added_paths.push(nfc_path(&file.path));
             self.needs_enrichment = true;
         } else if !unchanged {
-            self.modified_paths.push(file.path.clone());
+            self.modified_paths.push(nfc_path(&file.path));
             self.needs_enrichment = true;
         }
         photo
@@ -517,7 +543,7 @@ impl<'a> Walk<'a> {
             {
                 continue;
             }
-            removed_paths.push(path.clone());
+            removed_paths.push(nfc_path(path));
         }
 
         let root_folder = (!nodes.is_empty()).then(|| build_folder(&nodes, 0));
@@ -847,6 +873,53 @@ mod tests {
         assert!(light.modified_paths.is_empty());
         assert!(light.removed_paths.is_empty());
         assert_eq!(light.flat_photos.len(), 1);
+    }
+
+    #[test]
+    fn added_and_modified_paths_are_emitted_nfc() {
+        let nfc = "/lib/caf\u{e9}.jpg";
+        let nfd = "/lib/cafe\u{301}.jpg";
+        let vfs = MemVfs::new();
+        vfs.insert_at(nfd, vec![0u8; 10], FileTime::new(1000, 0));
+        let cold = scan(&vfs, "/lib", &ScanInput::default());
+        assert_eq!(
+            cold.added_paths,
+            vec![nfc.to_string()],
+            "added_paths must be NFC even when the listing is NFD"
+        );
+        assert!(cold.modified_paths.is_empty());
+
+        vfs.insert_at(nfd, vec![0u8; 99], FileTime::new(2000, 0));
+        let light = scan(&vfs, "/lib", &cache(&cold));
+        assert_eq!(
+            light.modified_paths,
+            vec![nfc.to_string()],
+            "modified_paths must be NFC even when the listing is NFD"
+        );
+        assert!(light.added_paths.is_empty());
+        assert!(light.removed_paths.is_empty());
+    }
+
+    #[test]
+    fn an_nfd_cache_row_still_hits() {
+        let nfc = "/lib/caf\u{e9}.jpg";
+        let nfd = "/lib/cafe\u{301}.jpg";
+        let vfs = MemVfs::new();
+        vfs.insert_at(nfc, vec![0u8; 10], FileTime::new(1000, 0));
+        let cold = scan(&vfs, "/lib", &ScanInput::default());
+        let photo = cold.flat_photos[0].clone();
+
+        let input = ScanInput {
+            reuse_cached: true,
+            cached_photos: HashMap::from([(nfd.to_string(), photo)]),
+            cached_sidecar_manifest: HashMap::new(),
+        };
+        let light = scan(&vfs, "/lib", &input);
+
+        assert_eq!(light.stats.cache_hits, 1);
+        assert!(light.added_paths.is_empty());
+        assert!(light.modified_paths.is_empty());
+        assert!(light.removed_paths.is_empty());
     }
 
     #[test]
@@ -1324,5 +1397,17 @@ mod tests {
             .conflict_groups
             .iter()
             .all(|g| { g.copies.iter().all(|c| c.name.contains(".sync-conflict-")) }));
+    }
+
+    #[test]
+    fn conflict_groups_helper_lists_without_a_photo_scan() {
+        let root = gallery_minimal();
+        let groups = conflict_groups(&StdVfs::new(), root.to_str().unwrap());
+        let names: Vec<&str> = groups.iter().map(|g| g.canonical_name.as_str()).collect();
+        assert_eq!(names, vec!["photo.heic", "photo.heic.xmp"]);
+        assert!(crate::is_conflict_name(
+            "photo.heic.sync-conflict-20200901-120000-PHONE01.xmp"
+        ));
+        assert!(!crate::is_conflict_name("photo.heic.xmp"));
     }
 }

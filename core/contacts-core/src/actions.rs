@@ -53,6 +53,7 @@ pub fn save_contact_logged(
     device: &str,
     command: SaveContactCommand,
 ) -> Result<ContactEditDraft, StoreError> {
+    let _span = localcore_trace::span_always("contacts", "save_contact_logged");
     validate_draft(&command.draft)?;
     let root = store.root.clone();
     let mut authoritative = Store::open(vfs, &root)?;

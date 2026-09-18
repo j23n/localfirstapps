@@ -26,3 +26,4 @@ publish = false
 # camino, serde_json) from the *runtime* crate — none of that belongs in a
 # library that ships to a phone. The bindgen crate opts back in below.
 uniffi = { version = "0.32.0", default-features = false }
+tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }

@@ -13,6 +13,7 @@
 #![forbid(unsafe_code)]
 
 pub mod collections;
+pub mod people;
 pub mod search;
 pub mod tags;
 pub mod text;
@@ -22,7 +23,10 @@ use std::collections::HashMap;
 use gallery_model::{PhotoFile, StableId};
 
 pub use collections::{collection_groups, leaf_tags, CollectionGroup};
-pub use search::{corpus_entry, corpus_terms, DISTANT_PAST};
+pub use people::{visible_people, PEOPLE_RAIL_CAP};
+pub use search::{
+    corpus_entry, corpus_terms, photo_count_label, SearchHit, SearchKind, DISTANT_PAST,
+};
 pub use tags::{matches_by_prefix, TagIndex, TagSuggestion};
 
 /// The photo table plus every index built over it.
@@ -58,6 +62,8 @@ impl LibraryIndex {
     /// Build every index from `all_photos`. One pass per index, no photo copies
     /// beyond the single table this takes ownership of.
     pub fn build(all_photos: Vec<PhotoFile>) -> Self {
+        let _span = localcore_trace::span_always("catalog", "LibraryIndex::build")
+            .extra("photos", all_photos.len());
         let keys: Vec<search::SortKey> = all_photos.iter().map(search::SortKey::new).collect();
         let mut sorted: Vec<u32> = (0..all_photos.len() as u32).collect();
         // Stable, so the comparator alone decides — the Swift `sorted` is not
@@ -127,6 +133,14 @@ impl LibraryIndex {
             .collect()
     }
 
+    /// First photo credited to `full_path`, without allocating the full list.
+    pub fn first_photo_id_for_tag(&self, full_path: &str) -> Option<StableId> {
+        self.tags
+            .indices_for_key(&text::match_key(full_path))
+            .first()
+            .map(|i| self.photos[*i as usize].id)
+    }
+
     /// `TagIndex.aggregateTagsAndPeople` over this index.
     pub fn tag_suggestions(&self) -> (Vec<TagSuggestion>, Vec<TagSuggestion>) {
         self.tags.aggregate(&self.photos)
@@ -191,10 +205,111 @@ impl LibraryIndex {
                 results.retain(|i| self.photo_carries(*i, &q, is_places));
             }
             // `q` is already in the corpus's canonical form, so the fallback
-            // is a plain byte search.
-            None => results.retain(|i| self.corpus[*i as usize].contains(&q)),
+            // is a plain byte search. Date-shaped queries also match
+            // `dateTaken` so "June 2023" can be a first-class hit.
+            None => {
+                let date_query = search::parse_date_query(&q);
+                results.retain(|i| {
+                    self.corpus[*i as usize].contains(&q)
+                        || date_query.is_some_and(|query| {
+                            search::photo_matches_date(&self.photos[*i as usize], query)
+                        })
+                });
+            }
         }
         results
+    }
+
+    /// Live-search hits for the Photos search field: matching tags and
+    /// capture dates, each carrying a kind icon like contacts field hits.
+    #[must_use]
+    pub fn search_hits(&self, query: &str) -> Vec<SearchHit> {
+        let needle = query.trim();
+        if needle.is_empty() {
+            return Vec::new();
+        }
+        let q = text::match_key(needle);
+        let (tags, _) = self.tag_suggestions();
+        let mut ranked: Vec<(usize, SearchHit)> = tags
+            .into_iter()
+            .filter_map(|tag| {
+                let kind = SearchKind::from_namespace(tag.namespace.as_deref())?;
+                let name = text::match_key(&tag.display_name);
+                let path = text::match_key(&tag.full_path);
+                if !name.contains(&q) && !path.contains(&q) {
+                    return None;
+                }
+                Some((
+                    tag.count,
+                    SearchHit {
+                        id: tag.id,
+                        kind,
+                        title: tag.display_name,
+                        subtitle: Some(search::photo_count_label(tag.count)),
+                    },
+                ))
+            })
+            .collect();
+        ranked.extend(self.date_hits(&q));
+        ranked.sort_by(|left, right| {
+            right
+                .0
+                .cmp(&left.0)
+                .then_with(|| left.1.kind.cmp(&right.1.kind))
+                .then_with(|| left.1.title.cmp(&right.1.title))
+        });
+        ranked.truncate(8);
+        ranked.into_iter().map(|(_, hit)| hit).collect()
+    }
+
+    fn date_hits(&self, q: &str) -> Vec<(usize, SearchHit)> {
+        let mut years = std::collections::BTreeMap::<i32, usize>::new();
+        let mut months = std::collections::BTreeMap::<(i32, u32), usize>::new();
+        for photo in &self.photos {
+            let Some(date) = photo.date_taken else {
+                continue;
+            };
+            let civil = gallery_model::CivilDateTime::from_unix_secs_f64(date.unix_secs_f64());
+            *years.entry(civil.year).or_default() += 1;
+            *months.entry((civil.year, civil.month)).or_default() += 1;
+        }
+        let mut hits = Vec::new();
+        for (year, count) in years {
+            let title = year.to_string();
+            if !text::match_key(&title).contains(q) {
+                continue;
+            }
+            hits.push((
+                count,
+                SearchHit {
+                    id: format!("date:{year:04}"),
+                    kind: SearchKind::Date,
+                    title,
+                    subtitle: Some(search::photo_count_label(count)),
+                },
+            ));
+        }
+        for ((year, month), count) in months {
+            let name = search::month_name(month);
+            let title = format!("{name} {year}");
+            let iso = format!("{year:04}-{month:02}");
+            if !text::match_key(&title).contains(q)
+                && !iso.contains(q)
+                && !text::match_key(name).contains(q)
+            {
+                continue;
+            }
+            hits.push((
+                count,
+                SearchHit {
+                    id: format!("date:{iso}"),
+                    kind: SearchKind::Date,
+                    title,
+                    subtitle: Some(search::photo_count_label(count)),
+                },
+            ));
+        }
+        hits
     }
 
     /// Does photo `idx` carry `path` (already [`text::match_key`]ed), counting a nested
@@ -213,5 +328,74 @@ impl LibraryIndex {
                     && hp.starts_with(path)
                     && hp.as_bytes()[path.len()] == b'/')
         })
+    }
+}
+
+#[cfg(test)]
+mod search_hit_tests {
+    use super::*;
+    use gallery_model::{AppleDate, CivilDateTime, HierarchicalTag, PhotoFile};
+
+    fn dated(path: &str, year: i32, month: u32, tags: &[&str]) -> PhotoFile {
+        let mut photo = PhotoFile::new(path, path.rsplit('/').next().unwrap_or(path), 0);
+        photo.date_taken = Some(AppleDate::from_unix_secs_f64(
+            CivilDateTime::new(year, month, 15, 12, 0, 0).as_naive_unix_secs() as f64,
+        ));
+        photo.hierarchical_tags = tags.iter().map(|tag| HierarchicalTag::new(tag)).collect();
+        photo
+    }
+
+    #[test]
+    fn search_hits_name_the_matched_category() {
+        let index = LibraryIndex::build(vec![dated(
+            "/a.jpg",
+            2023,
+            6,
+            &[
+                "Places/Italy/Rome",
+                "People/Ada",
+                "Scenes/Beach",
+                "Objects/Cat",
+            ],
+        )]);
+        let kinds = |query: &str| {
+            index
+                .search_hits(query)
+                .into_iter()
+                .map(|hit| hit.kind)
+                .collect::<Vec<_>>()
+        };
+        assert!(kinds("rome").contains(&SearchKind::Location));
+        assert!(kinds("ada").contains(&SearchKind::People));
+        assert!(kinds("beach").contains(&SearchKind::Scene));
+        assert!(kinds("cat").contains(&SearchKind::Objects));
+        assert!(kinds("2023").contains(&SearchKind::Date));
+        assert!(kinds("june").contains(&SearchKind::Date));
+        assert_eq!(SearchKind::Location.symbol(), "mark-location-symbolic");
+        assert_eq!(SearchKind::Date.label(), "Date");
+    }
+
+    #[test]
+    fn date_query_filters_photos_without_changing_tag_queries() {
+        let index = LibraryIndex::build(vec![
+            dated("/a.jpg", 2023, 6, &[]),
+            dated("/b.jpg", 2023, 7, &["Places/Rome"]),
+        ]);
+        let (tags, _) = index.tag_suggestions();
+        assert_eq!(index.search("june", &[], &tags).len(), 1);
+        assert_eq!(index.search("rome", &[], &tags).len(), 1);
+        assert_eq!(index.search("2023-06", &[], &tags).len(), 1);
+    }
+
+    #[test]
+    fn first_photo_id_for_tag_skips_the_full_list() {
+        let index = LibraryIndex::build(vec![
+            dated("/a.jpg", 2023, 6, &["People/Ada"]),
+            dated("/b.jpg", 2023, 7, &["People/Ada"]),
+        ]);
+        let all = index.photos_for_tag("People/Ada");
+        assert_eq!(all.len(), 2);
+        assert_eq!(index.first_photo_id_for_tag("People/Ada"), Some(all[0].id));
+        assert_eq!(index.first_photo_id_for_tag("People/Missing"), None);
     }
 }

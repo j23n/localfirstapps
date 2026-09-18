@@ -27,6 +27,40 @@ pub struct MediaItemData {
     pub label: Option<String>,
     pub badge: Option<String>,
     pub texture: Option<gdk::Texture>,
+    /// Thumbnail edge in CSS pixels. Music keeps the 48 default.
+    pub thumb_px: i32,
+    pub trailing: Option<String>,
+    /// When true, the row is activatable and shows a chevron.
+    pub navigates: bool,
+}
+
+impl Default for MediaItemData {
+    fn default() -> Self {
+        Self {
+            thumbnail_ref: String::new(),
+            label: None,
+            badge: None,
+            texture: None,
+            thumb_px: 48,
+            trailing: None,
+            navigates: false,
+        }
+    }
+}
+
+/// One pill in [`crate::chip_bar`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chip {
+    pub label: String,
+    pub mode: ChipMode,
+    /// Optional leading symbolic, matching the search-hit icon.
+    pub icon: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChipMode {
+    Display,
+    Removable,
 }
 
 #[derive(Debug, Clone)]
@@ -64,9 +98,22 @@ pub struct NavRowData {
 #[derive(Debug, Clone)]
 pub struct ProgressRowData {
     pub label: String,
+    /// Optional count / ETA shown under the label.
+    pub detail: Option<String>,
     pub fraction: Option<f64>,
     /// When true, the row shows a cancel suffix (R5).
     pub cancel: bool,
+}
+
+impl From<&localcore_ui::ProgressDisplay> for ProgressRowData {
+    fn from(display: &localcore_ui::ProgressDisplay) -> Self {
+        Self {
+            label: display.label.clone(),
+            detail: display.detail.clone(),
+            fraction: display.fraction,
+            cancel: display.cancel,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

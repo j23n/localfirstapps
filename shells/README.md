@@ -16,10 +16,16 @@ UI toolkit.
 - `music-gtk` — LocalMusic laptop / Comet shell. Links the kit and
   `music-core`; GStreamer and MPRIS remain host ports. Headless tests inject
   a deterministic transport.
-- `gallery-gtk` — Phase 5.3 pin crate (`gallery-ffi` + leftover
-  `localgallery`, both `default-features = false`). Kit UI is Phase 5.5.
-  Workspace pins: `image = "=0.25.10"`, `uniffi` 0.32. `ort` stays behind
-  `ml` (not a crate feature yet, so `--all-features` does not download it).
+- `gallery-gtk` — LocalGallery kit shell (Phase 5.9 year rail). Binary
+  `localgallery`, id `com.j23n.LocalGallery`. Path-depends on
+  `gallery-ffi` + leftover `localgallery`, both `default-features =
+  false`. Workspace pins: `image = "=0.25.10"`, `uniffi` 0.32. `ort`
+  stays behind `ml` (not a crate feature, so `--all-features` does not
+  download it). Settings is a primary-menu dialog; leftover `ui` stays
+  off. Folders, collections, viewer, photo-info, and the memories
+  rail are routed. Second consumer of kit `media_item` (folder 64px
+  covers) and `chip_bar` (photos tags). Newsreader Italic loads for
+  `.memory-title` only. Flush is not promoted. Face-review stays unbound.
 
 ```
 cd shells
@@ -29,6 +35,24 @@ cargo run -p contacts-gtk
 cargo run -p contacts-gtk -- --comet
 cargo run -p music-gtk --features gstreamer-playback
 cargo run -p music-gtk --features gstreamer-playback -- --comet
+cargo run -p gallery-gtk
+cargo run -p gallery-gtk -- --comet
+cargo run -p gallery-gtk -- --bench --folder /path/to/photos
+```
+
+`scripts/gtk-perf.sh smoke|20k` times the Gallery catalog path under
+headless mutter when it is installed; without mutter the GTK half
+skips and exits 0. 20k also runs ignored `e2e_catalog` (Session +
+`ViewList`, no display). Core 20k stays `apps/gallery/scripts/e2e_20k.sh`.
+
+Debug traces (`core/localcore-trace`): `[lf main]` is the thread that
+called `init` (UI jank if a line is slow); `[lf work]` is every other
+thread.
+
+```
+LOCALFILES_DEBUG=1 cargo run -p gallery-gtk
+LOCALFILES_DEBUG=2 cargo run -p music-gtk
+RUST_LOG=lf=debug cargo run -p contacts-gtk
 ```
 
 On macOS:

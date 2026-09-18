@@ -28,6 +28,6 @@ pub use geo::{
 pub use pack::{
     data_pack_root, default_roots, discover_pack, ml_enabled, resolve_in, PackRoots, PackStatus,
 };
-pub use places::{run_places, PlaceOutcome, PlaceRecord, PlacesSummary};
+pub use places::{places_queue_db_path, run_places, PlaceOutcome, PlaceRecord, PlacesSummary};
 pub use refresh::{refresh_plan, SidecarRefreshPlan};
 pub use watch::{should_note, REFRESH_INTERVAL};

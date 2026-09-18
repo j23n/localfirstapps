@@ -18,3 +18,4 @@ image = { version = "=0.25.10", default-features = false, features = [
     "jpeg",
     "png",
 ] }
+localcore-trace = { path = "../core/localcore-trace" }

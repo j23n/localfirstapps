@@ -10,6 +10,7 @@ description = "Generic directory walk with a caller-supplied content predicate (
 [dependencies]
 localcore-conflict = { path = "../localcore-conflict" }
 localcore-vfs = { path = "../localcore-vfs" }
+localcore-trace = { path = "../localcore-trace" }
 # Failed-directory paths are decomposed: Swift emits them through
 # `standardizedFileURL.path`, and carry-forward prefix checks compare
 # against that same form.

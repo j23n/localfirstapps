@@ -97,20 +97,26 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
     }
 
     pub fn open_folder(&mut self, folder: &str) -> Result<(), ShellError> {
+        let _span = localcore_trace::span_always("music", "open_folder");
         let store = Store::open(&self.vfs, folder)?;
+        self.install_store(store, folder.to_owned());
+        Ok(())
+    }
+
+    /// Install a store built off-thread (walk + optional cancel).
+    pub fn install_store(&mut self, store: Store, folder: String) {
         let count = store.tracks().len();
         let _ = self.transport.stop();
         self.queue.clear();
         self.queue_index = None;
         self.current_item = None;
         self.store = Some(store);
-        self.folder = Some(folder.to_owned());
+        self.folder = Some(folder);
         self.diagnostics.record(
             LogLevel::Info,
             "folder",
             format!("Opened Folder with {count} tracks"),
         );
-        Ok(())
     }
 
     pub fn reload(&mut self) -> Result<(), ShellError> {
@@ -134,6 +140,7 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         query: String,
         sort: SortOption,
     ) -> Result<LibraryRows, ShellError> {
+        let _span = localcore_trace::span_always("music", "library_rows");
         let store = self.store_mut()?;
         let generation = set_library_view(store, SetLibraryViewCommand { query, sort });
         let state = store.library_content_state();
@@ -167,10 +174,29 @@ impl<V: Vfs, P: TransportPort> Session<V, P> {
         Ok(self.store()?.metadata_requests(0, limit))
     }
 
+    #[must_use]
+    pub fn pending_metadata_count(&self) -> usize {
+        self.store()
+            .map(Store::pending_metadata_count)
+            .unwrap_or(0)
+    }
+
+    #[must_use]
+    pub fn track_count(&self) -> usize {
+        self.store().map(|store| store.tracks().len()).unwrap_or(0)
+    }
+
+    #[must_use]
+    pub fn clone_store(&self) -> Option<Store> {
+        self.store.clone()
+    }
+
     pub fn apply_metadata_batch(
         &mut self,
         updates: Vec<music_core::MetadataUpdate>,
     ) -> Result<(), ShellError> {
+        let _span = localcore_trace::span_always("music", "apply_metadata_batch")
+            .extra("n", updates.len());
         self.store_mut()?.apply_metadata_batch(updates)?;
         Ok(())
     }

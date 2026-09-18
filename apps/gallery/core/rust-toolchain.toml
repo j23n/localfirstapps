@@ -1,5 +1,0 @@
-[toolchain]
-channel = "1.97.1"
-components = ["rustfmt", "clippy"]
-targets = ["aarch64-apple-darwin", "aarch64-apple-ios", "aarch64-apple-ios-sim"]
-profile = "minimal"

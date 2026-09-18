@@ -108,11 +108,13 @@ impl PlacesSession {
                 );
             }
         });
+        let queue_db = gallery_session::places_queue_db_path(&cache_path);
         let summary = gallery_session::run_places(
             &StdVfs::new(),
             &photos,
             &gallery_session::Gazetteer,
             &mut cache,
+            Some(queue_db.as_path()),
             force,
             &self.cancel,
             on_progress
@@ -215,6 +217,32 @@ mod tests {
         assert_eq!(summary.written, 1, "{summary:?}");
         assert_eq!(summary.records[0].outcome, PlacesRecordOutcome::Written);
         assert!(cache.is_file());
+    }
+
+    #[test]
+    fn second_run_does_not_reprocess_persisted_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("a.jpg");
+        std::fs::write(&image, b"not-a-jpeg").unwrap();
+        let cache = dir.path().join("geo-cache.json");
+        let session = PlacesSession::new();
+        let first = session.run(
+            vec![photo(image.to_str().unwrap())],
+            cache.to_str().unwrap().to_string(),
+            false,
+            None,
+        );
+        assert_eq!(first.written, 1, "{first:?}");
+        assert!(dir.path().join("gallery-cache.sqlite").is_file());
+
+        let second = session.run(
+            vec![photo(image.to_str().unwrap())],
+            cache.to_str().unwrap().to_string(),
+            false,
+            None,
+        );
+        assert_eq!(second.processed, 0, "{second:?}");
+        assert_eq!(second.written, 0, "{second:?}");
     }
 
     #[test]

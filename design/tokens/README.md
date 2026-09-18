@@ -15,6 +15,15 @@ invent a palette. **Exception (D4):** Gallery dark *surfaces* (`bg`,
 roles. Contacts and Music still have no invented surfaces; shells use
 platform semantic colours (ADR 0004 R12).
 
+An optional `[fonts] display = { family, style, file }` names one
+display typeface (ADR 0004 R10/R11). Gallery has Newsreader Italic;
+the generator emits family/style/file constants in Rust and Swift.
+Generated CSS emits metric variables only (`--grid-gutter`,
+`--thumb-radius`, …). It MUST NOT emit `font-family`. Only that app’s
+shell loads the file, and only the documented class may set
+`font-family` (Gallery `.memory-title`). `screens.toml` still must not
+declare fonts (R2).
+
 ```
 python3 scripts/gen_r14.py          # write generated sources
 python3 scripts/gen_r14.py --check  # CI: regenerating produces no diff

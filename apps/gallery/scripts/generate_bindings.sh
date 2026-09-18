@@ -14,7 +14,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORE_DIR="$ROOT/core"
 MODULE="GalleryCore"
-export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.97.1}"
 
 if ! pkg-config --exists openssl && [[ -z "${OPENSSL_DIR:-}${OPENSSL_INCLUDE_DIR:-}" ]]; then
     echo "error: OpenSSL headers not found (pkg-config openssl / OPENSSL_DIR)." >&2

@@ -21,7 +21,7 @@ sections = [
 id = "contact-list"
 kind = "list"
 title = "Contacts"
-affordances = ["search", "filter", "selection", "primary-action", "confirm"]
+affordances = ["search", "filter", "selection", "primary-action", "confirm", "progress"]
 item_nav = { intent = "push", destination = "contact-detail" }
 # Filter: tags, and contacts that have a conflict.
 # Primary action: add contact → contact-edit (sheet).
@@ -61,6 +61,7 @@ title = "Settings"
 # Apple Contacts sync is iOS-only (ADR 0007 R15); GTK omits `sync`.
 sections = [
     { id = "folder", item = "action-row" },
+    { id = "reload", item = "progress-row" },
     { id = "sync", item = "action-row" },
     { id = "tags", item = "nav-row" },
     { id = "diagnostics", item = "nav-row" },

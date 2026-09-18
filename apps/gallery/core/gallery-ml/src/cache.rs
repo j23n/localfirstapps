@@ -22,6 +22,9 @@
 //! -- faces
 //! CREATE TABLE face_work  (… identical shape to ml_work, face_count instead
 //!                          of tag_count …);
+//! -- places (created by gallery-session via localcore_queue::ensure_table;
+//! -- not a CacheDb migration)
+//! CREATE TABLE places_work (… identical shape to ml_work, place_count …);
 //! CREATE TABLE face_scans (content_hash BLOB, model TEXT, face_count INTEGER,
 //!                          image_w INTEGER, image_h INTEGER,
 //!                          PRIMARY KEY (content_hash, model));
@@ -50,7 +53,7 @@
 //! `face_scans`) are keyed by, which is where it earns its keep — the second
 //! copy of a file gets a cache hit and never runs inference.
 //!
-//! # Two queues, one shape
+//! # Work queues, one shape
 //!
 //! Tagging and faces are independent pipelines over the same library: a face
 //! run must be resumable without regard to whether tagging is done, a pack that
@@ -62,6 +65,12 @@
 //! its result-count column. SQL and the state machine live in
 //! `localcore-queue`; this module opens the file, migrates embeddings /
 //! faces / clusters, and maps capability-specific [`ErrorCode`]s.
+//!
+//! Places (`places_work`) uses the same table shape and the same crate, but
+//! `gallery-session` owns that capability: it calls [`localcore_queue::Queue::new`]
+//! plus [`localcore_queue::ensure_table`] rather than adding a CacheDb migration.
+//! A pack swap must not re-queue Places; a Places run must not touch
+//! `ml_work` / `face_work`.
 //!
 //! # Concurrency
 //!

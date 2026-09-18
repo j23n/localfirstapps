@@ -44,7 +44,7 @@ public enum ShellKitCoverage {
         case .navRow:
             .shared
         case .progressRow:
-            .appOwned
+            .shared
         case .statusRow:
             .shared
         case .chartRow:
@@ -70,6 +70,8 @@ public enum ShellKitCoverage {
             .appOwned
         case .banner:
             .appOwned
+        case .progress:
+            .shared
         case .confirm:
             .shared
         }

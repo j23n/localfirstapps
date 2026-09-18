@@ -193,6 +193,7 @@ pub fn open_library_with_commit(
         return Err(HostError::Cancelled);
     }
 
+    let _open = localcore_trace::span_always("host", "open_library");
     let _ = take_unsupported_names();
     let vfs = StdVfs::new();
     let (cached, snapshot_reuse) = load_snapshot_for(root);
@@ -218,6 +219,13 @@ pub fn open_library_with_commit(
     if let Some(cb) = on_progress {
         cb("Scanning…", 0, 0);
     }
+    localcore_trace::event(
+        "host",
+        format!(
+            "open_library scan begin reuse={snapshot_reuse:?} cached={}",
+            cached.as_ref().map(|s| s.all_photos.len()).unwrap_or(0)
+        ),
+    );
     let outcome: ScanOutcome = match on_progress {
         Some(cb) => scan_with_progress(&vfs, root_str, &input, Some(&|n| cb("Scanning…", n, 0))),
         None => scan_with_progress(&vfs, root_str, &input, None),
@@ -235,6 +243,13 @@ pub fn open_library_with_commit(
         .map(|(i, _)| i)
         .collect();
     let stale_total = stale.len();
+    localcore_trace::event(
+        "host",
+        format!(
+            "open_library scanned photos={} folders? enrich_stale={stale_total}",
+            outcome.flat_photos.len()
+        ),
+    );
     if let Some(cb) = on_progress {
         cb("Reading metadata…", 0, stale_total);
     }
@@ -245,6 +260,12 @@ pub fn open_library_with_commit(
             return Err(HostError::Cancelled);
         }
         photos[idx] = enrich_photo(&vfs, photos[idx].clone());
+        if localcore_trace::enabled() && (done + 1) % 500 == 0 {
+            localcore_trace::event(
+                "host",
+                format!("open_library enrich {}/{stale_total}", done + 1),
+            );
+        }
         if let Some(cb) = on_progress {
             cb("Reading metadata…", done + 1, stale_total);
         }
@@ -578,6 +599,9 @@ fn persist_snapshot(
     photos: &[PhotoFile],
     manifest: &[SidecarCandidate],
 ) -> Result<(), HostError> {
+    let _span = localcore_trace::span_always("host", "persist_snapshot")
+        .extra("photos", photos.len())
+        .extra("sidecars", manifest.len());
     let Some(root_folder) = tree.cloned() else {
         return Ok(());
     };

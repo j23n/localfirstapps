@@ -16,3 +16,4 @@ shell-kit-gtk = { path = "../shell-kit-gtk" }
 contacts-core = { path = "../../core/contacts-core" }
 gtk = { package = "gtk4", version = "0.11", features = ["v4_22"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }
+localcore-trace = { path = "../../core/localcore-trace", features = ["subscriber"] }

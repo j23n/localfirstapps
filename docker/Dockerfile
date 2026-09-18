@@ -177,6 +177,7 @@ CMD ["/bin/bash"]
 # This stage adds what the localfiles repos build with on Linux:
 #
 #   rust + GTK4/libadwaita   gallery core/linux; contacts/music GTK
+#   mutter + dbus-daemon     headless Wayland (gtk-snapshots.sh, GTK perf)
 #   gstreamer1               music-gtk --features gstreamer-playback
 #   openssl-devel            rust openssl-sys / native-tls
 #   go + cgo                 localhealth (mattn/go-sqlite3)
@@ -197,6 +198,8 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         golang \
         gtk4-devel \
         libadwaita-devel \
+        mutter \
+        dbus-daemon \
         gstreamer1-devel \
         gstreamer1-plugins-base-devel \
         gstreamer1-plugins-base \

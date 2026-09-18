@@ -220,6 +220,9 @@ extension GalleryStore {
         // Scan + enrichment have settled — clear progress so the banner
         // dismisses.
         self.scanProgress = nil
+        if analysis.progress == nil {
+            progressRevealed = false
+        }
 
         // Refresh the widget snapshot after the scan/enrichment pass settles.
         // Unlistable root keeps photos in memory but hides them in-app —
@@ -259,6 +262,7 @@ extension GalleryStore {
     func runScanPass(at url: URL, light: Bool, silent _: Bool) async -> CoreScanner.Result {
         let startedAt = clock.now()
         self.scanProgress = ScanProgress(phase: .scanning, processed: 0, total: nil, startedAt: startedAt)
+        armProgressReveal()
 
         let cachedPhotos = Dictionary(
             allPhotos.map { ($0.url, $0) },

@@ -200,9 +200,30 @@ pub fn max_declared_extent(bytes: &[u8]) -> Option<(u32, u32)> {
         .max()
 }
 
-/// Walk `iprp` → `ipco` for `ispe` properties and take the largest.
-fn largest_ispe(meta_children: &[u8]) -> Option<(u32, u32)> {
-    let mut largest: Option<(u32, u32)> = None;
+/// Whether `ipco` lists an `imir` mirror property.
+///
+/// iPhone front-camera stills carry one (the selfie flip). Rear-camera stills
+/// typically do not. Used by the Linux HEIC decoder to undo heif-oxide 0.1.0's
+/// inverted axis — not to decide display rotation on its own.
+pub fn has_imir(bytes: &[u8]) -> bool {
+    let MetaBox::Found { body, .. } = find_meta(bytes) else {
+        return false;
+    };
+    [4usize, 0].into_iter().any(|skip| {
+        body.get(skip..).is_some_and(|children| {
+            let mut found = false;
+            for_each_ipco_property(children, |kind, _| {
+                if &kind == b"imir" {
+                    found = true;
+                }
+            });
+            found
+        })
+    })
+}
+
+/// Walk `iprp` → `ipco` and visit every property box.
+fn for_each_ipco_property(meta_children: &[u8], mut visit: impl FnMut([u8; 4], &[u8])) {
     for (kind, iprp) in boxes(meta_children) {
         if &kind != b"iprp" {
             continue;
@@ -212,22 +233,29 @@ fn largest_ispe(meta_children: &[u8]) -> Option<(u32, u32)> {
                 continue;
             }
             for (kind, property) in boxes(ipco) {
-                if &kind != b"ispe" {
-                    continue;
-                }
-                // FullBox header, then two 32-bit extents.
-                let mut c = Cursor::new(property);
-                let (Some(_), Some(_), Some(w), Some(h)) = (c.u8(), c.take(3), c.u32(), c.u32())
-                else {
-                    continue;
-                };
-                let area = u64::from(w) * u64::from(h);
-                if largest.is_none_or(|(lw, lh)| area > u64::from(lw) * u64::from(lh)) {
-                    largest = Some((w, h));
-                }
+                visit(kind, property);
             }
         }
     }
+}
+
+/// Walk `iprp` → `ipco` for `ispe` properties and take the largest.
+fn largest_ispe(meta_children: &[u8]) -> Option<(u32, u32)> {
+    let mut largest: Option<(u32, u32)> = None;
+    for_each_ipco_property(meta_children, |kind, property| {
+        if &kind != b"ispe" {
+            return;
+        }
+        // FullBox header, then two 32-bit extents.
+        let mut c = Cursor::new(property);
+        let (Some(_), Some(_), Some(w), Some(h)) = (c.u8(), c.take(3), c.u32(), c.u32()) else {
+            return;
+        };
+        let area = u64::from(w) * u64::from(h);
+        if largest.is_none_or(|(lw, lh)| area > u64::from(lw) * u64::from(lh)) {
+            largest = Some((w, h));
+        }
+    });
     largest
 }
 
@@ -853,6 +881,41 @@ pub(crate) mod tests {
         let mut cut = with_ispe(&[(4032, 3024)]);
         cut.truncate(cut.len() - 4);
         assert_eq!(max_declared_extent(&cut), None);
+    }
+
+    #[test]
+    fn imir_in_ipco_is_visible_without_decoding() {
+        fn with_props(kinds: &[&[u8; 4]]) -> Vec<u8> {
+            let mut ipco = Vec::new();
+            for kind in kinds {
+                let body: &[u8] = if *kind == b"ispe" {
+                    let mut ispe = vec![0u8, 0, 0, 0];
+                    ispe.extend_from_slice(&64u32.to_be_bytes());
+                    ispe.extend_from_slice(&48u32.to_be_bytes());
+                    ipco.extend_from_slice(&boxed(b"ispe", &ispe));
+                    continue;
+                } else if *kind == b"imir" {
+                    &[1]
+                } else if *kind == b"irot" {
+                    &[1]
+                } else {
+                    &[]
+                };
+                ipco.extend_from_slice(&boxed(kind, body));
+            }
+            let mut ftyp = b"heic".to_vec();
+            ftyp.extend_from_slice(&0u32.to_be_bytes());
+            ftyp.extend_from_slice(b"heic");
+            let mut out = boxed(b"ftyp", &ftyp);
+            out.extend_from_slice(&full(b"meta", 0, &boxed(b"iprp", &boxed(b"ipco", &ipco))));
+            out
+        }
+
+        assert!(has_imir(&with_props(&[b"ispe", b"irot", b"imir"])));
+        assert!(!has_imir(&with_props(&[b"ispe", b"irot"])));
+        assert!(!has_imir(&with_props(&[])));
+        assert!(!has_imir(b"not a container"));
+        assert!(!has_imir(&heif(b"heic", &[], 0)));
     }
 
     fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {

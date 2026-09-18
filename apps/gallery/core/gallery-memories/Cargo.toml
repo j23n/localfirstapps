@@ -10,6 +10,7 @@ publish.workspace = true
 # `gallery_model::text` supplies the NFC folds that make a Rust `HashMap` key
 # agree with the Swift `Dictionary`/`Set<String>` it replaces.
 gallery-model = { path = "../gallery-model" }
+localcore-trace = { path = "../../../../core/localcore-trace" }
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }

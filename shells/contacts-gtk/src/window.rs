@@ -3,6 +3,10 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::Instant;
 
 use adw::prelude::*;
 use gtk::gio;
@@ -15,14 +19,16 @@ use contacts_core::{
     SaveContactCommand, StdVfs, Store, Vfs, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
-    about_dialog, action_row, confirm_dialog, empty_state, field_row, field_row_widget, form_sheet,
-    header_action, highlight_markup, init_style, list_screen, nav_row, overflow,
-    preferences_dialog, primary_action, primary_menu, push_settings_subpage, search_hit_row,
+    about_dialog, action_row, apply_progress_row, chip_bar, chrome_progress, confirm_dialog,
+    empty_state, field_row, field_row_widget, form_sheet, found_detail, header_action,
+    highlight_markup, init_style, list_screen, nav_row, overflow, preferences_dialog,
+    primary_action, primary_menu, progress_row, push_settings_subpage, search_hit_row,
     settings_screen, sheet, split_list_detail, status_row, text_row, ActionRole, ActionRowData,
-    ChoiceData, ConfirmData, ContactsScreen, EmptyCopy, EmptyKind, FieldRowData, Filter,
-    FilterControl, FormSheet, Leading, ListScreen, ListScreenBuilt, ListSection, MenuCommand,
-    NavRowData, PrimaryMenu, SettingsGroup, SettingsScreen, SheetSize, SplitListDetail,
-    StatusRowData, StatusSeverity, TextRowData,
+    Chip, ChipMode, ChoiceData, ChromeProgress, ConfirmData, ContactsScreen, EmptyCopy, EmptyKind,
+    FieldRowData, Filter, FilterControl, FormSheet, Leading, ListScreen, ListScreenBuilt,
+    ListSection, MenuCommand, NavRowData, PrimaryMenu, ProgressDisplay, ProgressRowData,
+    SettingsGroup, SettingsScreen, SheetSize, SplitListDetail, StatusRowData, StatusSeverity,
+    TextRowData, WorkProgress,
 };
 
 use crate::routing::route_id;
@@ -64,6 +70,19 @@ struct Inner {
     folder: RefCell<Option<String>>,
     query: RefCell<String>,
     diagnostics: RefCell<LogStore>,
+    chrome_progress: ChromeProgress,
+    work: Arc<Mutex<Option<WorkProgress>>>,
+    work_rx: RefCell<Option<mpsc::Receiver<ContactsWork>>>,
+    work_busy: Cell<bool>,
+    work_cancel: RefCell<Option<Arc<AtomicBool>>>,
+    work_tick: Cell<bool>,
+    scan_progress_row: RefCell<Option<adw::ActionRow>>,
+}
+
+enum ContactsWork {
+    Ready { folder: String, store: Store },
+    Cancelled,
+    Failed(String),
 }
 
 impl Window {
@@ -88,13 +107,14 @@ impl Window {
     fn apply_launch(&self, launch: &crate::LaunchArgs) {
         let route = launch.route.as_deref();
         let skip_folder = route == Some(route_id(ContactsScreen::FolderPicker));
+        let wait = launch.snapshot.is_some() || launch.route.is_some();
         if let Some(folder) = launch.folder.as_ref().filter(|_| !skip_folder) {
             match folder.to_str() {
-                Some(path) => self.open_folder(path),
+                Some(path) => self.open_folder(path, wait),
                 None => self.toast("Folder path is not UTF-8"),
             }
         } else if !skip_folder {
-            self.load_persisted();
+            self.load_persisted(wait);
         }
         if let Some(route) = route {
             self.apply_route(route);
@@ -254,6 +274,8 @@ impl Window {
         let add = header_action("list-add-symbolic", "Add Contact");
         add.set_sensitive(false);
         split.sidebar_start.append(&add);
+        let chrome_progress = chrome_progress();
+        split.sidebar_start.append(&chrome_progress.root);
         let menu = primary_menu(
             APP_TITLE,
             &[
@@ -327,6 +349,13 @@ impl Window {
             device,
             paths,
             store: RefCell::new(None),
+            chrome_progress,
+            work: Arc::new(Mutex::new(None)),
+            work_rx: RefCell::new(None),
+            work_busy: Cell::new(false),
+            work_cancel: RefCell::new(None),
+            work_tick: Cell::new(false),
+            scan_progress_row: RefCell::new(None),
             folder: RefCell::new(None),
             query: RefCell::new(String::new()),
             diagnostics: RefCell::new(LogStore::new(DIAGNOSTIC_CAPACITY)),
@@ -349,6 +378,11 @@ impl Window {
             let reloader = this.clone();
             reload.connect_activate(move |_, _| reloader.reload_folder());
         }
+        let cancel = this.clone();
+        this.inner
+            .chrome_progress
+            .cancel_button()
+            .connect_clicked(move |_| cancel.cancel_folder_work());
         if let Some(choose_folder) = menu.extra("choose-folder") {
             let chooser = this.clone();
             choose_folder.connect_activate(move |_, _| chooser.pick_folder());
@@ -433,10 +467,11 @@ impl Window {
             .record(level, category, message);
     }
 
-    fn load_persisted(&self) {
+    fn load_persisted(&self, wait: bool) {
+        let _span = localcore_trace::span_always("contacts", "load_persisted");
         if let Some(folder) = self.inner.paths.load_folder() {
             if std::path::Path::new(&folder).is_dir() {
-                self.open_folder(&folder);
+                self.open_folder(&folder, wait);
             } else {
                 self.record(
                     LogLevel::Warning,
@@ -461,7 +496,7 @@ impl Window {
             gio::Cancellable::NONE,
             move |result| match result {
                 Ok(file) => match file.path().and_then(|p| p.to_str().map(str::to_owned)) {
-                    Some(path) => this.open_folder(&path),
+                    Some(path) => this.open_folder(&path, false),
                     None => {
                         this.record(
                             LogLevel::Warning,
@@ -482,34 +517,11 @@ impl Window {
         );
     }
 
-    fn open_folder(&self, folder: &str) {
-        match Store::open(&self.inner.vfs, folder) {
-            Ok(store) => {
-                let count = list_rows_filtered(&store, "", None).len();
-                self.inner.store.replace(Some(store));
-                self.inner.folder.replace(Some(folder.to_string()));
-                self.inner.paths.save_folder(folder);
-                self.inner.selection_toggle.set_active(false);
-                self.inner.selected_ids.borrow_mut().clear();
-                self.inner.selected_tag.replace(None);
-                self.inner
-                    .root_stack
-                    .set_visible_child_name(route_id(ContactsScreen::ContactList));
-                self.inner.add.set_sensitive(true);
-                self.show_empty_detail();
-                self.record(
-                    LogLevel::Info,
-                    "folder",
-                    format!("Opened contacts folder with {count} contacts"),
-                );
-                self.refill_tag_filter();
-                self.refill_list();
-                self.refill_settings();
-            }
-            Err(err) => {
-                self.record(LogLevel::Error, "folder", "Could not open contacts folder");
-                self.toast(&err.to_string());
-            }
+    fn open_folder(&self, folder: &str, wait: bool) {
+        let _span = localcore_trace::span_always("contacts", "open_folder");
+        self.start_folder_work(folder.to_string());
+        if wait {
+            self.drain_folder_work();
         }
     }
 
@@ -520,6 +532,7 @@ impl Window {
     }
 
     fn refill_list(&self) {
+        let _span = localcore_trace::span_always("contacts", "refill_list");
         while let Some(child) = self.inner.list.first_child() {
             self.inner.list.remove(&child);
         }
@@ -755,7 +768,166 @@ impl Window {
             self.toast("Choose a Folder first");
             return;
         };
-        self.open_folder(&folder);
+        self.open_folder(&folder, false);
+    }
+
+    fn start_folder_work(&self, folder: String) {
+        if self.inner.work_busy.get() {
+            self.cancel_folder_work();
+        }
+        self.inner.work_busy.set(true);
+        if let Ok(mut work) = self.inner.work.lock() {
+            *work = Some(WorkProgress::new("Reloading"));
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.inner.work_cancel.replace(Some(cancel.clone()));
+        let status = self.inner.work.clone();
+        let (tx, rx) = mpsc::channel();
+        self.inner.work_rx.replace(Some(rx));
+        let vfs = StdVfs::new(TEMP_PREFIX);
+        thread::spawn(move || {
+            let report = |discovered: usize| {
+                if let Ok(mut guard) = status.lock() {
+                    if let Some(progress) = guard.as_mut() {
+                        progress.update("Reloading", Some(found_detail(discovered as u64)), None);
+                    }
+                }
+            };
+            let cancelled = || cancel.load(Ordering::Relaxed);
+            let outcome =
+                match Store::open_with_hooks(&vfs, &folder, Some(&report), Some(&cancelled)) {
+                    Ok(Some(store)) => ContactsWork::Ready { folder, store },
+                    Ok(None) => ContactsWork::Cancelled,
+                    Err(error) => ContactsWork::Failed(error.to_string()),
+                };
+            let _ = tx.send(outcome);
+        });
+        self.ensure_work_tick();
+        self.sync_chrome_progress();
+    }
+
+    fn cancel_folder_work(&self) {
+        if let Some(flag) = self.inner.work_cancel.borrow().as_ref() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn drain_folder_work(&self) {
+        let ctx = gtk::glib::MainContext::default();
+        while self.inner.work_busy.get() {
+            self.poll_folder_work();
+            if self.inner.work_busy.get() {
+                ctx.iteration(true);
+            }
+        }
+    }
+
+    fn ensure_work_tick(&self) {
+        if self.inner.work_tick.get() {
+            return;
+        }
+        self.inner.work_tick.set(true);
+        let this = self.clone();
+        gtk::glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+            this.poll_folder_work();
+            this.sync_chrome_progress();
+            if this.inner.work_busy.get() {
+                gtk::glib::ControlFlow::Continue
+            } else {
+                this.inner.work_tick.set(false);
+                gtk::glib::ControlFlow::Break
+            }
+        });
+    }
+
+    fn poll_folder_work(&self) {
+        let Some(rx) = self.inner.work_rx.borrow_mut().take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(ContactsWork::Ready { folder, store }) => {
+                self.finish_folder_open(folder, store);
+            }
+            Ok(ContactsWork::Cancelled) => {
+                self.inner.work_busy.set(false);
+                if let Ok(mut work) = self.inner.work.lock() {
+                    *work = None;
+                }
+                self.inner.work_cancel.replace(None);
+                self.sync_chrome_progress();
+                self.toast("Reload cancelled");
+            }
+            Ok(ContactsWork::Failed(error)) => {
+                self.inner.work_busy.set(false);
+                if let Ok(mut work) = self.inner.work.lock() {
+                    *work = None;
+                }
+                self.inner.work_cancel.replace(None);
+                self.sync_chrome_progress();
+                self.record(LogLevel::Error, "folder", "Could not open contacts folder");
+                self.toast(&error);
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                self.inner.work_rx.replace(Some(rx));
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.inner.work_busy.set(false);
+            }
+        }
+    }
+
+    fn finish_folder_open(&self, folder: String, store: Store) {
+        let count = list_rows_filtered(&store, "", None).len();
+        self.inner.store.replace(Some(store));
+        self.inner.folder.replace(Some(folder.clone()));
+        self.inner.paths.save_folder(&folder);
+        self.inner.selection_toggle.set_active(false);
+        self.inner.selected_ids.borrow_mut().clear();
+        self.inner.selected_tag.replace(None);
+        self.inner
+            .root_stack
+            .set_visible_child_name(route_id(ContactsScreen::ContactList));
+        self.inner.add.set_sensitive(true);
+        self.show_empty_detail();
+        self.record(
+            LogLevel::Info,
+            "folder",
+            format!("Opened contacts folder with {count} contacts"),
+        );
+        self.inner.work_busy.set(false);
+        if let Ok(mut work) = self.inner.work.lock() {
+            *work = None;
+        }
+        self.inner.work_cancel.replace(None);
+        self.sync_chrome_progress();
+        self.refill_tag_filter();
+        self.refill_list();
+        self.refill_settings();
+    }
+
+    fn sync_chrome_progress(&self) {
+        let progress = self
+            .inner
+            .work
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .and_then(|work| work.chrome(Instant::now()).cloned())
+            })
+            .map(|display| ProgressRowData::from(&display));
+        self.inner.chrome_progress.apply(progress.as_ref());
+        if let Some(row) = self.inner.scan_progress_row.borrow().clone() {
+            let display = self
+                .inner
+                .work
+                .lock()
+                .ok()
+                .and_then(|guard| guard.as_ref().map(|work| work.display().clone()))
+                .unwrap_or_else(idle_contacts_progress);
+            apply_progress_row(&row, &ProgressRowData::from(&display));
+        }
     }
 
     fn present_about(&self) {
@@ -1523,6 +1695,15 @@ impl Window {
         reload.add_suffix(&gtk::Image::from_icon_name("view-refresh-symbolic"));
         let this = self.clone();
         reload.connect_activated(move |_| this.reload_folder());
+        let scan = self
+            .inner
+            .work
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|work| work.display().clone()))
+            .unwrap_or_else(idle_contacts_progress);
+        let scan_row = progress_row(&ProgressRowData::from(&scan));
+        self.inner.scan_progress_row.replace(Some(scan_row.clone()));
 
         let tags = nav_row(&NavRowData {
             label: "Tags".into(),
@@ -1554,6 +1735,11 @@ impl Window {
                         change.upcast(),
                         reload.upcast(),
                     ],
+                },
+                SettingsGroup {
+                    id: "reload".into(),
+                    title: "Reload".into(),
+                    rows: vec![scan_row.upcast()],
                 },
                 SettingsGroup {
                     id: "tags".into(),
@@ -2249,6 +2435,7 @@ fn contact_detail_body(
     let mut urls = Vec::new();
     let mut addresses = Vec::new();
     let mut other = Vec::new();
+    let mut categories = Vec::new();
     for field in fields {
         match field.id.as_deref().unwrap_or_default() {
             "fn" | "org" | "photo" => {}
@@ -2256,6 +2443,7 @@ fn contact_detail_body(
             id if id.starts_with("email:") => emails.push(field),
             id if id.starts_with("url:") => urls.push(field),
             id if id.starts_with("adr:") => addresses.push(field),
+            id if id.starts_with("category:") => categories.push(field),
             _ => other.push(field),
         }
     }
@@ -2280,12 +2468,32 @@ fn contact_detail_body(
         }
         column.append(&group);
     }
+    if !categories.is_empty() {
+        let chips: Vec<Chip> = categories
+            .iter()
+            .map(|field| Chip {
+                label: field.value.clone(),
+                mode: ChipMode::Display,
+                icon: None,
+            })
+            .collect();
+        column.append(&chip_bar(&chips));
+    }
 
     let clamp = adw::Clamp::new();
     clamp.set_maximum_size(720);
     clamp.set_tightening_threshold(480);
     clamp.set_child(Some(&column));
     clamp.upcast()
+}
+
+fn idle_contacts_progress() -> ProgressDisplay {
+    ProgressDisplay {
+        label: "Reload Folder".into(),
+        detail: None,
+        fraction: None,
+        cancel: false,
+    }
 }
 
 fn section_key(title: &str) -> String {

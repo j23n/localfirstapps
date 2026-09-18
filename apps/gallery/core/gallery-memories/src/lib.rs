@@ -114,6 +114,23 @@ pub enum PersonLink {
     Disabled,
 }
 
+/// Resolved link for a person tag — what the UI should display.
+///
+/// A dangling [`PersonLink::Manual`] id is [`LinkState::Unlinked`], not an
+/// auto-match. Birthday generation is different: it falls back to the name
+/// match so a synced `CN:…` id still produces a memory on Linux.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkState {
+    /// No manual link and no auto-match.
+    Unlinked,
+    /// User explicitly disabled matching.
+    Disabled,
+    /// Manual override resolved to this contact.
+    Manual(Contact),
+    /// Name auto-match.
+    Auto(Contact),
+}
+
 /// `ContactInfo`, reduced to the fields the engine reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Contact {
@@ -269,26 +286,48 @@ pub struct PersonKeys {
     /// Derived from `contacts` here rather than shipped across the FFI, which
     /// is what stops the app's copy and the core's from disagreeing.
     contacts_by_name: HashMap<String, Contact>,
+    /// Opaque host id → contact. Ids are not folded (CN identifiers / vCard
+    /// local ids are ASCII by construction).
+    contacts_by_id: HashMap<String, Contact>,
 }
 
 impl PersonKeys {
     pub fn build(inputs: &GenerationInputs) -> Self {
-        let mut contacts_by_name: HashMap<String, Contact> =
-            HashMap::with_capacity(inputs.contacts.len());
-        for c in &inputs.contacts {
+        Self::from_parts(
+            &inputs.contacts,
+            &inputs.person_contact_links,
+            &inputs.hidden_people,
+            &inputs.me_person_path,
+        )
+    }
+
+    /// Same indexes [`Self::build`] installs, for link-state without a full
+    /// generation snapshot.
+    pub fn from_parts(
+        contacts: &[Contact],
+        person_contact_links: &HashMap<String, PersonLink>,
+        hidden_people: &HashSet<String>,
+        me_person_path: &str,
+    ) -> Self {
+        let mut contacts_by_name: HashMap<String, Contact> = HashMap::with_capacity(contacts.len());
+        let mut contacts_by_id: HashMap<String, Contact> = HashMap::with_capacity(contacts.len());
+        for c in contacts {
+            contacts_by_id
+                .entry(c.id.clone())
+                .or_insert_with(|| c.clone());
             contacts_by_name
                 .entry(text::match_key(&c.full_name()))
                 .or_insert_with(|| c.clone());
         }
         PersonKeys {
-            hidden_people: inputs.hidden_people.iter().map(|p| text::nfc(p)).collect(),
-            me_person_path: text::nfc(&inputs.me_person_path),
-            person_contact_links: inputs
-                .person_contact_links
+            hidden_people: hidden_people.iter().map(|p| text::nfc(p)).collect(),
+            me_person_path: text::nfc(me_person_path),
+            person_contact_links: person_contact_links
                 .iter()
                 .map(|(k, v)| (text::nfc(k), v.clone()))
                 .collect(),
             contacts_by_name,
+            contacts_by_id,
         }
     }
 
@@ -316,6 +355,39 @@ impl PersonKeys {
     /// The auto-match: a contact whose full name equals the tag's leaf.
     pub fn contact_named(&self, display_name: &str) -> Option<&Contact> {
         self.contacts_by_name.get(&text::match_key(display_name))
+    }
+
+    pub fn contact_by_id(&self, id: &str) -> Option<&Contact> {
+        self.contacts_by_id.get(id)
+    }
+
+    /// UI resolution. A dangling manual id is unlinked, not an auto-match.
+    pub fn link_state(&self, person_path: &str, display_name: &str) -> LinkState {
+        let key = Self::key(person_path);
+        match self.link_for(&key) {
+            Some(PersonLink::Disabled) => LinkState::Disabled,
+            Some(PersonLink::Manual(id)) => match self.contact_by_id(id) {
+                Some(contact) => LinkState::Manual(contact.clone()),
+                None => LinkState::Unlinked,
+            },
+            None => match self.contact_named(display_name) {
+                Some(contact) => LinkState::Auto(contact.clone()),
+                None => LinkState::Unlinked,
+            },
+        }
+    }
+
+    /// Birthday / memory resolution. An unknown manual id falls back to the
+    /// name auto-match so a synced iOS `CN:…` link still works on Linux.
+    pub fn resolve_contact(&self, person_path: &str, display_name: &str) -> Option<&Contact> {
+        let key = Self::key(person_path);
+        match self.link_for(&key) {
+            Some(PersonLink::Disabled) => None,
+            Some(PersonLink::Manual(id)) => self
+                .contact_by_id(id)
+                .or_else(|| self.contact_named(display_name)),
+            None => self.contact_named(display_name),
+        }
     }
 }
 
@@ -451,6 +523,8 @@ pub fn generate_cancellable(
     inputs: &GenerationInputs,
     is_cancelled: &dyn Fn() -> bool,
 ) -> Vec<Memory> {
+    let _span = localcore_trace::span_always("memory", "generate_cancellable")
+        .extra("photos", inputs.photos.len());
     let zone = inputs.zone();
     let cal = zone.now();
     let photos = &inputs.photos;
@@ -875,5 +949,27 @@ mod tests {
         assert!(!generate(&inputs)
             .iter()
             .any(|m| m.kind == MemoryType::Birthday));
+    }
+
+    /// A synced iOS `CN:…` id is absent from a vCard snapshot. Generation
+    /// falls back to the name auto-match; the UI still reports unlinked.
+    #[test]
+    fn dangling_manual_link_falls_back_to_name_match() {
+        let mut inputs = birthday_inputs("People/Jos\u{00E9} Ruiz");
+        inputs.person_contact_links = HashMap::from([(
+            "People/Jos\u{00E9} Ruiz".to_string(),
+            PersonLink::Manual("CN:missing".into()),
+        )]);
+        assert!(
+            generate(&inputs)
+                .iter()
+                .any(|m| m.kind == MemoryType::Birthday),
+            "unresolved manual must not suppress a name match"
+        );
+        let keys = PersonKeys::build(&inputs);
+        assert_eq!(
+            keys.link_state("People/Jos\u{00E9} Ruiz", "Jos\u{00E9} Ruiz"),
+            LinkState::Unlinked
+        );
     }
 }

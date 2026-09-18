@@ -1,0 +1,6 @@
+# Same pin as the repo-root rust-toolchain.toml. This file wins under
+# apps/gallery/ and is the pin for the leftover gallery-only remote.
+# No Apple targets — Linux rustup would otherwise fetch them.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]

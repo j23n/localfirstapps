@@ -111,6 +111,8 @@ pub struct AnalysisRequest<'a> {
     pub cancel: &'a AtomicBool,
     /// Optional progress hop for the banner.
     pub on_progress: Option<ProgressFn>,
+    /// Host HEIC door. Ignored when `ml` is off.
+    pub heic_decoder: Option<Arc<dyn gallery_ml::HostHeicDecoder>>,
 }
 
 /// Run the three phases. `pack` / `ml_cache` are ignored when `ml` is off.
@@ -124,7 +126,9 @@ pub fn run_analysis(request: AnalysisRequest<'_>) -> AnalysisSummary {
         force_places,
         cancel,
         on_progress,
+        heic_decoder,
     } = request;
+    let _span = localcore_trace::span_always("catalog", "run_analysis").extra("photos", photos.len());
     let mut summary = AnalysisSummary {
         photos: photos.len(),
         ..AnalysisSummary::default()
@@ -141,6 +145,7 @@ pub fn run_analysis(request: AnalysisRequest<'_>) -> AnalysisSummary {
                     cache,
                     cancel,
                     on_progress.clone(),
+                    heic_decoder,
                     &mut summary,
                 ) {
                     if summary.error.is_none() {
@@ -165,8 +170,8 @@ pub fn run_analysis(request: AnalysisRequest<'_>) -> AnalysisSummary {
     #[cfg(not(feature = "ml"))]
     {
         let _ = pack;
-        let _ = ml_cache;
         let _ = &stills;
+        let _ = heic_decoder;
         summary.skipped_ml = Some(
             "This build has no ONNX. Rebuild with --features ml to tag and find faces.".into(),
         );
@@ -184,6 +189,7 @@ pub fn run_analysis(request: AnalysisRequest<'_>) -> AnalysisSummary {
         photos,
         geo,
         geo_cache,
+        ml_cache,
         force_places,
         cancel,
         Some(&|done, total| {
@@ -217,6 +223,7 @@ fn run_ml(
     cache_db: &std::path::Path,
     cancel: &AtomicBool,
     on_progress: Option<ProgressFn>,
+    heic: Option<Arc<dyn gallery_ml::HostHeicDecoder>>,
     summary: &mut AnalysisSummary,
 ) -> Result<(), String> {
     use gallery_ml::{FaceEngine, FaceRunOptions, RunOptions, TaggingEngine};
@@ -228,8 +235,11 @@ fn run_ml(
     }
     let paths: Vec<String> = stills.iter().map(|p| p.path().to_string()).collect();
 
-    let tagging =
+    let mut tagging =
         TaggingEngine::open(cache_db, &pack.directory, vfs.clone()).map_err(|e| e.to_string())?;
+    if let Some(dec) = heic.clone() {
+        tagging = tagging.with_heic_decoder(dec);
+    }
     tagging.enqueue(&paths).map_err(|e| e.to_string())?;
     let progress = PhaseProgress::new(AnalysisPhase::Tagging, on_progress.clone());
     let tag_summary = tagging
@@ -257,11 +267,14 @@ fn run_ml(
         return Ok(());
     }
 
-    let faces = match FaceEngine::open(cache_db, &pack.directory, vfs) {
+    let mut faces = match FaceEngine::open(cache_db, &pack.directory, vfs) {
         Ok(engine) => engine,
         Err(gallery_ml::MlError::FaceModelsUnavailable) => return Ok(()),
         Err(e) => return Err(e.to_string()),
     };
+    if let Some(dec) = heic.clone() {
+        faces = faces.with_heic_decoder(dec);
+    }
     faces.enqueue(&paths).map_err(|e| e.to_string())?;
     let progress = PhaseProgress::new(AnalysisPhase::Faces, on_progress);
     let face_summary = faces
@@ -406,6 +419,36 @@ pub fn readiness_blurb(pack: Option<&PackStatus>, photo_count: usize) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geo::{Gazetteer, GeoCache};
+
+    struct UnusedHeic;
+
+    impl gallery_ml::HostHeicDecoder for UnusedHeic {
+        fn decode(&self, _path: &str) -> gallery_ml::MlResult<gallery_ml::RgbImage> {
+            panic!("ml is off; host decoder must not be asked")
+        }
+    }
+
+    #[test]
+    fn places_only_run_accepts_a_heic_decoder_when_ml_is_off() {
+        let cancel = AtomicBool::new(false);
+        let mut geo_cache = GeoCache::new();
+        let summary = run_analysis(AnalysisRequest {
+            photos: &[],
+            pack: None,
+            ml_cache: None,
+            geo: &Gazetteer,
+            geo_cache: &mut geo_cache,
+            force_places: false,
+            cancel: &cancel,
+            on_progress: None,
+            heic_decoder: Some(Arc::new(UnusedHeic)),
+        });
+        assert!(!summary.cancelled);
+        assert!(summary.places.is_some());
+        assert!(summary.error.is_none());
+        assert!(summary.skipped_ml.is_some());
+    }
 
     #[test]
     fn readiness_mentions_gazetteer() {

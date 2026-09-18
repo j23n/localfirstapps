@@ -45,3 +45,8 @@ card_radius = 14
 memory_radius = 20
 separator_opacity = 0.10
 accent_soft_opacity = 0.13
+grid_gutter = 2
+thumb_radius = 8
+
+[fonts]
+display = { family = "Newsreader", style = "italic", file = "Newsreader-Italic[opsz,wght].ttf" }

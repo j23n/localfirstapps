@@ -41,8 +41,10 @@ if ! command -v rustup >/dev/null 2>&1; then
   exit 1
 fi
 echo "rustup: $(command -v rustup)"
-# Pull the pin in apps/gallery/core/rust-toolchain.toml (1.97.1 + iOS targets).
-(cd "$workspace/apps/gallery/core" && rustup show)
+# rust-toolchain.toml at the repo root. Apple targets are not in that
+# file (Linux rustup would otherwise fetch them).
+(cd "$workspace" && rustup show)
+rustup target add aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim
 
 # XcodeGen — same pin CI uses, not `brew install xcodegen`.
 xcodegen_installer="$workspace/apps/gallery/scripts/install_xcodegen.sh"

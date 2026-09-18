@@ -308,12 +308,12 @@ pub struct ScanCatalogHost {
     pub needs_enrichment: bool,
     /// One row per image that has a `<basename>.xmp` beside it.
     pub sidecar_manifest: Vec<ScannedSidecarHost>,
-    /// Paths seen now and absent from the cache.
+    /// Paths seen now and absent from the cache. NFC.
     pub added_paths: Vec<String>,
     /// Paths in the cache and not seen now, excluding anything under a failed
-    /// directory.
+    /// directory. NFC.
     pub removed_paths: Vec<String>,
-    /// Paths whose size or mtime changed.
+    /// Paths whose size or mtime changed. NFC.
     pub modified_paths: Vec<String>,
     /// Decomposed paths of directories whose listing failed.
     pub failed_directory_paths: Vec<String>,
@@ -329,6 +329,7 @@ pub struct ScanCommand {
     /// Reuse cached photos for unchanged paths — the light scan.
     pub reuse_cached: bool,
     /// Last pass's photos. Carries EXIF, tags and GPS forward.
+    /// Inserted into the scan cache under the NFC form of `path`.
     pub cached_photos: Vec<ScannedMediaHost>,
     /// Last pass's sidecar rows. A hit here is what lets a light scan skip
     /// rebuilding an `.xmp` row when the listing still matches.
@@ -440,6 +441,9 @@ impl ScannerSession {
         request: ScanCommand,
         progress: Option<Arc<dyn ScanProgressListener>>,
     ) -> Result<ScanCatalogHost, ScanError> {
+        let _span = localcore_trace::span_always("scan", "scanner.scan")
+            .extra("reuse", request.reuse_cached)
+            .extra("cached", request.cached_photos.len());
         let generation = self.next_generation.fetch_add(1, Ordering::AcqRel);
         self.running_generation.store(generation, Ordering::Release);
         let _guard = RunGuard {
@@ -454,7 +458,7 @@ impl ScannerSession {
             cached_photos: request
                 .cached_photos
                 .into_iter()
-                .map(|p| (p.path.clone(), photo_from_record(p)))
+                .map(|p| (nfc_path(&p.path), photo_from_record(p)))
                 .collect(),
             cached_sidecar_manifest: request
                 .cached_sidecar_manifest
@@ -855,6 +859,10 @@ pub fn named_people_without_box(
 // Conversions
 // ---------------------------------------------------------------------------
 
+fn nfc_path(path: &str) -> String {
+    gallery_model::text::nfc(path)
+}
+
 fn tag_to_record(tag: &HierarchicalTag) -> ScanTag {
     ScanTag {
         full_path: tag.full_path.clone(),
@@ -1052,6 +1060,8 @@ fn outcome_to_record(
     outcome: gallery_scan::ScanOutcome,
     elapsed: std::time::Duration,
 ) -> ScanOutcomeRecord {
+    let _span = localcore_trace::span_always("scan", "outcome_to_record")
+        .extra("photos", outcome.flat_photos.len());
     let stats = outcome.stats;
     let mut folders = Vec::new();
     if let Some(root) = &outcome.root_folder {
@@ -1180,6 +1190,47 @@ mod tests {
         assert!(out.sidecar_manifest[0].sidecar_path.ends_with("b.jpg.xmp"));
         assert_eq!(out.timings.slow_path, 3);
         assert_eq!(out.timings.cache_hits, 0);
+    }
+
+    #[test]
+    fn an_nfd_cache_row_still_hits() {
+        let dir = tempfile::tempdir().unwrap();
+        let nfc_name = "caf\u{e9}.jpg";
+        std::fs::write(dir.path().join(nfc_name), b"aaaa").unwrap();
+        let root = dir.path().to_str().unwrap().to_string();
+        let session = ScannerSession::new();
+        let cold = session.scan(root.clone(), empty_request(), None).unwrap();
+        assert_eq!(cold.flat_photos.len(), 1);
+        assert_eq!(
+            cold.added_paths,
+            cold.added_paths
+                .iter()
+                .map(|p| nfc_path(p))
+                .collect::<Vec<_>>(),
+            "FFI added_paths must already be NFC: {:?}",
+            cold.added_paths
+        );
+
+        let mut cached = cold.flat_photos[0].clone();
+        cached.path = cached.path.replacen("caf\u{e9}", "cafe\u{301}", 1);
+        assert_ne!(cached.path, cold.flat_photos[0].path);
+
+        let light = session
+            .scan(
+                root,
+                ScanRequest {
+                    reuse_cached: true,
+                    cached_photos: vec![cached],
+                    cached_sidecar_manifest: cold.sidecar_manifest.clone(),
+                },
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(light.timings.cache_hits, 1);
+        assert!(light.added_paths.is_empty());
+        assert!(light.modified_paths.is_empty());
+        assert!(light.removed_paths.is_empty());
     }
 
     /// The point of feeding the cache back in: a second pass reuses it and

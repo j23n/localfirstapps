@@ -104,7 +104,7 @@ pub struct PersonStatePair {
 /// `PersonLink.disabled`.
 ///
 /// R6 role: structure DTO.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, uniffi::Record)]
 pub struct PersonStateStructure {
     pub hidden: Vec<String>,
     pub featured: Vec<String>,
@@ -164,7 +164,27 @@ pub fn person_log_append(
     event_type: String,
     body_json: String,
 ) -> Result<(), PersonLogError> {
-    append_person(log_root(&root), &device, &event_type, &body_json).map_err(Into::into)
+    let log = log_root(&root);
+    localcore_trace::event(
+        "people",
+        format!(
+            "person_log_append type={event_type} device={device} library={root} log={}",
+            log.display()
+        ),
+    );
+    match append_person(&log, &device, &event_type, &body_json) {
+        Ok(()) => {
+            localcore_trace::event("people", format!("person_log_append ok type={event_type}"));
+            Ok(())
+        }
+        Err(error) => {
+            localcore_trace::event(
+                "people",
+                format!("person_log_append failed type={event_type}: {error}"),
+            );
+            Err(error.into())
+        }
+    }
 }
 
 /// Replay every device file under `{root}/.gallery/log`.
@@ -179,19 +199,46 @@ pub fn person_log_project(root: String) -> Result<PersonStateStructure, PersonLo
 /// surface these diagnostics and must not fall back to a stale local snapshot.
 #[uniffi::export]
 pub fn person_log_project_report(root: String) -> Result<PersonProjectionRecord, PersonLogError> {
-    let report = project_people_report_at(log_root(&root)).map_err(PersonLogError::from)?;
-    Ok(PersonProjectionRecord {
-        state: report.state.into(),
-        torn_tails: report
-            .torn_tails
-            .into_iter()
-            .map(|tail| PersonTornTailRecord {
-                path: tail.path.display().to_string(),
-                offset: tail.offset,
-                detail: tail.detail,
-            })
-            .collect(),
-    })
+    let log = log_root(&root);
+    match project_people_report_at(&log) {
+        Ok(report) => {
+            let record = PersonProjectionRecord {
+                state: report.state.into(),
+                torn_tails: report
+                    .torn_tails
+                    .into_iter()
+                    .map(|tail| PersonTornTailRecord {
+                        path: tail.path.display().to_string(),
+                        offset: tail.offset,
+                        detail: tail.detail,
+                    })
+                    .collect(),
+            };
+            localcore_trace::event(
+                "people",
+                format!(
+                    "person_log_project library={root} featured={} hidden={} me={} links={} torn={}",
+                    record.state.featured.len(),
+                    record.state.hidden.len(),
+                    if record.state.me.is_empty() {
+                        "-"
+                    } else {
+                        record.state.me.as_str()
+                    },
+                    record.state.links.len(),
+                    record.torn_tails.len()
+                ),
+            );
+            Ok(record)
+        }
+        Err(error) => {
+            localcore_trace::event(
+                "people",
+                format!("person_log_project failed library={root}: {error}"),
+            );
+            Err(PersonLogError::from(error))
+        }
+    }
 }
 
 /// One-shot import of the five UserDefaults keys. Returns events written

@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use gallery_model::photo::FaceRegion;
@@ -212,6 +212,7 @@ pub struct PoolJob {
 }
 
 /// Kind of display decode.
+#[derive(Clone)]
 pub enum PoolKind {
     /// XDG grid tile.
     Grid {
@@ -240,9 +241,70 @@ pub struct PoolResult {
     pub frame: Option<RgbFrame>,
 }
 
+struct JobQueueInner {
+    jobs: VecDeque<PoolJob>,
+    closed: bool,
+}
+
+struct JobQueue {
+    inner: Mutex<JobQueueInner>,
+    cv: Condvar,
+}
+
+impl JobQueue {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(JobQueueInner {
+                jobs: VecDeque::new(),
+                closed: false,
+            }),
+            cv: Condvar::new(),
+        }
+    }
+
+    fn push(&self, job: PoolJob, front: bool) {
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        if guard.closed {
+            return;
+        }
+        if front {
+            guard.jobs.push_front(job);
+        } else {
+            guard.jobs.push_back(job);
+        }
+        self.cv.notify_one();
+    }
+
+    fn cancel(&self, key: &str) -> bool {
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let before = guard.jobs.len();
+        guard.jobs.retain(|job| job.key != key);
+        before != guard.jobs.len()
+    }
+
+    fn recv(&self) -> Option<PoolJob> {
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        loop {
+            if let Some(job) = guard.jobs.pop_front() {
+                return Some(job);
+            }
+            if guard.closed {
+                return None;
+            }
+            guard = self.cv.wait(guard).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+
+    fn close(&self) {
+        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        guard.closed = true;
+        self.cv.notify_all();
+    }
+}
+
 /// Bounded worker pool. Submit unique keys; join duplicates in the UI.
 pub struct DecodePool {
-    jobs: Sender<PoolJob>,
+    jobs: Arc<JobQueue>,
     workers: usize,
 }
 
@@ -252,41 +314,80 @@ impl DecodePool {
         Self::spawn_work(workers, results, run_job)
     }
 
+    /// Like [`spawn`], then `notify` after each result is on the channel.
+    ///
+    /// GTK shells use this to wake an idle drain instead of polling.
+    pub fn spawn_notified(
+        workers: usize,
+        results: Sender<PoolResult>,
+        notify: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
+        Self::spawn_inner(workers, results, run_job, Some(Arc::new(notify)))
+    }
+
     /// Spawn with an injected body (tests).
     pub fn spawn_work<F>(workers: usize, results: Sender<PoolResult>, work: F) -> Self
     where
         F: Fn(&PoolJob) -> Option<RgbFrame> + Send + Sync + 'static,
     {
+        Self::spawn_inner(workers, results, work, None)
+    }
+
+    /// [`spawn_work`] plus a completion notify (tests / kit shell).
+    pub fn spawn_work_notified<F>(
+        workers: usize,
+        results: Sender<PoolResult>,
+        work: F,
+        notify: impl Fn() + Send + Sync + 'static,
+    ) -> Self
+    where
+        F: Fn(&PoolJob) -> Option<RgbFrame> + Send + Sync + 'static,
+    {
+        Self::spawn_inner(workers, results, work, Some(Arc::new(notify)))
+    }
+
+    fn spawn_inner<F>(
+        workers: usize,
+        results: Sender<PoolResult>,
+        work: F,
+        notify: Option<Arc<dyn Fn() + Send + Sync>>,
+    ) -> Self
+    where
+        F: Fn(&PoolJob) -> Option<RgbFrame> + Send + Sync + 'static,
+    {
         let workers = clamp_workers(workers);
-        let (jobs, job_rx) = mpsc::channel::<PoolJob>();
-        let job_rx = Arc::new(Mutex::new(job_rx));
+        let jobs = Arc::new(JobQueue::new());
         let work = Arc::new(work);
-        for _ in 0..workers {
-            let rx = job_rx.clone();
+        localcore_trace::event(
+            "pool",
+            format!("DecodePool spawn workers={workers} (grid/viewer/face decode)"),
+        );
+        for i in 0..workers {
+            let rx = jobs.clone();
             let tx = results.clone();
             let work = work.clone();
-            thread::spawn(move || loop {
-                let job = {
-                    let guard = match rx.lock() {
-                        Ok(g) => g,
-                        Err(_) => return,
+            let notify = notify.clone();
+            thread::Builder::new()
+                .name(format!("lf-decode-{i}"))
+                .spawn(move || loop {
+                    let Some(job) = rx.recv() else {
+                        return;
                     };
-                    guard.recv()
-                };
-                let Ok(job) = job else {
-                    return;
-                };
-                let frame = work(&job);
-                if tx
-                    .send(PoolResult {
-                        key: job.key,
-                        frame,
-                    })
-                    .is_err()
-                {
-                    return;
-                }
-            });
+                    let frame = work(&job);
+                    if tx
+                        .send(PoolResult {
+                            key: job.key,
+                            frame,
+                        })
+                        .is_err()
+                    {
+                        return;
+                    }
+                    if let Some(notify) = &notify {
+                        notify();
+                    }
+                })
+                .expect("lf-decode worker");
         }
         Self { jobs, workers }
     }
@@ -296,14 +397,34 @@ impl DecodePool {
         self.workers
     }
 
-    /// Queue a job. Callers must have won [`FlightBook::try_start`].
+    /// Queue a job. Viewer jobs jump the grid/face queue.
+    /// Callers must have won [`FlightBook::try_start`].
     pub fn submit(&self, job: PoolJob) {
-        let _ = self.jobs.send(job);
+        let front = matches!(job.kind, PoolKind::Viewer { .. });
+        self.jobs.push(job, front);
+    }
+
+    /// Drop a job that is still queued. `false` if a worker already popped it.
+    pub fn cancel(&self, key: &str) -> bool {
+        self.jobs.cancel(key)
+    }
+}
+
+impl Drop for DecodePool {
+    fn drop(&mut self) {
+        self.jobs.close();
     }
 }
 
 fn run_job(job: &PoolJob) -> Option<RgbFrame> {
-    match &job.kind {
+    let kind = match &job.kind {
+        PoolKind::Grid { size } => format!("grid:{}", size.dir_name()),
+        PoolKind::Viewer { max_side } => format!("viewer:{max_side}"),
+        PoolKind::Face { size, .. } => format!("face:{}", size.dir_name()),
+    };
+    let _span = localcore_trace::span("pool", "run_job").extra("kind", &kind);
+    localcore_trace::detail("pool", format!("path={}", job.path));
+    let frame = match &job.kind {
         PoolKind::Grid { size } => {
             xdg_thumb::load_or_make(&xdg_thumb::cache_root(), &job.path, *size)
         }
@@ -312,7 +433,11 @@ fn run_job(job: &PoolJob) -> Option<RgbFrame> {
             xdg_thumb::load_or_make(&xdg_thumb::cache_root(), &job.path, *size)
                 .and_then(|frame| crop_region(&frame, region))
         }
+    };
+    if frame.is_none() {
+        localcore_trace::detail("pool", format!("decode miss kind={kind}"));
     }
+    frame
 }
 
 /// Cache key for a grid / viewer / face bind.
@@ -420,5 +545,131 @@ mod tests {
             "peak concurrency {}",
             peak.load(Ordering::SeqCst)
         );
+    }
+
+    fn hold_pair() -> Arc<(Mutex<bool>, Condvar)> {
+        Arc::new((Mutex::new(true), Condvar::new()))
+    }
+
+    fn wait_held(hold: &Arc<(Mutex<bool>, Condvar)>) {
+        let (lock, cv) = hold.as_ref();
+        let mut guard = lock.lock().unwrap();
+        while *guard {
+            guard = cv.wait(guard).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+
+    fn release_held(hold: &Arc<(Mutex<bool>, Condvar)>) {
+        let (lock, cv) = hold.as_ref();
+        *lock.lock().unwrap() = false;
+        cv.notify_all();
+    }
+
+    fn dummy_job(key: &str) -> PoolJob {
+        PoolJob {
+            key: key.to_string(),
+            path: String::new(),
+            kind: PoolKind::Grid {
+                size: crate::xdg_thumb::ThumbSize::Large,
+            },
+        }
+    }
+
+    #[test]
+    fn cancel_removes_queued_job_before_work_runs() {
+        let started = Arc::new(Mutex::new(HashSet::<String>::new()));
+        let hold = hold_pair();
+        let (tx, rx) = result_channel();
+        let work = {
+            let started = started.clone();
+            let hold = hold.clone();
+            move |job: &PoolJob| {
+                started.lock().unwrap().insert(job.key.clone());
+                wait_held(&hold);
+                None
+            }
+        };
+        let pool = DecodePool::spawn_work(2, tx, work);
+        for i in 0..6 {
+            pool.submit(dummy_job(&format!("k{i}")));
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if started.lock().unwrap().len() >= 2 {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "workers did not start"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+        let inflight = started.lock().unwrap().clone();
+        assert_eq!(inflight.len(), 2);
+        let cancel_key = (0..6)
+            .map(|i| format!("k{i}"))
+            .find(|key| !inflight.contains(key))
+            .expect("queued key");
+        assert!(pool.cancel(&cancel_key));
+        assert!(!pool.cancel(&cancel_key));
+        release_held(&hold);
+        let mut results = HashSet::new();
+        for _ in 0..5 {
+            let msg = rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("pool result");
+            results.insert(msg.key);
+        }
+        assert!(!results.contains(&cancel_key));
+        assert!(!started.lock().unwrap().contains(&cancel_key));
+        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+    }
+
+    #[test]
+    fn notify_runs_after_each_result() {
+        let n = Arc::new(AtomicUsize::new(0));
+        let (tx, rx) = result_channel();
+        let pool = DecodePool::spawn_work_notified(1, tx, |_| None, {
+            let n = n.clone();
+            move || {
+                n.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        pool.submit(dummy_job("a"));
+        rx.recv_timeout(Duration::from_secs(2))
+            .expect("pool result");
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while n.load(Ordering::SeqCst) < 1 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "notify did not run after send"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn cancel_inflight_returns_false_and_worker_still_completes() {
+        let started = Arc::new(std::sync::Barrier::new(2));
+        let hold = hold_pair();
+        let (tx, rx) = result_channel();
+        let work = {
+            let started = started.clone();
+            let hold = hold.clone();
+            move |_job: &PoolJob| {
+                started.wait();
+                wait_held(&hold);
+                None
+            }
+        };
+        let pool = DecodePool::spawn_work(1, tx, work);
+        pool.submit(dummy_job("live"));
+        started.wait();
+        assert!(!pool.cancel("live"));
+        release_held(&hold);
+        let msg = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("in-flight result");
+        assert_eq!(msg.key, "live");
     }
 }

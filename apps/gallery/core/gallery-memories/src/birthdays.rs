@@ -12,10 +12,7 @@ use std::collections::HashMap;
 
 use gallery_model::PhotoFile;
 
-use crate::{
-    dedup_photos_by_time_window, Contact, GenerationInputs, Memory, MemoryType, PersonKeys,
-    PersonLink,
-};
+use crate::{dedup_photos_by_time_window, GenerationInputs, Memory, MemoryType, PersonKeys};
 
 /// Every photo carrying one `People/*` tag, by that tag's exact path.
 #[derive(Debug, Clone)]
@@ -73,8 +70,8 @@ impl PeopleIndex {
 ///
 /// Resolution order is pinned (landmine 13): the **hidden** set is consulted
 /// first, then the explicit link — `.disabled` suppresses the tag entirely and
-/// `.manual` beats the name auto-match — and only then does the contact's
-/// birthday have to match.
+/// a resolved `.manual` beats the name auto-match. An *unresolved* manual id
+/// (synced `CN:…` on Linux, deleted contact) falls back to the name match.
 ///
 /// Every person lookup goes through [`PersonKeys`], which folds both sides to
 /// NFC the way Swift's `Set<String>`/`Dictionary` did. Without it a
@@ -95,8 +92,6 @@ pub fn generate_birthday_memories(
         return Vec::new();
     }
 
-    let contact_by_id: HashMap<&str, &Contact> =
-        inputs.contacts.iter().map(|c| (c.id.as_str(), c)).collect();
     let photos = &inputs.photos;
     let mut out = Vec::new();
 
@@ -105,12 +100,9 @@ pub fn generate_birthday_memories(
         if keys.is_hidden(&key) {
             continue;
         }
-        let contact: Option<&Contact> = match keys.link_for(&key) {
-            Some(PersonLink::Disabled) => continue,
-            Some(PersonLink::Manual(id)) => contact_by_id.get(id.as_str()).copied(),
-            None => keys.contact_named(&bundle.display_name),
+        let Some(contact) = keys.resolve_contact(&bundle.full_path, &bundle.display_name) else {
+            continue;
         };
-        let Some(contact) = contact else { continue };
         if contact.birthday_month != Some(month) || contact.birthday_day != Some(day) {
             continue;
         }

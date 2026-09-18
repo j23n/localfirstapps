@@ -16,7 +16,6 @@ CORE_DIR="$REPO/core"
 BINDGEN_DIR="$REPO/apps/gallery/core"
 OUT_DIR="$ROOT/build/core"
 XCFRAMEWORK="$OUT_DIR/$MODULE.xcframework"
-export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.97.1}"
 
 PROFILE="debug"
 CARGO_PROFILE="dev"

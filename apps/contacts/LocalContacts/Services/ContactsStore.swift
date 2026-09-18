@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import os
+import ShellKitSwift
 
 @Observable
 @MainActor
@@ -11,6 +12,7 @@ final class ContactsStore {
     var showConflictsOnly = false
     var folderURL: URL?
     var isLoading = false
+    private(set) var progressRevealed = false
     var isSuppressingReload = false
     var errorMessage: String?
     var lastSyncedAt: Date?
@@ -277,8 +279,10 @@ final class ContactsStore {
     func loadContacts() async {
         guard let url = folderURL else { return }
         guard !isSuppressingReload else { return }
-        if contacts.isEmpty { isLoading = true }
+        isLoading = true
+        progressRevealed = false
         errorMessage = nil
+        let reveal = Task { await self.revealProgressIfNeeded() }
 
         do {
             let opened = try ContactsSession.open(root: url.path, device: deviceId)
@@ -291,6 +295,25 @@ final class ContactsStore {
 
         lastSyncedAt = Date()
         isLoading = false
+        progressRevealed = false
+        reveal.cancel()
+    }
+
+    private func revealProgressIfNeeded() async {
+        try? await Task.sleep(for: .milliseconds(500))
+        if isLoading {
+            progressRevealed = true
+        }
+    }
+
+    var chromeProgress: ShellProgressData? {
+        guard isLoading, progressRevealed, !contacts.isEmpty else { return nil }
+        return ShellProgressData(label: "Reloading", cancel: false)
+    }
+
+    var settingsProgress: ShellProgressData? {
+        guard isLoading else { return nil }
+        return ShellProgressData(label: "Reloading", cancel: false)
     }
 
     // MARK: - Save

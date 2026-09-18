@@ -24,6 +24,11 @@ pub mod gallery {
     pub const MEMORY_RADIUS: f64 = 20.0;
     pub const SEPARATOR_OPACITY: f64 = 0.1;
     pub const ACCENT_SOFT_OPACITY: f64 = 0.13;
+    pub const GRID_GUTTER: f64 = 2.0;
+    pub const THUMB_RADIUS: f64 = 8.0;
+    pub const DISPLAY_FAMILY: &str = "Newsreader";
+    pub const DISPLAY_STYLE: &str = "italic";
+    pub const DISPLAY_FILE: &str = "Newsreader-Italic[opsz,wght].ttf";
 }
 
 pub mod contacts {
@@ -36,6 +41,7 @@ pub mod music {
     pub const ACCENT: &str = "#C0392B";
     pub const ACCENT_DARK: &str = "#D14738";
     pub const CARD_RADIUS: f64 = 12.0;
+    pub const THUMB_RADIUS: f64 = 8.0;
 }
 
 pub mod health {

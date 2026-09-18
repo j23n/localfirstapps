@@ -58,7 +58,12 @@ pub use image::RgbImage;
 /// says nothing about how we turned those bytes into a tensor.
 ///
 /// **Not** [`DECODER_VERSION`]; see there for why they are two constants.
-pub const PREPROCESS_VERSION: u32 = 1;
+///
+/// | value | change |
+/// |---|---|
+/// | 1 | initial JPEG/PNG/HEIC preprocess |
+/// | 2 | HEIC `imir` axis correction — iPhone selfies were upside down |
+pub const PREPROCESS_VERSION: u32 = 2;
 
 /// Bumped whenever the *set of formats this crate can open* changes.
 ///
@@ -77,7 +82,6 @@ pub const PREPROCESS_VERSION: u32 = 1;
 /// was already scored — hours of CPU, for a change that alters nothing about
 /// how a JPEG is decoded or resized.
 ///
-/// The two are equal at 1 today, which is exactly why conflating them was easy.
 /// They answer different questions and they move for different reasons:
 ///
 /// | constant | moves when | invalidates |

@@ -153,4 +153,9 @@ fn metadata_drives_core_search_sort_sections_and_display_copy() {
     assert!(hits
         .iter()
         .any(|hit| hit.kind == music_core::SearchKind::Track));
+    assert_eq!(music_core::SearchKind::Artist.label(), "Artist");
+    assert_eq!(
+        music_core::SearchKind::Artist.symbol(),
+        "system-users-symbolic"
+    );
 }

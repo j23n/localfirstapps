@@ -9,8 +9,7 @@
 # What this image can do:
 #   - `cd core && cargo test --workspace` (host target; first run needs net
 #     for crates.io and the ORT download-binaries cache)
-#   - rustfmt / clippy / rust-analyzer against the pin in
-#     `core/rust-toolchain.toml`
+#   - rustfmt / clippy / rust-analyzer against rust-toolchain.toml
 #   - `cargo run -p uniffi-bindgen` (the Rust bindgen; Swift output is just
 #     text — assembling the xcframework is still macOS)
 #   - `python3 scripts/gen_conformance_assets.py` (needs exiftool)
@@ -22,8 +21,8 @@
 # What it cannot do (needs Xcode / an iOS SDK / Apple silicon link flags):
 #   - `scripts/build_core.sh` (xcframework + libtool merge for iOS slices)
 #   - `xcodegen` / `xcodebuild` / the Swift unit tests
-#   - the Apple targets listed in `core/rust-toolchain.toml`
-#     (`aarch64-apple-darwin`, `aarch64-apple-ios`, `aarch64-apple-ios-sim`)
+#   - Apple rustup targets (`aarch64-apple-ios` and friends). Those are
+#     not in rust-toolchain.toml; mac/bootstrap.sh and iOS CI add them.
 #
 # Do not COPY the repo. Mount it, or let Cursor check the commit out.
 
@@ -34,14 +33,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/usr/local/cargo \
     UV_INSTALL_DIR=/usr/local/bin \
     PATH=/usr/local/cargo/bin:${PATH} \
-    RUST_VERSION=1.97.1 \
-    RUSTUP_TOOLCHAIN=1.97.1 \
     LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
     LANGUAGE=en_US:en
 
-# RUSTUP_TOOLCHAIN pins rustup to the host std. Without it, `cd core && cargo`
-# would read rust-toolchain.toml and try to download the Apple targets.
+# --default-toolchain none: rust-toolchain.toml names the compiler.
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -82,15 +78,13 @@ RUN id -u ubuntu >/dev/null 2>&1 || useradd -m -s /bin/bash ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu \
     && chmod 0440 /etc/sudoers.d/ubuntu
 
-# Pinned to core/rust-toolchain.toml. Host std only — the Apple targets in
-# that file need the iOS SDK. rust-src + rust-analyzer are for editor work
-# against the core crates.
+# rust-toolchain.toml names the compiler. rustfmt/clippy come from that
+# file on first cargo. rust-src / rust-analyzer: rustup component add.
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain "${RUST_VERSION}" \
+        | sh -s -- -y --default-toolchain none \
             --profile minimal --no-modify-path \
-            -c rustfmt -c clippy -c rust-src -c rust-analyzer \
     && chmod -R a+w "${RUSTUP_HOME}" "${CARGO_HOME}" \
-    && rustc --version && cargo --version && rust-analyzer --version
+    && rustup --version
 
 # uv runs `scripts/generate_test_library.py` (PEP 723 script deps) without
 # a hand-rolled venv. Model-pack torch still goes in that script's own venv.

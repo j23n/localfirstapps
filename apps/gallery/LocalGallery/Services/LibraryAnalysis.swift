@@ -103,6 +103,8 @@ final class LibraryAnalysis {
     /// onto the live `PhotoFile` — scans will not, because the image file
     /// itself did not change.
     @ObservationIgnored var onSidecarPaths: (@MainActor ([String]) -> Void)?
+    /// Store arms the 500 ms chrome reveal when a run begins or ends.
+    @ObservationIgnored var onChromeProgress: (@MainActor () -> Void)?
 
     init(tagging: TaggingService, faces: FaceService, places: CorePlaces) {
         self.tagging = tagging
@@ -409,6 +411,7 @@ final class LibraryAnalysis {
     private func finish(_ summary: Summary) {
         progress = nil
         lastSummary = summary
+        onChromeProgress?()
         Log.ml.info(
             "Library analysis finished cancelled=\(summary.cancelled) tagging=\(summary.tagging?.processed ?? 0) faces=\(summary.faces?.processed ?? 0) places=\(summary.places?.processed ?? 0)"
         )
@@ -430,6 +433,7 @@ final class LibraryAnalysis {
             overallTotal: overallTotal,
             startedAt: startedAt
         )
+        onChromeProgress?()
     }
 
     /// `start` returns after spawning the core thread; give that assignment a

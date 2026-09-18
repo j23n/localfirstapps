@@ -124,7 +124,7 @@ xcodebuild test -project LocalGallery.xcodeproj -scheme LocalGallery \
   -testLanguage en -testRegion US
 
 cd core && cargo test --workspace
-# 20k generated-library e2e (not a PR gate):
+# 20k generated-library e2e (required rust.yml gallery-core step):
 # ./scripts/e2e_20k.sh
 ```
 
@@ -142,10 +142,10 @@ companion; surfaces stay light.
 On this monorepo, gallery crates are the root `rust.yml` and the Linux
 + iOS suites are the `gallery-*` jobs in root `apps.yml`. The nested
 `.github/workflows/test.yml` remains only for a standalone checkout; the
-root workflows are canonical here. The
-20k generated-library regression suite is local-only
-(`apps/gallery/scripts/e2e_20k.sh`: scan, enrich, index, memories);
-it does not run in CI.
+root workflows are canonical here. The 20k generated-library
+regression suite (`apps/gallery/scripts/e2e_20k.sh`: scan, enrich,
+index, memories, bounded FFI) is a required `gallery-core` step in
+root `rust.yml`.
 
 Pull requests and tags **validate** the tree (generate, compile, test).
 They do not publish an IPA. See [docs/release.md](docs/release.md) and

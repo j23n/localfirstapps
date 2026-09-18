@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-11
-- Revised: 2026-09-11 (r2); 2026-09-11 (native Linux delivery); 2026-09-11 (0.2: CONVENTIONS.md deleted); 2026-09-16 (domain logs separated from local diagnostics)
+- Revised: 2026-09-11 (r2); 2026-09-11 (native Linux delivery); 2026-09-11 (0.2: CONVENTIONS.md deleted); 2026-09-16 (domain logs separated from local diagnostics); 2026-09-17 (progress reveal)
 
 ## Scope
 
@@ -51,7 +51,10 @@ not finished loading (ADR 0003 R4).
 reachable only from where the affected thing is shown.
 
 **R5.** Every long operation shows determinate progress where a total is
-knowable, and is cancellable.
+knowable, and is cancellable. Chrome progress (affordance `progress`) is
+revealed only after 500 ms so short work does not flash. Settings
+`progress-row` and blocking first-load empty states (`loading`) stay
+immediate so a tap and a cold folder never look idle (R3).
 
 ### Identity
 

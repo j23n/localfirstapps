@@ -473,14 +473,29 @@ fn compare(want: &Pass, got: &Pass, failures: &mut Vec<String>) {
             want.needs_enrichment, got.needs_enrichment
         ),
     );
+    // added/modified/removed emit NFC (5.8-nfc-emit). The Swift golden
+    // recorded on-disk spelling, so café.jpg is NFD there. Compare identity,
+    // not bytes — `failedDirectoryPaths` stay NFD and are not folded.
+    let nfc_list = |paths: &[String]| -> Vec<String> {
+        let mut out: Vec<String> = paths.iter().map(|p| p.nfc().collect()).collect();
+        out.sort();
+        out
+    };
     for (field, want_list, got_list) in [
-        ("addedPaths", &want.added_paths, &got.added_paths),
-        ("removedPaths", &want.removed_paths, &got.removed_paths),
-        ("modifiedPaths", &want.modified_paths, &got.modified_paths),
         (
-            "failedDirectoryPaths",
-            &want.failed_directory_paths,
-            &got.failed_directory_paths,
+            "addedPaths",
+            nfc_list(&want.added_paths),
+            nfc_list(&got.added_paths),
+        ),
+        (
+            "removedPaths",
+            nfc_list(&want.removed_paths),
+            nfc_list(&got.removed_paths),
+        ),
+        (
+            "modifiedPaths",
+            nfc_list(&want.modified_paths),
+            nfc_list(&got.modified_paths),
         ),
     ] {
         check(
@@ -489,6 +504,14 @@ fn compare(want: &Pass, got: &Pass, failures: &mut Vec<String>) {
             format!("    expected {want_list:?}\n    got      {got_list:?}"),
         );
     }
+    check(
+        "failedDirectoryPaths",
+        want.failed_directory_paths == got.failed_directory_paths,
+        format!(
+            "    expected {:?}\n    got      {:?}",
+            want.failed_directory_paths, got.failed_directory_paths
+        ),
+    );
     check(
         "flatPhotos",
         want.flat_photos == got.flat_photos,
@@ -529,6 +552,46 @@ fn diff_lists<T: PartialEq + std::fmt::Debug>(want: &[T], got: &[T]) -> String {
         }
     }
     out.join("\n")
+}
+
+/// Diff lists are NFC even when the listing (and the Swift golden) is NFD.
+#[test]
+fn added_and_modified_paths_are_nfc() {
+    let temp = tempfile::tempdir().unwrap();
+    let tree = ScannerTree::load();
+    let root_path = tree.materialize(temp.path());
+    let root = root_path.to_str().expect("temp paths are UTF-8");
+    let vfs = ApfsLikeVfs::new();
+
+    let cold = scan(&vfs, root, &ScanInput::default());
+    for path in cold
+        .added_paths
+        .iter()
+        .chain(cold.modified_paths.iter())
+        .chain(cold.removed_paths.iter())
+    {
+        let nfc: String = path.nfc().collect();
+        assert_eq!(path, &nfc, "diff path must be NFC: {path:?}");
+    }
+    assert!(
+        cold.added_paths
+            .iter()
+            .any(|p| p.contains('\u{e9}') && !p.contains('\u{301}')),
+        "café.jpg must land in added_paths as NFC, not the on-disk NFD: {:?}",
+        cold.added_paths
+    );
+
+    let locked = Unlocker(tree.mutate(&root_path));
+    assert!(
+        locked.0.iter().all(|p| chmod_is_effective(p)),
+        "chmod 000 did not make {:?} unreadable",
+        locked.0
+    );
+    let light = scan(&vfs, root, &cache_from(&cold, true));
+    for path in light.added_paths.iter().chain(light.modified_paths.iter()) {
+        let nfc: String = path.nfc().collect();
+        assert_eq!(path, &nfc, "diff path must be NFC: {path:?}");
+    }
 }
 
 /// The fixture tree has to reach disk with byte-exact names, or the two

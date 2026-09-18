@@ -13,6 +13,7 @@ localcore-conflict = { path = "../localcore-conflict" }
 localcore-log = { path = "../localcore-log" }
 localcore-vfs = { path = "../localcore-vfs" }
 localcore-walk = { path = "../localcore-walk" }
+localcore-trace = { path = "../localcore-trace" }
 serde_json.workspace = true
 sha2.workspace = true
 uuid = { version = "1", features = ["v4"] }

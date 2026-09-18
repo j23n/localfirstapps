@@ -665,6 +665,7 @@ impl Window {
                 force_places: false,
                 cancel: &flag,
                 on_progress: Some(on_progress),
+                heic_decoder: Some(crate::linux_heic_decoder()),
             });
             let library = if summary.written_paths.is_empty() {
                 None

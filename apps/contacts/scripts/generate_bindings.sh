@@ -16,7 +16,6 @@ REPO="$(cd "$ROOT/../.." && pwd)"
 CORE_DIR="$REPO/core"
 BINDGEN_DIR="$REPO/apps/gallery/core"
 MODULE="ContactsCore"
-export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.97.1}"
 
 echo "==> cargo build -p contacts-ffi (host cdylib)"
 (cd "$CORE_DIR" && cargo build --locked -p contacts-ffi)

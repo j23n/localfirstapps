@@ -36,6 +36,13 @@ struct PlaylistsView: View {
                 }
             }
             .navigationTitle("Playlists")
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if let progress = library.chromeProgress {
+                        ShellProgressChip(progress)
+                    }
+                }
+            }
             .refreshable {
                 await library.refreshPlaylistsFromDisk()
             }

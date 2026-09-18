@@ -50,6 +50,10 @@ struct SettingsView: View {
                     ) { _ in
                         Task { await store.loadContacts() }
                     }
+
+                    if let progress = store.settingsProgress {
+                        ShellProgressRow(progress)
+                    }
                 }
 
                 Section {

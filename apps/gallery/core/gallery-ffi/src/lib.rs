@@ -18,6 +18,7 @@
 //!   functions over an inputs snapshot; [`MemoryGenerator`] holds the
 //!   cancel flag.
 //! * [`places`]: offline place lookup and Places sidecar writes.
+//! * [`conflict`]: [`ConflictSession`] for Syncthing `.xmp` groups.
 //! * [`person_log`]: person-state append / read / project / UserDefaults migrate.
 //!
 //! Tagging and face sessions share one cache file: [`support`] holds
@@ -25,10 +26,12 @@
 
 uniffi::setup_scaffolding!("GalleryCore");
 
+pub mod conflict;
 pub mod faces;
 pub mod heic;
 pub mod library;
 mod locations;
+pub mod people;
 pub mod person_log;
 pub mod places;
 pub mod scanner;
@@ -36,6 +39,10 @@ mod support;
 pub mod tagging;
 pub mod view;
 
+pub use conflict::{
+    is_conflict_name, ConflictError, ConflictFieldPreview, ConflictPreview, ConflictRow,
+    ConflictSession, ConflictSide, GalleryFieldRow, MergeKind,
+};
 pub use faces::{
     face_merge_direction, ClusterState, FaceAssignKind, FaceAssignmentCommandResult,
     FaceClusterHostRow, FaceCropHostItem, FaceError, FaceFailure, FaceLibraryCommandResult,
@@ -43,6 +50,7 @@ pub use faces::{
     FaceProgressListener, FaceQueueCommandResult, FaceReclusterCommandResult, FaceRunCommandResult,
     FaceSession, FaceSplitCommandResult, SidecarWriteCommandResult,
 };
+pub use gallery_index::{SearchHit, SearchKind};
 pub use heic::{HeicDecodeError, HeicDecoder, HostDecodedImage};
 pub use library::{
     compute_scheduled_memories, generate_memories, memory_cluster_key, memory_country_name,
@@ -51,6 +59,7 @@ pub use library::{
     MemoryKind, MemoryPersonCommandItem, MemoryStructure, ScheduledMemoryContext,
     ScheduledMemoryStructure, TagStructureItem, TagStructures,
 };
+pub use people::{person_link_state, visible_people, PersonLinkKind, PersonLinkResolution};
 pub use person_log::{
     person_log_append, person_log_migrate_from_snapshot, person_log_project,
     person_log_project_report, person_log_read, PersonLogError, PersonProjectionRecord,

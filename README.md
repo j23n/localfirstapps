@@ -19,7 +19,7 @@ they need a Mac and Xcode.
 
 ## Linux requirements
 
-- Rust **1.97.1** (`rustup install 1.97.1`; use `cargo +1.97.1` below)
+- Rust via rustup (`rust-toolchain.toml` at the repo root; just `cargo`)
 - GTK 4.22+ and libadwaita 1.9+
 - Platform baseline Fedora 44 / Ubuntu 26.04 (GNOME 50)
 - A C compiler (`gcc`)
@@ -47,7 +47,7 @@ sudo apt install build-essential pkg-config libgtk-4-dev libadwaita-1-dev \
 
 Need a graphical session to *run* the GTK apps. `cargo test` does not.
 
-Debug builds of the GTK shells accept `--route <screen-id> --snapshot out.png --size WxH` and optional `--folder`. `scripts/gtk-snapshots.sh contacts` (or `music`) runs the implemented route matrix under headless mutter when it is installed; without mutter the script skips and exits 0. PNGs land in `docs/screenshots/gtk-before/` only when a capture actually writes a file. `cargo test` / CI do not run mutter.
+Debug builds of the GTK shells accept `--route <screen-id> --snapshot out.png --size WxH` and optional `--folder`. `scripts/gtk-snapshots.sh contacts` (or `music`) runs the implemented route matrix under headless mutter when it is installed; without mutter the script skips and exits 0. PNGs land in `docs/screenshots/gtk-before/` only when a capture actually writes a file. There are no `docs/screenshots/gtk-after/` files: mutter was not available to capture them. Gallery `--bench --folder` plus `scripts/gtk-perf.sh smoke|20k` time the GTK-thread catalog path the same way (skip without mutter). `cargo test` / CI do not run mutter.
 
 ## Host release binaries
 
@@ -56,12 +56,12 @@ on the laptop):
 
 ```bash
 cd shells
-cargo +1.97.1 test --locked --workspace --all-targets
-cargo +1.97.1 build --release --locked -p contacts-gtk
+cargo test --locked --workspace --all-targets
+cargo build --release --locked -p contacts-gtk
 # Playback needs GStreamer devel on the machine (no extra packages if
 # `pkg-config --exists gstreamer-1.0` already prints nothing and exits 0):
 pkg-config --exists gstreamer-1.0 && echo gst-ok
-cargo +1.97.1 build --release --locked -p music-gtk --features gstreamer-playback
+cargo build --release --locked -p music-gtk --features gstreamer-playback
 ```
 
 Binaries: `shells/target/release/localcontacts` and
@@ -75,7 +75,7 @@ needs a host rebuild after devel packages are installed:
 ```bash
 pkg-config --exists gstreamer-1.0 && echo gst-ok
 cd ~/dev/public/localfirst/shells
-cargo +1.97.1 build --release --locked -p music-gtk --features gstreamer-playback
+cargo build --release --locked -p music-gtk --features gstreamer-playback
 cp -f target/release/localmusic ../build/localmusic
 ```
 
@@ -91,9 +91,9 @@ plus `gstreamer1-plugins-good` and a codec set for typical MP3/M4A.
 
 ```bash
 cd shells
-cargo +1.97.1 test --locked --workspace --all-targets
-cargo +1.97.1 run --locked -p contacts-gtk
-cargo +1.97.1 run --locked -p contacts-gtk -- --comet
+cargo test --locked --workspace --all-targets
+cargo run --locked -p contacts-gtk
+cargo run --locked -p contacts-gtk -- --comet
 ```
 
 Binary: `shells/target/debug/localcontacts`.
@@ -106,10 +106,10 @@ Open a folder of `.vcf` files. Device id and last folder path stay under
 
 ```bash
 cd shells
-cargo +1.97.1 run --locked -p music-gtk
+cargo run --locked -p music-gtk
 # real playback (needs GStreamer devel + plugins):
-cargo +1.97.1 run --locked -p music-gtk --features gstreamer-playback
-cargo +1.97.1 run --locked -p music-gtk --features gstreamer-playback -- --comet
+cargo run --locked -p music-gtk --features gstreamer-playback
+cargo run --locked -p music-gtk --features gstreamer-playback -- --comet
 ```
 
 Binary: `shells/target/debug/localmusic`.
@@ -123,18 +123,23 @@ without GStreamer headers. Host settings are
 ## LocalGallery
 
 ```bash
-cd apps/gallery/linux
-cargo +1.97.1 test --locked --no-default-features --all-targets
-cargo +1.97.1 run --locked
-cargo +1.97.1 run --locked -- --comet
+cd shells
+cargo run --locked -p gallery-gtk
+cargo run --locked -p gallery-gtk -- --comet
+cargo run --locked -p gallery-gtk -- --folder /path/to/photos
+cd ../apps/gallery/linux
+cargo test --locked --no-default-features --all-targets
+cargo run --locked --features ui --bin localgallery-reference
 ```
 
-Binary: `apps/gallery/linux/target/debug/localgallery`.
+Kit binary: `shells/target/debug/localgallery`. Leftover reference:
+`apps/gallery/linux/target/debug/localgallery-reference`.
 
-Open a photo folder. **Scan Photos** writes `.xmp` sidecars next to images;
-image bytes are not rewritten. Tagging and faces need a model pack **and**
-`--features ml` — see [apps/gallery/linux/INSTALL.md](apps/gallery/linux/INSTALL.md).
-Without a pack, browse and Places still work.
+Open a photo folder. The kit walk is file scan + live progress (no ONNX;
+the `ml` feature is not on `gallery-gtk`). Leftover **Scan Photos** still
+writes `.xmp` sidecars when built with `--features ml` and a pack — see
+[apps/gallery/linux/INSTALL.md](apps/gallery/linux/INSTALL.md). Image
+bytes are not rewritten.
 
 ## LocalHealth
 
@@ -161,7 +166,7 @@ NDJSON blobs.
 
 ```bash
 cd core
-cargo +1.97.1 test --locked -p health-core -p health-ffi --all-targets
+cargo test --locked -p health-core -p health-ffi --all-targets
 ```
 
 ## More

@@ -148,6 +148,51 @@ public struct ShellChartRowData: Equatable, Sendable {
     }
 }
 
+public struct ShellProgressData: Equatable, Sendable {
+    public let label: String
+    public let detail: String?
+    public let fraction: Double?
+    public let cancel: Bool
+
+    public init(
+        label: String,
+        detail: String? = nil,
+        fraction: Double? = nil,
+        cancel: Bool = false
+    ) {
+        self.label = label
+        self.detail = detail
+        self.fraction = fraction
+        self.cancel = cancel
+    }
+}
+
+public enum ShellProgressReveal {
+    public static let delayNanoseconds: UInt64 = 500_000_000
+
+    /// Flip `revealed` after 500 ms while `isRunning` stays true.
+    @MainActor
+    public static func arm(
+        isRunning: Bool,
+        startedAt: Date?,
+        revealed: inout Bool
+    ) async {
+        if !isRunning {
+            revealed = false
+            return
+        }
+        if let startedAt, Date().timeIntervalSince(startedAt) >= 0.5 {
+            revealed = true
+            return
+        }
+        revealed = false
+        try? await Task.sleep(nanoseconds: delayNanoseconds)
+        if isRunning {
+            revealed = true
+        }
+    }
+}
+
 public struct ShellConfirmData: Equatable, Sendable {
     public let actionID: String
     public let question: String

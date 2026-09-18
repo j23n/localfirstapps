@@ -38,6 +38,7 @@ fn generated_library_ffi_windows_are_bounded_and_generation_checked() {
     );
 
     let index = LibraryIndex::new();
+    let photo_ids: Vec<String> = scanned.flat_photos.iter().map(|p| p.id.clone()).collect();
     index.build(scanned.flat_photos);
     let structure = index.photo_structure();
     let id_count: usize = structure
@@ -127,10 +128,7 @@ fn generated_library_ffi_windows_are_bounded_and_generation_checked() {
         "retained 20k horizon took {horizon_ms:.1}ms (ceiling {horizon_ceiling_ms:.0}ms)"
     );
 
-    index.set_folders(
-        scanned.folders,
-        scanned.flat_photos.iter().map(|p| p.id.clone()).collect(),
-    );
+    index.set_folders(scanned.folders, photo_ids);
     let folders = index.folder_structure(None);
     let folder_rows = index
         .folder_window("folders".into(), 0, 8, folders.generation)

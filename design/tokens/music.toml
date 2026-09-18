@@ -10,3 +10,4 @@ dark = "#D14738"
 
 [metrics]
 card_radius = 12
+thumb_radius = 8

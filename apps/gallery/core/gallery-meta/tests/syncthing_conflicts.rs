@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gallery_meta::{merge_sidecar_conflicts, read_view, SidecarVersion};
+use gallery_meta::{apply_sidecar_conflict, merge_sidecar_conflicts, read_view, SidecarVersion};
 use gallery_vfs::{MemVfs, Vfs};
 
 const CANONICAL: &str = "photo.heic.xmp";
@@ -129,6 +129,31 @@ fn planning_never_overwrites_or_deletes_any_input() {
         !vfs.exists("/library/photo.heic.merged.xmp"),
         "a pure plan unexpectedly wrote output"
     );
+}
+
+#[test]
+fn apply_writes_surviving_and_deletes_copies() {
+    let (canonical, phone, laptop) = (read(CANONICAL), read(PHONE), read(LAPTOP));
+    let vfs = MemVfs::new();
+    for (name, bytes) in [(CANONICAL, &canonical), (PHONE, &phone), (LAPTOP, &laptop)] {
+        vfs.insert(&format!("/library/{name}"), bytes.clone());
+    }
+
+    let merge = merge_sidecar_conflicts(&versions(&canonical, &phone, &laptop)).unwrap();
+    apply_sidecar_conflict(
+        &vfs,
+        &format!("/library/{CANONICAL}"),
+        &[format!("/library/{PHONE}"), format!("/library/{LAPTOP}")],
+        &merge.bytes,
+    )
+    .unwrap();
+
+    assert_eq!(
+        vfs.read(&format!("/library/{CANONICAL}")).unwrap(),
+        merge.bytes
+    );
+    assert!(!vfs.exists(&format!("/library/{PHONE}")));
+    assert!(!vfs.exists(&format!("/library/{LAPTOP}")));
 }
 
 #[test]

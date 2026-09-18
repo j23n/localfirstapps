@@ -102,7 +102,10 @@ impl ImageDecoder for HeifDecoder {
         }
         let image = RgbImage::from_raw(w, h, rgb)
             .ok_or_else(|| bad(format!("{w}×{h} is not a usable size")))?;
-        Ok(DynamicImage::ImageRgb8(image))
+        Ok(correct_heif_oxide_imir(
+            DynamicImage::ImageRgb8(image),
+            bytes,
+        ))
     }
 
     fn backend_name(&self) -> &'static str {
@@ -117,12 +120,31 @@ impl ImageDecoder for HeifDecoder {
     /// second time. One decision, made here: **take the container's transform
     /// and ignore EXIF orientation for HEIC.**
     ///
+    /// `heif-oxide` 0.1.0 then has to be corrected for `imir`: it swaps the
+    /// ISO 23008-12:2022 axis (and ImageIO's). See [`correct_heif_oxide_imir`].
+    ///
     /// This matters well beyond a sideways thumbnail. Face regions are written
     /// in normalised coordinates of the *oriented* image, so a double rotation
     /// puts every box on the wrong part of every face — silently, because the
     /// crop still looks like a crop.
     fn output_is_oriented(&self) -> bool {
         true
+    }
+}
+
+/// Undo heif-oxide 0.1.0's inverted `imir` axis.
+///
+/// ISO/IEC 23008-12:2022 §6.5.12 (libheif, libavif, ImageIO) maps axis 0 to
+/// top↔bottom and axis 1 to left↔right. heif-oxide 0.1.0 does the opposite.
+/// Mirroring about the wrong axis is a 180° rotation of the right result,
+/// whether or not an `irot` ran first — which is why iPhone front-camera
+/// stills (the files that carry `imir`) come out upside down, and rear-camera
+/// stills (irot only) do not.
+fn correct_heif_oxide_imir(image: DynamicImage, bytes: &[u8]) -> DynamicImage {
+    if gallery_meta::media::isobmff::has_imir(bytes) {
+        image.rotate180()
+    } else {
+        image
     }
 }
 
@@ -152,6 +174,7 @@ fn to_rgb8(pixels: &heif_oxide::Pixels) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::GenericImageView;
 
     /// The bit-depth rule, pinned. A tone map would make these numbers depend
     /// on a curve; a right shift makes them arithmetic.
@@ -209,5 +232,42 @@ mod tests {
         out.extend_from_slice(kind);
         out.extend_from_slice(payload);
         out
+    }
+
+    fn heic_ipco(properties: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
+        let mut ipco = Vec::new();
+        for (kind, body) in properties {
+            ipco.extend_from_slice(&boxed(kind, body));
+        }
+        let mut ftyp = b"heic".to_vec();
+        ftyp.extend_from_slice(&0u32.to_be_bytes());
+        ftyp.extend_from_slice(b"heic");
+        let mut file = boxed(b"ftyp", &ftyp);
+        let mut meta = vec![0u8, 0, 0, 0];
+        meta.extend_from_slice(&boxed(b"iprp", &boxed(b"ipco", &ipco)));
+        file.extend_from_slice(&boxed(b"meta", &meta));
+        file
+    }
+
+    /// The correction is a 180° turn, and only when `imir` is present.
+    #[test]
+    fn imir_axis_swap_is_a_180_turn() {
+        let mut rgb = image::RgbImage::new(2, 1);
+        rgb.put_pixel(0, 0, image::Rgb([255, 0, 0]));
+        rgb.put_pixel(1, 0, image::Rgb([0, 255, 0]));
+        let img = DynamicImage::ImageRgb8(rgb);
+
+        let with_imir = heic_ipco(&[(b"imir", &[1])]);
+        let irot_only = heic_ipco(&[(b"irot", &[1])]);
+        assert!(gallery_meta::media::isobmff::has_imir(&with_imir));
+        assert!(!gallery_meta::media::isobmff::has_imir(&irot_only));
+
+        let flipped = correct_heif_oxide_imir(img.clone(), &with_imir);
+        assert_eq!(flipped.get_pixel(0, 0), image::Rgba([0, 255, 0, 255]));
+        assert_eq!(flipped.get_pixel(1, 0), image::Rgba([255, 0, 0, 255]));
+
+        let left = correct_heif_oxide_imir(img, &irot_only);
+        assert_eq!(left.get_pixel(0, 0), image::Rgba([255, 0, 0, 255]));
+        assert_eq!(left.get_pixel(1, 0), image::Rgba([0, 255, 0, 255]));
     }
 }

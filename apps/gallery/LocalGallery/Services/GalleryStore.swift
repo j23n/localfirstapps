@@ -145,6 +145,28 @@ final class GalleryStore {
     /// `FolderScanner` and `EnrichmentService` callbacks; observed by the
     /// `ScanProgressBanner` on the three main tabs.
     var scanProgress: ScanProgress?
+    /// Chrome chip after 500 ms (ADR 0007 R5). Settings rows ignore this.
+    var progressRevealed = false
+
+    func armProgressReveal() {
+        progressRevealed = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            if scanProgress != nil || analysis.progress != nil {
+                progressRevealed = true
+            }
+        }
+    }
+
+    func syncProgressReveal() {
+        if scanProgress == nil && analysis.progress == nil {
+            progressRevealed = false
+            return
+        }
+        if !progressRevealed {
+            armProgressReveal()
+        }
+    }
     var lastSyncedAt: Date?
     /// Timestamp of the most recent FULL scan completion. Persisted so the
     /// `fullScanInterval` `.auto`-mode promotion survives relaunch.
@@ -335,6 +357,9 @@ final class GalleryStore {
             faces: self.faces,
             places: self.geocoding
         )
+        self.analysis.onChromeProgress = { [weak self] in
+            self?.syncProgressReveal()
+        }
         self.sidecarSync.onFinished = { @MainActor [weak self] in
             self?.reapplySidecarMerges()
         }

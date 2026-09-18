@@ -3,6 +3,10 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::Instant;
 
 use adw::prelude::*;
 use gtk::gdk;
@@ -10,18 +14,20 @@ use gtk::gio;
 use gtk::glib;
 use music_core::{
     ConflictDisposition, LibraryContentState, SortOption, StatusSeverity as CoreStatusSeverity,
-    StdVfs, TEMP_PREFIX,
+    StdVfs, Store, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
-    about_dialog, action_row, adaptive_shell, banner, choice_dropdown, confirm_dialog, empty_state,
-    field_row, flush_media_list, form_sheet, header_action, highlight_markup, init_style,
-    list_box_page, list_screen, media_item, nav_row, navigation_view, overflow, page, pill_primary,
-    preferences_dialog, primary_action, primary_menu, push_settings_subpage, search_entry,
-    search_hit_row, settings_screen, sheet, status_row, text_row, ActionRole, ActionRowData,
-    AdaptiveShell, ChoiceData, ConfirmData, EmptyCopy, EmptyKind, FieldRowData, Filter,
-    FilterControl, FormSheet, Leading, ListScreen, ListScreenBuilt, ListSection, LogLevel,
-    MediaItemData, MenuCommand, MusicScreen, NavRowData, PageChrome, PrimaryMenu, RootPage,
-    SettingsGroup, SettingsScreen, SheetSize, StatusRowData, StatusSeverity, TextRowData,
+    about_dialog, action_row, adaptive_shell, apply_progress_row, banner, choice_dropdown,
+    chrome_progress, confirm_dialog, count_detail, empty_state, field_row, flush_media_list,
+    form_sheet, found_detail, header_action, highlight_markup, init_style, list_box_page,
+    list_screen, media_item, nav_row, navigation_view, overflow, page, pill_primary,
+    preferences_dialog, primary_action, primary_menu, progress_row, push_settings_subpage,
+    search_entry, search_hit_row, settings_screen, sheet, status_row, text_row, ActionRole,
+    ActionRowData, AdaptiveShell, ChoiceData, ChromeProgress, ConfirmData, EmptyCopy, EmptyKind,
+    FieldRowData, Filter, FilterControl, FormSheet, Leading, ListScreen, ListScreenBuilt,
+    ListSection, LogLevel, MediaItemData, MenuCommand, MusicScreen, NavRowData, PageChrome,
+    PrimaryMenu, ProgressDisplay, ProgressRowData, RootPage, SettingsGroup, SettingsScreen,
+    SheetSize, StatusRowData, StatusSeverity, TextRowData, WorkProgress,
 };
 
 use crate::mpris::MprisState;
@@ -89,6 +95,19 @@ struct Inner {
     session: RefCell<AppSession>,
     paths: Paths,
     mpris: RefCell<Option<MprisHost>>,
+    chrome_progress: ChromeProgress,
+    work: Arc<Mutex<Option<WorkProgress>>>,
+    work_rx: RefCell<Option<mpsc::Receiver<LibraryWork>>>,
+    work_busy: Cell<bool>,
+    work_cancel: RefCell<Option<Arc<AtomicBool>>>,
+    work_tick: Cell<bool>,
+    scan_progress_row: RefCell<Option<adw::ActionRow>>,
+}
+
+enum LibraryWork {
+    Ready { folder: String, store: Store },
+    Cancelled,
+    Failed(String),
 }
 
 impl Window {
@@ -113,13 +132,14 @@ impl Window {
     fn apply_launch(&self, launch: &crate::LaunchArgs) {
         let route = launch.route.as_deref();
         let skip_folder = route == Some(route_id(MusicScreen::FolderPicker));
+        let wait = launch.snapshot.is_some() || launch.route.is_some();
         if let Some(folder) = launch.folder.as_ref().filter(|_| !skip_folder) {
             match folder.to_str() {
-                Some(path) => self.open_folder(path),
+                Some(path) => self.open_folder(path, wait),
                 None => self.toast("The selected Folder is not a local UTF-8 path"),
             }
         } else if !skip_folder {
-            self.load_persisted();
+            self.load_persisted(wait);
         }
         if let Some(route) = route {
             self.apply_route(route);
@@ -389,6 +409,8 @@ impl Window {
         search_box.set_margin_start(8);
         search_box.set_margin_end(8);
         search_box.append(&search);
+        let chrome_progress = chrome_progress();
+        shell.header.pack_start(&chrome_progress.root);
         shell.header.pack_start(&sort);
         shell.header.pack_start(&add_playlist);
         shell.header.pack_end(&menu.button);
@@ -486,6 +508,13 @@ impl Window {
             session: RefCell::new(session),
             paths,
             mpris: RefCell::new(None),
+            chrome_progress,
+            work: Arc::new(Mutex::new(None)),
+            work_rx: RefCell::new(None),
+            work_busy: Cell::new(false),
+            work_cancel: RefCell::new(None),
+            work_tick: Cell::new(false),
+            scan_progress_row: RefCell::new(None),
         });
         let this = Self { inner };
 
@@ -552,17 +581,13 @@ impl Window {
             .connect_activate(move |_, _| about.present_about());
         if let Some(reload) = menu.extra("reload") {
             let reloader = this.clone();
-            reload.connect_activate(move |_, _| {
-                let result = reloader.inner.session.borrow_mut().reload();
-                match result {
-                    Err(error) => reloader.report("folder", "Could not reload", &error.to_string()),
-                    Ok(()) => {
-                        reloader.apply_host_metadata();
-                        reloader.refill_browse();
-                    }
-                }
-            });
+            reload.connect_activate(move |_, _| reloader.reload_folder());
         }
+        let cancel = this.clone();
+        this.inner
+            .chrome_progress
+            .cancel_button()
+            .connect_clicked(move |_| cancel.cancel_library_work());
         if let Some(choose_folder) = menu.extra("choose-folder") {
             let chooser = this.clone();
             choose_folder.connect_activate(move |_, _| chooser.pick_folder());
@@ -664,10 +689,10 @@ impl Window {
         }
     }
 
-    fn load_persisted(&self) {
+    fn load_persisted(&self, wait: bool) {
         if let Some(folder) = self.inner.paths.load_folder() {
             if std::path::Path::new(&folder).is_dir() {
-                self.open_folder(&folder);
+                self.open_folder(&folder, wait);
             } else {
                 self.record(LogLevel::Warning, "folder", "Saved Folder is unavailable");
             }
@@ -689,7 +714,7 @@ impl Window {
                     .path()
                     .and_then(|path| path.to_str().map(str::to_owned))
                 {
-                    Some(path) => this.open_folder(&path),
+                    Some(path) => this.open_folder(&path, false),
                     None => this.toast("The selected Folder is not a local UTF-8 path"),
                 },
                 Err(error) => {
@@ -702,31 +727,222 @@ impl Window {
         );
     }
 
-    fn open_folder(&self, folder: &str) {
-        let result = self.inner.session.borrow_mut().open_folder(folder);
-        match result {
-            Ok(()) => {
-                self.inner.paths.save_folder(folder);
-                self.inner.root_stack.set_visible_child_name("music");
-                self.apply_host_metadata();
-                self.refill_all();
-            }
-            Err(error) => self.report("folder", "Could not open Folder", &error.to_string()),
+    fn open_folder(&self, folder: &str, wait: bool) {
+        let _span = localcore_trace::span_always("music", "window.open_folder");
+        self.start_library_work(folder.to_string(), None);
+        if wait {
+            self.drain_library_work();
         }
     }
 
+    fn reload_folder(&self) {
+        let Some(folder) = self.inner.session.borrow().folder().map(str::to_owned) else {
+            self.toast("Choose a Folder first");
+            return;
+        };
+        let store = self.inner.session.borrow().clone_store();
+        self.start_library_work(folder, store);
+    }
+
+    fn start_library_work(&self, folder: String, existing: Option<Store>) {
+        if self.inner.work_busy.get() {
+            self.cancel_library_work();
+        }
+        self.inner.work_busy.set(true);
+        if let Ok(mut work) = self.inner.work.lock() {
+            *work = Some(WorkProgress::new("Scanning"));
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.inner.work_cancel.replace(Some(cancel.clone()));
+        let status = self.inner.work.clone();
+        let (tx, rx) = mpsc::channel();
+        self.inner.work_rx.replace(Some(rx));
+        let vfs = StdVfs::new(TEMP_PREFIX);
+        thread::spawn(move || {
+            let report = |discovered: usize| {
+                if let Ok(mut guard) = status.lock() {
+                    if let Some(progress) = guard.as_mut() {
+                        progress.update("Scanning", Some(found_detail(discovered as u64)), None);
+                    }
+                }
+            };
+            let cancelled = || cancel.load(Ordering::Relaxed);
+            let result = match existing {
+                Some(mut store) => store
+                    .reload_with_hooks(&vfs, Some(&report), Some(&cancelled))
+                    .map(|done| done.map(|()| store)),
+                None => Store::open_with_hooks(&vfs, &folder, Some(&report), Some(&cancelled)),
+            };
+            let outcome = match result {
+                Ok(Some(store)) => LibraryWork::Ready { folder, store },
+                Ok(None) => LibraryWork::Cancelled,
+                Err(error) => LibraryWork::Failed(error.to_string()),
+            };
+            let _ = tx.send(outcome);
+        });
+        self.ensure_work_tick();
+        self.sync_chrome_progress();
+    }
+
+    fn cancel_library_work(&self) {
+        if let Some(flag) = self.inner.work_cancel.borrow().as_ref() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn drain_library_work(&self) {
+        let ctx = gtk::glib::MainContext::default();
+        while self.inner.work_busy.get() {
+            self.poll_library_work();
+            if self.inner.work_busy.get() {
+                ctx.iteration(true);
+            }
+        }
+    }
+
+    fn ensure_work_tick(&self) {
+        if self.inner.work_tick.get() {
+            return;
+        }
+        self.inner.work_tick.set(true);
+        let this = self.clone();
+        gtk::glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+            this.poll_library_work();
+            this.sync_chrome_progress();
+            if this.inner.work_busy.get() {
+                gtk::glib::ControlFlow::Continue
+            } else {
+                this.inner.work_tick.set(false);
+                gtk::glib::ControlFlow::Break
+            }
+        });
+    }
+
+    fn poll_library_work(&self) {
+        let Some(rx) = self.inner.work_rx.borrow_mut().take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(LibraryWork::Ready { folder, store }) => {
+                self.inner.paths.save_folder(&folder);
+                self.inner.session.borrow_mut().install_store(store, folder);
+                self.inner.root_stack.set_visible_child_name("music");
+                self.inner.work_busy.set(false);
+                if self.inner.session.borrow().pending_metadata_count() == 0 {
+                    if let Ok(mut work) = self.inner.work.lock() {
+                        *work = None;
+                    }
+                    self.inner.work_cancel.replace(None);
+                    self.sync_chrome_progress();
+                }
+                self.apply_host_metadata();
+                self.refill_all();
+            }
+            Ok(LibraryWork::Cancelled) => {
+                self.inner.work_busy.set(false);
+                if let Ok(mut work) = self.inner.work.lock() {
+                    *work = None;
+                }
+                self.inner.work_cancel.replace(None);
+                self.sync_chrome_progress();
+                self.toast("Reload cancelled");
+            }
+            Ok(LibraryWork::Failed(error)) => {
+                self.inner.work_busy.set(false);
+                if let Ok(mut work) = self.inner.work.lock() {
+                    *work = None;
+                }
+                self.inner.work_cancel.replace(None);
+                self.sync_chrome_progress();
+                self.report("folder", "Could not open Folder", &error);
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                self.inner.work_rx.replace(Some(rx));
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.inner.work_busy.set(false);
+            }
+        }
+    }
+
+    fn sync_chrome_progress(&self) {
+        let progress = self
+            .inner
+            .work
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .and_then(|work| work.chrome(Instant::now()).cloned())
+            })
+            .map(|display| ProgressRowData::from(&display));
+        self.inner.chrome_progress.apply(progress.as_ref());
+        if let Some(row) = self.inner.scan_progress_row.borrow().clone() {
+            let display = self
+                .inner
+                .work
+                .lock()
+                .ok()
+                .and_then(|guard| guard.as_ref().map(|work| work.display().clone()))
+                .unwrap_or_else(idle_music_progress);
+            apply_progress_row(&row, &ProgressRowData::from(&display));
+        }
+    }
+
+    fn update_metadata_progress(&self) {
+        let pending = self.inner.session.borrow().pending_metadata_count();
+        let total = self.inner.session.borrow().track_count();
+        let done = total.saturating_sub(pending);
+        if let Ok(mut guard) = self.inner.work.lock() {
+            let progress = guard.get_or_insert_with(|| WorkProgress::new("Metadata"));
+            let started = progress.started();
+            let fraction = (total > 0).then(|| done as f64 / total as f64);
+            progress.update(
+                "Metadata",
+                Some(count_detail(
+                    done as u64,
+                    total as u64,
+                    started,
+                    Instant::now(),
+                )),
+                fraction,
+            );
+        }
+        self.sync_chrome_progress();
+    }
+
     fn apply_host_metadata(&self) {
+        localcore_trace::detail("music", "apply_host_metadata idle tick");
         let this = self.clone();
         gtk::glib::idle_add_local(move || {
+            if this
+                .inner
+                .work_cancel
+                .borrow()
+                .as_ref()
+                .is_some_and(|flag| flag.load(Ordering::Relaxed))
+            {
+                if let Ok(mut work) = this.inner.work.lock() {
+                    *work = None;
+                }
+                this.sync_chrome_progress();
+                return gtk::glib::ControlFlow::Break;
+            }
             let requests = match this.inner.session.borrow().pending_metadata(24) {
                 Ok(requests) => requests,
                 Err(_) => return gtk::glib::ControlFlow::Break,
             };
             if requests.is_empty() {
+                if let Ok(mut work) = this.inner.work.lock() {
+                    *work = None;
+                }
+                this.sync_chrome_progress();
                 this.refill_browse();
                 this.update_now_playing();
                 return gtk::glib::ControlFlow::Break;
             }
+            this.update_metadata_progress();
             let reads: Vec<_> = requests.iter().map(crate::metadata::read_or_mark).collect();
             for read in &reads {
                 if let Some(bytes) = &read.artwork {
@@ -759,6 +975,7 @@ impl Window {
     }
 
     fn refill_all(&self) {
+        let _span = localcore_trace::span_always("music", "refill_all");
         self.refill_browse();
         self.refill_settings();
         self.update_now_playing();
@@ -775,6 +992,7 @@ impl Window {
     }
 
     fn refill_songs(&self) {
+        let _span = localcore_trace::span_always("music", "refill_songs");
         clear_list(&self.inner.songs_list);
         let rows = self
             .inner
@@ -1065,6 +1283,7 @@ impl Window {
     }
 
     fn refill_search(&self) {
+        let _span = localcore_trace::span("music", "refill_search");
         let query = self.inner.query.borrow().clone();
         clear_list(&self.inner.search_results);
         if query.trim().is_empty() {
@@ -1078,11 +1297,12 @@ impl Window {
             }
             Ok(hits) => {
                 for hit in hits {
-                    let subtitle = hit
-                        .subtitle
-                        .as_deref()
-                        .map(|text| highlight_markup(text, &query))
-                        .unwrap_or_default();
+                    let value = hit.subtitle.as_deref().unwrap_or(&hit.title);
+                    let subtitle = format!(
+                        "{}: {}",
+                        gtk::glib::markup_escape_text(hit.kind.label()),
+                        highlight_markup(value, &query)
+                    );
                     let row = search_hit_row(&hit.title, &subtitle, hit.kind.symbol());
                     row.set_widget_name(&hit.id);
                     self.inner.search_results.append(&row);
@@ -1442,6 +1662,7 @@ impl Window {
     }
 
     fn present_add_tracks(&self, detail: crate::PlaylistDetailRows) {
+        let _span = localcore_trace::span_always("music", "present_add_tracks");
         let result = self
             .inner
             .session
@@ -1810,16 +2031,23 @@ impl Window {
         let reload = action_row(&ActionRowData {
             label: "Reload".into(),
             role: ActionRole::Normal,
-            enabled: self.inner.session.borrow().folder().is_some(),
+            enabled: self.inner.session.borrow().folder().is_some() && !self.inner.work_busy.get(),
         });
         let this = self.clone();
-        reload.connect_clicked(move |_| {
-            let result = this.inner.session.borrow_mut().reload();
-            match result {
-                Ok(()) => this.refill_all(),
-                Err(error) => this.report("folder", "Could not Reload Folder", &error.to_string()),
-            }
-        });
+        reload.connect_clicked(move |_| this.reload_folder());
+        let scan = self
+            .inner
+            .work
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|work| work.display().clone()))
+            .unwrap_or_else(idle_music_progress);
+        let scan_row = progress_row(&ProgressRowData::from(&scan));
+        if let Some(cancel) = find_widget::<gtk::Button>(&scan_row) {
+            let this = self.clone();
+            cancel.connect_clicked(move |_| this.cancel_library_work());
+        }
+        self.inner.scan_progress_row.replace(Some(scan_row.clone()));
         let logs = nav_row(&NavRowData {
             label: "Logs".into(),
             trailing: Some("Local only".into()),
@@ -1859,6 +2087,11 @@ impl Window {
                         change.upcast(),
                         reload.upcast(),
                     ],
+                },
+                SettingsGroup {
+                    id: "scan".into(),
+                    title: "Scan".into(),
+                    rows: vec![scan_row.upcast()],
                 },
                 SettingsGroup {
                     id: "playback".into(),
@@ -2064,6 +2297,7 @@ fn to_media_data(row: music_core::MediaItem, texture: Option<gdk::Texture>) -> M
         label: row.label,
         badge: row.badge,
         texture,
+        ..MediaItemData::default()
     }
 }
 
@@ -2073,4 +2307,28 @@ fn to_status_severity(severity: CoreStatusSeverity) -> StatusSeverity {
         CoreStatusSeverity::Warning => StatusSeverity::Warning,
         CoreStatusSeverity::Error => StatusSeverity::Error,
     }
+}
+
+fn idle_music_progress() -> ProgressDisplay {
+    ProgressDisplay {
+        label: "Folder walk and metadata".into(),
+        detail: None,
+        fraction: None,
+        cancel: false,
+    }
+}
+
+fn find_widget<T: IsA<gtk::Widget>>(root: &impl IsA<gtk::Widget>) -> Option<T> {
+    let widget = root.as_ref();
+    if let Ok(found) = widget.clone().downcast::<T>() {
+        return Some(found);
+    }
+    let mut child = widget.first_child();
+    while let Some(node) = child {
+        if let Some(found) = find_widget::<T>(&node) {
+            return Some(found);
+        }
+        child = node.next_sibling();
+    }
+    None
 }

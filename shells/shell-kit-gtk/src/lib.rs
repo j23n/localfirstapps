@@ -8,8 +8,9 @@
 //! enums. An unhandled kind is a compile error.
 
 pub use localcore_ui::{
-    ActionRole, Affordance, ContactsScreen, HealthScreen, ItemKind, MusicScreen, NavIntent,
-    ScreenKind, StatusSeverity,
+    count_detail, found_detail, ActionRole, Affordance, ContactsScreen, GalleryScreen,
+    HealthScreen, ItemKind, MusicScreen, NavIntent, ProgressDisplay, ScreenKind, StatusSeverity,
+    WorkProgress, REVEAL_AFTER,
 };
 
 mod affordance;
@@ -35,7 +36,7 @@ pub use nav::*;
 pub use reuse::*;
 pub use screen::*;
 
-/// Kit stylesheet: token-driven named-colour bridge, no custom classes.
+/// Kit stylesheet: token-driven named-colour bridge plus `.thumb`.
 const KIT_STYLE: &str = include_str!("../data/style.css");
 
 /// Load generated token CSS, then the kit stylesheet.
@@ -98,6 +99,11 @@ mod tests {
         assert!(KIT_STYLE.contains("@define-color accent_fg_color var(--accent-fg-color)"));
         assert!(!KIT_STYLE.contains("@define-color accent_color"));
         assert!(!KIT_STYLE.contains("--accent-color:"));
+        assert!(KIT_STYLE.contains(".thumb {"));
+        assert!(KIT_STYLE.contains("border-radius: var(--thumb-radius);"));
+        assert!(!KIT_STYLE.contains("Newsreader"));
+        assert!(!KIT_STYLE.contains(".memory-title"));
+        assert!(!KIT_STYLE.contains("font-family"));
     }
 
     #[test]

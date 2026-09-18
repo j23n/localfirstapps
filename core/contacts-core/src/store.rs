@@ -2,7 +2,7 @@
 
 use localcore_conflict::ConflictGroup;
 use localcore_vfs::{Vfs, VfsError};
-use localcore_walk::walk;
+use localcore_walk::{walk_with_hooks, WalkOutcome};
 use uuid::Uuid;
 
 use crate::card::{Card, Layout};
@@ -78,9 +78,33 @@ impl From<VfsError> for StoreError {
 impl Store {
     /// Walk `root`, load surviving `.vcf` files, assign missing ids once.
     pub fn open(vfs: &dyn Vfs, root: &str) -> Result<Self, StoreError> {
-        let outcome = walk(vfs, root, |name| {
-            name.to_ascii_lowercase().ends_with(".vcf")
-        });
+        Self::open_with_hooks(vfs, root, None, None)
+            .map(|store| store.expect("open without cancel cannot be cancelled"))
+    }
+
+    /// [`open`], with walk progress and an optional cancel hook.
+    ///
+    /// `Ok(None)` means the caller cancelled. There is no partial store.
+    pub fn open_with_hooks(
+        vfs: &dyn Vfs,
+        root: &str,
+        on_progress: Option<&dyn Fn(usize)>,
+        cancelled: Option<&dyn Fn() -> bool>,
+    ) -> Result<Option<Self>, StoreError> {
+        let _span = localcore_trace::span_always("contacts", "Store::open");
+        let Some(outcome) = walk_with_hooks(
+            vfs,
+            root,
+            &|name| name.to_ascii_lowercase().ends_with(".vcf"),
+            on_progress,
+            cancelled,
+        ) else {
+            return Ok(None);
+        };
+        Ok(Some(Self::from_walk(vfs, root, outcome)?))
+    }
+
+    fn from_walk(vfs: &dyn Vfs, root: &str, outcome: WalkOutcome) -> Result<Self, StoreError> {
         let mut cards = Vec::new();
         for file in &outcome.files {
             let bytes = vfs.read(&file.path)?;
@@ -99,6 +123,15 @@ impl Store {
             }
             cards.extend(parsed);
         }
+        localcore_trace::event(
+            "contacts",
+            format!(
+                "open files={} cards={} conflicts={}",
+                outcome.files.len(),
+                cards.len(),
+                outcome.conflict_groups.len()
+            ),
+        );
         Ok(Self {
             root: root.to_owned(),
             cards,

@@ -1,6 +1,18 @@
 //! Places pass: eligibility, cache, offline gazetteer, sidecar write.
+//!
+//! Work rows live in `places_work` via [`localcore_queue`]. Gazetteer,
+//! sidecar skip, and eligibility stay here — the queue only remembers
+//! which paths are pending, in flight, or settled.
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use localcore_queue::{
+    begin, claimable, configure_connection, enqueue, ensure_table, finish_done, finish_failed,
+    mark_stale, nfc_path, reclaim_abandoned, release, Queue,
+};
+use rusqlite::Connection;
 
 use crate::geo::{resolve, wait_until_allowed, GeoCache, GeoError, ReverseGeocoder};
 use gallery_meta::places::write_places;
@@ -10,6 +22,28 @@ use gallery_model::photo::PhotoFile;
 use gallery_vfs::{Vfs, VfsResult};
 
 use crate::eligibility::{is_places_candidate, places_needed};
+
+/// `places_work` in `gallery-cache.sqlite` (or a session-owned file).
+const PLACES: Queue = Queue::new("places_work", "place_count");
+
+/// Stamped on `done` rows. Not a model pack — Places is the gazetteer.
+const PLACES_PACK: &str = "gazetteer";
+
+/// Capability-local failure code stored on the row; the queue does not
+/// interpret it.
+const PLACES_FAILED: i64 = 1;
+
+/// SQLite file that holds `places_work`.
+///
+/// Sibling of the geo-cache JSON (`gallery-cache.sqlite`), the same file
+/// tagging and faces use when they share the directory. `PlacesSession`
+/// keeps its FFI signature and derives this from `cache_path`.
+pub fn places_queue_db_path(geo_cache_path: impl AsRef<Path>) -> PathBuf {
+    match geo_cache_path.as_ref().parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.join("gallery-cache.sqlite"),
+        _ => PathBuf::from("gallery-cache.sqlite"),
+    }
+}
 
 /// What one Places pass did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -58,146 +92,125 @@ pub enum PlaceOutcome {
 
 /// Walk `photos`, look up each eligible still, write sidecars.
 ///
-/// Queue uses in-memory tags. The write skip re-reads the sidecar so a
-/// finished city on disk is not overwritten when the row is stale.
+/// `queue_db` is `gallery-cache.sqlite` (or another session-owned file).
+/// `None` uses an in-memory table (tests). Enqueue is idempotent; a `done`
+/// row is not claimed again unless `force` marks it stale. The write skip
+/// still re-reads the sidecar so a finished city on disk is not overwritten
+/// when the row is stale.
 pub fn run_places(
     vfs: &dyn Vfs,
     photos: &[PhotoFile],
     geo: &dyn ReverseGeocoder,
     cache: &mut GeoCache,
+    queue_db: Option<&Path>,
     force: bool,
     cancel: &AtomicBool,
     on_progress: Option<&dyn Fn(usize, usize)>,
 ) -> PlacesSummary {
-    let queue: Vec<&PhotoFile> = photos
-        .iter()
-        .filter(|p| is_places_candidate(p) && (force || places_needed(row_tags(p), false)))
-        .collect();
-    let total = queue.len();
+    let _span = localcore_trace::span_always("queue", "run_places").extra("photos", photos.len());
+    let mut by_key: HashMap<String, &PhotoFile> = HashMap::new();
+    for photo in photos {
+        if is_places_candidate(photo) && (force || places_needed(row_tags(photo), false)) {
+            by_key.entry(nfc_path(photo.path())).or_insert(photo);
+        }
+    }
     let mut summary = PlacesSummary {
-        considered: total,
+        considered: by_key.len(),
         ..PlacesSummary::default()
     };
+
+    let mut conn = match open_places_queue(queue_db) {
+        Ok(conn) => conn,
+        Err(error) => {
+            summary.error = Some(error);
+            return summary;
+        }
+    };
+
+    let paths: Vec<String> = by_key.keys().cloned().collect();
+    if persist_step(&mut summary, || enqueue(&mut conn, PLACES, &paths)).is_err() {
+        return summary;
+    }
+    if persist_step(&mut summary, || reclaim_abandoned(&conn, PLACES)).is_err() {
+        return summary;
+    }
+    if force {
+        for path in by_key.keys() {
+            if persist_step(&mut summary, || mark_stale(&conn, PLACES, path)).is_err() {
+                return summary;
+            }
+        }
+    }
+
+    let items = match claimable(&conn, PLACES, 0, None) {
+        Ok(items) => items
+            .into_iter()
+            .filter(|item| by_key.contains_key(&item.path))
+            .collect::<Vec<_>>(),
+        Err(error) => {
+            summary.error = Some(error.to_string());
+            return summary;
+        }
+    };
+    let total = items.len();
     if let Some(cb) = on_progress {
         cb(0, total);
     }
+
     let mut last_lookup = None;
-    for (i, photo) in queue.into_iter().enumerate() {
+    for (i, item) in items.into_iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             summary.cancelled = true;
             break;
         }
-        if !force {
-            match sidecar_places_needed(vfs, photo.path()) {
-                Ok(true) => {}
-                Ok(false) => {
-                    finish_photo(
-                        &mut summary,
-                        photo.path(),
-                        None,
-                        PlaceOutcome::Skipped,
-                        i,
-                        total,
-                        on_progress,
-                    );
-                    continue;
-                }
-                Err(error) => {
-                    let detail = error.to_string();
-                    if summary.error.is_none() {
-                        summary.error = Some(detail.clone());
-                    }
-                    finish_photo(
-                        &mut summary,
-                        photo.path(),
-                        None,
-                        PlaceOutcome::Failed(detail),
-                        i,
-                        total,
-                        on_progress,
-                    );
-                    continue;
-                }
-            }
-        }
-        let (Some(lat), Some(lon)) = (photo.gps_latitude, photo.gps_longitude) else {
-            finish_photo(
-                &mut summary,
-                photo.path(),
-                None,
-                PlaceOutcome::Skipped,
-                i,
-                total,
-                on_progress,
-            );
+        let Some(photo) = by_key.get(&item.path).copied() else {
             continue;
         };
-        if cache.nearest(lat, lon).is_none()
-            && !wait_until_allowed(&mut last_lookup, geo.min_interval(), cancel)
-        {
-            summary.cancelled = true;
-            break;
-        }
-        let request = match resolve(cache, geo, lat, lon) {
-            Ok(Some(req)) => req,
-            Ok(None) => {
-                finish_photo(
-                    &mut summary,
-                    photo.path(),
-                    None,
-                    PlaceOutcome::Skipped,
-                    i,
-                    total,
-                    on_progress,
-                );
-                continue;
-            }
-            Err(GeoError::Retryable(e)) | Err(GeoError::Fatal(e)) => {
+        match begin(&conn, PLACES, &item.path) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
                 if summary.error.is_none() {
-                    summary.error = Some(e.clone());
+                    summary.error = Some(error.to_string());
                 }
                 finish_photo(
                     &mut summary,
                     photo.path(),
                     None,
-                    PlaceOutcome::Failed(e),
+                    PlaceOutcome::Failed(error.to_string()),
                     i,
                     total,
                     on_progress,
                 );
                 continue;
             }
-        };
-        let place_path = Some(request.path.clone());
-        match write_places(vfs, photo.path(), &request) {
-            Ok(outcome) if outcome.written => finish_photo(
-                &mut summary,
-                photo.path(),
+        }
+
+        let result = process_photo(vfs, photo, geo, cache, force, cancel, &mut last_lookup);
+        match result {
+            ProcessResult::Cancelled => {
+                if let Err(error) = release(&conn, PLACES, &item.path) {
+                    if summary.error.is_none() {
+                        summary.error = Some(error.to_string());
+                    }
+                }
+                summary.cancelled = true;
+                break;
+            }
+            ProcessResult::Finished {
                 place_path,
-                PlaceOutcome::Written,
-                i,
-                total,
-                on_progress,
-            ),
-            Ok(_) => finish_photo(
-                &mut summary,
-                photo.path(),
-                place_path,
-                PlaceOutcome::Skipped,
-                i,
-                total,
-                on_progress,
-            ),
-            Err(e) => {
-                let detail = e.to_string();
-                if summary.error.is_none() {
-                    summary.error = Some(detail.clone());
+                outcome,
+            } => {
+                if let Err(error) = finish_queue(&conn, &item.path, &outcome) {
+                    if summary.error.is_none() {
+                        summary.error = Some(error);
+                    }
                 }
                 finish_photo(
                     &mut summary,
                     photo.path(),
                     place_path,
-                    PlaceOutcome::Failed(detail),
+                    outcome,
                     i,
                     total,
                     on_progress,
@@ -206,6 +219,129 @@ pub fn run_places(
         }
     }
     summary
+}
+
+enum ProcessResult {
+    Cancelled,
+    Finished {
+        place_path: Option<String>,
+        outcome: PlaceOutcome,
+    },
+}
+
+fn process_photo(
+    vfs: &dyn Vfs,
+    photo: &PhotoFile,
+    geo: &dyn ReverseGeocoder,
+    cache: &mut GeoCache,
+    force: bool,
+    cancel: &AtomicBool,
+    last_lookup: &mut Option<std::time::Instant>,
+) -> ProcessResult {
+    if !force {
+        match sidecar_places_needed(vfs, photo.path()) {
+            Ok(true) => {}
+            Ok(false) => {
+                return ProcessResult::Finished {
+                    place_path: None,
+                    outcome: PlaceOutcome::Skipped,
+                };
+            }
+            Err(error) => {
+                return ProcessResult::Finished {
+                    place_path: None,
+                    outcome: PlaceOutcome::Failed(error.to_string()),
+                };
+            }
+        }
+    }
+    let (Some(lat), Some(lon)) = (photo.gps_latitude, photo.gps_longitude) else {
+        return ProcessResult::Finished {
+            place_path: None,
+            outcome: PlaceOutcome::Skipped,
+        };
+    };
+    if cache.nearest(lat, lon).is_none()
+        && !wait_until_allowed(last_lookup, geo.min_interval(), cancel)
+    {
+        return ProcessResult::Cancelled;
+    }
+    let request = match resolve(cache, geo, lat, lon) {
+        Ok(Some(req)) => req,
+        Ok(None) => {
+            return ProcessResult::Finished {
+                place_path: None,
+                outcome: PlaceOutcome::Skipped,
+            };
+        }
+        Err(GeoError::Retryable(e)) | Err(GeoError::Fatal(e)) => {
+            return ProcessResult::Finished {
+                place_path: None,
+                outcome: PlaceOutcome::Failed(e),
+            };
+        }
+    };
+    let place_path = Some(request.path.clone());
+    match write_places(vfs, photo.path(), &request) {
+        Ok(outcome) if outcome.written => ProcessResult::Finished {
+            place_path,
+            outcome: PlaceOutcome::Written,
+        },
+        Ok(_) => ProcessResult::Finished {
+            place_path,
+            outcome: PlaceOutcome::Skipped,
+        },
+        Err(e) => ProcessResult::Finished {
+            place_path,
+            outcome: PlaceOutcome::Failed(e.to_string()),
+        },
+    }
+}
+
+fn finish_queue(conn: &Connection, path: &str, outcome: &PlaceOutcome) -> Result<(), String> {
+    let ok = match outcome {
+        PlaceOutcome::Written => finish_done(conn, PLACES, path, PLACES_PACK, 1, None),
+        PlaceOutcome::Skipped => finish_done(conn, PLACES, path, PLACES_PACK, 0, None),
+        PlaceOutcome::Failed(_) => finish_failed(conn, PLACES, path, PLACES_FAILED),
+    }
+    .map_err(|e| e.to_string())?;
+    if !ok {
+        return Err(format!("places queue lost claim for {path}"));
+    }
+    Ok(())
+}
+
+fn persist_step<T>(
+    summary: &mut PlacesSummary,
+    op: impl FnOnce() -> rusqlite::Result<T>,
+) -> Result<T, String> {
+    match op() {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            let detail = error.to_string();
+            if summary.error.is_none() {
+                summary.error = Some(detail.clone());
+            }
+            Err(detail)
+        }
+    }
+}
+
+fn open_places_queue(path: Option<&Path>) -> Result<Connection, String> {
+    let conn = match path {
+        Some(path) => {
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+            }
+            Connection::open(path).map_err(|e| e.to_string())?
+        }
+        None => Connection::open_in_memory().map_err(|e| e.to_string())?,
+    };
+    configure_connection(&conn).map_err(|e| e.to_string())?;
+    ensure_table(&conn, PLACES).map_err(|e| e.to_string())?;
+    Ok(conn)
 }
 
 fn finish_photo(
@@ -225,6 +361,11 @@ fn finish_photo(
         }
         PlaceOutcome::Skipped => summary.skipped += 1,
         PlaceOutcome::Failed(_) => summary.failed += 1,
+    }
+    if let PlaceOutcome::Failed(detail) = &outcome {
+        if summary.error.is_none() {
+            summary.error = Some(detail.clone());
+        }
     }
     summary.records.push(PlaceRecord {
         image_path: image_path.to_string(),
@@ -271,6 +412,7 @@ mod tests {
     use gallery_meta::place_from_parts;
     use gallery_model::photo::HierarchicalTag;
     use gallery_vfs::{MemVfs, VfsError};
+    use localcore_queue::{item, WorkState};
     use std::time::Duration;
 
     struct FakeGeo;
@@ -295,10 +437,35 @@ mod tests {
     }
 
     fn still_with_gps() -> PhotoFile {
-        let mut p = PhotoFile::new("/lib/a.jpg", "a", 12);
+        still_with_gps_at("/lib/a.jpg")
+    }
+
+    fn still_with_gps_at(path: &str) -> PhotoFile {
+        let mut p = PhotoFile::new(path, "a", 12);
         p.gps_latitude = Some(48.8566);
         p.gps_longitude = Some(2.3522);
         p
+    }
+
+    fn run(
+        vfs: &dyn Vfs,
+        photos: &[PhotoFile],
+        geo: &dyn ReverseGeocoder,
+        cache: &mut GeoCache,
+        queue_db: Option<&Path>,
+        force: bool,
+        cancel: bool,
+    ) -> PlacesSummary {
+        run_places(
+            vfs,
+            photos,
+            geo,
+            cache,
+            queue_db,
+            force,
+            &AtomicBool::new(cancel),
+            None,
+        )
     }
 
     #[test]
@@ -306,14 +473,14 @@ mod tests {
         let vfs = MemVfs::new();
         vfs.write_atomic("/lib/a.jpg", b"not-a-jpeg").unwrap();
         let mut cache = GeoCache::new();
-        let summary = run_places(
+        let summary = run(
             &vfs,
             &[still_with_gps()],
             &FakeGeo,
             &mut cache,
-            false,
-            &AtomicBool::new(false),
             None,
+            false,
+            false,
         );
         assert_eq!(summary.written, 1);
         assert!(vfs.exists("/lib/a.jpg.xmp"));
@@ -334,14 +501,14 @@ mod tests {
         .unwrap();
         write_places(&vfs, "/lib/a.jpg", &req).unwrap();
         let mut cache = GeoCache::new();
-        let summary = run_places(
+        let summary = run(
             &vfs,
             &[still_with_gps()],
             &FakeGeo,
             &mut cache,
-            false,
-            &AtomicBool::new(false),
             None,
+            false,
+            false,
         );
         assert_eq!(summary.written, 0);
         assert!(summary.skipped >= 1);
@@ -354,15 +521,7 @@ mod tests {
         let vfs = MemVfs::new();
         vfs.write_atomic("/lib/a.jpg", b"x").unwrap();
         let mut cache = GeoCache::new();
-        let summary = run_places(
-            &vfs,
-            &[p],
-            &FakeGeo,
-            &mut cache,
-            false,
-            &AtomicBool::new(false),
-            None,
-        );
+        let summary = run(&vfs, &[p], &FakeGeo, &mut cache, None, false, false);
         assert_eq!(summary.written, 1);
     }
 
@@ -371,14 +530,14 @@ mod tests {
         let vfs = MemVfs::new();
         vfs.write_atomic("/lib/a.jpg", b"not-a-jpeg").unwrap();
         let mut cache = GeoCache::new();
-        let summary = run_places(
+        let summary = run(
             &vfs,
             &[still_with_gps()],
             &Gazetteer,
             &mut cache,
-            false,
-            &AtomicBool::new(false),
             None,
+            false,
+            false,
         );
         assert_eq!(summary.written, 1, "{summary:?}");
         let view = read_view(&vfs.read("/lib/a.jpg.xmp").unwrap()).unwrap();
@@ -449,14 +608,14 @@ mod tests {
         let inner = MemVfs::new();
         inner.write_atomic("/lib/a.jpg", b"x").unwrap();
         let mut cache = GeoCache::new();
-        let summary = run_places(
+        let summary = run(
             &DeniedVfs(inner),
             &[still_with_gps()],
             &MustNotLookup,
             &mut cache,
-            false,
-            &AtomicBool::new(false),
             None,
+            false,
+            false,
         );
 
         assert_eq!(summary.failed, 1, "{summary:?}");
@@ -466,5 +625,123 @@ mod tests {
             .error
             .as_deref()
             .is_some_and(|error| error.contains("permission denied")));
+    }
+
+    #[test]
+    fn nfc_and_nfd_paths_share_one_queue_row() {
+        let nfc = "/lib/caf\u{00E9}.jpg";
+        let nfd = "/lib/cafe\u{0301}.jpg";
+        let vfs = MemVfs::new();
+        vfs.write_atomic(nfc, b"x").unwrap();
+        vfs.write_atomic(nfd, b"x").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("gallery-cache.sqlite");
+        let mut cache = GeoCache::new();
+        let summary = run(
+            &vfs,
+            &[still_with_gps_at(nfd), still_with_gps_at(nfc)],
+            &FakeGeo,
+            &mut cache,
+            Some(&db),
+            false,
+            false,
+        );
+        assert_eq!(summary.considered, 1, "{summary:?}");
+        assert_eq!(summary.processed, 1, "{summary:?}");
+        assert_eq!(summary.written, 1, "{summary:?}");
+
+        let conn = Connection::open(&db).unwrap();
+        let row = item(&conn, PLACES, nfd).unwrap().unwrap();
+        assert_eq!(row.path, nfc);
+        assert_eq!(row.state, WorkState::Done);
+        assert!(item(&conn, PLACES, nfc).unwrap().is_some());
+    }
+
+    #[test]
+    fn done_row_is_not_reprocessed_on_the_next_run() {
+        struct MustNotLookup;
+
+        impl ReverseGeocoder for MustNotLookup {
+            fn lookup(
+                &self,
+                _lat: f64,
+                _lon: f64,
+            ) -> Result<Option<gallery_meta::PlaceWriteRequest>, GeoError> {
+                panic!("a done places_work row was claimed again")
+            }
+
+            fn min_interval(&self) -> Duration {
+                Duration::ZERO
+            }
+        }
+
+        let vfs = MemVfs::new();
+        vfs.write_atomic("/lib/a.jpg", b"x").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("gallery-cache.sqlite");
+        let mut cache = GeoCache::new();
+        let first = run(
+            &vfs,
+            &[still_with_gps()],
+            &FakeGeo,
+            &mut cache,
+            Some(&db),
+            false,
+            false,
+        );
+        assert_eq!(first.written, 1, "{first:?}");
+
+        let second = run(
+            &vfs,
+            &[still_with_gps()],
+            &MustNotLookup,
+            &mut cache,
+            Some(&db),
+            false,
+            false,
+        );
+        assert_eq!(second.processed, 0, "{second:?}");
+        assert_eq!(second.written, 0, "{second:?}");
+        assert!(!second.cancelled);
+    }
+
+    #[test]
+    fn abandoned_hashing_row_is_reclaimed_on_the_next_run() {
+        let vfs = MemVfs::new();
+        vfs.write_atomic("/lib/a.jpg", b"x").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("gallery-cache.sqlite");
+        {
+            let mut conn = Connection::open(&db).unwrap();
+            configure_connection(&conn).unwrap();
+            ensure_table(&conn, PLACES).unwrap();
+            enqueue(&mut conn, PLACES, &["/lib/a.jpg".into()]).unwrap();
+            assert!(begin(&conn, PLACES, "/lib/a.jpg").unwrap());
+        }
+
+        let mut cache = GeoCache::new();
+        let summary = run(
+            &vfs,
+            &[still_with_gps()],
+            &FakeGeo,
+            &mut cache,
+            Some(&db),
+            false,
+            false,
+        );
+        assert_eq!(summary.written, 1, "{summary:?}");
+        let conn = Connection::open(&db).unwrap();
+        assert_eq!(
+            item(&conn, PLACES, "/lib/a.jpg").unwrap().unwrap().state,
+            WorkState::Done
+        );
+    }
+
+    #[test]
+    fn queue_path_is_gallery_cache_beside_the_geo_json() {
+        assert_eq!(
+            places_queue_db_path("/var/cache/geo-cache.json"),
+            PathBuf::from("/var/cache/gallery-cache.sqlite")
+        );
     }
 }

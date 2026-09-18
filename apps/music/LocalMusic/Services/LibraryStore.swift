@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import ShellKitSwift
 
 enum LibrarySortOption: String, CaseIterable, Identifiable, Sendable {
     case title, artist, album, duration
@@ -50,6 +51,7 @@ final class LibraryStore {
     private(set) var isScanning = false
     private(set) var isFiltering = false
     private(set) var scanProgress: ScanProgress?
+    private(set) var progressRevealed = false
     var errorMessage: String?
 
     var searchText = "" {
@@ -166,7 +168,9 @@ final class LibraryStore {
         startScanAccess(folderURL)
         isScanning = true
         scanProgress = nil
+        progressRevealed = false
         scanRevision += 1
+        Task { await self.revealProgressIfNeeded(revision) }
         let revision = scanRevision
         let capturedURL = folderURL
         let task = Task<Void, Never> { [weak self] in
@@ -178,8 +182,42 @@ final class LibraryStore {
         if revision == scanRevision {
             isScanning = false
             scanProgress = nil
+            progressRevealed = false
             scanTask = nil
         }
+    }
+
+    private func revealProgressIfNeeded(_ revision: Int) async {
+        try? await Task.sleep(for: .milliseconds(500))
+        if isScanning, scanRevision == revision {
+            progressRevealed = true
+        }
+    }
+
+    var chromeProgress: ShellProgressData? {
+        guard isScanning, progressRevealed else { return nil }
+        if let progress = scanProgress, progress.total > 0 {
+            return ShellProgressData(
+                label: "Scanning",
+                detail: "\(progress.completed) / \(progress.total)",
+                fraction: Double(progress.completed) / Double(max(progress.total, 1)),
+                cancel: false
+            )
+        }
+        return ShellProgressData(label: "Scanning", cancel: false)
+    }
+
+    var settingsProgress: ShellProgressData? {
+        guard isScanning else { return nil }
+        if let progress = scanProgress, progress.total > 0 {
+            return ShellProgressData(
+                label: "Scanning",
+                detail: "\(progress.completed) / \(progress.total)",
+                fraction: Double(progress.completed) / Double(max(progress.total, 1)),
+                cancel: false
+            )
+        }
+        return ShellProgressData(label: "Scanning", cancel: false)
     }
 
     func adoptSavedFolder() async {

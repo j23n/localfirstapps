@@ -4,6 +4,19 @@
 use adw::prelude::*;
 
 fn main() {
+    localcore_trace::init(localcore_trace::Init {
+        app: "localcontacts",
+        lanes: &[
+            localcore_trace::Lane {
+                kind: "FOREGROUND",
+                detail: "open_folder, load_persisted, list/detail refill",
+            },
+            localcore_trace::Lane {
+                kind: "BACKGROUND",
+                detail: "vcard/folder walk, conflict merge",
+            },
+        ],
+    });
     let launch = match contacts_gtk::parse_launch_args(std::env::args()) {
         Ok(launch) => launch,
         Err(error) => {

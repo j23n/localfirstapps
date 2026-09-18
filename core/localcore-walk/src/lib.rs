@@ -48,7 +48,7 @@ pub mod path_form;
 use localcore_conflict::{groups, parse_name};
 use localcore_vfs::{EntryKind, FileTime, Vfs, VfsError};
 
-pub use localcore_conflict::{ConflictCopy, ConflictGroup};
+pub use localcore_conflict::{is_conflict_name, ConflictCopy, ConflictGroup};
 pub use order::{localized_standard_compare, sort_names};
 pub use path_form::decomposed;
 
@@ -173,11 +173,13 @@ pub fn walk_with_hooks(
     on_progress: Option<&dyn Fn(usize)>,
     cancelled: Option<&dyn Fn() -> bool>,
 ) -> Option<WalkOutcome> {
+    let _span = localcore_trace::span_always("walk", "walk_with_hooks");
     let mut walker = Walker::new(vfs, is_content);
     let mut stack: Vec<(String, Option<usize>)> = vec![(root.to_string(), None)];
 
     while let Some((dir, parent)) = stack.pop() {
         if cancelled.is_some_and(|c| c()) {
+            localcore_trace::event("walk", "cancelled");
             return None;
         }
         let Some(mut subdirs) = walker.visit_directory(&dir, parent) else {
@@ -198,7 +200,18 @@ pub fn walk_with_hooks(
     if let Some(callback) = on_progress {
         walker.report(callback, true);
     }
-    Some(walker.finish())
+    let outcome = walker.finish();
+    localcore_trace::event(
+        "walk",
+        format!(
+            "done files={} folders={} failed={} conflicts={}",
+            outcome.files.len(),
+            outcome.directories.len(),
+            outcome.failed_directory_paths.len(),
+            outcome.conflict_groups.len()
+        ),
+    );
+    Some(outcome)
 }
 
 struct Walker<'a> {

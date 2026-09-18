@@ -23,7 +23,6 @@ OUT="${LOCALGALLERY_E2E_LIBRARY:-${TMPDIR:-/tmp}/localgallery-e2e-library}"
 SCRIPT="${ROOT}/apps/gallery/scripts/generate_test_library.py"
 MARKER="${OUT}/.generated"
 
-export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.97.1}"
 export LOCALGALLERY_E2E_COUNT="${COUNT}"
 export LOCALGALLERY_E2E_TODAY="${TODAY}"
 export LOCALGALLERY_E2E_SEED="${SEED}"

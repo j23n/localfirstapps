@@ -5,4 +5,5 @@ enum MusicTokens {
     static let accent = Color(red: 0.753, green: 0.224, blue: 0.169)
     static let accentDark = Color(red: 0.820, green: 0.278, blue: 0.220)
     static let cardRadius: CGFloat = 12
+    static let thumbRadius: CGFloat = 8
 }

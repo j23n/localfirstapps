@@ -1,18 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.j23n.LocalGallery</id>
+  <id>com.j23n.LocalGallery.Reference</id>
   <metadata_license>MPL-2.0</metadata_license>
   <project_license>MPL-2.0</project_license>
-  <name>LocalGallery</name>
-  <summary>Browse a folder of photos — same library as the iOS app</summary>
+  <name>LocalGallery (Reference)</name>
+  <summary>Frozen leftover GTK UI — same library as the iOS app</summary>
   <description>
     <p>
       LocalGallery treats a plain folder as the library. Sidecars travel with
-      the files. This Linux build is one window: a GNOME laptop layout and a
-      collapsed Mecha Comet layout (540×620 at 2×).
+      the files. This leftover Linux build is a frozen reference: a GNOME
+      laptop layout and a collapsed Mecha Comet layout (540×620 at 2×). The
+      kit shell is `localgallery` (`com.j23n.LocalGallery`).
     </p>
   </description>
-  <launchable type="desktop-id">com.j23n.LocalGallery.desktop</launchable>
+  <launchable type="desktop-id">com.j23n.LocalGallery.Reference.desktop</launchable>
   <url type="homepage">https://github.com/j23n/localgallery</url>
   <developer_name>Johannes</developer_name>
   <releases>

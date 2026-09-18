@@ -15,7 +15,7 @@ ui = ["dep:gtk", "dep:adw"]
 ml = ["gallery-session/ml", "gallery-ml/ort-backend"]
 
 [[bin]]
-name = "localgallery"
+name = "localgallery-reference"
 path = "src/main.rs"
 required-features = ["ui"]
 
@@ -35,6 +35,7 @@ notify = "6"
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png"] }
 md-5 = "0.10"
 png = "0.18"
+localcore-trace = { path = "../../../core/localcore-trace", features = ["subscriber"] }
 gtk = { package = "gtk4", version = "0.8", features = ["v4_14"], optional = true }
 adw = { package = "libadwaita", version = "0.6", features = ["v1_5"], optional = true }
 

@@ -19,7 +19,7 @@ sections = [
 id = "library"
 kind = "list"
 title = "Library"
-affordances = ["search", "sort", "primary-action"]
+affordances = ["search", "sort", "primary-action", "progress"]
 item_nav = { intent = "replace", destination = "now-playing" }
 # Search, ordering, and section labels are music-core policy.
 sections = [
@@ -31,7 +31,7 @@ sections = [
 id = "playlist-list"
 kind = "list"
 title = "Playlists"
-affordances = ["primary-action", "confirm"]
+affordances = ["primary-action", "confirm", "progress"]
 item_nav = { intent = "push", destination = "playlist-detail" }
 sections = [
     { id = "playlists", item = "media-item" },

@@ -19,6 +19,8 @@
   --memory-radius: 20px;
   --separator-opacity: 0.1;
   --accent-soft-opacity: 0.13;
+  --grid-gutter: 2px;
+  --thumb-radius: 8px;
 }
 @media (prefers-color-scheme: dark) {
   :root {

@@ -23,4 +23,9 @@ enum GalleryTokens {
     static let memoryRadius: CGFloat = 20
     static let separatorOpacity: Double = 0.1
     static let accentSoftOpacity: Double = 0.13
+    static let gridGutter: CGFloat = 2
+    static let thumbRadius: CGFloat = 8
+    static let displayFamily = "Newsreader"
+    static let displayStyle = "italic"
+    static let displayFile = "Newsreader-Italic[opsz,wght].ttf"
 }

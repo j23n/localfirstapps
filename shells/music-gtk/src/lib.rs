@@ -35,6 +35,7 @@ pub const KIT_BINDINGS: &[BindingId] = &[
     BindingId::ActionRow,
     BindingId::AdaptiveShell,
     BindingId::Banner,
+    BindingId::ChromeProgress,
     BindingId::ChoiceDropdown,
     BindingId::ConfirmDialog,
     BindingId::Diagnostics,
@@ -50,6 +51,7 @@ pub const KIT_BINDINGS: &[BindingId] = &[
     BindingId::PreferencesDialog,
     BindingId::PrimaryAction,
     BindingId::PrimaryMenu,
+    BindingId::ProgressRow,
     BindingId::SearchBar,
     BindingId::SearchEntry,
     BindingId::SettingsPage,
@@ -245,7 +247,7 @@ fn xdg_config_home() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shell_kit_gtk::measure_reuse;
+    use shell_kit_gtk::{measure_reuse, BindingId};
 
     #[test]
     fn comet_flag_is_only_an_initial_size_hint() {
@@ -300,8 +302,28 @@ mod tests {
     #[test]
     fn music_is_a_measured_second_consumer_of_the_gtk_kit() {
         let metrics = measure_reuse(contacts_gtk::KIT_BINDINGS, KIT_BINDINGS);
-        assert_eq!(metrics.first_unique, 25);
-        assert_eq!(metrics.second_unique, 27);
-        assert_eq!(metrics.shared, 23);
+        assert_eq!(metrics.first_unique, 28);
+        assert_eq!(metrics.second_unique, 29);
+        assert_eq!(metrics.shared, 25);
+    }
+
+    #[test]
+    fn gallery_music_share_media_item() {
+        assert!(gallery_gtk::KIT_BINDINGS.contains(&BindingId::MediaItem));
+        assert!(KIT_BINDINGS.contains(&BindingId::MediaItem));
+        let metrics = measure_reuse(gallery_gtk::KIT_BINDINGS, KIT_BINDINGS);
+        assert!(metrics.shared >= 1);
+        assert!(gallery_gtk::KIT_BINDINGS
+            .iter()
+            .any(|id| *id == BindingId::MediaItem
+                && KIT_BINDINGS.contains(&BindingId::MediaItem)));
+    }
+
+    #[test]
+    fn gallery_contacts_share_chip_bar() {
+        assert!(gallery_gtk::KIT_BINDINGS.contains(&BindingId::ChipBar));
+        assert!(contacts_gtk::KIT_BINDINGS.contains(&BindingId::ChipBar));
+        let metrics = measure_reuse(gallery_gtk::KIT_BINDINGS, contacts_gtk::KIT_BINDINGS);
+        assert!(metrics.shared >= 1);
     }
 }

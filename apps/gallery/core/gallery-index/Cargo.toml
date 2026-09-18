@@ -12,6 +12,7 @@ publish.workspace = true
 # is how that survives the port — `gallery_model::text`, re-exported as this
 # crate's `text`.
 gallery-model = { path = "../gallery-model" }
+localcore-trace = { path = "../../../../core/localcore-trace" }
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }

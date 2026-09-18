@@ -37,6 +37,9 @@ pub mod scan;
 
 pub use classify::{classify, MediaKind, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS};
 pub use localcore_walk::{
-    decomposed, localized_standard_compare, order, path_form, ConflictCopy, ConflictGroup,
+    decomposed, is_conflict_name, localized_standard_compare, order, path_form, ConflictCopy,
+    ConflictGroup,
 };
-pub use scan::{scan, scan_with_hooks, scan_with_progress, ScanInput, ScanOutcome, ScanStats};
+pub use scan::{
+    conflict_groups, scan, scan_with_hooks, scan_with_progress, ScanInput, ScanOutcome, ScanStats,
+};

@@ -1,7 +1,10 @@
 # GTK design pass — plan
 
 Status: HIG chrome pass landed (kit + Contacts + Music stage). Phase 5
-5.1–5.4 landed; next is the `gallery-gtk` kit skeleton (5.5). Written 2026-09-16; revised the same day
+kit sequence 5.1–5.7 + 5.9 year rail / ADR+docs landed; leftover GTK
+removal is still owner; `gtk-after/` is a written gap (mutter absent).
+Named 5.8 leftovers keep Phase 5 open. Written 2026-09-16; revised
+2026-09-17 (5.7 promotions + font; 5.9 year rail + close-out)
 (kit-first sequence, two-consumer rule, builders as the derivation
 lever); revised again against `main` @ `9082c72` (Phase 2 split into
 2a/2b/2c, accent-text rule for apps without ink, filter controls,
@@ -253,8 +256,8 @@ That is how `choice-dropdown` and diagnostics entered the kit.
 
 | Binding | First consumer (in-app) | Promoted to kit |
 |---|---|---|
-| Media row (rounded 48 thumb) + `thumb_radius` + `.thumb` | Music, Phase 4 | Phase 5, when Gallery folders / face review use it |
-| `chip_bar` (display chips; removable variant) | Contacts detail tags, Phase 3 | Phase 5, when Gallery tag chips use it |
+| Media row (rounded 48 thumb) + `thumb_radius` + `.thumb` | Music, Phase 4 | **5.7** — Gallery folders (64px). Face review still unbound |
+| `chip_bar` (display chips; removable variant) | Contacts detail tags, Phase 3 | **5.7** — Gallery photos tag chips |
 | Flush `GtkListView` + section model | Music, Phase 4, only if measured | Phase 5, if Gallery lists use the same adapter |
 | `media_tile(Timeline\|Card\|Hero)`, carousel, scrim cards | Gallery, Phase 5 | Not in this pass |
 | Mini-player | Music, Phase 4 | Not in this pass |
@@ -405,7 +408,9 @@ until promotion).
   button).
 - Loading → `AdwSpinner` status page; never "nothing found" before first
   load.
-- Long work → progress row with cancel (R5).
+- Long work → Settings `progress-row` with cancel (R5), plus chrome
+  `progress` (header spinner + label) after 500 ms. Do not reuse
+  `AdwBanner` for work; banners stay folder-level status.
 - Transient notices → `AdwToast`.
 - Folder-level status → `AdwBanner`.
 
@@ -497,6 +502,10 @@ captures stay optional.
      capture succeeds**. Do not commit empty or invented PNGs.
    - **CI does not run mutter.** Unit tests must not require a display
      beyond what `cargo test` already does in `shells/`.
+   - Gallery UI timings: `localgallery --bench --folder` prints
+     `[gallery-gtk-perf]` and quits. `scripts/gtk-perf.sh smoke|20k`
+     starts mutter the same way; 20k also runs ignored
+     `gallery-gtk` `e2e_catalog` (no display). Not a `rust.yml` job.
 
 Exit: `contacts-gtk` and `music-gtk` build and test on gtk4 0.11 /
 libadwaita 0.9; the snapshot harness is in both apps (**landed**).
@@ -750,7 +759,9 @@ should take it (needs a second consumer).
 ### Phase 5 — Gallery on the kit
 
 Living slices and gates: [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
-§Phase 5 (5.1–5.9). 5.1–5.4 landed (`gallery-gtk` is a pin crate; kit UI is 5.5).
+§Phase 5 (5.1–5.9). Kit sequence 5.1–5.7 + 5.9 year rail / ADR+docs
+landed. Leftover GTK removal is still **5.9 owner**. Next is named
+5.8 leftovers (Phase 5 stays open).
 
 1. **Spec first (5.1)**: write `apps/gallery/ui-spec/screens.toml` from the
    hand-built UI and iOS IA, R4 kinds only. Extend `gen_r14.py` →
@@ -812,27 +823,24 @@ Living slices and gates: [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
    app id `com.j23n.LocalGallery.Reference`, so both can run side by side.
    Mark `apps/gallery/linux/src/ui` frozen in its README: no new features,
    removed once gallery-gtk reaches parity and the owner agrees.
-5. **Font (D5), here not earlier.**
-   - Add `design/fonts/Newsreader-Italic[opsz,wght].ttf` + `OFL.txt`.
-   - Amend ADR 0004 R11 so tokens may carry a *display typeface* (family +
-     file), and R10 so the display face is part of brand. Add
-     `[fonts] display = { family = "Newsreader", style = "italic", file = "…" }`
-     to `gallery.toml`.
-   - Load at startup with `pango::FontMap::add_font_file` on the default
-     font map, falling back to fontconfig `FcConfigAppFontAddFile`.
-   - Packaging installs the file into `share/fonts/` (Flatpak
-     `/app/share/fonts`).
+5. **Font (D5), landed in 5.7.**
+   - `design/fonts/Newsreader-Italic[opsz,wght].ttf` + `OFL.txt` (SIL OFL 1.1).
+   - ADR 0004 R10/R11 amended: `[fonts] display` is brand when present.
+   - `gallery-gtk` loads the file with `pango::FontMap::add_font_file` on
+     the default map (`CARGO_MANIFEST_DIR/../../design/fonts`, then XDG,
+     then `/app/share/fonts`). Missing file logs and continues. No
+     fontconfig crate.
    - Only `gallery-gtk` CSS uses the family, in class `.memory-title`.
 6. **Screens** (worked example). Timeline tiles, hero cards, carousel,
-   and viewer chrome start in `gallery-gtk`. Promotions in this phase,
+   and viewer chrome start in `gallery-gtk`. Promotions in **5.7**,
    because Gallery is the second consumer:
-   - Music's media row + `thumb_radius` + `.thumb` move to the kit
-     (Gallery folders, face review). Re-snapshot Music.
-   - Contacts' chip row moves to the kit as `chip_bar` with a removable
-     variant (Gallery tags). Re-snapshot Contacts. `AdwWrapBox` per L6.
-   - Music's Flush list adapter, if it exists, moves only if Gallery's
-     lists use the same `ViewStructure` section adapter.
-   - `grid_gutter` token added here.
+   - Music's media row + `thumb_radius` + `.thumb` are in the kit
+     (Gallery folders at 64px). Face review stays unbound.
+   - Contacts' chip row is kit `chip_bar` with a removable variant
+     (Gallery photos tags + typeahead). `AdwWrapBox` per L6.
+   - Music's Flush list adapter stays in Music. Gallery does not use
+     the same section adapter.
+   - `grid_gutter` token drives `GtkGridView` spacing.
 
 | Screen | Compact | Wide |
 |---|---|---|
@@ -850,8 +858,10 @@ Living slices and gates: [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
    over the `gio::ListModel` adapter from step 2 (ADR 0003 R4). No
    `FlowBox`. Thumbnails resolve `thumbnail_ref` in factory `bind` and
    cancel in `unbind`.
-8. Year scrubber on the photos timeline is **5.9 optional**. If it
-   does not ship, 5.9 records it as a written gap — not “later”.
+8. Year rail on the Photos tab **landed (5.9)** as `gallery-gtk`
+   chrome (`years_from_structure` from existing month sections).
+   Overlay on `photos_scroll`; hidden unless more than one year.
+   Not a kit kind. Leftover GTK removal is still **5.9 owner**.
 
 Exit:
 - Every screen in `screens.toml` routed, each backed by a `gallery-ffi`
@@ -859,7 +869,8 @@ Exit:
   queries.
 - `cargo tree -d` clean for the pinned Gallery dependencies; Gallery
   core tests green.
-- Screenshots of reference vs new at both sizes and schemes.
+- Screenshots of reference vs new at both sizes and schemes —
+  `gtk-after/` is a written gap (mutter absent; no invented PNGs).
 - Scroll measured on the 20k-photo tree (record jank; fix in this crate).
 - Reference binary still builds.
 
@@ -879,11 +890,13 @@ Exit:
 - Update `docs/IMPLEMENTATION-PLAN.md` in the same change whenever
   this pass changes inventory or sequence: leftover vs `gallery-gtk`,
   kit promotion / two-consumer evidence, token exceptions, deferred
-  items (year scrubber, reference UI removal, Flush promotion). The
+  items (year rail **landed (5.9)**; leftover GTK removal still
+  **5.9 owner**; Flush promotion still Music-only). The
   implementation plan is the living backlog; this file is the GTK
   design sequence. Findings do not live only here.
-- `docs/screenshots/gtk-after/` committed; README gets one GTK screenshot
-  per shipped kit app.
+- `docs/screenshots/gtk-after/` is a **written gap**: mutter is
+  absent; no after-shots were invented. README does not embed
+  missing GTK shots.
 
 ## Order and dependencies
 
@@ -925,8 +938,11 @@ and is re-snapshotted in every consumer.
   **landed**; Phase 2b typed builders **landed**; Phase 2c row polish
   **landed**. Contacts `gtk-before/` baselines are in tree; further
   mutter captures stay optional. Contacts and Music kit stages landed.
-  Phase 5 Gallery 5.1–5.4 landed (spec, location windows, leftover
-  freeze, shells pins). Next is the `gallery-gtk` kit skeleton (5.5).
+  Phase 5 Gallery kit sequence 5.1–5.7 + 5.9 year rail / ADR+docs
+  landed (spec, location windows, leftover freeze, shells pins, kit
+  skeleton, remaining screens, promotions + font, Photos year rail).
+  Named 5.8 leftovers keep Phase 5 open. Leftover UI removal still
+  needs an owner yes. `gtk-after/` is a gap (mutter absent).
 - Headless mutter in CI may not be available. Snapshots stay a local
   script; unit tests must not require them.
 - `GtkSectionModel` adapters, if Music needs Flush, stay in `music-gtk`

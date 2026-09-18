@@ -23,6 +23,12 @@ pub struct Config {
     /// `{"unix_bytes":[…]}` so a tab or a non-Unicode name is not dropped.
     #[serde(default, skip_serializing_if = "Option::is_none", with = "path_serde")]
     pub library_root: Option<PathBuf>,
+    /// Optional LocalContacts `.vcf` folder. Files only (ADR 0007 R15).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "path_serde")]
+    pub contacts_root: Option<PathBuf>,
+    /// ADR 0005 R5 per-device id. Must match `localcore_log::valid_device`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub device_id: String,
 }
 
 /// How [`Config::load_from`] finished.
@@ -274,6 +280,7 @@ mod tests {
         let path = dir.path().join("config.json");
         let cfg = Config {
             library_root: Some(PathBuf::from("/lib/vacation photos")),
+            ..Config::default()
         };
         cfg.save_to(&path).unwrap();
         let text = String::from_utf8(std::fs::read(&path).unwrap()).unwrap();
@@ -308,6 +315,7 @@ mod tests {
         ]));
         let cfg = Config {
             library_root: Some(root.clone()),
+            ..Config::default()
         };
         cfg.save_to(&path).unwrap();
         let text = String::from_utf8(std::fs::read(&path).unwrap()).unwrap();
@@ -326,6 +334,7 @@ mod tests {
         let path = nested.join("config.json");
         Config {
             library_root: Some(PathBuf::from("/lib")),
+            ..Config::default()
         }
         .save_to(&path)
         .unwrap();

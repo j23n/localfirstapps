@@ -22,6 +22,9 @@ pub(crate) struct FolderTable {
 
 impl FolderTable {
     pub(crate) fn new(folders: Vec<ScannedFolderHost>, photo_ids: Vec<String>) -> Self {
+        let _span = localcore_trace::span("folders", "FolderTable::new")
+            .extra("folders", folders.len())
+            .extra("ids", photo_ids.len());
         let mut children = vec![Vec::new(); folders.len()];
         let mut roots = Vec::new();
         let mut by_id = HashMap::with_capacity(folders.len());
@@ -113,7 +116,7 @@ pub(crate) fn folder_text_row(folder: &ScannedFolderHost) -> GalleryTextRow {
 
 pub(crate) fn people_text_row(person: &TagSuggestion) -> GalleryTextRow {
     GalleryTextRow {
-        id: person.id.clone(),
+        id: person.full_path.clone(),
         title: person.display_name.clone(),
         subtitle: None,
         trailing: Some(photo_count_label(person.count)),

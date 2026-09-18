@@ -121,7 +121,9 @@ id = "source-files"
 kind = "list"
 title = "Files"
 legacy_routes = ["/blobs"]
-# Imported source files are listed without a preview.
+affordances = ["progress"]
+# Imported source files are listed without a preview. Long import
+# work uses chrome progress after 500 ms.
 sections = [
     { id = "imports", item = "text-row" },
 ]

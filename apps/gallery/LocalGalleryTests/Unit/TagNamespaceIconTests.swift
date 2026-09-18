@@ -12,6 +12,7 @@ final class TagNamespaceIconTests: XCTestCase {
         XCTAssertEqual(TagNamespace.icon(for: "Objects"), "cube.fill")
         XCTAssertEqual(TagNamespace.icon(for: "Scenes"), "mountain.2.fill")
         XCTAssertEqual(TagNamespace.icon(for: "Text"), "textformat")
+        XCTAssertEqual(TagNamespace.icon(for: "Date"), "calendar")
     }
 
     func testNamespaceMatchIsCaseInsensitive() {
@@ -62,6 +63,9 @@ final class TagNamespaceIconTests: XCTestCase {
         let person = TagSuggestion(id: "people/alice", displayName: "Alice",
                                     fullPath: "People/Alice", namespace: "People", count: 7)
         XCTAssertEqual(person.icon, "person.fill")
+        let date = TagSuggestion(id: "date:2023-06", displayName: "June 2023",
+                                  fullPath: "Date/June 2023", namespace: "Date", count: 4)
+        XCTAssertEqual(date.icon, "calendar")
     }
 
     func testFlatSuggestionFallsBackToTagIcon() {

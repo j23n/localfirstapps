@@ -1,0 +1,17 @@
+[package]
+name = "localcore-trace"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Shared debug traces for every LocalFiles core and shell"
+
+[features]
+default = []
+# Binaries install the subscriber. Cores emit only.
+subscriber = ["dep:tracing-subscriber"]
+
+[dependencies]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }

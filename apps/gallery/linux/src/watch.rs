@@ -118,6 +118,7 @@ impl Drop for WatchHandle {
 /// returned receiver. `mute` retains a dirty bit while the host is writing
 /// sidecars or walking the tree; the host reconciles once on unmute.
 pub fn start(root: PathBuf, mute: Arc<MuteGate>) -> std::io::Result<(WatchHandle, Receiver<()>)> {
+    localcore_trace::event("watch", "folder watch start (background inotify)");
     let (raw_tx, raw_rx) = mpsc::channel::<()>();
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {

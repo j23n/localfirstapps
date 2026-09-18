@@ -1,13 +1,16 @@
-//! Display decode of the original file (viewer). JPEG/PNG via `image`,
-//! HEIC via the core's heif-oxide path. Not the tagging preprocess.
+//! Display decode of the original file (viewer / XDG). JPEG/PNG via `image`
+//! with EXIF Orientation applied. HEIC uses the container transform only
+//! (do not apply EXIF on top). Movies grab one frame via [`crate::video`].
+//! Analysis uses [`crate::heic`] and never samples video.
 
 use std::io::Cursor;
 
 use gallery_meta::media::isobmff;
 use gallery_ml::{HeifDecoder, ImageDecoder, ImageKind};
+use image::metadata::Orientation;
 use image::ImageDecoder as _;
 
-/// RGB8 pixels plus size, already oriented for HEIC (container transform).
+/// RGB8 pixels plus size, already oriented (EXIF for JPEG/PNG; HEIC container).
 #[derive(Debug, Clone)]
 pub struct RgbFrame {
     /// Pixel width.
@@ -59,8 +62,18 @@ pub fn decode_limited(path: &str, max_side: u32) -> Option<RgbFrame> {
 
 /// [`decode_limited`] with explicit budgets (tests, tight hosts).
 pub fn decode_limited_with(path: &str, max_side: u32, limits: DecodeLimits) -> Option<RgbFrame> {
+    let _span = localcore_trace::span("decode", "decode_limited").extra("max_side", max_side);
+    localcore_trace::detail("decode", format!("path={path}"));
+    // Movies are not stills. Do not read them into the JPEG/HEIC budget.
+    if crate::video::is_video_path(path) {
+        return crate::video::decode_frame(path, max_side);
+    }
     let meta = std::fs::metadata(path).ok()?;
     if !limits.allows_compressed(meta.len()) {
+        localcore_trace::event(
+            "decode",
+            format!("refuse compressed {} bytes for {path}", meta.len()),
+        );
         return None;
     }
     let bytes = std::fs::read(path).ok()?;
@@ -70,9 +83,12 @@ pub fn decode_limited_with(path: &str, max_side: u32, limits: DecodeLimits) -> O
     let image = if looks_like_heif(&bytes) {
         if let Some((w, h)) = isobmff::max_declared_extent(&bytes) {
             if !limits.allows_pixels(w, h) {
+                localcore_trace::event("decode", format!("refuse HEIC {w}x{h} for {path}"));
                 return None;
             }
         }
+        // Container irot/imir only. HeifDecoder also undoes heif-oxide's
+        // inverted imir axis (iPhone selfies). Do not apply EXIF on top.
         HeifDecoder.decode(path, &bytes, ImageKind::Heic).ok()?
     } else {
         decode_raster(&bytes, limits)?
@@ -105,10 +121,19 @@ fn decode_raster(bytes: &[u8], limits: DecodeLimits) -> Option<image::DynamicIma
     let mut img_limits = image::Limits::default();
     img_limits.max_alloc = Some(limits.max_alloc_bytes());
     decoder.set_limits(img_limits).ok()?;
-    image::DynamicImage::from_decoder(decoder).ok()
+    let mut image = image::DynamicImage::from_decoder(decoder).ok()?;
+    // Same kamadak-exif read as analysis. `decoder.orientation()` misses
+    // iPhone JPEG APP1 / PNG eXIf. HEIC selfies are the `imir` path above.
+    let orientation = gallery_ml::preprocess::read_exif_orientation(bytes)
+        .and_then(Orientation::from_exif)
+        .unwrap_or(Orientation::NoTransforms);
+    image.apply_orientation(orientation);
+    Some(image)
 }
 
-fn looks_like_heif(bytes: &[u8]) -> bool {
+/// ISO-BMFF `ftyp` brands leftover display and the analysis host agree on.
+/// Display pixel/byte caps stay in [`decode_limited`]; the host does not use them.
+pub(crate) fn looks_like_heif(bytes: &[u8]) -> bool {
     bytes.len() >= 12
         && &bytes[4..8] == b"ftyp"
         && matches!(
@@ -197,5 +222,59 @@ mod tests {
         assert!(DecodeLimits::DEFAULT.allows_pixels(1, 1));
         assert!(DecodeLimits::DEFAULT.allows_compressed(1024));
         assert!(!DecodeLimits::DEFAULT.allows_compressed(0));
+    }
+
+    fn with_exif_orientation(jpeg: &[u8], orientation: u16) -> Vec<u8> {
+        assert_eq!(&jpeg[..2], [0xFF, 0xD8]);
+        let mut app1 = vec![0xFF, 0xE1, 0x00, 0x00];
+        app1.extend_from_slice(b"Exif\0\0");
+        app1.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00]);
+        app1.extend_from_slice(&[0x01, 0x00]);
+        app1.extend_from_slice(&[0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00]);
+        app1.extend_from_slice(&[orientation as u8, (orientation >> 8) as u8, 0x00, 0x00]);
+        app1.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        let len = u16::try_from(app1.len() - 2).expect("APP1");
+        app1[2] = (len >> 8) as u8;
+        app1[3] = len as u8;
+        let mut out = vec![0xFF, 0xD8];
+        out.extend_from_slice(&app1);
+        out.extend_from_slice(&jpeg[2..]);
+        out
+    }
+
+    #[test]
+    fn jpeg_applies_exif_orientation_6() {
+        let mut rgb = image::RgbImage::new(2, 1);
+        rgb.put_pixel(0, 0, image::Rgb([255, 0, 0]));
+        rgb.put_pixel(1, 0, image::Rgb([0, 255, 0]));
+        let mut jpeg = Vec::new();
+        image::DynamicImage::ImageRgb8(rgb)
+            .write_to(&mut Cursor::new(&mut jpeg), image::ImageFormat::Jpeg)
+            .unwrap();
+        let bytes = with_exif_orientation(&jpeg, 6);
+        assert_eq!(
+            gallery_ml::preprocess::read_exif_orientation(&bytes),
+            Some(6)
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rot.jpg");
+        std::fs::write(&path, &bytes).unwrap();
+        let frame = decode_limited(path.to_str().unwrap(), 64).expect("jpeg");
+        assert_eq!((frame.width, frame.height), (1, 2));
+    }
+
+    #[test]
+    fn a_movie_is_not_read_as_a_still() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clip.mp4");
+        std::fs::write(&path, b"ftypisomnotanimage").unwrap();
+        let limits = DecodeLimits {
+            max_compressed_bytes: 4,
+            max_pixels: 1_000_000,
+        };
+        // Under the still-image budget this would be refused for size.
+        // The video branch must not apply that budget.
+        assert!(path.metadata().unwrap().len() as u64 > limits.max_compressed_bytes);
+        assert!(decode_limited_with(path.to_str().unwrap(), 64, limits).is_none());
     }
 }

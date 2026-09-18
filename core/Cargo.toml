@@ -10,6 +10,7 @@ members = [
     "localcore-id",
     "localcore-log",
     "localcore-queue",
+    "localcore-trace",
     "localcore-ui",
     "localcore-vfs",
     "localcore-walk",
@@ -30,3 +31,9 @@ serde_json = "1"
 sha2 = "0.10"
 # default-features = false: no cargo-metadata in a crate that may ship.
 uniffi = { version = "0.32.0", default-features = false }
+tracing = { version = "0.1", default-features = false, features = ["std", "attributes"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "env-filter",
+    "registry",
+    "std",
+] }

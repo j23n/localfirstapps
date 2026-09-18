@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use localcore_conflict::ConflictGroup;
 use localcore_vfs::{Vfs, VfsError};
-use localcore_walk::walk;
+use localcore_walk::{walk_with_hooks, WalkOutcome};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::display::{StatusRow, StatusSeverity, TextRow};
@@ -111,7 +111,42 @@ impl Store {
     /// Walk audio and playlist files, excluding every Syncthing copy from
     /// content and identity.
     pub fn open(vfs: &dyn Vfs, root: &str) -> Result<Self, StoreError> {
-        let outcome = walk(vfs, root, |name| classify_name(name).is_some());
+        Self::open_with_hooks(vfs, root, None, None)
+            .map(|store| store.expect("open without cancel cannot be cancelled"))
+    }
+
+    /// [`open`], with walk progress and an optional cancel hook.
+    ///
+    /// `Ok(None)` means the caller cancelled. There is no partial store.
+    pub fn open_with_hooks(
+        vfs: &dyn Vfs,
+        root: &str,
+        on_progress: Option<&dyn Fn(usize)>,
+        cancelled: Option<&dyn Fn() -> bool>,
+    ) -> Result<Option<Self>, StoreError> {
+        let _span = localcore_trace::span_always("music", "Store::open");
+        let Some(outcome) = walk_with_hooks(
+            vfs,
+            root,
+            &|name| classify_name(name).is_some(),
+            on_progress,
+            cancelled,
+        ) else {
+            return Ok(None);
+        };
+        Ok(Some(Self::from_walk(vfs, root, outcome)?))
+    }
+
+    fn from_walk(vfs: &dyn Vfs, root: &str, outcome: WalkOutcome) -> Result<Self, StoreError> {
+        localcore_trace::event(
+            "music",
+            format!(
+                "walk files={} folders={} failed={}",
+                outcome.files.len(),
+                outcome.directories.len(),
+                outcome.failed_directory_paths.len()
+            ),
+        );
         if outcome.directories.is_empty() {
             if vfs.try_exists(root)? {
                 return Ok(Self::empty(root));
@@ -205,6 +240,18 @@ impl Store {
     /// Reload while retaining metadata supplied by the host for unchanged ids
     /// and retaining the current query/sort intent.
     pub fn reload(&mut self, vfs: &dyn Vfs) -> Result<(), StoreError> {
+        self.reload_with_hooks(vfs, None, None)
+            .map(|done| done.expect("reload without cancel cannot be cancelled"))
+    }
+
+    /// [`reload`], with walk progress and an optional cancel hook.
+    pub fn reload_with_hooks(
+        &mut self,
+        vfs: &dyn Vfs,
+        on_progress: Option<&dyn Fn(usize)>,
+        cancelled: Option<&dyn Fn() -> bool>,
+    ) -> Result<Option<()>, StoreError> {
+        let _span = localcore_trace::span_always("music", "Store::reload");
         let metadata: BTreeMap<String, (u64, Option<localcore_vfs::FileTime>, MetadataUpdate)> =
             self.tracks
                 .iter()
@@ -230,7 +277,10 @@ impl Store {
                 .collect();
         let query = self.projection.query.clone();
         let sort = self.projection.sort;
-        let mut next = Self::open(vfs, &self.root)?;
+        let mut next = match Self::open_with_hooks(vfs, &self.root, on_progress, cancelled)? {
+            Some(next) => next,
+            None => return Ok(None),
+        };
         let unchanged = metadata
             .into_values()
             .filter_map(|(source_size, source_mtime, update)| {
@@ -248,7 +298,7 @@ impl Store {
         }
         next.set_library_view(query, sort);
         *self = next;
-        Ok(())
+        Ok(Some(()))
     }
 
     /// Projected tracks, in stable-id order. Shells use windowed rows instead.
@@ -323,6 +373,8 @@ impl Store {
         &mut self,
         updates: Vec<MetadataUpdate>,
     ) -> Result<u64, StoreError> {
+        let _span = localcore_trace::span("music", "Store::apply_metadata_batch")
+            .extra("n", updates.len());
         for update in updates {
             let track = self
                 .tracks
@@ -341,6 +393,15 @@ impl Store {
         }
         self.projection.rebuild(&self.tracks);
         Ok(self.projection.generation)
+    }
+
+    /// Tracks still waiting on host metadata.
+    #[must_use]
+    pub fn pending_metadata_count(&self) -> usize {
+        self.tracks
+            .iter()
+            .filter(|track| !track.metadata_loaded)
+            .count()
     }
 
     /// Windowed host metadata work, never a whole Track domain record.

@@ -50,6 +50,7 @@ enum TagNamespace {
         case "objects":   return "cube.fill"
         case "scenes":    return "mountain.2.fill"
         case "text":      return "textformat"
+        case "date":      return "calendar"
         default:          return "tag.fill"
         }
     }

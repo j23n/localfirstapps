@@ -30,6 +30,7 @@ public enum Affordance: String, Sendable, CaseIterable, Hashable {
     case primaryAction = "primary-action"
     case overflow = "overflow"
     case banner = "banner"
+    case progress = "progress"
     case confirm = "confirm"
 }
 

@@ -23,6 +23,7 @@ affordances = [
     "primary-action",
     "overflow",
     "banner",
+    "progress",
     "confirm",
 ]
 

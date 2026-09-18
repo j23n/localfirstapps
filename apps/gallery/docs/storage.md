@@ -54,22 +54,23 @@ uses as a library — the cache is per-device.
 
 ## Person state (tier 2)
 
-Hidden / featured / me / cover-photo / contact-link decisions are
-**dual-written**. UserDefaults is still the process snapshot
-(`hiddenPeople`, `pinnedPeople`, `featuredPhotoByPerson`,
-`mePersonPath`, `personContactLinks`). The same mutations also append
-to an event log at:
+Hidden / featured / me / cover-photo / contact-link decisions live in
+the synced event log after folder attach:
 
 `{library}/.gallery/log/<dev>/YYYY-MM.ndjson`
 
-The log is not yet the authority. On attach, this device may migrate
-the UserDefaults snapshot into the log (one-shot: a `person_migrated`
-marker written last). A later project can refresh in-memory state from
-the log, but UserDefaults remains until cutover.
+That log is the authority. The five person keys
+(`hiddenPeople`, `pinnedPeople`, `featuredPhotoByPerson`,
+`mePersonPath`, `personContactLinks`) are not written back to
+UserDefaults. On attach, this device may migrate a leftover
+UserDefaults snapshot into the log (one-shot: a `person_migrated`
+marker written last) and then drop those keys.
 
 The log syncs with the library. The device id (`galleryDeviceId` in
 UserDefaults) is the ADR 0005 R5 per-device exception and must not
-sync. Memory chrome (`hiddenMemories`, …) is not in this log.
+sync. Memory chrome (`hiddenMemories`, `seenMemoryIDs`,
+`surfacedClusters`, `birthdayMemoriesEnabled`, `memoriesGeneratedDay`)
+is still a UserDefaults snapshot and is not in this log.
 
 This is a schema-defined domain event log, not a diagnostic log. It syncs
 because replayed person decisions must follow the folder.

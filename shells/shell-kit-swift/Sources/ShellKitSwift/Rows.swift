@@ -190,6 +190,61 @@ public struct ShellStatusRow: View {
 }
 
 @MainActor
+public struct ShellProgressChip: View {
+    public let data: ShellProgressData
+
+    public init(_ data: ShellProgressData) {
+        self.data = data
+    }
+
+    public var body: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+            Text(data.label)
+                .lineLimit(1)
+                .layoutPriority(0)
+            if let detail = data.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
+            }
+        }
+        .font(.caption.weight(.semibold))
+    }
+}
+
+@MainActor
+public struct ShellProgressRow: View {
+    public let data: ShellProgressData
+    public let onCancel: (@MainActor () -> Void)?
+
+    public init(
+        _ data: ShellProgressData,
+        onCancel: (@MainActor () -> Void)? = nil
+    ) {
+        self.data = data
+        self.onCancel = onCancel
+    }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            ShellProgressChip(data)
+            Spacer(minLength: 8)
+            if data.cancel, let onCancel {
+                Button("Cancel", action: onCancel)
+                    .font(.subheadline)
+                    .buttonStyle(.borderless)
+                    .layoutPriority(2)
+            }
+        }
+    }
+}
+
+@MainActor
 public struct ShellChartRow: View {
     public let data: ShellChartRowData
 

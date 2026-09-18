@@ -81,15 +81,15 @@ pub fn text_row(data: &TextRowData) -> adw::ActionRow {
 ///
 /// App-owned references such as `artwork:<id>` intentionally remain opaque
 /// to the kit; the shell can replace the prefix image after host resolution.
+/// The prefix `gtk::Image` is named `thumb` and has class `.thumb`.
 pub fn media_item(data: &MediaItemData) -> adw::ActionRow {
     let row = plain_action_row(data.label.as_deref().unwrap_or_default());
     if let Some(badge) = &data.badge {
         row.set_subtitle(badge);
     }
+    let thumb_px = if data.thumb_px > 0 { data.thumb_px } else { 48 };
     let image = if let Some(texture) = &data.texture {
-        let image = gtk::Image::from_paintable(Some(texture));
-        image.set_pixel_size(48);
-        image
+        gtk::Image::from_paintable(Some(texture))
     } else if let Some(path) = data.thumbnail_ref.strip_prefix("file:") {
         gtk::Image::from_file(path)
     } else {
@@ -108,8 +108,19 @@ pub fn media_item(data: &MediaItemData) -> adw::ActionRow {
         };
         gtk::Image::from_icon_name(&icon)
     };
-    image.set_pixel_size(48);
+    image.set_pixel_size(thumb_px);
+    image.add_css_class("thumb");
+    image.set_widget_name("thumb");
     row.add_prefix(&image);
+    if let Some(trailing) = &data.trailing {
+        row.add_suffix(&dim_suffix(trailing, true));
+    }
+    if data.navigates {
+        row.set_activatable(true);
+        let chevron = gtk::Image::from_icon_name("go-next-symbolic");
+        chevron.set_valign(gtk::Align::Center);
+        row.add_suffix(&chevron);
+    }
     row
 }
 
@@ -231,6 +242,9 @@ pub fn nav_row(data: &NavRowData) -> adw::ActionRow {
 
 pub fn progress_row(data: &ProgressRowData) -> adw::ActionRow {
     let row = plain_action_row(&data.label);
+    if let Some(detail) = &data.detail {
+        row.set_subtitle(detail);
+    }
     let bar = gtk::ProgressBar::new();
     bar.set_hexpand(true);
     bar.set_valign(gtk::Align::Center);
@@ -246,6 +260,33 @@ pub fn progress_row(data: &ProgressRowData) -> adw::ActionRow {
         row.add_suffix(&cancel);
     }
     row
+}
+
+/// Apply live values to an existing Settings progress row.
+pub fn apply_progress_row(row: &adw::ActionRow, data: &ProgressRowData) {
+    row.set_title(&data.label);
+    row.set_subtitle(data.detail.as_deref().unwrap_or(""));
+    if let Some(bar) = find_progress_bar(row) {
+        match data.fraction {
+            Some(fraction) => bar.set_fraction(fraction.clamp(0.0, 1.0)),
+            None => bar.pulse(),
+        }
+    }
+}
+
+fn find_progress_bar(root: &impl IsA<gtk::Widget>) -> Option<gtk::ProgressBar> {
+    let widget = root.as_ref();
+    if let Ok(bar) = widget.clone().downcast::<gtk::ProgressBar>() {
+        return Some(bar);
+    }
+    let mut child = widget.first_child();
+    while let Some(node) = child {
+        if let Some(bar) = find_progress_bar(&node) {
+            return Some(bar);
+        }
+        child = node.next_sibling();
+    }
+    None
 }
 
 fn status_icon(severity: StatusSeverity) -> &'static str {
@@ -353,9 +394,7 @@ pub fn item_widget(kind: ItemKind) -> gtk::Widget {
         .upcast(),
         ItemKind::MediaItem => media_item(&MediaItemData {
             thumbnail_ref: "symbol:audio-x-generic".into(),
-            label: None,
-            badge: None,
-            texture: None,
+            ..MediaItemData::default()
         })
         .upcast(),
         ItemKind::FieldRow => field_row_widget(&FieldRowData {
@@ -381,6 +420,7 @@ pub fn item_widget(kind: ItemKind) -> gtk::Widget {
         .upcast(),
         ItemKind::ProgressRow => progress_row(&ProgressRowData {
             label: String::new(),
+            detail: None,
             fraction: None,
             cancel: false,
         })
@@ -405,6 +445,22 @@ pub fn item_widget(kind: ItemKind) -> gtk::Widget {
 mod tests {
     use super::*;
     use gtk::prelude::{Cast, IsA, WidgetExt};
+
+    fn find_named_image(root: &gtk::Widget, name: &str) -> Option<gtk::Image> {
+        if let Ok(image) = root.clone().downcast::<gtk::Image>() {
+            if image.widget_name() == name {
+                return Some(image);
+            }
+        }
+        let mut child = root.first_child();
+        while let Some(node) = child {
+            if let Some(hit) = find_named_image(&node, name) {
+                return Some(hit);
+            }
+            child = node.next_sibling();
+        }
+        None
+    }
 
     fn find_widget<T: IsA<gtk::Widget>>(root: &gtk::Widget) -> Option<T> {
         if let Ok(hit) = root.clone().downcast::<T>() {
@@ -473,7 +529,7 @@ mod tests {
                 thumbnail_ref: "symbol:audio-x-generic".into(),
                 label: Some(title.into()),
                 badge: Some("Artist & Friends".into()),
-                texture: None,
+                ..MediaItemData::default()
             });
             assert!(!media.uses_markup());
             assert_eq!(media.title().as_str(), title);
@@ -582,6 +638,22 @@ mod tests {
             });
             assert!(row.has_css_class("destructive-action"));
             assert_eq!(row.title().as_str(), "Delete");
+        });
+    }
+
+    #[test]
+    fn media_item_thumb_is_named_and_48px_by_default() {
+        crate::with_adw(|| {
+            let row = media_item(&MediaItemData {
+                thumbnail_ref: "symbol:audio-x-generic".into(),
+                label: Some("Track".into()),
+                ..MediaItemData::default()
+            });
+            let thumb = find_named_image(row.upcast_ref(), "thumb").expect("thumb");
+            assert!(thumb.has_css_class("thumb"));
+            assert_eq!(thumb.widget_name().as_str(), "thumb");
+            assert_eq!(thumb.pixel_size(), 48);
+            assert!(find_image_with_icon(row.upcast_ref(), "go-next-symbolic").is_none());
         });
     }
 

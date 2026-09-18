@@ -83,6 +83,7 @@ pub enum Affordance {
     PrimaryAction,
     Overflow,
     Banner,
+    Progress,
     Confirm,
 }
 
@@ -95,6 +96,7 @@ impl Affordance {
         Self::PrimaryAction,
         Self::Overflow,
         Self::Banner,
+        Self::Progress,
         Self::Confirm,
     ];
 
@@ -107,6 +109,7 @@ impl Affordance {
             Self::PrimaryAction => "primary-action",
             Self::Overflow => "overflow",
             Self::Banner => "banner",
+            Self::Progress => "progress",
             Self::Confirm => "confirm",
         }
     }

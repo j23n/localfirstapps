@@ -17,6 +17,10 @@ struct PersonCard: View {
         store.effectiveContact(forPersonPath: tag.fullPath, displayName: tag.displayName) != nil
     }
 
+    private var isMe: Bool {
+        store.people.isMe(tag.fullPath)
+    }
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             if let photo = coverPhoto {
@@ -41,12 +45,14 @@ struct PersonCard: View {
                 endPoint: .bottom
             )
 
-            // Top-right badges. Featured stays rightmost (matches existing
-            // muscle memory); the contact-link badge sits to its left when
-            // both apply.
+            // Top-right badges. Featured stays rightmost; contact and Me
+            // sit to its left when they apply.
             HStack(spacing: 4) {
                 if isLinkedToContact {
                     badgeCircle(systemName: "person.text.rectangle.fill")
+                }
+                if isMe {
+                    badgeCircle(systemName: "person.crop.circle.badge.checkmark")
                 }
                 if featured {
                     badgeCircle(systemName: "star.fill")

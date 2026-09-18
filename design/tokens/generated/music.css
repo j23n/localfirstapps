@@ -5,6 +5,7 @@
   --accent-fg-color: #FFFFFF;
   --accent: #C0392B;
   --card-radius: 12px;
+  --thumb-radius: 8px;
 }
 @media (prefers-color-scheme: dark) {
   :root {

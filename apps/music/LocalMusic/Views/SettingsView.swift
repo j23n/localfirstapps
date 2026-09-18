@@ -52,24 +52,8 @@ struct SettingsView: View {
                         LabeledContent("Last Synced", value: lastSynced, format: .dateTime)
                     }
 
-                    if library.isScanning {
-                        if let progress = library.scanProgress, progress.total > 0 {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ProgressView(value: Double(progress.completed),
-                                             total: Double(max(progress.total, 1)))
-                                Text("Scanning \(progress.completed) of \(progress.total)…")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                            }
-                        } else {
-                            HStack {
-                                ProgressView()
-                                Text("Scanning folder…")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                    if let progress = library.settingsProgress {
+                        ShellProgressRow(progress)
                     }
                 }
 

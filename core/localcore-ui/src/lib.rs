@@ -4,10 +4,15 @@
 //! (ADR 0001 R9).
 
 mod kinds;
+mod progress;
 mod screens;
 mod tokens;
 
 pub use kinds::{ActionRole, Affordance, ItemKind, NavIntent, ScreenKind, StatusSeverity};
+pub use progress::{
+    count_detail, found_detail, format_count, format_remaining, ProgressDisplay, WorkProgress,
+    ETA_AFTER, REVEAL_AFTER,
+};
 pub use screens::{ContactsScreen, GalleryScreen, HealthScreen, MusicScreen};
 
 pub mod gallery {
@@ -37,6 +42,7 @@ mod tests {
         assert_eq!(ItemKind::TextRow.as_str(), "text-row");
         assert_eq!(ItemKind::ChartRow.as_str(), "chart-row");
         assert_eq!(Affordance::PrimaryAction.as_str(), "primary-action");
+        assert_eq!(Affordance::Progress.as_str(), "progress");
         assert_eq!(NavIntent::Push.as_str(), "push");
     }
 
@@ -48,6 +54,15 @@ mod tests {
         assert_eq!(contacts::ACCENT_DARK, "#4D85DE");
         assert_eq!(music::ACCENT, "#C0392B");
         assert_eq!(music::ACCENT_DARK, "#D14738");
+        assert_eq!(gallery::GRID_GUTTER, 2.0);
+        assert_eq!(gallery::THUMB_RADIUS, 8.0);
+        assert_eq!(gallery::DISPLAY_FAMILY, "Newsreader");
+        assert_eq!(gallery::DISPLAY_STYLE, "italic");
+        assert_eq!(
+            gallery::DISPLAY_FILE,
+            "Newsreader-Italic[opsz,wght].ttf"
+        );
+        assert_eq!(music::THUMB_RADIUS, 8.0);
     }
 
     #[test]

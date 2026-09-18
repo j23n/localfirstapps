@@ -25,6 +25,11 @@ struct LibraryView: View {
             }
             .navigationTitle("Library")
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if let progress = library.chromeProgress {
+                        ShellProgressChip(progress)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     sortMenu
                 }
@@ -159,6 +164,41 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var isSearching: Bool {
+        !library.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var playlistHits: [Playlist] {
+        guard isSearching else { return [] }
+        let needle = library.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return library.playlists.filter {
+            $0.name.range(of: needle, options: .caseInsensitive) != nil
+        }
+    }
+
+    private var artistHits: [String] {
+        uniqueNames(matching: \.artist)
+    }
+
+    private var albumHits: [String] {
+        uniqueNames(matching: \.album)
+    }
+
+    private func uniqueNames(matching keyPath: KeyPath<Track, String>) -> [String] {
+        guard isSearching else { return [] }
+        let needle = library.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var seen = Set<String>()
+        var names: [String] = []
+        for track in library.tracks {
+            let value = track[keyPath: keyPath]
+            guard value.range(of: needle, options: .caseInsensitive) != nil else { continue }
+            if seen.insert(value.lowercased()).inserted {
+                names.append(value)
+            }
+        }
+        return names
+    }
+
     @ViewBuilder
     private var trackListView: some View {
         let sections = library.sections
@@ -179,21 +219,7 @@ struct LibraryView: View {
                 }
             }
 
-            if let progress = library.scanProgress, library.isScanning, progress.total > 0 {
-                Section {
-                    HStack {
-                        ProgressView(value: Double(progress.completed),
-                                     total: Double(max(progress.total, 1)))
-                        Text("\(progress.completed)/\(progress.total)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-                .listRowSeparator(.hidden)
-            }
-
-            if total == 0 {
+            if total == 0 && playlistHits.isEmpty && artistHits.isEmpty && albumHits.isEmpty {
                 Section {
                     Text(library.searchText.isEmpty
                          ? "No tracks."
@@ -205,29 +231,99 @@ struct LibraryView: View {
                 }
                 .listRowSeparator(.hidden)
             } else {
-                Section {
-                    Text("\(total) track\(total == 1 ? "" : "s")")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                        .foregroundStyle(.secondary)
-                }
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
-
-                ForEach(sections) { section in
+                if !artistHits.isEmpty {
                     Section {
-                        ForEach(section.tracks) { track in
-                            TrackRowButton(track: track)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        ForEach(artistHits, id: \.self) { artist in
+                            SearchLocationButton(
+                                title: artist,
+                                subtitle: "Artist",
+                                symbol: MusicSearchKind.artist.symbol,
+                                tracks: library.tracks.filter { $0.artist == artist }
+                            )
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                         }
                     } header: {
-                        Text(section.title)
+                        Text("Artists")
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundStyle(.primary)
+                    }
+                }
+
+                if !albumHits.isEmpty {
+                    Section {
+                        ForEach(albumHits, id: \.self) { album in
+                            SearchLocationButton(
+                                title: album,
+                                subtitle: "Album",
+                                symbol: MusicSearchKind.album.symbol,
+                                tracks: library.tracks.filter { $0.album == album }
+                            )
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        }
+                    } header: {
+                        Text("Albums")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                    }
+                }
+
+                if !playlistHits.isEmpty {
+                    Section {
+                        ForEach(playlistHits) { playlist in
+                            NavigationLink {
+                                PlaylistDetailView(playlistID: playlist.id)
+                            } label: {
+                                MusicSearchHitRow(
+                                    title: playlist.name,
+                                    subtitle: playlist.countLabel,
+                                    symbol: MusicSearchKind.playlist.symbol
+                                )
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        }
+                    } header: {
+                        Text("Playlists")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                    }
+                }
+
+                if total > 0 {
+                    Section {
+                        Text("\(total) track\(total == 1 ? "" : "s")")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
+
+                    ForEach(sections) { section in
+                        Section {
+                            ForEach(section.tracks) { track in
+                                TrackRowButton(
+                                    track: track,
+                                    matchKind: isSearching
+                                        ? MusicSearchKind.firstMatch(track: track, query: library.searchText)
+                                        : nil
+                                )
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                            }
+                        } header: {
+                            Text(section.title)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.primary)
+                        }
                     }
                 }
             }
@@ -246,6 +342,7 @@ struct LibraryView: View {
 /// each time `player.currentTrack` ticks.
 private struct TrackRowButton: View {
     let track: Track
+    var matchKind: MusicSearchKind? = nil
     @Environment(LibraryStore.self) private var library
     @Environment(AudioPlayerManager.self) private var player
 
@@ -258,7 +355,8 @@ private struct TrackRowButton: View {
         } label: {
             TrackRow(track: track,
                      isCurrent: player.currentTrack?.id == track.id,
-                     isActivelyPlaying: player.isPlaying && player.currentTrack?.id == track.id)
+                     isActivelyPlaying: player.isPlaying && player.currentTrack?.id == track.id,
+                     matchKind: matchKind)
         }
         .contextMenu {
             if !library.playlists.isEmpty {
@@ -286,11 +384,18 @@ struct TrackRow: View {
     let track: Track
     var isCurrent: Bool = false
     var isActivelyPlaying: Bool = false
+    var matchKind: MusicSearchKind? = nil
 
-    init(track: Track, isCurrent: Bool = false, isActivelyPlaying: Bool = false) {
+    init(
+        track: Track,
+        isCurrent: Bool = false,
+        isActivelyPlaying: Bool = false,
+        matchKind: MusicSearchKind? = nil
+    ) {
         self.track = track
         self.isCurrent = isCurrent
         self.isActivelyPlaying = isActivelyPlaying
+        self.matchKind = matchKind
     }
 
     /// Compatibility for call sites not yet updated.
@@ -298,18 +403,26 @@ struct TrackRow: View {
         self.track = track
         self.isCurrent = isPlaying
         self.isActivelyPlaying = isPlaying
+        self.matchKind = nil
     }
 
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                ArtworkView(trackURL: track.url,
-                            hasArtwork: track.hasArtwork,
-                            pointSize: 52)
-                    .frame(width: 52, height: 52)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                if let matchKind {
+                    Image(systemName: matchKind.systemImage)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 52, height: 52)
+                } else {
+                    ArtworkView(trackURL: track.url,
+                                hasArtwork: track.hasArtwork,
+                                pointSize: 52)
+                        .frame(width: 52, height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
 
-                if isCurrent {
+                if isCurrent && matchKind == nil {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(.black.opacity(0.4))
                         .frame(width: 52, height: 52)
@@ -375,5 +488,115 @@ struct NowPlayingBars: View {
                 .delay(delay),
                 value: animating
             )
+    }
+}
+
+// MARK: - Search match category
+
+/// Same kinds as `music-core::SearchKind`. Icons use the core symbolic
+/// names so GTK and Swift stay on one table.
+enum MusicSearchKind: String {
+    case track, album, artist, playlist
+
+    /// Symbolic name from `SearchKind::symbol`.
+    var symbol: String {
+        switch self {
+        case .track: "audio-x-generic-symbolic"
+        case .album: "media-optical-symbolic"
+        case .artist: "system-users-symbolic"
+        case .playlist: "view-list-symbolic"
+        }
+    }
+
+    var systemImage: String {
+        switch symbol {
+        case "audio-x-generic-symbolic": "music.note"
+        case "media-optical-symbolic": "opticaldisc"
+        case "system-users-symbolic": "person.2"
+        case "view-list-symbolic": "list.bullet"
+        default: "music.note"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .track: "Track"
+        case .album: "Album"
+        case .artist: "Artist"
+        case .playlist: "Playlist"
+        }
+    }
+
+    /// First field that contains `query`, in title → artist → album order.
+    static func firstMatch(track: Track, query: String) -> MusicSearchKind {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if track.title.range(of: needle, options: .caseInsensitive) != nil {
+            return .track
+        }
+        if track.artist.range(of: needle, options: .caseInsensitive) != nil {
+            return .artist
+        }
+        if track.album.range(of: needle, options: .caseInsensitive) != nil {
+            return .album
+        }
+        return .track
+    }
+}
+
+private struct SearchLocationButton: View {
+    let title: String
+    let subtitle: String
+    let symbol: String
+    let tracks: [Track]
+    @Environment(AudioPlayerManager.self) private var player
+
+    var body: some View {
+        Button {
+            if let first = tracks.first {
+                player.play(track: first, queue: tracks, startIndex: 0)
+            }
+        } label: {
+            MusicSearchHitRow(title: title, subtitle: subtitle, symbol: symbol)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct MusicSearchHitRow: View {
+    let title: String
+    var subtitle: String? = nil
+    let symbol: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: Self.systemImage(for: symbol))
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(width: 52, height: 52)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+        }
+        .padding(.vertical, 2)
+    }
+
+    static func systemImage(for symbol: String) -> String {
+        switch symbol {
+        case "audio-x-generic-symbolic": "music.note"
+        case "media-optical-symbolic": "opticaldisc"
+        case "system-users-symbolic": "person.2"
+        case "view-list-symbolic": "list.bullet"
+        default: "music.note"
+        }
     }
 }

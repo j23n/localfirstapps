@@ -47,6 +47,8 @@ use crate::locations::{
     collection_section_id, collection_text_row, folder_text_row, people_text_row,
     photo_count_label, FolderTable,
 };
+use crate::people::{page_people, rail_people};
+use crate::person_log::PersonStateStructure;
 use crate::scanner::{photo_from_record, ScanPhoto, ScannedFolderHost, ScannedMediaHost};
 use crate::view::{
     checked_window, GalleryMediaItem, GalleryTextRow, ViewAction, ViewContentState, ViewError,
@@ -80,7 +82,7 @@ pub struct TagStructureItem {
 }
 
 impl TagStructureItem {
-    fn of(s: &TagSuggestion) -> Self {
+    pub(crate) fn of(s: &TagSuggestion) -> Self {
         TagStructureItem {
             id: s.id.clone(),
             display_name: s.display_name.clone(),
@@ -145,6 +147,13 @@ struct Indexed {
     /// it here removes the way to get it wrong.
     tags: Vec<TagSuggestion>,
     people: Vec<TagSuggestion>,
+    /// Hidden-filtered, featured-first page list.
+    visible_people: Vec<TagSuggestion>,
+    /// Recency-gated rail (cap 20).
+    rail_people: Vec<TagSuggestion>,
+    person_state: PersonStateStructure,
+    /// Apple reference seconds; rail recency uses this.
+    person_now: f64,
     /// Generation of every id list derived from this table.
     generation: u64,
     /// The current Photos-screen projection. Structure returns these ids;
@@ -179,6 +188,10 @@ impl Default for LibraryIndex {
                 index: CoreIndex::build(Vec::new()),
                 tags: Vec::new(),
                 people: Vec::new(),
+                visible_people: Vec::new(),
+                rail_people: Vec::new(),
+                person_state: PersonStateStructure::default(),
+                person_now: 0.0,
                 generation: 0,
                 visible_photo_ids: Vec::new(),
                 visible_sections: Vec::new(),
@@ -235,9 +248,11 @@ impl LibraryIndex {
         horizon_days: i64,
         hidden_memory_ids: Vec<String>,
     ) -> Vec<ScheduledMemoryStructure> {
-        let guard = read(&self.inner);
         let hidden: HashSet<String> = hidden_memory_ids.into_iter().collect();
-        let inputs = scheduled_inputs(&guard, context);
+        let inputs = {
+            let guard = read(&self.inner);
+            scheduled_inputs(&guard, context)
+        };
         compute_scheduled(&inputs, horizon_days, &hidden)
             .iter()
             .map(scheduled_record)
@@ -256,6 +271,8 @@ impl LibraryIndex {
         photos: Vec<ScanPhoto>,
         photo_time_zone_offsets: Vec<i32>,
     ) -> LibraryIndexSummary {
+        let _span =
+            localcore_trace::span_always("catalog", "index.rebuild").extra("photos", photos.len());
         let started = std::time::Instant::now();
         let photos: Vec<PhotoFile> = photos.into_iter().map(photo_from_record).collect();
         let index = CoreIndex::build(photos);
@@ -277,6 +294,7 @@ impl LibraryIndex {
         guard.index = index;
         guard.tags = tags;
         guard.people = people;
+        refresh_person_lists(&mut guard);
         guard.folders = FolderTable::empty();
         guard.visible_folder_parent = None;
         guard.visible_folder_ids = Vec::new();
@@ -289,6 +307,9 @@ impl LibraryIndex {
     /// The whole ordered id list is structure by ADR 0003 R4. The records
     /// behind those ids are fetched only through [`Self::photo_window`].
     pub fn set_photo_view(&self, query: String, required_tag_paths: Vec<String>) -> ViewStructure {
+        let _span = localcore_trace::span_always("photos", "set_photo_view")
+            .extra("q_len", query.len())
+            .extra("tags_n", required_tag_paths.len());
         let key = format!("{query}\u{0}{}", required_tag_paths.join("\u{0}"));
         let mut guard = write(&self.inner);
         if guard.visible_key != key {
@@ -326,6 +347,8 @@ impl LibraryIndex {
         query: String,
         required_tag_paths: Vec<String>,
     ) -> ViewStructure {
+        let _span = localcore_trace::span_always("photos", "set_photo_ids_view")
+            .extra("n", photo_ids.len());
         let key = format!(
             "ids\u{0}{view_id}\u{0}{query}\u{0}{}\u{0}{}",
             required_tag_paths.join("\u{0}"),
@@ -371,7 +394,19 @@ impl LibraryIndex {
 
     /// Current Photos-screen structure without changing search intent.
     pub fn photo_structure(&self) -> ViewStructure {
+        let _span = localcore_trace::span("photos", "photo_structure");
         photo_structure(&read(&self.inner))
+    }
+
+    /// Current photo projection in list order.
+    ///
+    /// Cheaper than [`Self::photo_structure`]: no month sections, one id list.
+    pub fn visible_photo_ids(&self) -> Vec<String> {
+        read(&self.inner)
+            .visible_photo_ids
+            .iter()
+            .map(ids)
+            .collect()
     }
 
     /// Display-ready photos for one visible window.
@@ -382,6 +417,9 @@ impl LibraryIndex {
         limit: u64,
         generation: u64,
     ) -> Result<Vec<GalleryMediaItem>, ViewError> {
+        let _span = localcore_trace::span("photos", "photo_window")
+            .extra("off", offset)
+            .extra("lim", limit);
         let guard = read(&self.inner);
         // Generation wins over section lookup: every section id belongs to
         // the requested structure, so an absent old id is stale, not unknown.
@@ -482,6 +520,9 @@ impl LibraryIndex {
         folders: Vec<ScannedFolderHost>,
         photo_ids_in_scan_order: Vec<String>,
     ) {
+        let _span = localcore_trace::span_always("folders", "set_folders")
+            .extra("folders", folders.len())
+            .extra("ids", photo_ids_in_scan_order.len());
         let table = FolderTable::new(folders, photo_ids_in_scan_order);
         let visible_folder_ids = table.listing_ids(None);
         let mut guard = write(&self.inner);
@@ -500,6 +541,7 @@ impl LibraryIndex {
     ///
     /// iOS callers land in Phase 5.8.
     pub fn folder_structure(&self, parent_id: Option<String>) -> ViewStructure {
+        let _span = localcore_trace::span("folders", "folder_structure");
         let mut guard = write(&self.inner);
         if guard.visible_folder_parent != parent_id {
             guard.visible_folder_ids = guard.folders.listing_ids(parent_id.as_deref());
@@ -524,6 +566,9 @@ impl LibraryIndex {
         limit: u64,
         generation: u64,
     ) -> Result<Vec<GalleryTextRow>, ViewError> {
+        let _span = localcore_trace::span("folders", "folder_window")
+            .extra("off", offset)
+            .extra("lim", limit);
         let guard = read(&self.inner);
         // Generation wins over section lookup: every section id belongs to
         // the requested structure, so an absent old id is stale, not unknown.
@@ -554,24 +599,31 @@ impl LibraryIndex {
     ///
     /// iOS callers land in Phase 5.8.
     pub fn folder_photo_ids(&self, folder_id: String) -> Vec<String> {
-        read(&self.inner).folders.own_photo_ids(&folder_id)
+        let _span = localcore_trace::span_always("folders", "folder_photo_ids");
+        let ids = read(&self.inner).folders.own_photo_ids(&folder_id);
+        localcore_trace::event("folders", format!("folder_photo_ids n={}", ids.len()));
+        ids
     }
 
-    /// People listing. Item ids come from the cached `People` suggestions.
+    /// People listing. Item ids are canonical `People/…` paths.
     ///
-    /// Person photos already work via [`Self::photo_ids_for_tag`] (`full_path`)
-    /// plus [`Self::set_photo_ids_view`].
-    ///
-    /// iOS callers land in Phase 5.8.
+    /// Hidden people are omitted and featured float to the front after
+    /// [`Self::set_person_state`]. Person photos already work via
+    /// [`Self::photo_ids_for_tag`] plus [`Self::set_photo_ids_view`].
     pub fn people_structure(&self) -> ViewStructure {
+        let _span = localcore_trace::span("catalog", "people_structure");
         let guard = read(&self.inner);
         let ids = guard
-            .people
+            .visible_people
             .iter()
-            .map(|person| person.id.clone())
+            .map(|person| person.full_path.clone())
             .collect();
+        localcore_trace::event(
+            "catalog",
+            format!("people_structure n={}", guard.visible_people.len()),
+        );
         ViewStructure {
-            state: content_state(guard.people.len()),
+            state: content_state(guard.visible_people.len()),
             sections: vec![ViewSection {
                 id: "people".into(),
                 title: "People".into(),
@@ -584,8 +636,6 @@ impl LibraryIndex {
     }
 
     /// Display-ready people rows (`display_name`, trailing count).
-    ///
-    /// iOS callers land in Phase 5.8.
     pub fn people_window(
         &self,
         section_id: String,
@@ -607,9 +657,101 @@ impl LibraryIndex {
             guard.generation,
             offset,
             limit,
-            guard.people.len(),
+            guard.visible_people.len(),
         )?;
-        Ok(guard.people[range].iter().map(people_text_row).collect())
+        Ok(guard.visible_people[range]
+            .iter()
+            .map(people_text_row)
+            .collect())
+    }
+
+    /// Collections-rail people (featured-first, recency gate).
+    pub fn people_rail_structure(&self) -> ViewStructure {
+        let guard = read(&self.inner);
+        let ids = guard
+            .rail_people
+            .iter()
+            .map(|person| person.full_path.clone())
+            .collect();
+        ViewStructure {
+            state: content_state(guard.rail_people.len()),
+            sections: vec![ViewSection {
+                id: "people".into(),
+                title: "People".into(),
+                slot_kind: ViewSlotKind::TextRow,
+                item_ids: ids,
+            }],
+            actions: Vec::new(),
+            generation: guard.generation,
+        }
+    }
+
+    /// Window over [`Self::people_rail_structure`].
+    pub fn people_rail_window(
+        &self,
+        section_id: String,
+        offset: u64,
+        limit: u64,
+        generation: u64,
+    ) -> Result<Vec<GalleryTextRow>, ViewError> {
+        let guard = read(&self.inner);
+        checked_window(generation, guard.generation, 0, 0, 0)?;
+        if section_id != "people" {
+            return Err(ViewError::SectionNotFound {
+                section_id,
+                message: "That Gallery people section no longer exists.".into(),
+                user_actionable: true,
+            });
+        }
+        let range = checked_window(
+            generation,
+            guard.generation,
+            offset,
+            limit,
+            guard.rail_people.len(),
+        )?;
+        Ok(guard.rail_people[range]
+            .iter()
+            .map(people_text_row)
+            .collect())
+    }
+
+    /// Project `.gallery/log` onto the people lists. Bumps generation.
+    pub fn set_person_state(&self, state: PersonStateStructure, now: f64) {
+        let mut guard = write(&self.inner);
+        guard.person_state = state;
+        guard.person_now = now;
+        refresh_person_lists(&mut guard);
+        guard.generation = guard.generation.saturating_add(1);
+    }
+
+    /// Last [`Self::set_person_state`] projection (empty before attach).
+    pub fn person_state(&self) -> PersonStateStructure {
+        read(&self.inner).person_state.clone()
+    }
+
+    /// Canonical `People/…` path for a row id or any spelling of the path.
+    pub fn person_full_path(&self, id_or_path: String) -> Option<String> {
+        let key = gallery_index::text::match_key(&id_or_path);
+        read(&self.inner)
+            .people
+            .iter()
+            .find(|person| {
+                gallery_index::text::match_key(&person.id) == key
+                    || gallery_index::text::match_key(&person.full_path) == key
+            })
+            .map(|person| person.full_path.clone())
+    }
+
+    /// Cover photo id from the person log, if the user set one.
+    pub fn featured_photo_id(&self, person_path: String) -> Option<String> {
+        let key = gallery_index::text::nfc(&person_path);
+        read(&self.inner)
+            .person_state
+            .featured_photo
+            .iter()
+            .find(|pair| gallery_index::text::nfc(&pair.path) == key)
+            .map(|pair| pair.value.clone())
     }
 
     /// Collections hub for non-People tag namespaces (Objects, Scenes, Places,
@@ -623,6 +765,7 @@ impl LibraryIndex {
     ///
     /// iOS callers land in Phase 5.8.
     pub fn collection_structure(&self) -> ViewStructure {
+        let _span = localcore_trace::span("catalog", "collection_structure");
         let guard = read(&self.inner);
         // Memories section is 5.6: there is no stored MemoryStructure
         // id list on the index. The shell caches generate_memories output and
@@ -641,6 +784,13 @@ impl LibraryIndex {
             .filter(|section| !section.item_ids.is_empty())
             .collect();
         let count: usize = sections.iter().map(|section| section.item_ids.len()).sum();
+        localcore_trace::event(
+            "catalog",
+            format!(
+                "collection_structure sections={} leaves={count}",
+                sections.len()
+            ),
+        );
         ViewStructure {
             state: content_state(count),
             sections,
@@ -735,11 +885,29 @@ impl LibraryIndex {
     }
 }
 
+impl LibraryIndex {
+    /// Categorized Photos search hits. Not on the UniFFI surface — GTK
+    /// reads them directly; iOS already derives suggestion icons from
+    /// tag namespaces.
+    pub fn search_hits(&self, query: &str) -> Vec<gallery_index::SearchHit> {
+        read(&self.inner).index.search_hits(query)
+    }
+
+    /// Cover id for a tag without building the full photo-id list.
+    pub fn first_photo_id_for_tag(&self, full_path: String) -> Option<String> {
+        read(&self.inner)
+            .index
+            .first_photo_id_for_tag(&full_path)
+            .map(|id| id.to_string())
+    }
+}
+
 fn photo_view_sections(
     index: &CoreIndex,
     item_ids: &[StableId],
     time_zone_offsets: &[i32],
 ) -> Vec<PhotoViewSection> {
+    let _span = localcore_trace::span("photos", "photo_view_sections").extra("ids", item_ids.len());
     let offsets: HashMap<StableId, i32> = index
         .photos()
         .iter()
@@ -821,6 +989,8 @@ fn folder_structure_of(indexed: &Indexed) -> ViewStructure {
 }
 
 fn photo_structure(indexed: &Indexed) -> ViewStructure {
+    let _span = localcore_trace::span("photos", "photo_structure_clone")
+        .extra("ids", indexed.visible_photo_ids.len());
     ViewStructure {
         state: content_state(indexed.visible_photo_ids.len()),
         sections: indexed
@@ -912,6 +1082,13 @@ fn read(lock: &RwLock<Indexed>) -> std::sync::RwLockReadGuard<'_, Indexed> {
 
 fn write(lock: &RwLock<Indexed>) -> std::sync::RwLockWriteGuard<'_, Indexed> {
     lock.write().unwrap_or_else(|p| p.into_inner())
+}
+
+fn refresh_person_lists(guard: &mut Indexed) {
+    let hidden = &guard.person_state.hidden;
+    let featured = &guard.person_state.featured;
+    guard.visible_people = page_people(&guard.people, hidden, featured);
+    guard.rail_people = rail_people(&guard.people, hidden, featured, guard.person_now);
 }
 
 // ---------------------------------------------------------------------------
@@ -1340,8 +1517,11 @@ impl MemoryGenerator {
         index: Arc<LibraryIndex>,
         context: ScheduledMemoryContext,
     ) -> Vec<MemoryStructure> {
-        let guard = read(&index.inner);
-        let inputs = scheduled_inputs(&guard, context);
+        let _span = localcore_trace::span_always("memory", "MemoryGenerator::generate");
+        let inputs = {
+            let guard = read(&index.inner);
+            scheduled_inputs(&guard, context)
+        };
         let memories = generate_cancellable(&inputs, &|| self.cancelled.load(Ordering::Acquire));
         memories.iter().map(MemoryRecord::of).collect()
     }
@@ -1815,6 +1995,40 @@ mod tests {
             index.folder_window("photos".into(), 0, 20, year.generation),
             Err(ViewError::SectionNotFound { .. })
         ));
+        assert_eq!(person_rows[0].id, "People/Alice");
+    }
+
+    #[test]
+    fn person_state_hides_and_features_people_windows() {
+        let index = LibraryIndex::default();
+        index.build(vec![
+            photo("/lib/ada.jpg", Some(400.0), &["People/Ada"]),
+            photo("/lib/bob.jpg", Some(400.0), &["People/Bob"]),
+            photo("/lib/cy.jpg", Some(400.0), &["People/Cy"]),
+        ]);
+        let before = index.people_structure();
+        assert_eq!(before.sections[0].item_ids.len(), 3);
+
+        index.set_person_state(
+            crate::person_log::PersonStateStructure {
+                hidden: vec!["People/Cy".into()],
+                featured: vec!["People/Bob".into()],
+                ..crate::person_log::PersonStateStructure::default()
+            },
+            500.0,
+        );
+        let page = index.people_structure();
+        assert!(page.generation > before.generation);
+        assert_eq!(
+            page.sections[0].item_ids,
+            vec!["People/Bob".to_string(), "People/Ada".to_string()]
+        );
+        let rail = index.people_rail_structure();
+        assert_eq!(rail.sections[0].item_ids[0], "People/Bob");
+        assert_eq!(
+            index.person_full_path("people/ada".into()).as_deref(),
+            Some("People/Ada")
+        );
     }
 
     #[test]

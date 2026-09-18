@@ -105,7 +105,7 @@ pub enum SearchKind {
     Playlist,
 }
 
-/// One global search result. Shells pick an icon from [`Self::kind`].
+/// One global search result. Shells pick an icon from [`SearchKind::symbol`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchHit {
     /// Track id, `album:{name}`, `artist:{name}`, or playlist id.
@@ -127,6 +127,17 @@ impl SearchKind {
             Self::Album => "media-optical-symbolic",
             Self::Artist => "system-users-symbolic",
             Self::Playlist => "view-list-symbolic",
+        }
+    }
+
+    /// Field kind shown on the second line (`Track`, `Album`, …).
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Track => "Track",
+            Self::Album => "Album",
+            Self::Artist => "Artist",
+            Self::Playlist => "Playlist",
         }
     }
 }

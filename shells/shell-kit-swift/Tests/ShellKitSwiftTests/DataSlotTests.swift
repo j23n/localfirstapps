@@ -102,4 +102,17 @@ final class DataSlotTests: XCTestCase {
     func testTokensCarryAuthoredMetricsWithoutAColorFallback() {
         XCTAssertEqual(ShellTokens(cardRadius: 12).cardRadius, 12)
     }
+
+    func testProgressSlotCarriesPhaseAndDetail() {
+        let progress = ShellProgressData(
+            label: "Scanning",
+            detail: "12 found",
+            fraction: nil,
+            cancel: true
+        )
+        XCTAssertEqual(progress.label, "Scanning")
+        XCTAssertEqual(progress.detail, "12 found")
+        XCTAssertTrue(progress.cancel)
+        XCTAssertNil(progress.fraction)
+    }
 }

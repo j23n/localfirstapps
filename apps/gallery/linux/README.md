@@ -1,8 +1,8 @@
 # LocalGallery for Linux
 
 GTK4 / libadwaita leftover (own lockfile, gtk 0.8). Same Rust core as
-iOS. One binary: GNOME laptop layout, or `--comet` for a 540×620
-window.
+iOS. Frozen reference binary: GNOME laptop layout, or `--comet` for a
+540×620 window.
 
 **`src/ui` is frozen.** No new features, no design-pass chrome, no kit
 adoption here. New work goes in `apps/gallery/ui-spec/` + `gallery-ffi`
@@ -14,17 +14,17 @@ Phase 5 and
 [`docs/GTK-DESIGN-PLAN.md`](../../../docs/GTK-DESIGN-PLAN.md)
 Phase 5.
 
-The binary stays `localgallery` until the kit shell ships, then this
-binary becomes `localgallery-reference` /
-`com.j23n.LocalGallery.Reference`.
+This leftover binary is `localgallery-reference` /
+`com.j23n.LocalGallery.Reference`. The kit shell is
+`shells/gallery-gtk` (`localgallery` / `com.j23n.LocalGallery`).
 
 Install and package notes: [INSTALL.md](INSTALL.md).
 
 ```bash
 sudo apt install libgtk-4-dev libadwaita-1-dev pkg-config
 cd linux
-cargo run -- --comet
-cargo run
+cargo run --features ui --bin localgallery-reference -- --comet
+cargo run --features ui --bin localgallery-reference
 cargo test --no-default-features
 ```
 
@@ -49,8 +49,8 @@ cargo run --features ml
 # /usr/share/localgallery/pack, then source-tree build/pack
 ```
 
-HEIC analysis and viewer decode use the core software HEVC path, not
-ImageIO.
+Analysis installs the leftover `HostHeicDecoder`; pixels are still
+software HEVC.
 
 The library folder is watched (inotify). Sidecar writes from an
 analysis run are muted for that walk.

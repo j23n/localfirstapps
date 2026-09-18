@@ -9,7 +9,6 @@ REPO="$(cd "$ROOT/../.." && pwd)"
 CORE_DIR="$REPO/core"
 BINDGEN_DIR="$REPO/apps/gallery/core"
 MODULE="MusicCore"
-export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.97.1}"
 
 echo "==> cargo build -p music-ffi (host cdylib)"
 (cd "$CORE_DIR" && cargo build --locked -p music-ffi)

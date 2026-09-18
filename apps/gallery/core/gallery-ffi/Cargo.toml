@@ -30,6 +30,7 @@ gallery-model = { path = "../gallery-model" }
 gallery-scan = { path = "../gallery-scan" }
 gallery-vfs = { path = "../gallery-vfs" }
 localcore-log = { path = "../../../../core/localcore-log" }
+localcore-trace = { path = "../../../../core/localcore-trace" }
 uniffi = { workspace = true }
 uuid = { version = "1", default-features = false }
 

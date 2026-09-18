@@ -23,7 +23,6 @@ env:
   LANGUAGE: en_US:en
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  RUST_VERSION: "1.97.1"
   # macos-26 runner default as of 2026-07-21 (actions/runner-images#14344).
   XCODE_VERSION: "26.6"
   # yonaskolb/XcodeGen 2.46.0 xcodegen.zip — GitHub release API digest.
@@ -47,9 +46,6 @@ jobs:
   rustfmt:
     name: rustfmt
     runs-on: ubuntu-24.04
-    env:
-      # Host std only — core/rust-toolchain.toml also lists Apple targets.
-      RUSTUP_TOOLCHAIN: "1.97.1"
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -57,7 +53,6 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
-          toolchain: "1.97.1"
           components: rustfmt
 
       - name: cargo fmt --check (core)
@@ -71,8 +66,6 @@ jobs:
   clippy:
     name: clippy
     runs-on: ubuntu-24.04
-    env:
-      RUSTUP_TOOLCHAIN: "1.97.1"
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -80,7 +73,6 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
-          toolchain: "1.97.1"
           components: clippy
 
       - name: OS dependencies (OpenSSL, GTK)
@@ -107,16 +99,12 @@ jobs:
   core-test:
     name: core tests
     runs-on: ubuntu-24.04
-    env:
-      RUSTUP_TOOLCHAIN: "1.97.1"
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
-        with:
-          toolchain: "1.97.1"
 
       - name: OS dependencies (OpenSSL)
         run: |
@@ -144,16 +132,12 @@ jobs:
   linux-test:
     name: linux headless tests
     runs-on: ubuntu-24.04
-    env:
-      RUSTUP_TOOLCHAIN: "1.97.1"
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
-        with:
-          toolchain: "1.97.1"
 
       - name: OS dependencies (OpenSSL, GTK)
         run: |
@@ -256,16 +240,12 @@ jobs:
   audit:
     name: dependency audit
     runs-on: ubuntu-24.04
-    env:
-      RUSTUP_TOOLCHAIN: "1.97.1"
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
-        with:
-          toolchain: "1.97.1"
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --version "${CARGO_AUDIT_VERSION}" --force
@@ -367,7 +347,6 @@ jobs:
       - name: Rust toolchain (iOS targets)
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master 2026-09-03
         with:
-          toolchain: "1.97.1"
           components: rustfmt, clippy
           targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
 

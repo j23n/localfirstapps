@@ -39,6 +39,8 @@ TWO_APP_BINDINGS = (
     "ShellFilterMenu",
     ".shellSearch(",
     ".shellConfirmation(",
+    "ShellProgressChip",
+    "ShellProgressRow",
 )
 
 # Production on Contacts only. Music has no matching form/status screen.
@@ -69,6 +71,10 @@ KNOWN_PUBLIC_TYPES = {
     "ShellList",
     "ShellNavRow",
     "ShellNavRowData",
+    "ShellProgressChip",
+    "ShellProgressData",
+    "ShellProgressReveal",
+    "ShellProgressRow",
     "ShellSearchData",
     "ShellSettings",
     "ShellStatusRow",

@@ -1,9 +1,10 @@
 # Install LocalGallery on Linux
 
 GTK4 / libadwaita desktop build of the same library the iOS app uses.
-One binary: a laptop window (1200×800) or `localgallery --comet`
-(540×620). This leftover UI is a frozen reference; the Phase 5
-destination is `shells/gallery-gtk`.
+Leftover reference binary: a laptop window (1200×800) or
+`localgallery-reference --comet` (540×620). This leftover UI is a
+frozen reference; the Phase 5 destination is `shells/gallery-gtk`
+(`localgallery` / `com.j23n.LocalGallery`).
 
 ## Dependencies
 
@@ -19,7 +20,7 @@ sudo dnf install gtk4-devel libadwaita-devel pkgconf-pkg-config \
   openssl-devel gcc clang cmake
 ```
 
-Rust: the pin in `core/rust-toolchain.toml` (rustup). First
+Rust: rustup reads `rust-toolchain.toml` at the repo root. First
 `gallery-ml` build may download a static ONNX Runtime into
 `~/.cache` / the ort cache when the `ml` feature is on.
 
@@ -27,8 +28,8 @@ Rust: the pin in `core/rust-toolchain.toml` (rustup). First
 
 ```bash
 cd linux
-cargo run                     # laptop window
-cargo run -- --comet          # Comet-sized window
+cargo run --features ui --bin localgallery-reference
+cargo run --features ui --bin localgallery-reference -- --comet
 cargo test --no-default-features
 ```
 
@@ -55,13 +56,13 @@ Places uses the bundled gazetteer. GPS coordinates stay on the machine.
 
 ```bash
 cd linux
-cargo build --release
-install -Dm755 target/release/localgallery ~/.local/bin/localgallery
-install -Dm644 data/com.j23n.LocalGallery.desktop \
-  ~/.local/share/applications/com.j23n.LocalGallery.desktop
+cargo build --release --features ui
+install -Dm755 target/release/localgallery-reference ~/.local/bin/localgallery-reference
+install -Dm644 data/com.j23n.LocalGallery.Reference.desktop \
+  ~/.local/share/applications/com.j23n.LocalGallery.Reference.desktop
 ```
 
-AppStream metadata is `data/com.j23n.LocalGallery.metainfo.xml`
+AppStream metadata is `data/com.j23n.LocalGallery.Reference.metainfo.xml`
 (project license MPL-2.0). There is no Flathub publication in this
 repo.
 
