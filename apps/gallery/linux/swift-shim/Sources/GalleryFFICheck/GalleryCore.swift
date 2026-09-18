@@ -7817,10 +7817,10 @@ public struct HostImageMetadata: Equatable, Hashable {
          */gpsLongitude: Double?, 
         /**
          * Face regions from the sidecar.
-         */faceRegions: [HostFaceRegion],
+         */faceRegions: [HostFaceRegion], 
         /**
          * EXIF / TIFF `Make`.
-         */make: String?,
+         */make: String?, 
         /**
          * EXIF / TIFF `Model`.
          */model: String?) {
@@ -7855,8 +7855,8 @@ public struct FfiConverterTypeHostImageMetadata: FfiConverterRustBuffer {
                 countryCode: FfiConverterOptionString.read(from: &buf), 
                 gpsLatitude: FfiConverterOptionDouble.read(from: &buf), 
                 gpsLongitude: FfiConverterOptionDouble.read(from: &buf), 
-                faceRegions: FfiConverterSequenceTypeHostFaceRegion.read(from: &buf),
-                make: FfiConverterOptionString.read(from: &buf),
+                faceRegions: FfiConverterSequenceTypeHostFaceRegion.read(from: &buf), 
+                make: FfiConverterOptionString.read(from: &buf), 
                 model: FfiConverterOptionString.read(from: &buf)
         )
     }
