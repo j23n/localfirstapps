@@ -1594,6 +1594,8 @@ public func FfiConverterTypeDeletePlaylistCommand_lower(_ value: DeletePlaylistC
 
 /**
  * Host-port row used to paint the library from a warm cache. Not a domain record.
+ *
+ * R6 role: host-port DTO.
  */
 public struct LibraryPaintRow: Equatable, Hashable {
     /**

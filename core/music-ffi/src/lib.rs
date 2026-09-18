@@ -433,6 +433,8 @@ pub fn library_cache_path(cache_dir: String, root: String) -> String {
 }
 
 /// Host-port row used to paint the library from a warm cache. Not a domain record.
+///
+/// R6 role: host-port DTO.
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
 pub struct LibraryPaintRow {
     /// Opaque track id.
