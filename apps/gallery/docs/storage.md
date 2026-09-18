@@ -70,13 +70,17 @@ The log syncs with the library. The device id (`galleryDeviceId` in
 UserDefaults) is the ADR 0005 R5 per-device exception and must not
 sync. Memory chrome (`hiddenMemories`, `seenMemoryIDs`,
 `surfacedClusters`, `birthdayMemoriesEnabled`, `memoriesGeneratedDay`)
-is still a UserDefaults snapshot and is not in this log.
+uses the same log after folder attach: the projection is the authority
+and those five keys are not written back to UserDefaults. On attach,
+this device may migrate a leftover snapshot (one-shot: a
+`memory_migrated` marker written last) and then drop those keys.
 
 This is a schema-defined domain event log, not a diagnostic log. It syncs
-because replayed person decisions must follow the folder.
+because replayed person and memory decisions must follow the folder.
 
-A pre-M2 UserDefaults dump lives at
-`core/localcore-log/tests/fixtures/m2/userdefaults-person-state.json`.
+Pre-M2 UserDefaults dumps live at
+`core/localcore-log/tests/fixtures/m2/userdefaults-person-state.json` and
+`core/localcore-log/tests/fixtures/m2/userdefaults-memory-state.json`.
 
 ## Local diagnostics
 

@@ -1694,9 +1694,9 @@ pub fn generate_memories(inputs: GenerateMemoriesCommand) -> Vec<MemoryStructure
 /// `GalleryStore.computeScheduledMemories` — the widget's pre-published
 /// horizon, offsets `1..=horizon_days` from local midnight.
 ///
-/// `hidden_memory_ids` is `MemoryCoordinator.hiddenMemories`, which stays in
-/// Swift; it is passed separately because it is coordinator state rather than
-/// engine input, and `generate` does not read it at all.
+/// `hidden_memory_ids` is `MemoryCoordinator.hiddenMemories` (log-backed
+/// after attach); it is passed separately because it is coordinator state
+/// rather than engine input, and `generate` does not read it at all.
 pub fn compute_scheduled_memories(
     inputs: GenerateMemoriesCommand,
     horizon_days: i64,

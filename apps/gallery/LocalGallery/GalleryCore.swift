@@ -8383,6 +8383,65 @@ public func FfiConverterTypeMemoryDateCommandItem_lower(_ value: MemoryDateComma
 
 
 /**
+ * One key/timestamp pair in a projected memory-chrome map.
+ *
+ * R6 role: structure DTO.
+ */
+public struct MemoryDatePair: Equatable, Hashable {
+    public var key: String
+    public var at: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(key: String, at: String) {
+        self.key = key
+        self.at = at
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MemoryDatePair: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMemoryDatePair: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryDatePair {
+        return
+            try MemoryDatePair(
+                key: FfiConverterString.read(from: &buf), 
+                at: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MemoryDatePair, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.key, into: &buf)
+        FfiConverterString.write(value.at, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryDatePair_lift(_ buf: RustBuffer) throws -> MemoryDatePair {
+    return try FfiConverterTypeMemoryDatePair.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryDatePair_lower(_ value: MemoryDatePair) -> RustBuffer {
+    return FfiConverterTypeMemoryDatePair.lower(value)
+}
+
+
+/**
  * A leaf `PhotoFolder`, by reference into the photo list rather than by value.
  *
  * R6 role: command DTO.
@@ -8521,6 +8580,139 @@ public func FfiConverterTypeMemoryPersonCommandItem_lower(_ value: MemoryPersonC
 
 
 /**
+ * Projected state plus non-fatal append-only-log diagnostics.
+ *
+ * R6 role: structure DTO.
+ */
+public struct MemoryProjectionRecord: Equatable, Hashable {
+    public var state: MemoryStateStructure
+    public var tornTails: [MemoryTornTailRecord]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(state: MemoryStateStructure, tornTails: [MemoryTornTailRecord]) {
+        self.state = state
+        self.tornTails = tornTails
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MemoryProjectionRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMemoryProjectionRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryProjectionRecord {
+        return
+            try MemoryProjectionRecord(
+                state: FfiConverterTypeMemoryStateStructure.read(from: &buf), 
+                tornTails: FfiConverterSequenceTypeMemoryTornTailRecord.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MemoryProjectionRecord, into buf: inout [UInt8]) {
+        FfiConverterTypeMemoryStateStructure.write(value.state, into: &buf)
+        FfiConverterSequenceTypeMemoryTornTailRecord.write(value.tornTails, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryProjectionRecord_lift(_ buf: RustBuffer) throws -> MemoryProjectionRecord {
+    return try FfiConverterTypeMemoryProjectionRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryProjectionRecord_lower(_ value: MemoryProjectionRecord) -> RustBuffer {
+    return FfiConverterTypeMemoryProjectionRecord.lower(value)
+}
+
+
+/**
+ * Projected memory-chrome state after replaying `.gallery/log`.
+ *
+ * `generated_day` is empty when unset. `birthdays_enabled` defaults to
+ * true when the log has no `memory_birthdays_set` event.
+ *
+ * R6 role: structure DTO.
+ */
+public struct MemoryStateStructure: Equatable, Hashable {
+    public var hidden: [String]
+    public var seen: [MemoryDatePair]
+    public var surfaced: [MemoryDatePair]
+    public var birthdaysEnabled: Bool
+    public var generatedDay: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(hidden: [String], seen: [MemoryDatePair], surfaced: [MemoryDatePair], birthdaysEnabled: Bool, generatedDay: String) {
+        self.hidden = hidden
+        self.seen = seen
+        self.surfaced = surfaced
+        self.birthdaysEnabled = birthdaysEnabled
+        self.generatedDay = generatedDay
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MemoryStateStructure: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMemoryStateStructure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryStateStructure {
+        return
+            try MemoryStateStructure(
+                hidden: FfiConverterSequenceString.read(from: &buf), 
+                seen: FfiConverterSequenceTypeMemoryDatePair.read(from: &buf), 
+                surfaced: FfiConverterSequenceTypeMemoryDatePair.read(from: &buf), 
+                birthdaysEnabled: FfiConverterBool.read(from: &buf), 
+                generatedDay: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MemoryStateStructure, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.hidden, into: &buf)
+        FfiConverterSequenceTypeMemoryDatePair.write(value.seen, into: &buf)
+        FfiConverterSequenceTypeMemoryDatePair.write(value.surfaced, into: &buf)
+        FfiConverterBool.write(value.birthdaysEnabled, into: &buf)
+        FfiConverterString.write(value.generatedDay, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryStateStructure_lift(_ buf: RustBuffer) throws -> MemoryStateStructure {
+    return try FfiConverterTypeMemoryStateStructure.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryStateStructure_lower(_ value: MemoryStateStructure) -> RustBuffer {
+    return FfiConverterTypeMemoryStateStructure.lower(value)
+}
+
+
+/**
  * One generated memory.
  *
  * `date_range` is two optional fields rather than one optional pair because
@@ -8636,6 +8828,70 @@ public func FfiConverterTypeMemoryStructure_lift(_ buf: RustBuffer) throws -> Me
 #endif
 public func FfiConverterTypeMemoryStructure_lower(_ value: MemoryStructure) -> RustBuffer {
     return FfiConverterTypeMemoryStructure.lower(value)
+}
+
+
+/**
+ * One recovered torn final line. Complete events before this offset were
+ * projected and remain authoritative.
+ *
+ * R6 role: structure DTO.
+ */
+public struct MemoryTornTailRecord: Equatable, Hashable {
+    public var path: String
+    public var offset: UInt64
+    public var detail: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, offset: UInt64, detail: String) {
+        self.path = path
+        self.offset = offset
+        self.detail = detail
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MemoryTornTailRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMemoryTornTailRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryTornTailRecord {
+        return
+            try MemoryTornTailRecord(
+                path: FfiConverterString.read(from: &buf), 
+                offset: FfiConverterUInt64.read(from: &buf), 
+                detail: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MemoryTornTailRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterUInt64.write(value.offset, into: &buf)
+        FfiConverterString.write(value.detail, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryTornTailRecord_lift(_ buf: RustBuffer) throws -> MemoryTornTailRecord {
+    return try FfiConverterTypeMemoryTornTailRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryTornTailRecord_lower(_ value: MemoryTornTailRecord) -> RustBuffer {
+    return FfiConverterTypeMemoryTornTailRecord.lower(value)
 }
 
 
@@ -12765,6 +13021,153 @@ public func FfiConverterTypeMemoryKind_lower(_ value: MemoryKind) -> RustBuffer 
 
 
 /**
+ * Why a memory-log call failed.
+ */
+public 
+enum MemoryLogError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    /**
+     * Bad device id, unknown type, or a body that is not a JSON object.
+     */
+    case Invalid(
+        /**
+         * Log text.
+         */detail: String
+    )
+    /**
+     * Filesystem said no.
+     */
+    case Io(
+        /**
+         * Path that failed.
+         */path: String, 
+        /**
+         * OS message; for logs only.
+         */detail: String
+    )
+    /**
+     * A complete line was not JSON.
+     */
+    case Json(
+        /**
+         * Parser message; for logs only.
+         */detail: String
+    )
+    /**
+     * A truncated last line (ADR 0005 R16). Not mid-file corruption.
+     */
+    case TornTail(
+        /**
+         * File that ended mid-record.
+         */path: String, 
+        /**
+         * Byte offset of the torn line.
+         */offset: UInt64, 
+        /**
+         * Parser message; for logs only.
+         */detail: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension MemoryLogError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMemoryLogError: FfiConverterRustBuffer {
+    typealias SwiftType = MemoryLogError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MemoryLogError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .Invalid(
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 2: return .Io(
+            path: try FfiConverterString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 3: return .Json(
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 4: return .TornTail(
+            path: try FfiConverterString.read(from: &buf), 
+            offset: try FfiConverterUInt64.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MemoryLogError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .Invalid(detail):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .Io(path,detail):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .Json(detail):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .TornTail(path,offset,detail):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterUInt64.write(offset, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryLogError_lift(_ buf: RustBuffer) throws -> MemoryLogError {
+    return try FfiConverterTypeMemoryLogError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMemoryLogError_lower(_ value: MemoryLogError) -> RustBuffer {
+    return FfiConverterTypeMemoryLogError.lower(value)
+}
+
+
+/**
  * Semantic conflict disposition. Shells use this for control flow.
  *
  * [`MergeKind::Choice`] is part of the Contacts-shaped enum and is never
@@ -14933,6 +15336,31 @@ fileprivate struct FfiConverterSequenceTypeMemoryDateCommandItem: FfiConverterRu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeMemoryDatePair: FfiConverterRustBuffer {
+    typealias SwiftType = [MemoryDatePair]
+
+    public static func write(_ value: [MemoryDatePair], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMemoryDatePair.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryDatePair] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MemoryDatePair]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMemoryDatePair.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeMemoryFolderCommandItem: FfiConverterRustBuffer {
     typealias SwiftType = [MemoryFolderCommandItem]
 
@@ -15000,6 +15428,31 @@ fileprivate struct FfiConverterSequenceTypeMemoryStructure: FfiConverterRustBuff
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeMemoryStructure.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMemoryTornTailRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [MemoryTornTailRecord]
+
+    public static func write(_ value: [MemoryTornTailRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMemoryTornTailRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MemoryTornTailRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MemoryTornTailRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMemoryTornTailRecord.read(from: &buf))
         }
         return seq
     }
@@ -15366,6 +15819,67 @@ public func scheduledMemoryHorizonDays() -> Int64  {
 })
 }
 /**
+ * Append one memory-chrome operation. `body_json` is a JSON object.
+ */
+public func memoryLogAppend(root: String, device: String, eventType: String, bodyJson: String)throws   {try rustCallWithError(FfiConverterTypeMemoryLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_memory_log_append(
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(device),
+        FfiConverterString.lower(eventType),
+        FfiConverterString.lower(bodyJson),uniffiCallStatus
+    )
+}
+}
+/**
+ * One-shot import of the five UserDefaults keys. Returns events written
+ * (0 once this device has a `memory_migrated` marker).
+ */
+public func memoryLogMigrateFromSnapshot(root: String, device: String, snapshotJson: String)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeMemoryLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_memory_log_migrate_from_snapshot(
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(device),
+        FfiConverterString.lower(snapshotJson),uniffiCallStatus
+    )
+})
+}
+/**
+ * Replay every device file under `{root}/.gallery/log`.
+ */
+public func memoryLogProject(root: String)throws  -> MemoryStateStructure  {
+    return try  FfiConverterTypeMemoryStateStructure_lift(try rustCallWithError(FfiConverterTypeMemoryLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_memory_log_project(
+        FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+/**
+ * Replay complete events and return any ignored torn final lines. Hosts must
+ * surface these diagnostics and must not fall back to a stale local snapshot.
+ */
+public func memoryLogProjectReport(root: String)throws  -> MemoryProjectionRecord  {
+    return try  FfiConverterTypeMemoryProjectionRecord_lift(try rustCallWithError(FfiConverterTypeMemoryLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_memory_log_project_report(
+        FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+/**
+ * JSON array of every event under `{root}/.gallery/log`, sorted by (ts, id).
+ */
+public func memoryLogRead(root: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeMemoryLogError_lift) {
+        uniffiCallStatus in
+    uniffi_gallery_ffi_fn_func_memory_log_read(
+        FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+/**
  * `ContactLinker.linkState` — same indexes memories use.
  */
 public func personLinkState(personPath: String, displayName: String, contacts: [MemoryContactCommandItem], links: [MemoryPersonCommandItem]) -> PersonLinkResolution  {
@@ -15699,6 +16213,21 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_scheduled_memory_horizon_days() != 19202) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_memory_log_append() != 26415) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_memory_log_migrate_from_snapshot() != 46739) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_memory_log_project() != 14746) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_memory_log_project_report() != 46693) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_gallery_ffi_checksum_func_memory_log_read() != 49548) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_gallery_ffi_checksum_func_person_link_state() != 34004) {
