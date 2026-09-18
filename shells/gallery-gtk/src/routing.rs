@@ -79,11 +79,7 @@ pub(crate) enum NavKeyAction {
 /// Escape cancels Select first, else pops. `Alt+Left` pops. Search focus
 /// keeps both keys for the entry (type-to-search / clear).
 #[must_use]
-pub(crate) fn nav_key_policy(
-    selecting: bool,
-    search_focused: bool,
-    key: NavKey,
-) -> NavKeyAction {
+pub(crate) fn nav_key_policy(selecting: bool, search_focused: bool, key: NavKey) -> NavKeyAction {
     if search_focused {
         return NavKeyAction::Ignore;
     }

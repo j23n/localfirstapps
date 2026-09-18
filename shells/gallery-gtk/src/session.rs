@@ -26,6 +26,7 @@ use localgallery::mutate::MutationTarget;
 use localgallery::ops::{OpKind, OpLedger};
 use localgallery::{
     library_availability, AnalysisSummary, Config, LibraryAvailability, LibraryState, PhotoFile,
+    SnapshotReuse,
 };
 use shell_kit_gtk::{LogLevel, LogStore};
 
@@ -133,6 +134,38 @@ pub struct PhotoPage {
 pub struct TextPage {
     pub structure: ViewStructure,
     pub rows: Vec<GalleryTextRow>,
+}
+
+/// Outcome of leftover snapshot hydrate for the kit catalog walk.
+#[derive(Debug, Clone)]
+pub struct ScanCacheLoad {
+    pub document: Option<SnapshotHostDocument>,
+    pub reuse: SnapshotReuse,
+}
+
+/// Map a kit snapshot load error to leftover [`SnapshotReuse`].
+///
+/// [`ScanError::Io`] on a missing path is Missing; Io on an existing file
+/// is Unreadable. Hit / RootMismatch are not errors.
+#[must_use]
+pub fn snapshot_reuse_from_load_error(path: &Path, error: ScanError) -> SnapshotReuse {
+    match error {
+        ScanError::SnapshotCorrupt { detail } => SnapshotReuse::Corrupt { detail },
+        ScanError::SnapshotPayload { detail } => SnapshotReuse::Payload { detail },
+        ScanError::SnapshotVersionMismatch { found, expected } => {
+            SnapshotReuse::VersionMismatch { found, expected }
+        }
+        ScanError::Io { detail, .. } => {
+            if path.exists() {
+                SnapshotReuse::Unreadable { detail }
+            } else {
+                SnapshotReuse::Missing
+            }
+        }
+        ScanError::Cancelled => SnapshotReuse::Unreadable {
+            detail: "cancelled".into(),
+        },
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -348,7 +381,7 @@ impl Session {
     pub fn scan_catalog(&self, folder: &Path) -> Result<ScanCatalogHost, ShellError> {
         let cache = self
             .persist_host
-            .then(|| Self::load_scan_cache(folder))
+            .then(|| Self::load_scan_cache(folder).document)
             .flatten();
         Self::scan_with(
             self.scanner.clone(),
@@ -400,35 +433,64 @@ impl Session {
 
     /// Last leftover / iOS `LibrarySnapshot` for `folder`, if the file
     /// matches this root. Corrupt or foreign snapshots are ignored.
-    pub fn load_scan_cache(folder: &Path) -> Option<SnapshotHostDocument> {
+    pub fn load_scan_cache(folder: &Path) -> ScanCacheLoad {
         Self::load_scan_cache_at(&localgallery::config::snapshot_path(), folder)
     }
 
-    pub fn load_scan_cache_at(path: &Path, folder: &Path) -> Option<SnapshotHostDocument> {
-        let path = path.to_str()?;
-        let snap = match load_snapshot(path.to_string()) {
-            Ok(snap) => snap,
-            Err(error) => {
-                localcore_trace::event("catalog", format!("snapshot load skipped: {error}"));
-                return None;
-            }
+    pub fn load_scan_cache_at(path: &Path, folder: &Path) -> ScanCacheLoad {
+        let Some(path_str) = path.to_str() else {
+            return ScanCacheLoad {
+                document: None,
+                reuse: SnapshotReuse::Unreadable {
+                    detail: "snapshot path is not UTF-8".into(),
+                },
+            };
         };
-        let root = snap.folders.first()?.path.as_str();
-        if Path::new(root) != folder {
-            localcore_trace::event(
-                "catalog",
-                format!(
-                    "snapshot root mismatch have={root} want={}",
-                    folder.display()
-                ),
-            );
-            return None;
+        match load_snapshot(path_str.to_string()) {
+            Ok(snap) => {
+                let Some(root) = snap.folders.first().map(|folder| folder.path.as_str()) else {
+                    return ScanCacheLoad {
+                        document: None,
+                        reuse: SnapshotReuse::Payload {
+                            detail: "snapshot has no folders".into(),
+                        },
+                    };
+                };
+                if Path::new(root) != folder {
+                    localcore_trace::event(
+                        "catalog",
+                        format!(
+                            "snapshot root mismatch have={root} want={}",
+                            folder.display()
+                        ),
+                    );
+                    return ScanCacheLoad {
+                        document: None,
+                        reuse: SnapshotReuse::RootMismatch,
+                    };
+                }
+                localcore_trace::event(
+                    "catalog",
+                    format!("snapshot hit photos={}", snap.all_photos.len()),
+                );
+                ScanCacheLoad {
+                    document: Some(snap),
+                    reuse: SnapshotReuse::Hit,
+                }
+            }
+            Err(error) => {
+                let reuse = snapshot_reuse_from_load_error(path, error);
+                if reuse.recovery_message().is_some() {
+                    localcore_trace::event("catalog", format!("snapshot discarded: {reuse:?}"));
+                } else {
+                    localcore_trace::event("catalog", format!("snapshot load skipped: {reuse:?}"));
+                }
+                ScanCacheLoad {
+                    document: None,
+                    reuse,
+                }
+            }
         }
-        localcore_trace::event(
-            "catalog",
-            format!("snapshot hit photos={}", snap.all_photos.len()),
-        );
-        Some(snap)
     }
 
     /// Tagged catalog from a snapshot — first GTK paint before the walk.
@@ -2778,9 +2840,13 @@ mod tests {
         let snap_path = dir.join("library_snapshot.json");
         Session::persist_scan_snapshot_to(&snap_path, &catalog).unwrap();
 
-        let cache = Session::load_scan_cache_at(&snap_path, &dir).expect("snapshot matches root");
+        let cache = Session::load_scan_cache_at(&snap_path, &dir)
+            .document
+            .expect("snapshot matches root");
         assert!(
-            Session::load_scan_cache_at(&snap_path, Path::new("/other/lib")).is_none(),
+            Session::load_scan_cache_at(&snap_path, Path::new("/other/lib"))
+                .document
+                .is_none(),
             "foreign folder must not reuse this snapshot"
         );
 
@@ -2827,6 +2893,133 @@ mod tests {
                 .all(|photo| photo.hierarchical_tags.is_empty()),
             "deleted sidecar must retract People tags"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn snapshot_discard_maps_to_leftover_recovery_messages() {
+        assert_eq!(
+            SnapshotReuse::Corrupt {
+                detail: "bad json".into()
+            }
+            .recovery_message()
+            .as_deref(),
+            Some("Library snapshot is corrupt; rescanned (bad json)")
+        );
+        assert_eq!(
+            SnapshotReuse::Payload {
+                detail: "no folders".into()
+            }
+            .recovery_message()
+            .as_deref(),
+            Some("Library snapshot payload is unreadable; rescanned (no folders)")
+        );
+        assert_eq!(
+            SnapshotReuse::Unreadable {
+                detail: "permission denied".into()
+            }
+            .recovery_message()
+            .as_deref(),
+            Some("Library snapshot could not be read; rescanned (permission denied)")
+        );
+        assert_eq!(
+            SnapshotReuse::VersionMismatch {
+                found: 19,
+                expected: 20
+            }
+            .recovery_message()
+            .as_deref(),
+            Some("Library snapshot version 19 (expected 20); rescanned")
+        );
+        assert!(SnapshotReuse::Hit.recovery_message().is_none());
+        assert!(SnapshotReuse::Missing.recovery_message().is_none());
+        assert!(SnapshotReuse::RootMismatch.recovery_message().is_none());
+
+        let dir = temp_dir();
+        let missing = dir.join("absent.json");
+        assert_eq!(
+            snapshot_reuse_from_load_error(
+                &missing,
+                ScanError::Io {
+                    path: missing.display().to_string(),
+                    detail: "not found".into(),
+                }
+            ),
+            SnapshotReuse::Missing
+        );
+        let existing = dir.join("unreadable.json");
+        std::fs::write(&existing, b"not-json").unwrap();
+        assert_eq!(
+            snapshot_reuse_from_load_error(
+                &existing,
+                ScanError::Io {
+                    path: existing.display().to_string(),
+                    detail: "permission denied".into(),
+                }
+            ),
+            SnapshotReuse::Unreadable {
+                detail: "permission denied".into()
+            }
+        );
+        assert!(matches!(
+            snapshot_reuse_from_load_error(
+                &existing,
+                ScanError::SnapshotCorrupt {
+                    detail: "expected value".into()
+                }
+            ),
+            SnapshotReuse::Corrupt { .. }
+        ));
+        assert!(matches!(
+            snapshot_reuse_from_load_error(
+                &existing,
+                ScanError::SnapshotPayload {
+                    detail: "broken".into()
+                }
+            ),
+            SnapshotReuse::Payload { .. }
+        ));
+        assert_eq!(
+            snapshot_reuse_from_load_error(
+                &existing,
+                ScanError::SnapshotVersionMismatch {
+                    found: 19,
+                    expected: gallery_ffi::snapshot_version(),
+                }
+            ),
+            SnapshotReuse::VersionMismatch {
+                found: 19,
+                expected: gallery_ffi::snapshot_version()
+            }
+        );
+
+        let missing_load = Session::load_scan_cache_at(&missing, &dir);
+        assert!(missing_load.document.is_none());
+        assert_eq!(missing_load.reuse, SnapshotReuse::Missing);
+        assert!(missing_load.reuse.recovery_message().is_none());
+
+        let corrupt_load = Session::load_scan_cache_at(&existing, &dir);
+        assert!(corrupt_load.document.is_none());
+        assert!(matches!(corrupt_load.reuse, SnapshotReuse::Corrupt { .. }));
+        assert!(corrupt_load
+            .reuse
+            .recovery_message()
+            .unwrap()
+            .contains("corrupt"));
+
+        let versioned = dir.join("old.json");
+        std::fs::write(&versioned, r#"{"version":19,"value":{}}"#).unwrap();
+        let version_load = Session::load_scan_cache_at(&versioned, &dir);
+        assert!(version_load.document.is_none());
+        assert!(matches!(
+            version_load.reuse,
+            SnapshotReuse::VersionMismatch { found: 19, .. }
+        ));
+        assert!(version_load
+            .reuse
+            .recovery_message()
+            .unwrap()
+            .contains("version 19"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

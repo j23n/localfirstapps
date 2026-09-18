@@ -311,7 +311,7 @@ struct Inner {
     explorer_fill: RefCell<Option<ExplorerFill>>,
     folder_stack: RefCell<Vec<Option<String>>>,
     last_viewer_host: Cell<ViewerHost>,
-    scan_rx: RefCell<Option<mpsc::Receiver<Result<(PreparedUi, PathBuf), String>>>>,
+    scan_rx: RefCell<Option<mpsc::Receiver<ScanWire>>>,
     photos_rx: RefCell<Option<mpsc::Receiver<PreparedPhotos>>>,
     drill_rx: RefCell<Option<mpsc::Receiver<(u64, ViewList)>>>,
     memories_rx: RefCell<Option<mpsc::Receiver<Vec<gallery_ffi::MemoryStructure>>>>,
@@ -344,6 +344,12 @@ struct Inner {
     watch_ignore_ticks: Cell<u32>,
     mutate_rx: RefCell<Option<mpsc::Receiver<MutateOutcome>>>,
     move_ui: RefCell<Option<MoveUi>>,
+}
+
+struct ScanWire {
+    folder: PathBuf,
+    toasts: Vec<String>,
+    result: Result<PreparedUi, String>,
 }
 
 enum AnalysisEvent {
@@ -1500,7 +1506,11 @@ impl Window {
         self.inner.scan_rx.replace(Some(rx));
         thread::spawn(move || {
             let persist_folder = persist.then(|| folder.clone());
-            let cache = persist.then(|| Session::load_scan_cache(&folder)).flatten();
+            let loaded = persist.then(|| Session::load_scan_cache(&folder));
+            let snapshot_toast = loaded
+                .as_ref()
+                .and_then(|load| load.reuse.recovery_message());
+            let cache = loaded.and_then(|load| load.document);
             if let Some(snap) = &cache {
                 let warmed = Session::prepare_ui(
                     &index,
@@ -1509,54 +1519,83 @@ impl Window {
                     persist_folder.as_deref(),
                     &status,
                 );
-                if tx.send(Ok((warmed, folder.clone()))).is_err() {
+                if tx
+                    .send(ScanWire {
+                        folder: folder.clone(),
+                        toasts: Vec::new(),
+                        result: Ok(warmed),
+                    })
+                    .is_err()
+                {
                     return;
                 }
             }
-            let result = Session::scan_with(scanner, status.clone(), &folder, cache.as_ref())
-                .and_then(|mut catalog| {
-                    Session::mark_changed_sidecars(&mut catalog, cache.as_ref());
-                    if cache.is_none() {
-                        let first = Session::prepare_ui(
-                            &index,
-                            catalog.clone(),
-                            false,
-                            persist_folder.as_deref(),
-                            &status,
-                        );
-                        if tx.send(Ok((first, folder.clone()))).is_err() {
-                            return Ok(());
-                        }
+            let walk = Session::scan_with(scanner, status.clone(), &folder, cache.as_ref());
+            let unsupported = gallery_vfs::take_unsupported_names();
+            let mut walk_toasts = Vec::new();
+            if let Some(msg) = snapshot_toast {
+                walk_toasts.push(msg);
+            }
+            if let Some(msg) = localgallery::row::unsupported_names_message(&unsupported) {
+                walk_toasts.push(msg);
+            }
+            let result = walk.and_then(|mut catalog| {
+                Session::mark_changed_sidecars(&mut catalog, cache.as_ref());
+                let mut toasts = std::mem::take(&mut walk_toasts);
+                if cache.is_none() {
+                    let first = Session::prepare_ui(
+                        &index,
+                        catalog.clone(),
+                        false,
+                        persist_folder.as_deref(),
+                        &status,
+                    );
+                    if tx
+                        .send(ScanWire {
+                            folder: folder.clone(),
+                            toasts,
+                            result: Ok(first),
+                        })
+                        .is_err()
+                    {
+                        return Ok(());
                     }
-                    if enrich_after {
-                        if catalog.needs_enrichment {
-                            Session::enrich_catalog(&mut catalog);
-                        }
-                        if persist {
-                            if let Err(error) = Session::persist_scan_snapshot(&folder, &catalog) {
-                                localcore_trace::event(
-                                    "catalog",
-                                    format!("snapshot persist: {error}"),
-                                );
-                            }
-                        }
-                        let second = Session::prepare_ui(
-                            &index,
-                            catalog,
-                            true,
-                            persist_folder.as_deref(),
-                            &status,
-                        );
-                        let _ = tx.send(Ok((second, folder)));
-                    } else if persist {
+                    toasts = Vec::new();
+                }
+                if enrich_after {
+                    if catalog.needs_enrichment {
+                        Session::enrich_catalog(&mut catalog);
+                    }
+                    if persist {
                         if let Err(error) = Session::persist_scan_snapshot(&folder, &catalog) {
                             localcore_trace::event("catalog", format!("snapshot persist: {error}"));
                         }
                     }
-                    Ok(())
-                });
+                    let second = Session::prepare_ui(
+                        &index,
+                        catalog,
+                        true,
+                        persist_folder.as_deref(),
+                        &status,
+                    );
+                    let _ = tx.send(ScanWire {
+                        folder: folder.clone(),
+                        toasts,
+                        result: Ok(second),
+                    });
+                } else if persist {
+                    if let Err(error) = Session::persist_scan_snapshot(&folder, &catalog) {
+                        localcore_trace::event("catalog", format!("snapshot persist: {error}"));
+                    }
+                }
+                Ok(())
+            });
             if let Err(error) = result {
-                let _ = tx.send(Err(error.to_string()));
+                let _ = tx.send(ScanWire {
+                    folder,
+                    toasts: walk_toasts,
+                    result: Err(error.to_string()),
+                });
             }
         });
     }
@@ -2007,10 +2046,13 @@ impl Window {
             return;
         };
         match rx.try_recv() {
-            Ok(result) => {
+            Ok(packet) => {
                 self.inner.scan_rx.replace(Some(rx));
-                match result {
-                    Ok((prepared, folder)) => self.finish_scan(prepared, folder),
+                for message in &packet.toasts {
+                    self.toast(message);
+                }
+                match packet.result {
+                    Ok(prepared) => self.finish_scan(prepared, packet.folder),
                     Err(error) => {
                         self.inner.scan_rx.replace(None);
                         self.inner.scan_busy.set(false);
