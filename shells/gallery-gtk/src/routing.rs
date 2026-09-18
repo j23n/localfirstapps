@@ -61,6 +61,38 @@ pub(crate) enum FolderStackPop {
     PopFolder { parent: Option<String> },
 }
 
+/// Key that can cancel Select or pop the visible [`adw::NavigationView`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NavKey {
+    Escape,
+    AltLeft,
+}
+
+/// Outcome of leftover-parity back keys. Pure so tests need no display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NavKeyAction {
+    CancelSelect,
+    Pop,
+    Ignore,
+}
+
+/// Escape cancels Select first, else pops. `Alt+Left` pops. Search focus
+/// keeps both keys for the entry (type-to-search / clear).
+#[must_use]
+pub(crate) fn nav_key_policy(
+    selecting: bool,
+    search_focused: bool,
+    key: NavKey,
+) -> NavKeyAction {
+    if search_focused {
+        return NavKeyAction::Ignore;
+    }
+    match key {
+        NavKey::Escape if selecting => NavKeyAction::CancelSelect,
+        NavKey::Escape | NavKey::AltLeft => NavKeyAction::Pop,
+    }
+}
+
 /// Only Folder pages pop `folder_stack`. Viewer and photo-info stay put.
 #[must_use]
 pub(crate) fn folder_stack_pop_policy(
@@ -101,6 +133,38 @@ mod tests {
         assert_eq!(route_id(GalleryScreen::PhotoInfo), "photo-info");
         assert_eq!(route_id(GalleryScreen::Folder), "folder");
         assert_eq!(route_id(GalleryScreen::People), "people");
+    }
+
+    #[test]
+    fn nav_key_policy_covers_select_search_and_back() {
+        assert_eq!(
+            nav_key_policy(true, false, NavKey::Escape),
+            NavKeyAction::CancelSelect
+        );
+        assert_eq!(
+            nav_key_policy(false, false, NavKey::Escape),
+            NavKeyAction::Pop
+        );
+        assert_eq!(
+            nav_key_policy(true, false, NavKey::AltLeft),
+            NavKeyAction::Pop
+        );
+        assert_eq!(
+            nav_key_policy(false, false, NavKey::AltLeft),
+            NavKeyAction::Pop
+        );
+        assert_eq!(
+            nav_key_policy(true, true, NavKey::Escape),
+            NavKeyAction::Ignore
+        );
+        assert_eq!(
+            nav_key_policy(false, true, NavKey::AltLeft),
+            NavKeyAction::Ignore
+        );
+        assert_eq!(
+            nav_key_policy(false, true, NavKey::Escape),
+            NavKeyAction::Ignore
+        );
     }
 
     #[test]

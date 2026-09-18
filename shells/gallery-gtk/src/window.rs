@@ -36,7 +36,9 @@ use crate::paging::{
     same_item_ids, view_item_from_object, years_from_structure, PageCache, ViewItem, ViewList,
     ViewListModel, YearMark,
 };
-use crate::routing::{folder_stack_pop_policy, route_id, FolderStackPop};
+use crate::routing::{
+    folder_stack_pop_policy, nav_key_policy, route_id, FolderStackPop, NavKey, NavKeyAction,
+};
 use crate::session::{EventFolder, PhotoIntent, PreparedHub, PreparedUi, Session, TextPage};
 use crate::thumbs::ThumbCache;
 use crate::year_rail;
@@ -285,8 +287,8 @@ struct Inner {
     photos_scroll: gtk::ScrolledWindow,
     photos_grid: gtk::GridView,
     photos_year_rail: gtk::Box,
-    #[allow(dead_code)]
     photos_search: gtk::SearchEntry,
+    logs_search: RefCell<Option<gtk::SearchEntry>>,
     photos_hits: gtk::ListBox,
     photos_chips: gtk::Box,
     collections_box: gtk::Box,
@@ -763,6 +765,7 @@ impl Window {
             photos_grid: photos_grid.clone(),
             photos_year_rail,
             photos_search: photos_search.clone(),
+            logs_search: RefCell::new(None),
             photos_hits: photos_hits.clone(),
             photos_chips,
             collections_box,
@@ -876,18 +879,40 @@ impl Window {
             let deleting = this.clone();
             deleter.connect_clicked(move |_| deleting.delete_selected());
         }
-        let escape = gtk::EventControllerKey::new();
-        let escaper = this.clone();
-        escape.connect_key_pressed(move |_, keyval, _, _| {
-            if keyval == gtk::gdk::Key::Escape {
-                if escaper.inner.session.borrow().is_selecting() {
-                    escaper.cancel_select_mode();
-                    return glib::Propagation::Stop;
+        let keys = gtk::EventControllerKey::new();
+        let keyed = this.clone();
+        keys.connect_key_pressed(move |_, key, _, mods| {
+            let alt = mods.contains(gtk::gdk::ModifierType::ALT_MASK);
+            let nav_key = if key == gtk::gdk::Key::Escape {
+                Some(NavKey::Escape)
+            } else if alt && key == gtk::gdk::Key::Left {
+                Some(NavKey::AltLeft)
+            } else {
+                None
+            };
+            let Some(nav_key) = nav_key else {
+                return glib::Propagation::Proceed;
+            };
+            match nav_key_policy(
+                keyed.inner.session.borrow().is_selecting(),
+                keyed.search_entry_focused(),
+                nav_key,
+            ) {
+                NavKeyAction::CancelSelect => {
+                    keyed.cancel_select_mode();
+                    glib::Propagation::Stop
                 }
+                NavKeyAction::Pop => {
+                    if keyed.pop_visible_nav() {
+                        glib::Propagation::Stop
+                    } else {
+                        glib::Propagation::Proceed
+                    }
+                }
+                NavKeyAction::Ignore => glib::Propagation::Proceed,
             }
-            glib::Propagation::Proceed
         });
-        this.inner.window.add_controller(escape);
+        this.inner.window.add_controller(keys);
         let tabbed = this.clone();
         let last_tab = RefCell::new(
             this.inner
@@ -3848,6 +3873,29 @@ impl Window {
         self.inner.collections_nav.push(&page);
     }
 
+    fn search_entry_focused(&self) -> bool {
+        if self.inner.photos_search.has_focus() {
+            return true;
+        }
+        self.inner
+            .logs_search
+            .borrow()
+            .as_ref()
+            .is_some_and(|entry| entry.has_focus())
+    }
+
+    fn visible_nav(&self) -> &adw::NavigationView {
+        match self.inner.shell.stack.visible_child_name().as_deref() {
+            Some("folders") => &self.inner.folders_nav,
+            Some("collections") => &self.inner.collections_nav,
+            _ => &self.inner.photos_nav,
+        }
+    }
+
+    fn pop_visible_nav(&self) -> bool {
+        self.visible_nav().pop()
+    }
+
     fn viewer_nav(&self, host: ViewerHost) -> &adw::NavigationView {
         match host {
             ViewerHost::Photos => &self.inner.photos_nav,
@@ -5005,6 +5053,7 @@ impl Window {
         });
         let search = ui.search.clone().expect("logs search");
         search.set_placeholder_text(Some("Message or category"));
+        self.inner.logs_search.replace(Some(search.clone()));
         let level = match ui.filter.clone().expect("logs filter") {
             shell_kit_gtk::FilterControl::Scope(group) => group,
             shell_kit_gtk::FilterControl::Choice(_) => {
