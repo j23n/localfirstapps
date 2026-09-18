@@ -76,6 +76,7 @@ final class LibraryStore {
     @ObservationIgnored private var scanRevision = 0
     @ObservationIgnored private let core: MusicCoreClient
     @ObservationIgnored private let persistence: PersistenceManager
+    @ObservationIgnored private let snapshotCache: LibrarySnapshotCache
 
     let deviceID: String
 
@@ -86,10 +87,12 @@ final class LibraryStore {
     init(
         core: MusicCoreClient = MusicCoreClient(),
         persistence: PersistenceManager = .shared,
+        snapshotCache: LibrarySnapshotCache = .shared,
         defaults: UserDefaults = .standard
     ) {
         self.core = core
         self.persistence = persistence
+        self.snapshotCache = snapshotCache
         if let raw = defaults.string(forKey: Self.sortDefaultsKey),
            let option = LibrarySortOption(rawValue: raw) {
             sortOption = option
@@ -240,7 +243,33 @@ final class LibraryStore {
     }
 
     private func performScan(capturedURL: URL, revision: Int) async {
+        let cachePath = snapshotCache.fileURL(root: capturedURL.standardized.path).path
         do {
+            if let paint = try await core.tryOpenCached(
+                root: capturedURL.standardized.path,
+                device: deviceID,
+                cachePath: cachePath
+            ) {
+                guard !Task.isCancelled, folderURL == capturedURL, scanRevision == revision else {
+                    return
+                }
+                try await applyPaintedLibrary(paint)
+                await Task.yield()
+                try await core.reload()
+                guard !Task.isCancelled, folderURL == capturedURL, scanRevision == revision else {
+                    return
+                }
+                try await applyPaintedLibrary(try await core.libraryPaintRows())
+                let requests = try await core.pendingMetadataRequests()
+                try await enrichAndFinish(
+                    requests,
+                    capturedURL: capturedURL,
+                    revision: revision,
+                    cachePath: cachePath
+                )
+                return
+            }
+
             let requests = try await core.prepare(
                 root: capturedURL.standardized.path,
                 device: deviceID
@@ -248,39 +277,72 @@ final class LibraryStore {
             guard !Task.isCancelled, folderURL == capturedURL, scanRevision == revision else {
                 return
             }
-            scanProgress = ScanProgress(completed: 0, total: requests.count)
-            let enriched = try await loadMetadata(requests, revision: revision)
-            try Task.checkCancellation()
-            try await core.applyMetadata(enriched.map(\.result))
-            let snapshot = try await core.librarySnapshot(
-                query: searchText,
-                sort: sortOption.coreValue
+            try await enrichAndFinish(
+                requests,
+                capturedURL: capturedURL,
+                revision: revision,
+                cachePath: cachePath
             )
-            let rows = try await core.sessionRows()
-            guard !Task.isCancelled, folderURL == capturedURL, scanRevision == revision else {
-                return
-            }
-
-            var byID = tracksByCoreID
-            for item in enriched {
-                byID[item.track.coreID] = item.track
-            }
-            let liveIDs = Set(snapshot.allTrackIDs)
-            byID = byID.filter { liveIDs.contains($0.key) }
-            tracksByCoreID = byID
-            rebuildURLIndex()
-            apply(snapshot)
-            apply(rows)
-            let now = Date()
-            persistence.saveLastSynced(now)
-            lastSynced = now
-            errorMessage = nil
-            Log.library.info("MusicSession rescan complete: \(tracks.count) tracks")
         } catch is CancellationError {
             Log.library.debug("Discarding cancelled MusicSession rescan")
         } catch {
             report(error)
         }
+    }
+
+    private func enrichAndFinish(
+        _ requests: [MetadataRequest],
+        capturedURL: URL,
+        revision: Int,
+        cachePath: String
+    ) async throws {
+        scanProgress = ScanProgress(completed: 0, total: requests.count)
+        let enriched = try await loadMetadata(requests, revision: revision)
+        try Task.checkCancellation()
+        try await core.applyMetadata(enriched.map(\.result))
+        let snapshot = try await core.librarySnapshot(
+            query: searchText,
+            sort: sortOption.coreValue
+        )
+        let rows = try await core.sessionRows()
+        guard !Task.isCancelled, folderURL == capturedURL, scanRevision == revision else {
+            return
+        }
+
+        var byID = tracksByCoreID
+        for item in enriched {
+            byID[item.track.coreID] = item.track
+        }
+        let liveIDs = Set(snapshot.allTrackIDs)
+        byID = byID.filter { liveIDs.contains($0.key) }
+        tracksByCoreID = byID
+        rebuildURLIndex()
+        apply(snapshot)
+        apply(rows)
+        try? await core.saveLibraryCache(cachePath: cachePath)
+        let now = Date()
+        persistence.saveLastSynced(now)
+        lastSynced = now
+        errorMessage = nil
+        Log.library.info("MusicSession rescan complete: \(tracks.count) tracks")
+    }
+
+    private func applyPaintedLibrary(_ paint: [LibraryPaintRow]) async throws {
+        var byID: [String: Track] = [:]
+        for row in paint {
+            let track = Track(paint: row)
+            byID[track.coreID] = track
+        }
+        tracksByCoreID = byID
+        rebuildURLIndex()
+        let snapshot = try await core.librarySnapshot(
+            query: searchText,
+            sort: sortOption.coreValue
+        )
+        let rows = try await core.sessionRows()
+        apply(snapshot)
+        apply(rows)
+        errorMessage = nil
     }
 
     private func loadMetadata(

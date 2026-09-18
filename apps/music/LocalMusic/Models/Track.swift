@@ -19,6 +19,19 @@ struct Track: Identifiable, Codable, Hashable, Sendable {
     /// Opaque identity used by `MusicSession` commands.
     var coreID: String { id.uuidString.lowercased() }
 
+    /// Host adapter for a warm-start paint row from `MusicSession`.
+    init(paint: LibraryPaintRow) {
+        let url = URL(fileURLWithPath: paint.path)
+        self.id = UUID(uuidString: paint.id) ?? Track.stableID(for: url)
+        self.url = url
+        self.title = paint.title
+        self.artist = paint.artist
+        self.album = paint.album
+        self.duration = Double(paint.durationMs) / 1_000
+        self.hasArtwork = paint.hasArtwork
+        self.hasLyrics = paint.hasLyrics
+    }
+
     /// Stable UUID derived from the file path: a SHA-256 truncated to 16
     /// bytes with RFC 4122 variant + version-5 nibbles set so the value is
     /// a syntactically valid UUID. (It is not a strict v5 UUID — there's no

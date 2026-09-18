@@ -230,3 +230,46 @@ fn search_hits_and_settings_rows_are_session_projections() {
     assert_eq!(info[2].trailing.as_deref(), Some("0 groups"));
     assert!(session.search_hits(String::new()).unwrap().is_empty());
 }
+
+#[test]
+fn cached_session_paints_then_reuses_unchanged_fingerprints() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("song.mp3"), b"audio").unwrap();
+    let root = temp.path().to_str().unwrap().to_owned();
+    let session = MusicSession::open(root.clone(), "phone".into()).unwrap();
+    let request = session.metadata_requests(0, 1).unwrap().remove(0);
+    session
+        .apply_metadata(MetadataResult {
+            id: request.id,
+            title: "Warm".into(),
+            artist: "Ada".into(),
+            album: "Notes".into(),
+            duration_ms: 1_000,
+            has_artwork: true,
+            has_lyrics: false,
+        })
+        .unwrap();
+    let cache = temp.path().join("cache").join("library.json");
+    let cache_path = cache.to_str().unwrap().to_owned();
+    session.save_library_cache(cache_path.clone()).unwrap();
+
+    let warmed =
+        MusicSession::open_cached(root.clone(), "phone".into(), cache_path.clone()).unwrap();
+    let paint = warmed.library_paint_rows().unwrap();
+    assert_eq!(paint[0].title, "Warm");
+    assert_eq!(paint[0].artist, "Ada");
+    assert_eq!(warmed.pending_metadata_count().unwrap(), 0);
+    warmed.reload().unwrap();
+    assert_eq!(warmed.pending_metadata_count().unwrap(), 0);
+    assert_eq!(warmed.library_paint_rows().unwrap()[0].title, "Warm");
+
+    fs::write(temp.path().join("song.mp3"), b"retagged").unwrap();
+    warmed.reload().unwrap();
+    assert_eq!(warmed.pending_metadata_count().unwrap(), 1);
+
+    assert_ne!(
+        music_ffi::library_cache_path("/cache".into(), "/a".into()),
+        music_ffi::library_cache_path("/cache".into(), "/b".into())
+    );
+    assert!(MusicSession::open_cached(root, "phone".into(), "/no/such/cache.json".into()).is_err());
+}

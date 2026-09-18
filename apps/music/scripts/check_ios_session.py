@@ -31,6 +31,8 @@ def main() -> int:
     errors += require(
         "Services/MusicCoreClient.swift",
         "MusicSession.open(",
+        "openCached(",
+        "saveLibraryCache(",
         "librarySectionRows()",
         "libraryTrackRows(",
         "playlistEntryRows(",
@@ -59,8 +61,8 @@ def main() -> int:
     )
     errors += forbid(
         "Services/LibraryStore.swift",
-        "saveLibrary",
-        "loadLibrary",
+        "saveLibrary(",
+        "loadLibrary(",
         "folderContentModificationDate",
         "localizedCaseInsensitiveCompare",
     )
@@ -68,6 +70,17 @@ def main() -> int:
         "Services/PersistenceManager.swift",
         "migrateLegacyLibraryIfNeeded",
         "obsolete library.json",
+    )
+    errors += require(
+        "Services/LibrarySnapshotCache.swift",
+        "cachesDirectory",
+        "localmusic",
+        "library.json",
+    )
+    errors += forbid(
+        "Services/LibrarySnapshotCache.swift",
+        "documentDirectory",
+        "Documents/library.json",
     )
 
     routes = {

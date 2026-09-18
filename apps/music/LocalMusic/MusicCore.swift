@@ -599,6 +599,11 @@ public protocol MusicSessionProtocol: AnyObject, Sendable {
     func libraryGeneration() throws  -> UInt64
 
     /**
+     * Cached / current rows the host can paint without a metadata pass.
+     */
+    func libraryPaintRows() throws  -> [LibraryPaintRow]
+
+    /**
      * Cheap whole-screen structure as section `text-row`s.
      */
     func librarySectionRows() throws  -> [TextRow]
@@ -622,6 +627,11 @@ public protocol MusicSessionProtocol: AnyObject, Sendable {
      * Move one entry; returns the replacement content token.
      */
     func movePlaylistEntry(command: MovePlaylistEntryCommand) throws  -> String
+
+    /**
+     * Tracks still waiting on host metadata after a warm reload.
+     */
+    func pendingMetadataCount() throws  -> UInt64
 
     /**
      * Display-ready detail actions and enablement.
@@ -662,6 +672,11 @@ public protocol MusicSessionProtocol: AnyObject, Sendable {
      * Explicitly apply one R8-R11 conflict decision.
      */
     func resolveConflict(command: ResolveConflictCommand) throws
+
+    /**
+     * Persist the disposable snapshot after a walk and host metadata.
+     */
+    func saveLibraryCache(cachePath: String) throws
 
     /**
      * Non-fatal scan issues as status rows.
@@ -747,6 +762,20 @@ public static func `open`(root: String, device: String)throws  -> MusicSession  
     uniffi_music_ffi_fn_constructor_musicsession_open(
         FfiConverterString.lower(root),
         FfiConverterString.lower(device),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Hydrate from a private cache without walking. Cache miss is [`MusicError::Io`].
+     */
+public static func openCached(root: String, device: String, cachePath: String)throws  -> MusicSession  {
+    return try  FfiConverterTypeMusicSession_lift(try rustCallWithError(FfiConverterTypeMusicError_lift) {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_constructor_musicsession_open_cached(
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(device),
+        FfiConverterString.lower(cachePath),uniffiCallStatus
     )
 })
 }
@@ -867,6 +896,18 @@ open func libraryGeneration()throws  -> UInt64  {
 }
 
     /**
+     * Cached / current rows the host can paint without a metadata pass.
+     */
+open func libraryPaintRows()throws  -> [LibraryPaintRow]  {
+    return try  FfiConverterSequenceTypeLibraryPaintRow.lift(try rustCallWithError(FfiConverterTypeMusicError_lift) {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_method_musicsession_library_paint_rows(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Cheap whole-screen structure as section `text-row`s.
      */
 open func librarySectionRows()throws  -> [TextRow]  {
@@ -930,6 +971,18 @@ open func movePlaylistEntry(command: MovePlaylistEntryCommand)throws  -> String 
     uniffi_music_ffi_fn_method_musicsession_move_playlist_entry(
             self.uniffiCloneHandle(),
         FfiConverterTypeMovePlaylistEntryCommand_lower(command),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Tracks still waiting on host metadata after a warm reload.
+     */
+open func pendingMetadataCount()throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeMusicError_lift) {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_method_musicsession_pending_metadata_count(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -1030,6 +1083,18 @@ open func resolveConflict(command: ResolveConflictCommand)throws   {try rustCall
     uniffi_music_ffi_fn_method_musicsession_resolve_conflict(
             self.uniffiCloneHandle(),
         FfiConverterTypeResolveConflictCommand_lower(command),uniffiCallStatus
+    )
+}
+}
+
+    /**
+     * Persist the disposable snapshot after a walk and host metadata.
+     */
+open func saveLibraryCache(cachePath: String)throws   {try rustCallWithError(FfiConverterTypeMusicError_lift) {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_method_musicsession_save_library_cache(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(cachePath),uniffiCallStatus
     )
 }
 }
@@ -1524,6 +1589,135 @@ public func FfiConverterTypeDeletePlaylistCommand_lift(_ buf: RustBuffer) throws
 #endif
 public func FfiConverterTypeDeletePlaylistCommand_lower(_ value: DeletePlaylistCommand) -> RustBuffer {
     return FfiConverterTypeDeletePlaylistCommand.lower(value)
+}
+
+
+/**
+ * Host-port row used to paint the library from a warm cache. Not a domain record.
+ */
+public struct LibraryPaintRow: Equatable, Hashable {
+    /**
+     * Opaque track id.
+     */
+    public var id: String
+    /**
+     * Local audio path under the active host folder grant.
+     */
+    public var path: String
+    /**
+     * Display title.
+     */
+    public var title: String
+    /**
+     * Display artist.
+     */
+    public var artist: String
+    /**
+     * Display album.
+     */
+    public var album: String
+    /**
+     * Integral duration.
+     */
+    public var durationMs: UInt64
+    /**
+     * Artwork can be requested from the host cache.
+     */
+    public var hasArtwork: Bool
+    /**
+     * Lyrics can be requested from the host cache.
+     */
+    public var hasLyrics: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Opaque track id.
+         */id: String,
+        /**
+         * Local audio path under the active host folder grant.
+         */path: String,
+        /**
+         * Display title.
+         */title: String,
+        /**
+         * Display artist.
+         */artist: String,
+        /**
+         * Display album.
+         */album: String,
+        /**
+         * Integral duration.
+         */durationMs: UInt64,
+        /**
+         * Artwork can be requested from the host cache.
+         */hasArtwork: Bool,
+        /**
+         * Lyrics can be requested from the host cache.
+         */hasLyrics: Bool) {
+        self.id = id
+        self.path = path
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.durationMs = durationMs
+        self.hasArtwork = hasArtwork
+        self.hasLyrics = hasLyrics
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension LibraryPaintRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryPaintRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryPaintRow {
+        return
+            try LibraryPaintRow(
+                id: FfiConverterString.read(from: &buf),
+                path: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                artist: FfiConverterString.read(from: &buf),
+                album: FfiConverterString.read(from: &buf),
+                durationMs: FfiConverterUInt64.read(from: &buf),
+                hasArtwork: FfiConverterBool.read(from: &buf),
+                hasLyrics: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryPaintRow, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterString.write(value.album, into: &buf)
+        FfiConverterUInt64.write(value.durationMs, into: &buf)
+        FfiConverterBool.write(value.hasArtwork, into: &buf)
+        FfiConverterBool.write(value.hasLyrics, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryPaintRow_lift(_ buf: RustBuffer) throws -> LibraryPaintRow {
+    return try FfiConverterTypeLibraryPaintRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryPaintRow_lower(_ value: LibraryPaintRow) -> RustBuffer {
+    return FfiConverterTypeLibraryPaintRow.lower(value)
 }
 
 
@@ -3402,6 +3596,31 @@ fileprivate struct FfiConverterSequenceTypeConflictRow: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeLibraryPaintRow: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryPaintRow]
+
+    public static func write(_ value: [LibraryPaintRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryPaintRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryPaintRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryPaintRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryPaintRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeMediaItem: FfiConverterRustBuffer {
     typealias SwiftType = [MediaItem]
 
@@ -3584,6 +3803,19 @@ public func isConflictName(name: String) -> Bool  {
     )
 })
 }
+/**
+ * Private cache file for one selected folder. Hosts supply the cache directory
+ * (`$XDG_CACHE_HOME/localmusic` or the iOS Caches directory).
+ */
+public func libraryCachePath(cacheDir: String, root: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_music_ffi_fn_func_library_cache_path(
+        FfiConverterString.lower(cacheDir),
+        FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -3601,6 +3833,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.contractVersionMismatch
     }
     if (uniffi_music_ffi_checksum_func_is_conflict_name() != 11789) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_music_ffi_checksum_func_library_cache_path() != 40911) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_music_ffi_checksum_method_musicsession_add_tracks() != 40097) {
@@ -3630,6 +3865,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_music_ffi_checksum_method_musicsession_library_generation() != 58266) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_music_ffi_checksum_method_musicsession_library_paint_rows() != 17039) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_music_ffi_checksum_method_musicsession_library_section_rows() != 13537) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3643,6 +3881,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_music_ffi_checksum_method_musicsession_move_playlist_entry() != 40796) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_music_ffi_checksum_method_musicsession_pending_metadata_count() != 47124) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_music_ffi_checksum_method_musicsession_playlist_action_rows() != 36733) {
@@ -3669,6 +3910,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_music_ffi_checksum_method_musicsession_resolve_conflict() != 7954) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_music_ffi_checksum_method_musicsession_save_library_cache() != 33608) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_music_ffi_checksum_method_musicsession_scan_issue_rows() != 6276) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3682,6 +3926,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_music_ffi_checksum_constructor_musicsession_open() != 52643) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_music_ffi_checksum_constructor_musicsession_open_cached() != 17274) {
         return InitializationResult.apiChecksumMismatch
     }
 

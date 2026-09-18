@@ -10,8 +10,8 @@ use std::sync::{Mutex, MutexGuard};
 use music_core::{
     add_tracks_logged, conflict_choice_rows as core_conflict_choice_rows,
     conflict_rows as core_conflict_rows, create_playlist_logged, delete_playlist_logged,
-    is_conflict_name as core_is_conflict_name, move_entry_logged,
-    playlist_action_rows as core_playlist_action_rows,
+    is_conflict_name as core_is_conflict_name, library_cache_path as core_library_cache_path,
+    move_entry_logged, playlist_action_rows as core_playlist_action_rows,
     playlist_entry_rows as core_playlist_entry_rows, playlist_rows as core_playlist_rows,
     remove_entries_logged, resolve_conflict_logged, search_hits as core_search_hits,
     set_library_view, settings_info_rows as core_settings_info_rows, ActionRole as CoreActionRole,
@@ -20,7 +20,7 @@ use music_core::{
     DeletePlaylistCommand as CoreDeleteCommand, MetadataUpdate,
     MovePlaylistEntryCommand as CoreMoveCommand, RemovePlaylistEntriesCommand as CoreRemoveCommand,
     ResolveConflictCommand as CoreResolveCommand, SetLibraryViewCommand as CoreSetViewCommand,
-    SortOption as CoreSortOption, StatusSeverity as CoreStatusSeverity, Store, StoreError,
+    SortOption as CoreSortOption, StatusSeverity as CoreStatusSeverity, StdVfs, Store, StoreError,
     TEMP_PREFIX,
 };
 
@@ -425,6 +425,34 @@ pub fn is_conflict_name(name: String) -> bool {
     core_is_conflict_name(&name)
 }
 
+/// Private cache file for one selected folder. Hosts supply the cache directory
+/// (`$XDG_CACHE_HOME/localmusic` or the iOS Caches directory).
+#[uniffi::export]
+pub fn library_cache_path(cache_dir: String, root: String) -> String {
+    core_library_cache_path(&cache_dir, &root)
+}
+
+/// Host-port row used to paint the library from a warm cache. Not a domain record.
+#[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
+pub struct LibraryPaintRow {
+    /// Opaque track id.
+    pub id: String,
+    /// Local audio path under the active host folder grant.
+    pub path: String,
+    /// Display title.
+    pub title: String,
+    /// Display artist.
+    pub artist: String,
+    /// Display album.
+    pub album: String,
+    /// Integral duration.
+    pub duration_ms: u64,
+    /// Artwork can be requested from the host cache.
+    pub has_artwork: bool,
+    /// Lyrics can be requested from the host cache.
+    pub has_lyrics: bool,
+}
+
 /// Real-filesystem music session.
 #[derive(uniffi::Object)]
 pub struct MusicSession {
@@ -454,6 +482,66 @@ impl MusicSession {
             device,
             store: Mutex::new(store),
         })
+    }
+
+    /// Hydrate from a private cache without walking. Cache miss is [`MusicError::Io`].
+    #[uniffi::constructor]
+    pub fn open_cached(
+        root: String,
+        device: String,
+        cache_path: String,
+    ) -> Result<Self, MusicError> {
+        if !music_core::valid_device(&device) {
+            return Err(MusicError::InvalidCommand {
+                message: "Device id contains unsupported characters".into(),
+                user_actionable: true,
+            });
+        }
+        let vfs = ConfinedVfs::new(TEMP_PREFIX, &root).map_err(|error| MusicError::Io {
+            message: error.to_string(),
+            user_actionable: true,
+        })?;
+        let host = StdVfs::new(TEMP_PREFIX);
+        let store = Store::load_cache(&host, &cache_path, &root).ok_or(MusicError::Io {
+            message: "Library cache is unavailable".into(),
+            user_actionable: false,
+        })?;
+        Ok(Self {
+            vfs,
+            device,
+            store: Mutex::new(store),
+        })
+    }
+
+    /// Persist the disposable snapshot after a walk and host metadata.
+    pub fn save_library_cache(&self, cache_path: String) -> Result<(), MusicError> {
+        let host = StdVfs::new(TEMP_PREFIX);
+        self.lock()?.save_cache(&host, &cache_path)?;
+        Ok(())
+    }
+
+    /// Tracks still waiting on host metadata after a warm reload.
+    pub fn pending_metadata_count(&self) -> Result<u64, MusicError> {
+        Ok(self.lock()?.pending_metadata_count() as u64)
+    }
+
+    /// Cached / current rows the host can paint without a metadata pass.
+    pub fn library_paint_rows(&self) -> Result<Vec<LibraryPaintRow>, MusicError> {
+        Ok(self
+            .lock()?
+            .tracks()
+            .iter()
+            .map(|track| LibraryPaintRow {
+                id: track.id.clone(),
+                path: track.path.clone(),
+                title: track.title.clone(),
+                artist: track.artist.clone(),
+                album: track.album.clone(),
+                duration_ms: track.duration_ms,
+                has_artwork: track.has_artwork,
+                has_lyrics: track.has_lyrics,
+            })
+            .collect())
     }
 
     /// Re-walk the selected folder, preserving metadata for unchanged ids.
