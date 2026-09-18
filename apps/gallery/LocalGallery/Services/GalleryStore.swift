@@ -275,6 +275,9 @@ final class GalleryStore {
     /// Pre-M2 import source. Read once before the person store exists and
     /// discarded as soon as `.gallery/log` confirms the migration marker.
     @ObservationIgnored private var legacyPersonSnapshot: PersonLog.Snapshot?
+    /// Pre-M2 memory-chrome dump. Read after M1 remaps folder-keyed ids,
+    /// discarded as soon as `.gallery/log` confirms the memory marker.
+    @ObservationIgnored private var legacyMemorySnapshot: MemoryLog.Snapshot?
     @ObservationIgnored let clock: any Clock
     @ObservationIgnored private let contactsService: any ContactsServicing
     /// NotificationCenter observer tokens. Set once in `init()` (on main),
@@ -312,6 +315,7 @@ final class GalleryStore {
         }
         self.defaults = defaults
         self.legacyPersonSnapshot = legacyPersonSnapshot
+        self.legacyMemorySnapshot = MemoryLog.Snapshot.legacy(in: defaults)
         self.clock = clock
         self.contactsService = contactsService
         self.bookmarks = BookmarkManager(defaults: defaults, bookmarkKey: paths.bookmarkKey)
@@ -626,6 +630,19 @@ final class GalleryStore {
         if result.legacyMigrationComplete {
             PersonLog.Snapshot.clearLegacy(from: defaults)
             legacyPersonSnapshot = nil
+        }
+        attachMemoryLog(to: url)
+    }
+
+    /// Same library-folder attach as people. Reuses `PersonLog.deviceId`.
+    func attachMemoryLog(to url: URL) {
+        let result = memories.attachLibrary(
+            url,
+            snapshot: legacyMemorySnapshot ?? MemoryLog.Snapshot.legacy(in: defaults)
+        )
+        if result.legacyMigrationComplete {
+            MemoryLog.Snapshot.clearLegacy(from: defaults)
+            legacyMemorySnapshot = nil
         }
     }
 

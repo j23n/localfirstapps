@@ -1139,6 +1139,31 @@ int64_t uniffi_gallery_ffi_fn_func_scheduled_memory_horizon_days(RustCallStatus 
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_APPEND
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_APPEND
+void uniffi_gallery_ffi_fn_func_memory_log_append(RustBuffer root, RustBuffer device, RustBuffer event_type, RustBuffer body_json, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_MIGRATE_FROM_SNAPSHOT
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_MIGRATE_FROM_SNAPSHOT
+uint32_t uniffi_gallery_ffi_fn_func_memory_log_migrate_from_snapshot(RustBuffer root, RustBuffer device, RustBuffer snapshot_json, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_PROJECT
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_PROJECT
+RustBuffer uniffi_gallery_ffi_fn_func_memory_log_project(RustBuffer root, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_PROJECT_REPORT
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_PROJECT_REPORT
+RustBuffer uniffi_gallery_ffi_fn_func_memory_log_project_report(RustBuffer root, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_READ
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_MEMORY_LOG_READ
+RustBuffer uniffi_gallery_ffi_fn_func_memory_log_read(RustBuffer root, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LINK_STATE
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_FN_FUNC_PERSON_LINK_STATE
 RustBuffer uniffi_gallery_ffi_fn_func_person_link_state(RustBuffer person_path, RustBuffer display_name, RustBuffer contacts, RustBuffer links, RustCallStatus *_Nonnull out_status
@@ -1552,6 +1577,36 @@ uint16_t uniffi_gallery_ffi_checksum_func_memory_country_name(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_SCHEDULED_MEMORY_HORIZON_DAYS
 #define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_SCHEDULED_MEMORY_HORIZON_DAYS
 uint16_t uniffi_gallery_ffi_checksum_func_scheduled_memory_horizon_days(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_APPEND
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_APPEND
+uint16_t uniffi_gallery_ffi_checksum_func_memory_log_append(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_MIGRATE_FROM_SNAPSHOT
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_MIGRATE_FROM_SNAPSHOT
+uint16_t uniffi_gallery_ffi_checksum_func_memory_log_migrate_from_snapshot(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_PROJECT
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_PROJECT
+uint16_t uniffi_gallery_ffi_checksum_func_memory_log_project(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_PROJECT_REPORT
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_PROJECT_REPORT
+uint16_t uniffi_gallery_ffi_checksum_func_memory_log_project_report(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_READ
+#define UNIFFI_FFIDEF_UNIFFI_GALLERY_FFI_CHECKSUM_FUNC_MEMORY_LOG_READ
+uint16_t uniffi_gallery_ffi_checksum_func_memory_log_read(void
     
 );
 #endif

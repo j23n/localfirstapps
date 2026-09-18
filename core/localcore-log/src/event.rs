@@ -1,7 +1,8 @@
 //! Append-only log record.
 //!
-//! Ported from health `internal/event`, with gallery person-state types added
-//! so one schema serves both consumers (ADR 0005 R13/R14).
+//! Ported from health `internal/event`, with gallery person-state and
+//! memory-chrome types added so one schema serves both consumers
+//! (ADR 0005 R13/R14).
 
 use serde::{Deserialize, Serialize};
 use serde_json::ser::{CharEscape, CompactFormatter, Formatter, Serializer};
@@ -39,6 +40,16 @@ pub const TYPE_PERSON_CONTACT_LINK_SET: &str = "person_contact_link_set";
 pub const TYPE_PERSON_CONTACT_LINK_CLEAR: &str = "person_contact_link_clear";
 /// Written last by UserDefaults → log migrate. Absence means migrate may retry.
 pub const TYPE_PERSON_MIGRATED: &str = "person_migrated";
+
+pub const TYPE_MEMORY_HIDDEN: &str = "memory_hidden";
+pub const TYPE_MEMORY_UNHIDDEN: &str = "memory_unhidden";
+pub const TYPE_MEMORY_SEEN: &str = "memory_seen";
+pub const TYPE_MEMORY_CLUSTER_SURFACED: &str = "memory_cluster_surfaced";
+pub const TYPE_MEMORY_BIRTHDAYS_SET: &str = "memory_birthdays_set";
+pub const TYPE_MEMORY_GENERATED_DAY: &str = "memory_generated_day";
+pub const TYPE_MEMORY_GENERATED_DAY_CLEAR: &str = "memory_generated_day_clear";
+/// Written last by memory UserDefaults → log migrate. Absence means migrate may retry.
+pub const TYPE_MEMORY_MIGRATED: &str = "memory_migrated";
 
 /// One NDJSON line. Field order matches the on-disk format.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -101,6 +112,14 @@ pub fn known_type(t: &str) -> bool {
             | TYPE_PERSON_CONTACT_LINK_SET
             | TYPE_PERSON_CONTACT_LINK_CLEAR
             | TYPE_PERSON_MIGRATED
+            | TYPE_MEMORY_HIDDEN
+            | TYPE_MEMORY_UNHIDDEN
+            | TYPE_MEMORY_SEEN
+            | TYPE_MEMORY_CLUSTER_SURFACED
+            | TYPE_MEMORY_BIRTHDAYS_SET
+            | TYPE_MEMORY_GENERATED_DAY
+            | TYPE_MEMORY_GENERATED_DAY_CLEAR
+            | TYPE_MEMORY_MIGRATED
     )
 }
 
@@ -540,6 +559,14 @@ mod tests {
             TYPE_PERSON_CONTACT_LINK_SET,
             TYPE_PERSON_CONTACT_LINK_CLEAR,
             TYPE_PERSON_MIGRATED,
+            TYPE_MEMORY_HIDDEN,
+            TYPE_MEMORY_UNHIDDEN,
+            TYPE_MEMORY_SEEN,
+            TYPE_MEMORY_CLUSTER_SURFACED,
+            TYPE_MEMORY_BIRTHDAYS_SET,
+            TYPE_MEMORY_GENERATED_DAY,
+            TYPE_MEMORY_GENERATED_DAY_CLEAR,
+            TYPE_MEMORY_MIGRATED,
         ] {
             assert!(known_type(t), "{t}");
         }

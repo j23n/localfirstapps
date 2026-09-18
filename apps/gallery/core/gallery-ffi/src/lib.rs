@@ -20,6 +20,7 @@
 //! * [`places`]: offline place lookup and Places sidecar writes.
 //! * [`conflict`]: [`ConflictSession`] for Syncthing `.xmp` and image groups.
 //! * [`person_log`]: person-state append / read / project / UserDefaults migrate.
+//! * [`memory_log`]: memory-chrome append / read / project / UserDefaults migrate.
 //!
 //! Tagging and face sessions share one cache file: [`support`] holds
 //! the run-thread mechanics both are built on.
@@ -32,6 +33,7 @@ pub mod faces;
 pub mod heic;
 pub mod library;
 mod locations;
+pub mod memory_log;
 pub mod people;
 pub mod person_log;
 pub mod places;
@@ -63,6 +65,11 @@ pub use library::{
     MemoryContactCommandItem, MemoryDateCommandItem, MemoryFolderCommandItem, MemoryGenerator,
     MemoryKind, MemoryPersonCommandItem, MemoryStructure, RemovePhotosResult,
     ScheduledMemoryContext, ScheduledMemoryStructure, TagStructureItem, TagStructures,
+};
+pub use memory_log::{
+    memory_log_append, memory_log_migrate_from_snapshot, memory_log_project,
+    memory_log_project_report, memory_log_read, MemoryDatePair, MemoryLogError,
+    MemoryProjectionRecord, MemoryStateStructure, MemoryTornTailRecord,
 };
 pub use people::{person_link_state, visible_people, PersonLinkKind, PersonLinkResolution};
 pub use person_log::{

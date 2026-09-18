@@ -7,12 +7,12 @@
 //! `SetEscapeHTML(false)` (`<`, `>`, `&` stay literal).
 //!
 //! Ported from health `internal/log` + `internal/event`. Gallery person-state
-//! types are accepted in the schema so one log serves both consumers. Health
-//! Go remains the writer until Phase 6; `tests/health_golden.rs` is the port
-//! contract (byte-identical m0 log + `read_all` parity). Gallery writes under
-//! `{library}/.gallery` (M2); this crate's `root` is that directory.
-//! I/O goes through [`localcore_vfs::Vfs`]. Type tokens are open
-//! (`valid_type`); `known_type` is not a monorepo enum.
+//! and memory-chrome types are accepted in the schema so one log serves both
+//! consumers. Health Go remains the writer until Phase 6;
+//! `tests/health_golden.rs` is the port contract (byte-identical m0 log +
+//! `read_all` parity). Gallery writes under `{library}/.gallery` (M2); this
+//! crate's `root` is that directory. I/O goes through [`localcore_vfs::Vfs`].
+//! Type tokens are open (`valid_type`); `known_type` is not a monorepo enum.
 
 #![forbid(unsafe_code)]
 
@@ -24,20 +24,29 @@ use serde_json::Error as JsonError;
 
 pub mod event;
 pub mod gallery;
+pub mod memories;
 
 pub use event::{
     known_type, new_event_id, now_utc, parse_blob_import, ts_with_nanos, valid_device, valid_type,
     BlobImport, Event, TS_FORMAT, TYPE_BLOB_IMPORT, TYPE_EPISODE, TYPE_EXTRACTION,
     TYPE_FEATURED_PHOTO_CLEAR, TYPE_FEATURED_PHOTO_SET, TYPE_MEDITATION, TYPE_MED_EVENT,
-    TYPE_MED_START, TYPE_MED_STOP, TYPE_NOTE, TYPE_OBSERVATION, TYPE_PERSON_CONTACT_LINK_CLEAR,
-    TYPE_PERSON_CONTACT_LINK_SET, TYPE_PERSON_FEATURED, TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_CLEAR,
-    TYPE_PERSON_ME_SET, TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED,
-    TYPE_PERSON_UNHIDDEN, TYPE_RETRACT, TYPE_SUPERSEDE,
+    TYPE_MED_START, TYPE_MED_STOP, TYPE_MEMORY_BIRTHDAYS_SET, TYPE_MEMORY_CLUSTER_SURFACED,
+    TYPE_MEMORY_GENERATED_DAY, TYPE_MEMORY_GENERATED_DAY_CLEAR, TYPE_MEMORY_HIDDEN,
+    TYPE_MEMORY_MIGRATED, TYPE_MEMORY_SEEN, TYPE_MEMORY_UNHIDDEN, TYPE_NOTE, TYPE_OBSERVATION,
+    TYPE_PERSON_CONTACT_LINK_CLEAR, TYPE_PERSON_CONTACT_LINK_SET, TYPE_PERSON_FEATURED,
+    TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_CLEAR, TYPE_PERSON_ME_SET, TYPE_PERSON_MIGRATED,
+    TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED, TYPE_PERSON_UNHIDDEN, TYPE_RETRACT,
+    TYPE_SUPERSEDE,
 };
 pub use gallery::{
     append_person, is_person_event_type, migrate_from_snapshot, migrate_from_snapshot_json,
     project_people, project_people_at, project_people_report_at, PeopleProjection, PeopleState,
     PersonSnapshot,
+};
+pub use memories::{
+    append_memory, is_memory_event_type, migrate_memories_from_snapshot,
+    migrate_memories_from_snapshot_json, project_memories, project_memories_at,
+    project_memories_report_at, MemoryProjection, MemorySnapshot, MemoryState,
 };
 
 /// A final line that lacks a trailing newline and is not valid JSON.

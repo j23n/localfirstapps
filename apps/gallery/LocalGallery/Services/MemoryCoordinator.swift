@@ -11,6 +11,8 @@ import os
 /// The engine itself lives in the Rust core (`CoreMemories.generate`, Phase 4)
 /// and is pure; this type supplies its inputs (via the Store-provided
 /// `makeInputs` closure), owns the gating rules, and publishes results.
+/// After folder attach, hidden / seen / surfaced / birthdays / generated-day
+/// are projected from `.gallery/log` and are not written to UserDefaults.
 @Observable
 @MainActor
 final class MemoryCoordinator {
@@ -36,7 +38,7 @@ final class MemoryCoordinator {
 
     /// Memory IDs the user has hidden ("Don't show this memory").
     private(set) var hiddenMemories: Set<String> = [] {
-        didSet { defaults.set(Array(hiddenMemories), forKey: "hiddenMemories") }
+        didSet { persistHiddenMemories() }
     }
 
     /// Memory IDs the user has tapped into (opened the slideshow). Keyed by
@@ -46,10 +48,7 @@ final class MemoryCoordinator {
     /// effect (the engine only checks `> sixMonthsAgo`) and would otherwise
     /// accumulate forever as the user uses the app across years.
     @ObservationIgnored var seenMemoryIDs: [String: Date] = [:] {
-        didSet {
-            guard let data = try? JSONEncoder().encode(seenMemoryIDs) else { return }
-            defaults.set(data, forKey: "seenMemoryIDs")
-        }
+        didSet { persistSeenMemoryIDs() }
     }
 
     /// Cluster keys (see `CoreMemories.clusterKey(for:)`) → last date the
@@ -58,10 +57,7 @@ final class MemoryCoordinator {
     /// Pruned at load to entries from the last 7 days; that headroom
     /// covers the 3-day cool-down with slack for time-zone changes.
     @ObservationIgnored var surfacedClusters: [String: Date] = [:] {
-        didSet {
-            guard let data = try? JSONEncoder().encode(surfacedClusters) else { return }
-            defaults.set(data, forKey: "surfacedClusters")
-        }
+        didSet { persistSurfacedClusters() }
     }
 
     /// Master toggle for birthday memories. When `false`, generation skips
@@ -70,10 +66,12 @@ final class MemoryCoordinator {
     var birthdaysEnabled: Bool = true {
         didSet {
             guard oldValue != birthdaysEnabled else { return }
-            defaults.set(birthdaysEnabled, forKey: "birthdayMemoriesEnabled")
+            guard persistBirthdaysEnabled(previous: oldValue) else { return }
             // Force a regenerate so today's rail reflects the toggle change
             // immediately rather than waiting for the daily gate.
-            forceRegenerate()
+            if !applyingProjection {
+                forceRegenerate()
+            }
         }
     }
 
@@ -82,13 +80,7 @@ final class MemoryCoordinator {
     /// completes — a process death or cancelled BG task must not consume
     /// the day.
     @ObservationIgnored private(set) var generatedDay: Date? {
-        didSet {
-            if let day = generatedDay {
-                defaults.set(day, forKey: "memoriesGeneratedDay")
-            } else {
-                defaults.removeObject(forKey: "memoriesGeneratedDay")
-            }
-        }
+        didSet { persistGeneratedDay() }
     }
 
     /// Re-entrancy guard: `generateIfNeeded` spawns an unawaited Task and
@@ -121,6 +113,26 @@ final class MemoryCoordinator {
     @ObservationIgnored private let index: CoreLibraryIndex
     /// Hidden-people set, for suppressing stale birthday memories.
     @ObservationIgnored private let people: PeopleStore
+    @ObservationIgnored private let log: MemoryLogBackend
+    /// ADR 0005 R5: per-device, shared with `PersonLog`.
+    @ObservationIgnored let deviceId: String
+    /// Library folder; log lives at `{libraryRoot}/.gallery/log/<deviceId>/`.
+    @ObservationIgnored private(set) var libraryRoot: URL?
+    /// After folder attach, the five keys are log-backed and must not be
+    /// written to UserDefaults.
+    @ObservationIgnored private(set) var logBacked = false
+    @ObservationIgnored private var applyingProjection = false
+
+    enum Diagnostic: Equatable {
+        case tornTail(path: String, offset: UInt64, detail: String)
+        case migrationFailed(detail: String)
+        case projectionFailed(detail: String)
+        case appendFailed(operation: String, detail: String)
+    }
+
+    /// Non-fatal log health. A torn tail accompanies a recovered projection;
+    /// it never triggers a stale UserDefaults fallback.
+    private(set) var diagnostics: [Diagnostic] = []
     /// Set by the Store: snapshots engine inputs, or nil when the library
     /// is empty (nothing to generate from).
     @ObservationIgnored var makeInputs: (() -> GenerationInputs?)?
@@ -133,13 +145,16 @@ final class MemoryCoordinator {
         clock: any Clock,
         cache: JSONDiskCache<[Memory]>,
         index: CoreLibraryIndex,
-        people: PeopleStore
+        people: PeopleStore,
+        log: MemoryLogBackend = .live
     ) {
         self.defaults = defaults
         self.clock = clock
         self.cache = cache
         self.index = index
         self.people = people
+        self.log = log
+        self.deviceId = MemoryLog.deviceId(in: defaults)
 
         if let hiddenMem = defaults.array(forKey: "hiddenMemories") as? [String] {
             hiddenMemories = Set(hiddenMem)
@@ -151,15 +166,13 @@ final class MemoryCoordinator {
            let dict = try? JSONDecoder().decode([String: Date].self, from: data) {
             // Drop entries older than the engine's scoring window so the dict
             // can't grow unbounded across years of use.
-            let cutoff = Calendar.current.date(byAdding: .month, value: -12, to: clock.now()) ?? .distantPast
-            seenMemoryIDs = dict.filter { $0.value > cutoff }
+            seenMemoryIDs = pruneSeen(dict)
         }
         if let data = defaults.data(forKey: "surfacedClusters"),
            let dict = try? JSONDecoder().decode([String: Date].self, from: data) {
             // Drop entries outside the cool-down window so the map can't
             // grow unbounded across years of use.
-            let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: clock.now()) ?? .distantPast
-            surfacedClusters = dict.filter { $0.value > cutoff }
+            surfacedClusters = pruneSurfaced(dict)
         }
         if defaults.object(forKey: "birthdayMemoriesEnabled") != nil {
             birthdaysEnabled = defaults.bool(forKey: "birthdayMemoriesEnabled")
@@ -168,6 +181,69 @@ final class MemoryCoordinator {
             all = cached
             Log.cache.info("Loaded \(cached.count) memories from cache")
         }
+    }
+
+    struct AttachResult: Equatable {
+        var state: MemoryLog.State
+        /// True when migration returned successfully, including the no-op
+        /// "this device already has a marker" result.
+        var legacyMigrationComplete: Bool
+    }
+
+    /// Bind the synced log once the library folder is known, import the
+    /// legacy snapshot if needed, and always project `.gallery/log`.
+    ///
+    /// Projection is authoritative even when it is empty. A torn final line
+    /// returns the complete prefix plus a diagnostic. A hard failure leaves
+    /// this folder's state empty rather than leaking state from UserDefaults
+    /// or from the previously attached library.
+    @discardableResult
+    func attachLibrary(_ root: URL, snapshot: MemoryLog.Snapshot) -> AttachResult {
+        libraryRoot = root
+        logBacked = true
+        diagnostics = []
+        applyProjection(.init())
+        var migrationComplete = false
+        do {
+            _ = try log.migrate(root, deviceId, snapshot)
+            migrationComplete = true
+        } catch {
+            let detail = error.localizedDescription
+            diagnostics.append(.migrationFailed(detail: detail))
+            Log.cache.error("Memory log migration failed: \(detail)")
+        }
+
+        do {
+            let projection = try log.project(root)
+            applyProjection(projection.state)
+            diagnostics.append(contentsOf: projection.tornTails.map {
+                .tornTail(path: $0.path, offset: $0.offset, detail: $0.detail)
+            })
+            for tail in projection.tornTails {
+                Log.cache.error(
+                    "Memory log torn tail \(tail.path) at \(tail.offset): \(tail.detail)"
+                )
+            }
+            return AttachResult(
+                state: projection.state,
+                legacyMigrationComplete: migrationComplete
+            )
+        } catch {
+            let detail = error.localizedDescription
+            diagnostics.append(.projectionFailed(detail: detail))
+            Log.cache.error("Memory log projection failed: \(detail)")
+            return AttachResult(state: .init(), legacyMigrationComplete: migrationComplete)
+        }
+    }
+
+    func applyProjection(_ state: MemoryLog.State) {
+        applyingProjection = true
+        hiddenMemories = state.hidden
+        seenMemoryIDs = pruneSeen(state.seen)
+        surfacedClusters = pruneSurfaced(state.surfaced)
+        birthdaysEnabled = state.birthdaysEnabled
+        generatedDay = state.generatedDay
+        applyingProjection = false
     }
 
     // MARK: Reads
@@ -202,17 +278,24 @@ final class MemoryCoordinator {
     // MARK: Mutations
 
     func hide(_ id: String) {
+        guard commitMemoryEvent("memory_hidden", [("id", .string(id))]) else { return }
         hiddenMemories.insert(id)
         onMemoriesPublished?()
     }
 
     func unhide(_ id: String) {
+        guard commitMemoryEvent("memory_unhidden", [("id", .string(id))]) else { return }
         hiddenMemories.remove(id)
         onMemoriesPublished?()
     }
 
     func markSeen(_ id: String) {
-        seenMemoryIDs[id] = clock.now()
+        let now = clock.now()
+        guard commitMemoryEvent("memory_seen", [
+            ("id", .string(id)),
+            ("at", .string(MemoryLog.formatDate(now))),
+        ]) else { return }
+        seenMemoryIDs[id] = now
     }
 
     /// Wipe the disk cache without touching in-memory state. The Store calls
@@ -381,7 +464,12 @@ final class MemoryCoordinator {
         let now = clock.now()
         var updated = surfacedClusters
         for memory in results {
-            updated[CoreMemories.clusterKey(for: memory.id)] = now
+            let key = CoreMemories.clusterKey(for: memory.id)
+            guard commitMemoryEvent("memory_cluster_surfaced", [
+                ("key", .string(key)),
+                ("at", .string(MemoryLog.formatDate(now))),
+            ]) else { continue }
+            updated[key] = now
         }
         surfacedClusters = updated
         cache.save(all)
@@ -391,5 +479,100 @@ final class MemoryCoordinator {
         // widget picks up new "On this day" / "Years ago" content the same
         // day they become valid.
         onMemoriesPublished?()
+    }
+
+    // MARK: Persistence
+
+    private func persistHiddenMemories() {
+        guard !applyingProjection, !logBacked else { return }
+        defaults.set(Array(hiddenMemories), forKey: "hiddenMemories")
+    }
+
+    private func persistSeenMemoryIDs() {
+        guard !applyingProjection, !logBacked else { return }
+        guard let data = try? JSONEncoder().encode(seenMemoryIDs) else { return }
+        defaults.set(data, forKey: "seenMemoryIDs")
+    }
+
+    private func persistSurfacedClusters() {
+        guard !applyingProjection, !logBacked else { return }
+        guard let data = try? JSONEncoder().encode(surfacedClusters) else { return }
+        defaults.set(data, forKey: "surfacedClusters")
+    }
+
+    @discardableResult
+    private func persistBirthdaysEnabled(previous: Bool) -> Bool {
+        guard !applyingProjection else { return true }
+        if logBacked {
+            if !appendMemoryEvent("memory_birthdays_set", [
+                ("enabled", .bool(birthdaysEnabled)),
+            ]) {
+                applyingProjection = true
+                birthdaysEnabled = previous
+                applyingProjection = false
+                return false
+            }
+            return true
+        }
+        defaults.set(birthdaysEnabled, forKey: "birthdayMemoriesEnabled")
+        return true
+    }
+
+    private func persistGeneratedDay() {
+        guard !applyingProjection else { return }
+        if logBacked {
+            if let day = generatedDay {
+                _ = appendMemoryEvent("memory_generated_day", [
+                    ("day", .string(MemoryLog.formatDate(day))),
+                ])
+            } else {
+                _ = appendMemoryEvent("memory_generated_day_clear", [])
+            }
+            return
+        }
+        if let day = generatedDay {
+            defaults.set(day, forKey: "memoriesGeneratedDay")
+        } else {
+            defaults.removeObject(forKey: "memoriesGeneratedDay")
+        }
+    }
+
+    /// Pre-attach mutations stay install-local. After attach, append first.
+    private func commitMemoryEvent(
+        _ type: String,
+        _ body: [(String, MemoryLog.LogJSON)]
+    ) -> Bool {
+        guard logBacked, !applyingProjection else { return true }
+        return appendMemoryEvent(type, body)
+    }
+
+    @discardableResult
+    private func appendMemoryEvent(
+        _ type: String,
+        _ body: [(String, MemoryLog.LogJSON)]
+    ) -> Bool {
+        guard let root = libraryRoot else {
+            diagnostics.append(.appendFailed(operation: type, detail: "no library attached"))
+            return false
+        }
+        do {
+            try log.append(root, deviceId, type, body)
+            return true
+        } catch {
+            let detail = error.localizedDescription
+            diagnostics.append(.appendFailed(operation: type, detail: detail))
+            Log.cache.error("Memory log append failed (\(type)): \(detail)")
+            return false
+        }
+    }
+
+    private func pruneSeen(_ dict: [String: Date]) -> [String: Date] {
+        let cutoff = Calendar.current.date(byAdding: .month, value: -12, to: clock.now()) ?? .distantPast
+        return dict.filter { $0.value > cutoff }
+    }
+
+    private func pruneSurfaced(_ dict: [String: Date]) -> [String: Date] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: clock.now()) ?? .distantPast
+        return dict.filter { $0.value > cutoff }
     }
 }

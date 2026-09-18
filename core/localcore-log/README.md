@@ -11,8 +11,8 @@ from both trees.
 
 I/O goes through `localcore-vfs` (`append_on` / `read_all_on`). Type
 tokens are open (`valid_type`: `[a-z][a-z0-9_]*`). `known_type` lists
-the health and gallery helpers this crate documents; it is not a
-monorepo enum and does not gate append.
+the health, person-state, and memory-chrome helpers this crate documents;
+it is not a monorepo enum and does not gate append.
 
 `read_all` returns every complete valid event and ignores an invalid final
 line without a newline, as ADR 0005 R16 requires. Call `read_report` when the
