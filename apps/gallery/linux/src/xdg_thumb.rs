@@ -337,10 +337,7 @@ mod tests {
         let hit = lookup(&cache, path, ThumbSize::Normal).expect("lookup");
         assert_eq!(hit.width, made.width);
         assert_eq!(hit.height, made.height);
-        assert_eq!(
-            lookup_path(&cache, path).as_deref(),
-            Some(png.as_path())
-        );
+        assert_eq!(lookup_path(&cache, path).as_deref(), Some(png.as_path()));
     }
 
     #[test]

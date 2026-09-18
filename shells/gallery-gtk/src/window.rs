@@ -2,6 +2,7 @@
 //! GTK is never enabled.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,10 +20,11 @@ use shell_kit_gtk::{
     empty_state, field_row, highlight_markup, init_style, list_screen, nav_row, navigation_view,
     overflow, overflow_button, page, preferences_dialog, primary_menu, progress_row, push_page,
     push_settings_subpage, search_hit_row, selection_bar, settings_screen, sheet, status_row,
-    text_row, ActionRole, ActionRowData, AdaptiveShell, Chip, ChipMode, ChromeProgress, EmptyCopy,
-    EmptyKind, FieldRowData, GalleryScreen, ListScreen, ListScreenBuilt, ListSection, LogLevel,
-    MenuCommand, NavRowData, PageChrome, PrimaryMenu, ProgressRowData, RootPage, SelectionBar,
-    SettingsGroup, SettingsScreen, SheetSize, StatusRowData, StatusSeverity, TextRowData,
+    text_row, toggle_row, ActionRole, ActionRowData, AdaptiveShell, Chip, ChipMode, ChromeProgress,
+    EmptyCopy, EmptyKind, FieldRowData, GalleryScreen, ListScreen, ListScreenBuilt, ListSection,
+    LogLevel, MenuCommand, NavRowData, PageChrome, PrimaryMenu, ProgressRowData, RootPage,
+    SelectionBar, SettingsGroup, SettingsScreen, SheetSize, StatusRowData, StatusSeverity,
+    TextRowData, ToggleRowData,
 };
 
 #[path = "select.rs"]
@@ -30,7 +32,8 @@ mod select;
 
 use crate::folders::FolderEntry;
 use crate::paging::{
-    same_item_ids, view_item_from_object, PageCache, ViewItem, ViewList, ViewListModel, YearMark,
+    same_item_ids, view_item_from_object, years_from_structure, PageCache, ViewItem, ViewList,
+    ViewListModel, YearMark,
 };
 use crate::routing::{folder_stack_pop_policy, route_id, FolderStackPop};
 use crate::session::{EventFolder, PhotoIntent, PreparedHub, PreparedUi, Session, TextPage};
@@ -185,6 +188,9 @@ overlay.event-card .cover-captions {
 .person-badge image {
   margin: 0;
 }
+overlay.person-card.person-hidden {
+  opacity: 0.55;
+}
 .person-menu-item {
   min-width: 12em;
   padding: 6px 12px;
@@ -308,7 +314,15 @@ struct Inner {
     memories_rx: RefCell<Option<mpsc::Receiver<Vec<gallery_ffi::MemoryStructure>>>>,
     leftover_rx: RefCell<Option<mpsc::Receiver<Result<(PathBuf, f64), String>>>>,
     leftover_cancel: RefCell<Option<Arc<AtomicBool>>>,
+    analysis_rx: RefCell<Option<mpsc::Receiver<AnalysisEvent>>>,
+    pack_rx: RefCell<Option<mpsc::Receiver<PackEvent>>>,
     scan_busy: Cell<bool>,
+    analysis_busy: Cell<bool>,
+    pack_busy: Cell<bool>,
+    analysis_everything: Cell<bool>,
+    analysis_tagging: Cell<bool>,
+    analysis_faces: Cell<bool>,
+    analysis_places: Cell<bool>,
     photo_fill_gen: Cell<u64>,
     photo_fill_active: Cell<bool>,
     folders_fill_gen: Cell<u64>,
@@ -324,8 +338,21 @@ struct Inner {
     selection_bar: SelectionBar,
     select_scope_bar: SelectionBar,
     watch_mute: RefCell<Option<Arc<localgallery::watch::MuteGate>>>,
+    watch_ignore_ticks: Cell<u32>,
     mutate_rx: RefCell<Option<mpsc::Receiver<MutateOutcome>>>,
     move_ui: RefCell<Option<MoveUi>>,
+}
+
+enum AnalysisEvent {
+    Done {
+        summary: localgallery::AnalysisSummary,
+        ui: Option<PreparedUi>,
+    },
+}
+
+enum PackEvent {
+    Downloaded(Result<localgallery::PackStatus, String>),
+    Removed(Result<(), String>),
 }
 
 impl Window {
@@ -762,7 +789,15 @@ impl Window {
             memories_rx: RefCell::new(None),
             leftover_rx: RefCell::new(None),
             leftover_cancel: RefCell::new(None),
+            analysis_rx: RefCell::new(None),
+            pack_rx: RefCell::new(None),
             scan_busy: Cell::new(false),
+            analysis_busy: Cell::new(false),
+            pack_busy: Cell::new(false),
+            analysis_everything: Cell::new(true),
+            analysis_tagging: Cell::new(true),
+            analysis_faces: Cell::new(true),
+            analysis_places: Cell::new(true),
             photo_fill_gen: Cell::new(0),
             photo_fill_active: Cell::new(false),
             folders_fill_gen: Cell::new(0),
@@ -778,6 +813,7 @@ impl Window {
             selection_bar: selection,
             select_scope_bar: select_scope,
             watch_mute: RefCell::new(None),
+            watch_ignore_ticks: Cell::new(0),
             mutate_rx: RefCell::new(None),
             move_ui: RefCell::new(None),
         });
@@ -788,12 +824,7 @@ impl Window {
         this.install_photo_factory();
         this.attach_photo_grid_menu(&photos_grid, ViewerHost::Photos);
         this.attach_photo_grid_menu(&folders_grid, ViewerHost::Folders);
-        bind_cover_grid_columns(
-            &folders_scroll,
-            &folders_grid,
-            EVENT_TILE_PX,
-            EVENT_GAP_PX,
-        );
+        bind_cover_grid_columns(&folders_scroll, &folders_grid, EVENT_TILE_PX, EVENT_GAP_PX);
         let picker_open = this.clone();
         choose.connect_clicked(move |_| picker_open.pick_folder());
 
@@ -1301,14 +1332,117 @@ impl Window {
     }
 
     fn scan_photos(&self) {
-        let Some(folder) = self.inner.session.borrow().folder().map(Path::to_path_buf) else {
+        self.start_analysis(self.selected_analysis_phases(), false);
+    }
+
+    fn selected_analysis_phases(&self) -> localgallery::AnalysisPhases {
+        if self.inner.analysis_everything.get() {
+            return localgallery::AnalysisPhases::all();
+        }
+        localgallery::AnalysisPhases {
+            tagging: self.inner.analysis_tagging.get(),
+            faces: self.inner.analysis_faces.get(),
+            places: self.inner.analysis_places.get(),
+        }
+    }
+
+    fn start_analysis(&self, phases: localgallery::AnalysisPhases, force: bool) {
+        if self.inner.scan_busy.get()
+            || self.inner.analysis_busy.get()
+            || self.inner.pack_busy.get()
+        {
+            self.toast("A scan is already running");
+            return;
+        }
+        if self.inner.session.borrow().folder().is_none() {
             self.toast("Choose a Folder first");
             return;
-        };
-        self.start_scan(folder, false);
+        }
+        if self.inner.session.borrow().photo_count() == 0 {
+            self.toast("This folder has no photos yet");
+            return;
+        }
+        if phases.is_empty() {
+            self.toast("Choose something to scan");
+            return;
+        }
+        self.inner.session.borrow().prepare_analysis();
+        let photos = self.inner.session.borrow().analysis_photos();
+        let index = self.inner.session.borrow().index_arc();
+        let folders = self.inner.session.borrow().last_folders().to_vec();
+        let folder = self.inner.session.borrow().folder().map(Path::to_path_buf);
+        let persist = self.inner.session.borrow().persist_host();
+        let work = self.inner.session.borrow().scan_work_arc();
+        let cancel = self.inner.session.borrow().analysis_cancel_flag();
+        let pack = localgallery::installed_pack();
+        let (geo_cache, geo_note) = localgallery::config::load_geo_cache();
+        if let Some(msg) = geo_note {
+            self.toast(&msg);
+        }
+        let ml_cache = localgallery::config::ml_cache_path();
+        self.inner.analysis_busy.set(true);
+        self.inner.session.borrow().begin_work("Scan Photos");
+        self.mute_watch();
+        self.sync_scan_progress();
+        localcore_trace::event(
+            "scan",
+            format!(
+                "analysis start photos={} tag={} face={} place={} force={force}",
+                photos.len(),
+                phases.tagging,
+                phases.faces,
+                phases.places
+            ),
+        );
+        let (tx, rx) = mpsc::channel();
+        self.inner.analysis_rx.replace(Some(rx));
+        thread::spawn(move || {
+            let mut geo_cache = geo_cache;
+            let geo = localgallery::Gazetteer;
+            let work_progress = work.clone();
+            let on_progress: localgallery::ProgressFn = Arc::new(move |progress| {
+                let label = progress.phase.short_label();
+                let fraction =
+                    (progress.total > 0).then_some(progress.done as f64 / progress.total as f64);
+                let detail =
+                    (progress.total > 0).then(|| format!("{} / {}", progress.done, progress.total));
+                Session::touch_shared_work(&work_progress, label, detail, fraction);
+            });
+            let summary = localgallery::run_analysis(localgallery::AnalysisRequest {
+                photos: &photos,
+                pack: pack.as_ref(),
+                ml_cache: Some(&ml_cache),
+                geo: &geo,
+                geo_cache: &mut geo_cache,
+                phases,
+                force,
+                cancel: &cancel,
+                on_progress: Some(on_progress),
+                heic_decoder: Some(localgallery::linux_heic_decoder()),
+            });
+            if let Err(error) = localgallery::config::save_geo_cache(&geo_cache) {
+                localcore_trace::event("catalog", format!("geocode cache: {error}"));
+            }
+            let ui = if summary.written_paths.is_empty() {
+                None
+            } else {
+                Some(Session::overlay_analysis_writes(
+                    &index,
+                    folders,
+                    &summary.written_paths,
+                    persist.then_some(folder.as_deref()).flatten(),
+                    &work,
+                ))
+            };
+            let _ = tx.send(AnalysisEvent::Done { summary, ui });
+        });
     }
 
     fn start_scan(&self, folder: PathBuf, show_photos: bool) {
+        if self.inner.analysis_busy.get() || self.inner.pack_busy.get() {
+            self.toast("Scan Photos is already running");
+            return;
+        }
         self.cancel_leftover();
         if self.inner.scan_busy.get() {
             self.inner.session.borrow().cancel_scan();
@@ -1685,6 +1819,97 @@ impl Window {
         }
     }
 
+    fn drain_watch(&self) {
+        if let Some(rx) = self.inner.watch_rx.borrow().as_ref() {
+            while rx.try_recv().is_ok() {}
+        }
+    }
+
+    fn apply_deleted_photos(&self, ids: &[String]) {
+        let result = self.inner.session.borrow_mut().apply_photos_removed(ids);
+        if result.removed_ids.is_empty() {
+            return;
+        }
+        let drop: HashSet<String> = result.removed_ids.iter().cloned().collect();
+        if let Some(model) = self.inner.photos_model.borrow_mut().as_mut() {
+            model.set_generation(result.generation);
+            model.remove_ids(&drop);
+        }
+        let next_bound = self.inner.photos_bound_ids.borrow().as_ref().map(|bound| {
+            Arc::new(
+                bound
+                    .iter()
+                    .filter(|id| !drop.contains(id.as_str()))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+        });
+        if let Some(next) = next_bound {
+            self.inner.photos_bound_ids.replace(Some(next));
+        }
+        let next_fill = self.inner.photos_fill_items.borrow().as_ref().map(|fill| {
+            fill.iter()
+                .filter(|item| !drop.contains(&item.id))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
+        if let Some(items) = next_fill {
+            if items.is_empty() {
+                self.inner.photos_fill_items.replace(None);
+            } else {
+                self.inner.photos_fill_items.replace(Some(Rc::new(items)));
+            }
+        }
+        self.inner
+            .media_pages
+            .borrow_mut()
+            .replace_generation(result.generation);
+        let remaining = self
+            .inner
+            .photos_model
+            .borrow()
+            .as_ref()
+            .map(ViewListModel::n_items)
+            .unwrap_or(0);
+        let fill_left = self
+            .inner
+            .photos_fill_items
+            .borrow()
+            .as_ref()
+            .map(|items| items.len())
+            .unwrap_or(0);
+        if remaining == 0 && fill_left == 0 {
+            self.inner.photos_host.set_visible_child_name("empty");
+            self.inner.photos_grid.set_model(None::<&gtk::NoSelection>);
+            self.inner.photos_model.replace(None);
+            self.inner.photos_bound_ids.replace(None);
+            self.inner.photos_fill_items.replace(None);
+        } else if remaining == 0 && fill_left > 0 {
+            self.append_photo_fill_chunk();
+        }
+        let structure = self.inner.session.borrow().index().photo_structure();
+        let years = years_from_structure(&structure);
+        let this_year = self.clone();
+        year_rail::refill(&self.inner.photos_year_rail, &years, move |index| {
+            this_year.ensure_photos_filled_to(index);
+            this_year
+                .inner
+                .photos_grid
+                .scroll_to(index, gtk::ListScrollFlags::FOCUS, None);
+        });
+        self.rebuild_folder_tree();
+        self.refresh_folder_explorer();
+        localcore_trace::event(
+            "ui",
+            format!(
+                "apply_deleted_photos n={} gen={} store={}",
+                result.removed_ids.len(),
+                result.generation,
+                remaining
+            ),
+        );
+    }
+
     fn poll_idle(&self) {
         let this = self.clone();
         let ticks = Rc::new(Cell::new(0u32));
@@ -1694,11 +1919,14 @@ impl Window {
         glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
             let drained = false;
             this.poll_scan();
+            this.poll_analysis();
+            this.poll_pack();
             this.poll_photos();
             this.poll_drill();
             this.poll_memories();
             this.poll_leftover();
             this.poll_mutate();
+            let ignore = this.inner.watch_ignore_ticks.get();
             let dirty =
                 this.inner
                     .watch_rx
@@ -1709,8 +1937,16 @@ impl Window {
                         Err(TryRecvError::Empty | TryRecvError::Disconnected) => false,
                     });
             if dirty {
-                localcore_trace::event("watch", "dirty → reload_folder on GTK thread");
-                this.reload_folder();
+                this.drain_watch();
+                if ignore == 0 {
+                    localcore_trace::event("watch", "dirty → reload_folder on GTK thread");
+                    this.reload_folder();
+                } else {
+                    localcore_trace::event("watch", "dirty ignored after self-delete");
+                }
+            }
+            if ignore > 0 {
+                this.inner.watch_ignore_ticks.set(ignore - 1);
             }
             this.sync_scan_progress();
             let n = ticks.get().saturating_add(1);
@@ -1726,7 +1962,9 @@ impl Window {
                         session.last_folders().len(),
                         session.memories().len(),
                         session.leftover_snapshot_loaded(),
-                        this.inner.scan_busy.get(),
+                        this.inner.scan_busy.get()
+                            || this.inner.analysis_busy.get()
+                            || this.inner.pack_busy.get(),
                         snap.ready,
                         snap.inflight,
                         snap.waiting
@@ -1765,6 +2003,180 @@ impl Window {
         }
     }
 
+    fn poll_analysis(&self) {
+        let Some(rx) = self.inner.analysis_rx.borrow_mut().take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(AnalysisEvent::Done { summary, ui }) => {
+                self.finish_analysis(summary, ui);
+            }
+            Err(TryRecvError::Empty) => {
+                self.inner.analysis_rx.replace(Some(rx));
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.inner.analysis_busy.set(false);
+                self.unmute_watch();
+                self.inner.session.borrow().clear_work();
+                self.sync_scan_progress();
+            }
+        }
+    }
+
+    fn finish_analysis(&self, summary: localgallery::AnalysisSummary, ui: Option<PreparedUi>) {
+        self.inner.analysis_busy.set(false);
+        self.inner.analysis_rx.replace(None);
+        self.unmute_watch();
+        let line = summary.toast_line();
+        self.inner
+            .session
+            .borrow_mut()
+            .store_analysis_summary(summary);
+        if let Some(ui) = ui {
+            let ids = Arc::new(
+                ui.photos
+                    .items()
+                    .iter()
+                    .map(|item| item.id.clone())
+                    .collect(),
+            );
+            let generation = ui.photos.generation;
+            self.inner
+                .session
+                .borrow_mut()
+                .install_enrich(ui.catalog, Some(ids));
+            let hub = ui.hub;
+            self.inner.hub.replace(Some(hub.clone()));
+            if let Some(model) = self.inner.photos_model.borrow_mut().as_mut() {
+                model.set_generation(generation);
+            }
+            self.inner
+                .media_pages
+                .borrow_mut()
+                .replace_generation(generation);
+            self.refresh_photo_grid_thumbs();
+            self.bind_collections(&hub);
+            self.bind_tags(&hub);
+            let filtered = {
+                let session = self.inner.session.borrow();
+                !session.query().is_empty() || !session.required_tags().is_empty()
+            };
+            if filtered {
+                self.request_photos();
+            }
+            self.refresh_people_and_memories();
+        }
+        self.inner.session.borrow().clear_work();
+        self.sync_scan_progress();
+        self.toast(&line);
+    }
+
+    fn start_pack_download(&self) {
+        if self.inner.scan_busy.get()
+            || self.inner.analysis_busy.get()
+            || self.inner.pack_busy.get()
+        {
+            self.toast("A scan is already running");
+            return;
+        }
+        if localgallery::xdg_pack_present() {
+            self.toast("ML models are already installed");
+            return;
+        }
+        self.inner.pack_busy.set(true);
+        self.inner.session.borrow().begin_work("Download ML models");
+        self.sync_scan_progress();
+        localcore_trace::event("pack", "download start");
+        let (tx, rx) = mpsc::channel();
+        self.inner.pack_rx.replace(Some(rx));
+        thread::spawn(move || {
+            let result = localgallery::download_pack().map_err(|error| error.to_string());
+            let _ = tx.send(PackEvent::Downloaded(result));
+        });
+    }
+
+    fn start_pack_remove(&self) {
+        if self.inner.scan_busy.get()
+            || self.inner.analysis_busy.get()
+            || self.inner.pack_busy.get()
+        {
+            self.toast("A scan is already running");
+            return;
+        }
+        if !localgallery::xdg_pack_present() {
+            self.toast("No ML models to remove");
+            return;
+        }
+        self.inner.pack_busy.set(true);
+        self.inner.session.borrow().begin_work("Remove ML models");
+        self.sync_scan_progress();
+        localcore_trace::event("pack", "remove start");
+        let (tx, rx) = mpsc::channel();
+        self.inner.pack_rx.replace(Some(rx));
+        thread::spawn(move || {
+            let result = localgallery::remove_installed_pack().map_err(|error| error.to_string());
+            let _ = tx.send(PackEvent::Removed(result));
+        });
+    }
+
+    fn poll_pack(&self) {
+        let Some(rx) = self.inner.pack_rx.borrow_mut().take() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(event) => {
+                self.inner.pack_busy.set(false);
+                self.inner.pack_rx.replace(None);
+                self.inner.session.borrow().clear_work();
+                self.sync_scan_progress();
+                match event {
+                    PackEvent::Downloaded(Ok(pack)) => {
+                        let version = if pack.version.is_empty() {
+                            pack.name
+                        } else {
+                            pack.version
+                        };
+                        localcore_trace::event("pack", format!("download ok version={version}"));
+                        self.toast(&format!("ML models installed · {version}"));
+                    }
+                    PackEvent::Downloaded(Err(error)) => {
+                        localcore_trace::event("pack", format!("download failed: {error}"));
+                        self.toast(&error);
+                    }
+                    PackEvent::Removed(Ok(())) => {
+                        localcore_trace::event("pack", "remove ok");
+                        self.toast("ML models removed");
+                    }
+                    PackEvent::Removed(Err(error)) => {
+                        localcore_trace::event("pack", format!("remove failed: {error}"));
+                        self.toast(&error);
+                    }
+                }
+                self.refresh_settings();
+            }
+            Err(TryRecvError::Empty) => {
+                self.inner.pack_rx.replace(Some(rx));
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.inner.pack_busy.set(false);
+                self.inner.session.borrow().clear_work();
+                self.sync_scan_progress();
+            }
+        }
+    }
+
+    fn refresh_settings(&self) {
+        let Some(dialog) = self.inner.settings_dialog.borrow().clone() else {
+            return;
+        };
+        if !dialog.is_visible() {
+            return;
+        }
+        dialog.close();
+        self.inner.settings_dialog.replace(None);
+        self.present_settings();
+    }
+
     fn poll_memories(&self) {
         let received =
             self.inner
@@ -1788,6 +2200,7 @@ impl Window {
     }
 
     fn cancel_work(&self) {
+        self.inner.session.borrow().cancel_analysis();
         self.inner.session.borrow().cancel_scan();
         self.inner
             .photo_fill_gen
@@ -1799,12 +2212,16 @@ impl Window {
         self.cancel_leftover();
         self.inner.memories_rx.replace(None);
         self.inner.scan_busy.set(false);
-        self.inner.session.borrow().clear_work();
+        if !self.inner.analysis_busy.get() {
+            self.inner.session.borrow().clear_work();
+        }
         self.sync_scan_progress();
     }
 
     fn work_still_running(&self) -> bool {
         self.inner.scan_busy.get()
+            || self.inner.analysis_busy.get()
+            || self.inner.pack_busy.get()
             || self.inner.photo_fill_active.get()
             || self.inner.photos_rx.borrow().is_some()
             || self.inner.drill_rx.borrow().is_some()
@@ -2625,8 +3042,9 @@ impl Window {
             ));
         }
         let people = self.live_people_page();
-        if !people.rows.is_empty() {
-            let see_all = (people.rows.len() > people_limit).then(|| {
+        let people_see_all = self.people_see_all_needed(people.rows.len(), people_limit);
+        if !people.rows.is_empty() || people_see_all {
+            let see_all = people_see_all.then(|| {
                 let this = self.clone();
                 see_all_button(move || this.push_people())
             });
@@ -2752,7 +3170,7 @@ impl Window {
                 .map(|hub| hub.people.rows.clone())
                 .unwrap_or_default();
             if !rows.is_empty() {
-                let see_all = (rows.len() > people).then(|| {
+                let see_all = self.people_see_all_needed(rows.len(), people).then(|| {
                     let this = self.clone();
                     see_all_button(move || this.push_people())
                 });
@@ -2786,6 +3204,40 @@ impl Window {
                     hub_section("Events", see_all, self.events_rail(&preview)),
                 );
             }
+        }
+    }
+
+    fn put_hub_section(&self, name: &str, section: gtk::Widget) {
+        let host = &self.inner.collections_box;
+        let mut child = host.first_child();
+        let mut prev: Option<gtk::Widget> = None;
+        while let Some(widget) = child {
+            let next = widget.next_sibling();
+            if widget.widget_name() == name {
+                host.insert_child_after(&section, prev.as_ref());
+                host.remove(&widget);
+                return;
+            }
+            prev = Some(widget);
+            child = next;
+        }
+        if let Some(memories) = first_named_child(host, "hub-memories") {
+            host.insert_child_after(&section, Some(&memories));
+        } else {
+            host.prepend(&section);
+        }
+    }
+
+    fn remove_hub_section(&self, name: &str) {
+        let host = &self.inner.collections_box;
+        let mut child = host.first_child();
+        while let Some(widget) = child {
+            let next = widget.next_sibling();
+            if widget.widget_name() == name {
+                host.remove(&widget);
+                return;
+            }
+            child = next;
         }
     }
 
@@ -3120,9 +3572,7 @@ impl Window {
                     &root,
                     &row.title,
                     row.trailing.as_deref().unwrap_or_default(),
-                    cover
-                        .as_deref()
-                        .zip(path.as_deref()),
+                    cover.as_deref().zip(path.as_deref()),
                 );
                 this.set_person_badges(&root, &row.id, &row.title);
             }
@@ -3738,12 +4188,35 @@ impl Window {
         page
     }
 
+    fn people_see_all_needed(&self, rail_len: usize, limit: usize) -> bool {
+        match self.inner.session.borrow().people_page() {
+            Ok(page) => page.rows.len() > rail_len.min(limit),
+            Err(_) => rail_len > limit,
+        }
+    }
+
     fn refresh_people_ui(&self) {
-        let hub = self.inner.hub.borrow().clone();
-        if let Some(hub) = hub {
-            self.bind_collections(&hub);
+        let people = self.live_people_page();
+        let limit = self.inner.hub_people_limit.get();
+        let see_all_needed = self.people_see_all_needed(people.rows.len(), limit);
+        if people.rows.is_empty() && !see_all_needed {
+            self.remove_hub_section("hub-people");
+        } else {
+            let see_all = see_all_needed.then(|| {
+                let this = self.clone();
+                see_all_button(move || this.push_people())
+            });
+            self.put_hub_section(
+                "hub-people",
+                hub_section("People", see_all, self.people_hub(&people.rows, limit)),
+            );
         }
         self.sync_people_pages();
+    }
+
+    fn refresh_people_and_memories(&self) {
+        self.refresh_people_ui();
+        self.start_memories();
     }
 
     fn sync_people_pages(&self) {
@@ -3799,6 +4272,11 @@ impl Window {
         set_named_visible(root, "person-link", marks.linked);
         set_named_visible(root, "person-me", marks.me);
         set_named_visible(root, "person-star", marks.featured);
+        if marks.hidden {
+            root.add_css_class("person-hidden");
+        } else {
+            root.remove_css_class("person-hidden");
+        }
     }
 
     fn person_menu_popover(&self, path: &str, title: &str) -> gtk::Popover {
@@ -3878,7 +4356,7 @@ impl Window {
                         this.toast("Could not update Me");
                         return;
                     }
-                    this.refresh_people_ui();
+                    this.refresh_people_and_memories();
                 });
             },
         ));
@@ -3886,18 +4364,34 @@ impl Window {
         let this = self.clone();
         let hide_path = path.clone();
         let hide_popover = popover.clone();
-        list.append(&person_menu_item("Hide", move || {
-            localcore_trace::event("people", format!("menu hide click path={hide_path}"));
-            let this = this.clone();
-            let hide_path = hide_path.clone();
-            after_person_menu(&hide_popover, move || {
-                if !this.inner.session.borrow_mut().hide_person(&hide_path) {
-                    this.toast("Could not hide this person");
-                    return;
-                }
-                this.refresh_people_ui();
-            });
-        }));
+        let hidden = marks.hidden;
+        list.append(&person_menu_item(
+            if hidden { "Unhide" } else { "Hide" },
+            move || {
+                localcore_trace::event(
+                    "people",
+                    format!("menu hide click path={hide_path} hidden={hidden}"),
+                );
+                let this = this.clone();
+                let hide_path = hide_path.clone();
+                after_person_menu(&hide_popover, move || {
+                    let ok = if hidden {
+                        this.inner.session.borrow_mut().unhide_person(&hide_path)
+                    } else {
+                        this.inner.session.borrow_mut().hide_person(&hide_path)
+                    };
+                    if !ok {
+                        this.toast(if hidden {
+                            "Could not unhide this person"
+                        } else {
+                            "Could not hide this person"
+                        });
+                        return;
+                    }
+                    this.refresh_people_and_memories();
+                });
+            },
+        ));
 
         list.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
@@ -4133,7 +4627,7 @@ impl Window {
             self.toast("Could not update contact link");
             return;
         }
-        self.refresh_people_ui();
+        self.refresh_people_and_memories();
         dialog.close();
     }
 
@@ -4305,6 +4799,10 @@ impl Window {
         let session = self.inner.session.borrow();
         let folder = session.folder().map(|path| path.display().to_string());
         let photo_count = session.photo_count();
+        let people_count = session.tag_namespace_count("people");
+        let places_count = session.tag_namespace_count("places");
+        let objects_count = session.tag_namespace_count("objects");
+        let scenes_count = session.tag_namespace_count("scenes");
         let scan = session.settings_progress();
         let contacts_path = session
             .config()
@@ -4313,6 +4811,30 @@ impl Window {
             .map(|path| path.display().to_string());
         let hidden = session.person_state().hidden.clone();
         drop(session);
+        let pack = localgallery::installed_pack();
+        let pack_summary = match &pack {
+            Some(pack) => {
+                let version = if pack.version.is_empty() {
+                    pack.name.as_str()
+                } else {
+                    pack.version.as_str()
+                };
+                if pack.has_faces {
+                    format!("{version} · faces")
+                } else {
+                    version.to_string()
+                }
+            }
+            None => {
+                if localgallery::ml_enabled() {
+                    "None installed".into()
+                } else {
+                    "This build has no ONNX".into()
+                }
+            }
+        };
+        let xdg = localgallery::xdg_pack_present();
+        let pack_busy = self.inner.pack_busy.get();
 
         let change = adw::ActionRow::builder()
             .title("Change Folder")
@@ -4337,17 +4859,124 @@ impl Window {
             cancel.connect_clicked(move |_| this.cancel_work());
         }
         self.inner.scan_progress.replace(Some(scan_row.clone()));
+        let busy = self.inner.scan_busy.get() || self.inner.analysis_busy.get() || pack_busy;
         let scan_action = action_row(&ActionRowData {
             label: "Scan Photos".into(),
             role: ActionRole::Normal,
-            enabled: folder.is_some() && !self.inner.scan_busy.get(),
+            enabled: folder.is_some() && photo_count > 0 && !busy,
         });
         let this = self.clone();
         scan_action.connect_clicked(move |_| this.scan_photos());
-        let scan_status = status_row(&StatusRowData {
-            message: "Models are optional. Scan Photos without a pack skips ONNX.".into(),
-            severity: StatusSeverity::Info,
+
+        let everything = toggle_row(&ToggleRowData {
+            label: "Everything".into(),
+            on: self.inner.analysis_everything.get(),
         });
+        let tagging = toggle_row(&ToggleRowData {
+            label: "Objects & Scenes".into(),
+            on: self.inner.analysis_tagging.get(),
+        });
+        let faces = toggle_row(&ToggleRowData {
+            label: "Face tagging".into(),
+            on: self.inner.analysis_faces.get(),
+        });
+        let geotag = toggle_row(&ToggleRowData {
+            label: "Geotagging".into(),
+            on: self.inner.analysis_places.get(),
+        });
+        let syncing = Rc::new(Cell::new(false));
+        let this = self.clone();
+        let tagging_sync = tagging.clone();
+        let faces_sync = faces.clone();
+        let geotag_sync = geotag.clone();
+        let syncing_all = syncing.clone();
+        everything.connect_active_notify(move |row| {
+            if syncing_all.get() {
+                return;
+            }
+            let on = row.is_active();
+            this.inner.analysis_everything.set(on);
+            syncing_all.set(true);
+            this.inner.analysis_tagging.set(on);
+            this.inner.analysis_faces.set(on);
+            this.inner.analysis_places.set(on);
+            tagging_sync.set_active(on);
+            faces_sync.set_active(on);
+            geotag_sync.set_active(on);
+            syncing_all.set(false);
+        });
+        let this = self.clone();
+        let everything_tag = everything.clone();
+        let syncing_tag = syncing.clone();
+        tagging.connect_active_notify(move |row| {
+            if syncing_tag.get() {
+                return;
+            }
+            this.inner.analysis_tagging.set(row.is_active());
+            syncing_tag.set(true);
+            everything_tag.set_active(
+                this.inner.analysis_tagging.get()
+                    && this.inner.analysis_faces.get()
+                    && this.inner.analysis_places.get(),
+            );
+            this.inner
+                .analysis_everything
+                .set(everything_tag.is_active());
+            syncing_tag.set(false);
+        });
+        let this = self.clone();
+        let everything_face = everything.clone();
+        let syncing_face = syncing.clone();
+        faces.connect_active_notify(move |row| {
+            if syncing_face.get() {
+                return;
+            }
+            this.inner.analysis_faces.set(row.is_active());
+            syncing_face.set(true);
+            everything_face.set_active(
+                this.inner.analysis_tagging.get()
+                    && this.inner.analysis_faces.get()
+                    && this.inner.analysis_places.get(),
+            );
+            this.inner
+                .analysis_everything
+                .set(everything_face.is_active());
+            syncing_face.set(false);
+        });
+        let this = self.clone();
+        let everything_geo = everything.clone();
+        let syncing_geo = syncing;
+        geotag.connect_active_notify(move |row| {
+            if syncing_geo.get() {
+                return;
+            }
+            this.inner.analysis_places.set(row.is_active());
+            syncing_geo.set(true);
+            everything_geo.set_active(
+                this.inner.analysis_tagging.get()
+                    && this.inner.analysis_faces.get()
+                    && this.inner.analysis_places.get(),
+            );
+            this.inner
+                .analysis_everything
+                .set(everything_geo.is_active());
+            syncing_geo.set(false);
+        });
+
+        let download = action_row(&ActionRowData {
+            label: "Download ML models".into(),
+            role: ActionRole::Normal,
+            enabled: !busy && !xdg,
+        });
+        let this = self.clone();
+        download.connect_clicked(move |_| this.start_pack_download());
+        let remove = action_row(&ActionRowData {
+            label: "Remove ML models".into(),
+            role: ActionRole::Destructive,
+            enabled: !busy && xdg,
+        });
+        let this = self.clone();
+        remove.connect_clicked(move |_| this.start_pack_remove());
 
         let logs = nav_row(&NavRowData {
             label: "Logs".into(),
@@ -4381,7 +5010,7 @@ impl Window {
                     this.toast("Could not unhide this person");
                     return;
                 }
-                this.refresh_people_ui();
+                this.refresh_people_and_memories();
             });
             people_rows.push(unhide.upcast());
         }
@@ -4405,11 +5034,23 @@ impl Window {
                 },
                 SettingsGroup {
                     id: "scan".into(),
-                    title: "Scan".into(),
+                    title: "On-device Tagging".into(),
                     rows: vec![
-                        scan_status.upcast(),
+                        text_row(&TextRowData {
+                            title: "Model Pack".into(),
+                            subtitle: Some(pack_summary),
+                            trailing: None,
+                            leading: None,
+                        })
+                        .upcast(),
                         scan_row.upcast(),
+                        everything.upcast(),
+                        tagging.upcast(),
+                        faces.upcast(),
+                        geotag.upcast(),
                         scan_action.upcast(),
+                        download.upcast(),
+                        remove.upcast(),
                     ],
                 },
                 SettingsGroup {
@@ -4430,6 +5071,34 @@ impl Window {
                             title: "Photos".into(),
                             subtitle: None,
                             trailing: Some(photo_count.to_string()),
+                            leading: None,
+                        })
+                        .upcast(),
+                        text_row(&TextRowData {
+                            title: "People".into(),
+                            subtitle: None,
+                            trailing: Some(people_count.to_string()),
+                            leading: None,
+                        })
+                        .upcast(),
+                        text_row(&TextRowData {
+                            title: "Places".into(),
+                            subtitle: None,
+                            trailing: Some(places_count.to_string()),
+                            leading: None,
+                        })
+                        .upcast(),
+                        text_row(&TextRowData {
+                            title: "Objects".into(),
+                            subtitle: None,
+                            trailing: Some(objects_count.to_string()),
+                            leading: None,
+                        })
+                        .upcast(),
+                        text_row(&TextRowData {
+                            title: "Scenes".into(),
+                            subtitle: None,
+                            trailing: Some(scenes_count.to_string()),
                             leading: None,
                         })
                         .upcast(),
@@ -4585,6 +5254,17 @@ fn load_display_font() {
     if let Err(error) = font_map.add_font_file(&path) {
         eprintln!("could not load display font {}: {error}", path.display());
     }
+}
+
+fn first_named_child(host: &impl IsA<gtk::Widget>, name: &str) -> Option<gtk::Widget> {
+    let mut child = host.as_ref().first_child();
+    while let Some(widget) = child {
+        if widget.widget_name() == name {
+            return Some(widget);
+        }
+        child = widget.next_sibling();
+    }
+    None
 }
 
 fn find_named_widget<T: IsA<gtk::Widget>>(root: &impl IsA<gtk::Widget>, name: &str) -> Option<T> {

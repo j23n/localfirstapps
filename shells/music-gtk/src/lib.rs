@@ -315,8 +315,7 @@ mod tests {
         assert!(metrics.shared >= 1);
         assert!(gallery_gtk::KIT_BINDINGS
             .iter()
-            .any(|id| *id == BindingId::MediaItem
-                && KIT_BINDINGS.contains(&BindingId::MediaItem)));
+            .any(|id| *id == BindingId::MediaItem && KIT_BINDINGS.contains(&BindingId::MediaItem)));
     }
 
     #[test]

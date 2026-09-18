@@ -807,7 +807,8 @@ fn tagging_and_faces_run_over_the_same_cache_without_interfering() {
     let cache_path = dir.path().join("c.sqlite");
 
     let tagging =
-        gallery_ml::TaggingEngine::open(&cache_path, face_pack_dir(), Arc::new(StdVfs::new())).unwrap();
+        gallery_ml::TaggingEngine::open(&cache_path, face_pack_dir(), Arc::new(StdVfs::new()))
+            .unwrap();
     let faces = FaceEngine::open(&cache_path, face_pack_dir(), Arc::new(StdVfs::new())).unwrap();
 
     tagging.enqueue(&paths).unwrap();

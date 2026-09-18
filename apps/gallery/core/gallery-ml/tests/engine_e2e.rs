@@ -578,8 +578,12 @@ fn a_tampered_pack_file_is_refused() {
     std::fs::write(dir.path().join("encoder.onnx"), bytes).unwrap();
 
     let cache = tempfile::tempdir().unwrap();
-    let err = TaggingEngine::open(cache.path().join("c.sqlite"), dir.path(), Arc::new(StdVfs::new()))
-        .unwrap_err();
+    let err = TaggingEngine::open(
+        cache.path().join("c.sqlite"),
+        dir.path(),
+        Arc::new(StdVfs::new()),
+    )
+    .unwrap_err();
     assert!(
         matches!(err, gallery_ml::MlError::PackHashMismatch { .. }),
         "{err:?}"
@@ -1263,7 +1267,8 @@ fn a_panicking_encoder_fails_the_run_instead_of_unwinding_out_of_it() {
 fn a_run_that_fails_before_it_starts_still_reports_finished() {
     let dir = tempfile::tempdir().unwrap();
     let cache_path = dir.path().join("c.sqlite");
-    let engine = TaggingEngine::open(&cache_path, test_pack_dir(), Arc::new(StdVfs::new())).unwrap();
+    let engine =
+        TaggingEngine::open(&cache_path, test_pack_dir(), Arc::new(StdVfs::new())).unwrap();
 
     // Pull the queue table out from under the open engine: every pre-scope
     // statement (`reclaim_abandoned`, the re-stat pass, `claimable`) now fails.

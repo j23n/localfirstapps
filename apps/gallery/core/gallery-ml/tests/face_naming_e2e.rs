@@ -1645,7 +1645,9 @@ fn a_sidecar_write_error_fails_the_queue_row_and_counts_sidecars_failed() {
     let engine = FaceEngine::open(
         dir.path().join("gallery-cache.sqlite"),
         face_pack_dir(),
-        Arc::new(SidecarWriteFailVfs { inner: StdVfs::new() }),
+        Arc::new(SidecarWriteFailVfs {
+            inner: StdVfs::new(),
+        }),
     )
     .expect("face pack must load");
     let paths: Vec<String> = PHOTOS

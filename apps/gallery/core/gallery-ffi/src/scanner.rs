@@ -881,7 +881,7 @@ fn region_to_record(region: &FaceRegion) -> ScanRegion {
     }
 }
 
-fn photo_to_record(photo: &PhotoFile) -> ScanPhoto {
+pub(crate) fn photo_to_record(photo: &PhotoFile) -> ScanPhoto {
     ScanPhoto {
         id: photo.id.to_string(),
         path: photo.url.path().to_string(),
@@ -944,6 +944,11 @@ pub(crate) fn photo_from_record(record: ScanPhoto) -> PhotoFile {
             .collect(),
         sidecar_status: SidecarStatus::Absent,
     }
+}
+
+/// Reconstruct a core photo from the scan wire record. Used by Scan Photos.
+pub fn photo_file_from_scan(record: ScannedMediaHost) -> PhotoFile {
+    photo_from_record(record)
 }
 
 fn sidecar_to_record(row: &SidecarCandidate) -> ScanSidecarRow {

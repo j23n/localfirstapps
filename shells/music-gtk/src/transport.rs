@@ -197,9 +197,7 @@ impl TransportPort for UnavailableTransport {
     }
 
     fn load(&mut self, _source: &MediaSource) -> Result<(), TransportError> {
-        Err(TransportError::new(
-            "Playback is not available",
-        ))
+        Err(TransportError::new("Playback is not available"))
     }
 
     fn play(&mut self) -> Result<(), TransportError> {

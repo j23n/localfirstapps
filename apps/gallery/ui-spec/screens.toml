@@ -141,7 +141,10 @@ sections = [
 id = "settings"
 kind = "settings"
 title = "Settings"
-# Folder first, Scan, Diagnostics, Info last (ADR 0007 R2).
+# Folder first, Scan (model pack + Download/Remove + phase toggles +
+# Scan Photos), Diagnostics, Info last (ADR 0007 R2). Scan Photos runs
+# the selected workers (everything / objects & scenes / face tagging /
+# geotagging). Download copies the checkout pack into XDG.
 sections = [
     { id = "folder", item = "action-row" },
     { id = "scan", item = "progress-row" },

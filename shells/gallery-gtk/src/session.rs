@@ -13,17 +13,19 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use gallery_ffi::view::MAX_VIEW_WINDOW;
 use gallery_ffi::{
     load_snapshot, person_link_state, person_log_append, person_log_project_report,
-    read_image_metadata, read_video_date, save_snapshot, GalleryMediaItem, GalleryTextRow,
-    LibraryIndex, MemoryContactCommandItem, MemoryFolderCommandItem, MemoryGenerator,
-    MemoryPersonCommandItem, MemoryStructure, PersonLinkKind, PersonLinkResolution,
-    PersonStateStructure, ScanCatalogHost, ScanCommand, ScanError, ScanMetrics,
-    ScanProgressListener, ScannedFolderHost, ScannedSidecarHost, ScannerSession,
-    ScheduledMemoryContext, SnapshotHostDocument, ViewError, ViewStructure,
+    photo_file_from_scan, read_image_metadata, read_video_date, save_snapshot, GalleryMediaItem,
+    GalleryTextRow, LibraryIndex, MemoryContactCommandItem, MemoryFolderCommandItem,
+    MemoryGenerator, MemoryPersonCommandItem, MemoryStructure, PersonLinkKind,
+    PersonLinkResolution, PersonStateStructure, RemovePhotosResult, ScanCatalogHost, ScanCommand,
+    ScanError, ScanMetrics, ScanProgressListener, ScannedFolderHost, ScannedSidecarHost,
+    ScannerSession, ScheduledMemoryContext, SnapshotHostDocument, ViewError, ViewStructure,
 };
 use localcore_ui::{count_detail, found_detail, ProgressDisplay, WorkProgress};
 use localgallery::mutate::MutationTarget;
 use localgallery::ops::{OpKind, OpLedger};
-use localgallery::{library_availability, Config, LibraryAvailability, LibraryState};
+use localgallery::{
+    library_availability, AnalysisSummary, Config, LibraryAvailability, LibraryState, PhotoFile,
+};
 use shell_kit_gtk::{LogLevel, LogStore};
 
 use crate::paging::{years_from_structure, ViewList, YearMark};
@@ -62,6 +64,12 @@ impl Default for PhotoIntent {
             query: String::new(),
             tags: Vec::new(),
         }
+    }
+}
+
+fn drop_intent_ids(intent: &mut PhotoIntent, drop: &HashSet<&str>) {
+    if let PhotoIntent::Ids { ids, .. } = intent {
+        ids.retain(|id| !drop.contains(id.as_str()));
     }
 }
 
@@ -185,8 +193,7 @@ pub struct MemoriesCache {
     pub items: Vec<MemoryStructure>,
 }
 
-/// Scan Photos without a model pack: leftover analysis stays off so
-/// `--all-features` never pulls ONNX.
+/// Settings / chrome copy for the live job (library walk or Scan Photos).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScanStatus {
     pub label: String,
@@ -238,6 +245,8 @@ pub struct Session {
     contacts: Vec<MemoryContactCommandItem>,
     selecting: bool,
     selected: BTreeSet<String>,
+    analysis_cancel: Arc<AtomicBool>,
+    last_analysis: Option<AnalysisSummary>,
 }
 
 impl Session {
@@ -287,6 +296,8 @@ impl Session {
             contacts,
             selecting: false,
             selected: BTreeSet::new(),
+            analysis_cancel: Arc::new(AtomicBool::new(false)),
+            last_analysis: None,
         }
     }
 
@@ -714,8 +725,8 @@ impl Session {
         let folders = load_text_page(index.folder_structure(None), |generation| {
             index.folder_window("folders".into(), 0, PHOTO_PAGE, generation)
         });
-        let people = load_text_page(index.people_structure(), |generation| {
-            index.people_window("people".into(), 0, PHOTO_PAGE, generation)
+        let people = load_text_page(index.people_rail_structure(), |generation| {
+            index.people_rail_window("people".into(), 0, PHOTO_PAGE, generation)
         });
         let tags = load_text_page(index.tag_structure(), |generation| {
             index.tag_window("tags".into(), 0, PHOTO_PAGE, generation)
@@ -853,6 +864,60 @@ impl Session {
         );
     }
 
+    /// Drop deleted ids from the FFI table and this session's host maps.
+    /// Persists a leftover snapshot when host persist is on. Does not scan.
+    pub fn apply_photos_removed(&mut self, ids: &[String]) -> RemovePhotosResult {
+        let result = self.index.remove_photos(ids.to_vec());
+        if result.removed_ids.is_empty() {
+            return result;
+        }
+        let drop: HashSet<&str> = result.removed_ids.iter().map(String::as_str).collect();
+        let keep_paths: HashSet<String> = self
+            .index
+            .export_photos()
+            .iter()
+            .map(|photo| photo.path.clone())
+            .collect();
+        self.hosts.retain(|_, host| keep_paths.contains(&host.path));
+        self.scan_photo_ids = self.index.scan_order_photo_ids();
+        self.last_folders = self.index.export_folders();
+        self.rebuild_host_lookups();
+        self.photo_count = result.photo_count as usize;
+        self.visible_ids = Arc::new(result.visible_photo_ids.clone());
+        drop_intent_ids(&mut self.photos_intent, &drop);
+        drop_intent_ids(&mut self.current_intent, &drop);
+        self.prune_selection();
+        self.invalidate_memories();
+        if self.persist_host {
+            if let Some(folder) = self.folder.clone() {
+                let persist = ScanCatalogHost {
+                    flat_photos: self.index.export_photos(),
+                    folders: self.last_folders.clone(),
+                    needs_enrichment: false,
+                    sidecar_manifest: Vec::new(),
+                    added_paths: Vec::new(),
+                    removed_paths: Vec::new(),
+                    modified_paths: Vec::new(),
+                    failed_directory_paths: Vec::new(),
+                    timings: ScanMetrics::default(),
+                };
+                if let Err(error) = Self::persist_scan_snapshot(&folder, &persist) {
+                    localcore_trace::event("catalog", format!("delete snapshot: {error}"));
+                }
+            }
+        }
+        localcore_trace::event(
+            "catalog",
+            format!(
+                "apply_photos_removed dropped={} left={} gen={}",
+                result.removed_ids.len(),
+                result.photo_count,
+                result.generation
+            ),
+        );
+        result
+    }
+
     /// Index + folders + path map. Tests call this on the test thread;
     /// GTK prepares on the scan worker and only [`install_prepared`]s here.
     pub fn apply_catalog(
@@ -883,15 +948,107 @@ impl Session {
         self.last_leftover_ms
     }
 
-    /// Scan Photos without a pack: re-walk files, do not start leftover
-    /// analysis / ONNX.
+    /// Re-walk files. Scan Photos (tagging / faces / places) is a separate
+    /// worker started by the window.
     pub fn scan_photos_without_pack(&mut self) -> Result<(), ShellError> {
-        self.diagnostics.record(
-            LogLevel::Info,
-            "scan",
-            "Scan Photos without a model pack — file scan only",
-        );
+        self.diagnostics
+            .record(LogLevel::Info, "scan", "Reload library — file scan only");
         self.reload()
+    }
+
+    /// Photos the analysis worker needs. Cloned off the FFI index.
+    #[must_use]
+    pub fn analysis_photos(&self) -> Vec<PhotoFile> {
+        self.index
+            .export_photos()
+            .into_iter()
+            .map(photo_file_from_scan)
+            .collect()
+    }
+
+    #[must_use]
+    pub fn analysis_cancel_flag(&self) -> Arc<AtomicBool> {
+        self.analysis_cancel.clone()
+    }
+
+    pub fn prepare_analysis(&self) {
+        self.analysis_cancel
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn cancel_analysis(&self) {
+        self.analysis_cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn store_analysis_summary(&mut self, summary: AnalysisSummary) {
+        self.last_analysis = Some(summary);
+    }
+
+    #[must_use]
+    pub fn last_analysis(&self) -> Option<&AnalysisSummary> {
+        self.last_analysis.as_ref()
+    }
+
+    /// Tag buckets in one namespace (`people`, `places`, `objects`, `scenes`).
+    #[must_use]
+    pub fn tag_namespace_count(&self, namespace: &str) -> usize {
+        self.index
+            .tag_suggestions()
+            .tags
+            .iter()
+            .filter(|tag| {
+                tag.namespace
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case(namespace))
+            })
+            .count()
+    }
+
+    /// Re-read sidecars analysis just wrote, then flatten for GTK.
+    pub fn overlay_analysis_writes(
+        index: &LibraryIndex,
+        folders: Vec<ScannedFolderHost>,
+        written: &[String],
+        persist_folder: Option<&Path>,
+        work: &Mutex<Option<WorkProgress>>,
+    ) -> PreparedUi {
+        let want: HashSet<&str> = written.iter().map(String::as_str).collect();
+        let mut photos = index.export_photos();
+        for photo in &mut photos {
+            if want.contains(photo.path.as_str()) {
+                photo.enriched_file_date = None;
+            }
+        }
+        let catalog = ScanCatalogHost {
+            flat_photos: photos,
+            folders,
+            needs_enrichment: true,
+            sidecar_manifest: Vec::new(),
+            added_paths: Vec::new(),
+            removed_paths: Vec::new(),
+            modified_paths: Vec::new(),
+            failed_directory_paths: Vec::new(),
+            timings: ScanMetrics::default(),
+        };
+        let ui = Self::prepare_ui(index, catalog, true, persist_folder, work);
+        if let Some(folder) = persist_folder {
+            let persist = ScanCatalogHost {
+                flat_photos: index.export_photos(),
+                folders: ui.catalog.last_folders.clone(),
+                needs_enrichment: false,
+                sidecar_manifest: Vec::new(),
+                added_paths: Vec::new(),
+                removed_paths: Vec::new(),
+                modified_paths: Vec::new(),
+                failed_directory_paths: Vec::new(),
+                timings: ScanMetrics::default(),
+            };
+            if let Err(error) = Self::persist_scan_snapshot(folder, &persist) {
+                localcore_trace::event("catalog", format!("analysis snapshot: {error}"));
+            }
+        }
+        ui
     }
 
     #[must_use]
@@ -925,13 +1082,21 @@ impl Session {
         self.settings_progress().into()
     }
 
-    /// Settings row: live job, or the idle pack note.
+    /// Settings row: live job, last Scan Photos line, or idle.
     #[must_use]
     pub fn settings_progress(&self) -> ProgressDisplay {
         if let Ok(guard) = self.scan_work.lock() {
             if let Some(work) = guard.as_ref() {
                 return work.display().clone();
             }
+        }
+        if let Some(summary) = &self.last_analysis {
+            return ProgressDisplay {
+                label: summary.toast_line(),
+                detail: None,
+                fraction: None,
+                cancel: false,
+            };
         }
         idle_scan_status()
     }
@@ -1655,9 +1820,9 @@ impl Session {
     }
 
     pub fn people_rail_page(&self) -> TextPage {
-        load_text_page(self.index.people_structure(), |generation| {
+        load_text_page(self.index.people_rail_structure(), |generation| {
             self.index
-                .people_window("people".into(), 0, PHOTO_PAGE, generation)
+                .people_rail_window("people".into(), 0, PHOTO_PAGE, generation)
         })
     }
 
@@ -1788,7 +1953,9 @@ impl Session {
             Ok(()) => {
                 localcore_trace::event("people", format!("append {event_type} ok"));
                 self.refresh_person_state();
-                self.invalidate_memories();
+                if person_event_affects_memories(event_type) {
+                    self.invalidate_memories();
+                }
                 true
             }
             Err(error) => {
@@ -1857,7 +2024,7 @@ fn leftover_open(
 
 fn idle_scan_status() -> ProgressDisplay {
     ProgressDisplay {
-        label: "Models are optional. Scan Photos without a pack skips ONNX.".into(),
+        label: "Not started".into(),
         detail: None,
         fraction: None,
         cancel: false,
@@ -1955,6 +2122,19 @@ fn person_state_summary(state: &PersonStateStructure) -> String {
             state.me.as_str()
         },
         state.links.len()
+    )
+}
+
+fn person_event_affects_memories(event_type: &str) -> bool {
+    matches!(
+        event_type,
+        "person_hidden"
+            | "person_unhidden"
+            | "person_me_set"
+            | "person_me_clear"
+            | "person_contact_link_set"
+            | "person_contact_link_clear"
+            | "person_renamed"
     )
 }
 
@@ -2289,6 +2469,28 @@ mod tests {
     }
 
     #[test]
+    fn apply_photos_removed_keeps_siblings_and_hosts() {
+        let dir = temp_dir();
+        let mut session = Session::new(32);
+        session
+            .apply_catalog(nested_catalog(&dir), Some(&dir))
+            .unwrap();
+        let paris = session.folder_photo_ids("folder-paris");
+        assert_eq!(paris.len(), 1);
+        let year_own = session.folder_photo_ids("folder-2024");
+        let result = session.apply_photos_removed(&paris);
+        assert_eq!(result.removed_ids, paris);
+        assert_eq!(result.photo_count, 2);
+        assert_eq!(session.photo_count(), 2);
+        assert!(session.folder_photo_ids("folder-paris").is_empty());
+        assert_eq!(session.folder_photo_ids("folder-2024"), year_own);
+        assert!(session.host_for_photo(&paris[0]).is_none());
+        assert_eq!(session.last_folders()[0].total_photo_count, 2);
+        assert_eq!(session.last_folders()[1].total_photo_count, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn leftover_and_ffi_open_a_temp_folder() {
         let dir = temp_dir();
         write_jpeg(&dir, "probe.jpg");
@@ -2329,7 +2531,7 @@ mod tests {
             !session.leftover_snapshot_loaded(),
             "leftover snapshot persist is a worker, not apply_catalog"
         );
-        assert!(session.scan_status().label.contains("optional"));
+        assert!(session.scan_status().label.contains("Not started"));
 
         let photos = session.photo_page().unwrap();
         assert_eq!(photos.structure.state, ViewContentState::Content);
@@ -2360,8 +2562,24 @@ mod tests {
         assert!(filtered.items.is_empty() || filtered.structure.generation > 0);
 
         session.scan_photos_without_pack().unwrap();
-        assert!(session.scan_status().label.contains("ONNX"));
+        assert!(session.scan_status().label.contains("Not started"));
+        assert_eq!(session.analysis_photos().len(), 1);
+        assert_eq!(session.tag_namespace_count("people"), 0);
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn overlay_analysis_writes_rebuilds_the_index() {
+        let dir = temp_dir();
+        write_jpeg(&dir, "probe.jpg");
+        let mut session = Session::new(32);
+        session.open_folder(&dir).unwrap();
+        let path = session.analysis_photos()[0].path().to_string();
+        let folders = session.last_folders().to_vec();
+        let work = session.scan_work_arc();
+        let ui = Session::overlay_analysis_writes(session.index(), folders, &[path], None, &work);
+        assert_eq!(ui.catalog.photo_count, 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2596,6 +2814,14 @@ mod tests {
                 .iter()
                 .map(|row| row.id.as_str())
                 .collect::<Vec<_>>(),
+            vec!["People/Bob", "People/Ada"]
+        );
+        let rail = session.people_rail_page();
+        assert_eq!(
+            rail.rows
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["People/Bob"]
         );
         assert_eq!(
@@ -2685,6 +2911,17 @@ mod tests {
             "featured/hidden from .gallery/log must land on the hub before first paint"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn feature_keeps_memories_hide_invalidates() {
+        assert!(!person_event_affects_memories("person_featured"));
+        assert!(!person_event_affects_memories("person_unfeatured"));
+        assert!(!person_event_affects_memories("person_featured_photo"));
+        assert!(person_event_affects_memories("person_hidden"));
+        assert!(person_event_affects_memories("person_unhidden"));
+        assert!(person_event_affects_memories("person_me_set"));
+        assert!(person_event_affects_memories("person_contact_link_set"));
     }
 
     fn write_people_xmp(dir: &std::path::Path, file: &str, name: &str) {

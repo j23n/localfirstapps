@@ -57,6 +57,32 @@ pub fn visible_people(
     }
 }
 
+/// See-all people: visible (featured first), then hidden in `hidden` order.
+///
+/// The Collections rail still uses [`visible_people`].
+pub fn page_people(
+    people: &[TagSuggestion],
+    hidden: &[String],
+    featured: &[String],
+) -> Vec<TagSuggestion> {
+    let mut listed = visible_people(people, hidden, featured, 0.0, false, None);
+    listed.extend(hidden_people(people, hidden));
+    listed
+}
+
+fn hidden_people(people: &[TagSuggestion], hidden: &[String]) -> Vec<TagSuggestion> {
+    hidden
+        .iter()
+        .filter_map(|path| {
+            let key = text::nfc(path);
+            people
+                .iter()
+                .find(|person| text::nfc(&person.full_path) == key)
+                .cloned()
+        })
+        .collect()
+}
+
 fn two_years_ago(now: f64) -> f64 {
     let unix = AppleDate(now).unix_secs_f64();
     let mut civil = CivilDateTime::from_unix_secs_f64(unix);
@@ -154,5 +180,23 @@ mod tests {
             None,
         );
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn see_all_appends_hidden_in_hidden_order() {
+        let people = vec![
+            person("Cy", 9, Some(400.0)),
+            person("Ada", 4, Some(400.0)),
+            person("Bob", 2, Some(400.0)),
+        ];
+        let out = page_people(
+            &people,
+            &["People/Cy".into(), "People/Ada".into()],
+            &["People/Bob".into()],
+        );
+        assert_eq!(
+            out.iter().map(|p| p.full_path.as_str()).collect::<Vec<_>>(),
+            vec!["People/Bob", "People/Cy", "People/Ada"]
+        );
     }
 }

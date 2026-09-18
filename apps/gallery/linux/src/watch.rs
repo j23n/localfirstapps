@@ -95,6 +95,17 @@ pub fn watch_dirs(root: &Path, tree: Option<&PhotoFolder>) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Person-log and leftover writes live under `{library}/.gallery`. A
+/// recursive watch on the library root would otherwise treat those as
+/// photo changes and rescan (popping See all back to Collections).
+pub fn is_gallery_state_path(path: &Path) -> bool {
+    path.components().any(|c| c.as_os_str() == ".gallery")
+}
+
+fn is_gallery_state_event(event: &Event) -> bool {
+    !event.paths.is_empty() && event.paths.iter().all(|path| is_gallery_state_path(path))
+}
+
 fn collect_dirs(folder: &PhotoFolder, out: &mut Vec<PathBuf>) {
     out.push(PathBuf::from(folder.url.path()));
     for child in &folder.subfolders {
@@ -122,9 +133,13 @@ pub fn start(root: PathBuf, mute: Arc<MuteGate>) -> std::io::Result<(WatchHandle
     let (raw_tx, raw_rx) = mpsc::channel::<()>();
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
-            if res.is_ok() {
-                let _ = raw_tx.send(());
+            let Ok(event) = res else {
+                return;
+            };
+            if is_gallery_state_event(&event) {
+                return;
             }
+            let _ = raw_tx.send(());
         },
         notify::Config::default(),
     )
@@ -188,6 +203,7 @@ fn coalesce_loop(
 mod tests {
     use super::*;
     use gallery_model::photo::{FileUrl, PhotoFolder, StableId};
+    use std::path::Path;
 
     fn folder(path: &str, name: &str, subs: Vec<PhotoFolder>) -> PhotoFolder {
         PhotoFolder {
@@ -245,5 +261,15 @@ mod tests {
         let gate = MuteGate::new();
         assert_eq!(gate.set_muted(true), UnmuteAction::Idle);
         assert_eq!(gate.set_muted(false), UnmuteAction::Idle);
+    }
+
+    #[test]
+    fn gallery_state_paths_are_ignored() {
+        assert!(is_gallery_state_path(Path::new(
+            "/lib/.gallery/log/dev/2026-09.ndjson"
+        )));
+        assert!(is_gallery_state_path(Path::new("/lib/.gallery")));
+        assert!(!is_gallery_state_path(Path::new("/lib/vacation/photo.jpg")));
+        assert!(!is_gallery_state_path(Path::new("/lib/vacation")));
     }
 }

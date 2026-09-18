@@ -17,7 +17,7 @@ pub mod refresh;
 pub mod watch;
 
 pub use analysis::{
-    progress_title, readiness_blurb, run_analysis, AnalysisPhase, AnalysisProgress,
+    progress_title, readiness_blurb, run_analysis, AnalysisPhase, AnalysisPhases, AnalysisProgress,
     AnalysisRequest, AnalysisSummary, ProgressFn,
 };
 pub use eligibility::{is_ml_eligible, is_places_candidate, places_needed};
@@ -26,7 +26,9 @@ pub use geo::{
     GeoError, ReverseGeocoder, CACHE_RADIUS_KM, DISK_CACHE_VERSION,
 };
 pub use pack::{
-    data_pack_root, default_roots, discover_pack, ml_enabled, resolve_in, PackRoots, PackStatus,
+    checkout_pack_dir, data_pack_root, default_roots, discover_pack, download_pack, fetch_pack,
+    install_pack_from, installed_pack, ml_enabled, remove_installed_pack, remove_pack_at, resolve_in,
+    xdg_pack_present, PackFetch, PackInstallError, PackRoots, PackStatus,
 };
 pub use places::{places_queue_db_path, run_places, PlaceOutcome, PlaceRecord, PlacesSummary};
 pub use refresh::{refresh_plan, SidecarRefreshPlan};

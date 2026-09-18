@@ -20,6 +20,13 @@ pub mod xdg_thumb;
 pub mod ui;
 
 pub use config::{Config, ConfigLoad};
+pub use gallery_model::photo::PhotoFile;
+pub use gallery_session::{
+    checkout_pack_dir, discover_pack, download_pack, installed_pack, ml_enabled, progress_title,
+    remove_installed_pack, run_analysis, xdg_pack_present, AnalysisPhase, AnalysisPhases,
+    AnalysisProgress, AnalysisRequest, AnalysisSummary, Gazetteer, PackInstallError, PackStatus,
+    ProgressFn,
+};
 pub use heic::linux_heic_decoder;
 pub use host::{
     collection_groups, commit_analysis_state, event_folders, find_folder, leaf_tags,

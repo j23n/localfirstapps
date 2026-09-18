@@ -909,13 +909,13 @@ impl Window {
         Some(tx)
     }
 
-    fn mute_watch(&self) {
+    pub(super) fn mute_watch(&self) {
         if let Some(gate) = self.inner.watch_mute.borrow().as_ref() {
             let _ = gate.set_muted(true);
         }
     }
 
-    fn unmute_watch(&self) {
+    pub(super) fn unmute_watch(&self) {
         if let Some(gate) = self.inner.watch_mute.borrow().as_ref() {
             let _ = gate.set_muted(false);
         }
@@ -954,7 +954,9 @@ impl Window {
     }
 
     fn finish_delete(&self, result: DeleteResult, after_viewer: bool) {
-        self.unmute_watch();
+        if !result.deleted_ids.is_empty() {
+            self.apply_deleted_photos(&result.deleted_ids);
+        }
         let deleted = result.deleted_ids.len();
         let failed = result.failed.len();
         if deleted > 0 && failed == 0 && result.partial_ids.is_empty() {
@@ -967,7 +969,17 @@ impl Window {
         } else {
             self.toast(&format!("Deleted {deleted}, failed {failed}"));
         }
-        self.after_library_mutation(after_viewer);
+        if after_viewer {
+            let host = self.inner.last_viewer_host.get();
+            let _ = self.viewer_nav(host).pop();
+        }
+        self.set_selecting(false);
+        self.drain_watch();
+        self.unmute_watch();
+        self.drain_watch();
+        self.inner.watch_ignore_ticks.set(4);
+        self.inner.session.borrow().clear_work();
+        self.sync_chrome_progress();
     }
 
     fn finish_move(&self, result: Result<MoveResult, String>, after_viewer: bool) {

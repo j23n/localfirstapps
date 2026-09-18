@@ -3,7 +3,7 @@
 //! Scanner folders stay in [`crate::scanner::ScannedFolderHost`] form so the
 //! recursive `PhotoFolder` tree never crosses this crate's FFI again.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use gallery_index::TagSuggestion;
 
@@ -51,6 +51,84 @@ impl FolderTable {
 
     pub(crate) fn empty() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn folders(&self) -> &[ScannedFolderHost] {
+        &self.folders
+    }
+
+    pub(crate) fn photo_ids(&self) -> &[String] {
+        &self.photo_ids
+    }
+
+    /// Drop ids, keep scan order, and rewrite every folder's `[start, count)`.
+    ///
+    /// Remaining own-photos stay contiguous because the scan array only
+    /// shrinks. Recursive totals are recomputed from the new own-counts.
+    /// A cover path that named a dropped photo becomes the first remaining
+    /// own photo's path.
+    pub(crate) fn without_photo_ids(
+        &self,
+        drop: &HashSet<String>,
+        path_by_id: &HashMap<String, String>,
+    ) -> Self {
+        if drop.is_empty() {
+            return self.clone();
+        }
+        let mut new_ids = Vec::with_capacity(self.photo_ids.len());
+        let mut old_to_new = HashMap::with_capacity(self.photo_ids.len());
+        for (old, id) in self.photo_ids.iter().enumerate() {
+            if !drop.contains(id) {
+                old_to_new.insert(old, new_ids.len() as u32);
+                new_ids.push(id.clone());
+            }
+        }
+        let mut folders = self.folders.clone();
+        for folder in &mut folders {
+            let start = folder.photo_start as usize;
+            let end = start.saturating_add(folder.photo_count as usize);
+            let kept: Vec<(u32, &String)> = (start..end.min(self.photo_ids.len()))
+                .filter_map(|old| {
+                    let id = &self.photo_ids[old];
+                    if drop.contains(id) {
+                        None
+                    } else {
+                        Some((*old_to_new.get(&old)?, id))
+                    }
+                })
+                .collect();
+            folder.photo_count = kept.len() as u32;
+            folder.photo_start = kept.first().map(|(index, _)| *index).unwrap_or(0);
+            let cover_gone = folder.cover_photo_path.as_ref().is_some_and(|cover| {
+                !kept
+                    .iter()
+                    .any(|(_, id)| path_by_id.get(*id).is_some_and(|path| path == cover))
+            });
+            if cover_gone {
+                folder.cover_photo_path = kept
+                    .first()
+                    .and_then(|(_, id)| path_by_id.get(*id).cloned());
+            }
+        }
+        let mut table = FolderTable::new(folders, new_ids);
+        table.recompute_totals();
+        table
+    }
+
+    fn recompute_totals(&mut self) {
+        fn walk(table: &mut FolderTable, index: usize) -> i64 {
+            let children = table.children[index].clone();
+            let mut total = i64::from(table.folders[index].photo_count);
+            for child in children {
+                total += walk(table, child);
+            }
+            table.folders[index].total_photo_count = total;
+            total
+        }
+        let roots = self.roots.clone();
+        for root in roots {
+            walk(self, root);
+        }
     }
 
     /// Child folder ids for `parent_id`.

@@ -178,7 +178,9 @@ fn delete_companions(target: &MutationTarget, leftover: &mut bool) {
 }
 
 fn companions_still_present(target: &MutationTarget) -> bool {
-    companion_paths(target).into_iter().any(|path| path.exists())
+    companion_paths(target)
+        .into_iter()
+        .any(|path| path.exists())
 }
 
 fn companion_paths(target: &MutationTarget) -> Vec<PathBuf> {
@@ -646,9 +648,10 @@ fn unique_export_name(dest_dir: &Path, name: &str) -> String {
 }
 
 fn write_jpeg(path: &Path, frame: &RgbFrame, quality: u8) -> Result<(), MutateError> {
-    let image = image::RgbImage::from_raw(frame.width, frame.height, frame.rgb.clone()).ok_or_else(
-        || io::Error::new(io::ErrorKind::InvalidData, "RGB buffer does not match size"),
-    )?;
+    let image = image::RgbImage::from_raw(frame.width, frame.height, frame.rgb.clone())
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "RGB buffer does not match size")
+        })?;
     let mut file = fs::File::create(path)?;
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut file, quality);
     encoder
@@ -810,21 +813,20 @@ mod tests {
         let photo = write_photo(root.path(), "src.jpg");
         let before = fs::read(&photo).unwrap();
 
-        let copied = export_photos(
-            &[target("e1", &photo)],
-            dest.path(),
-            ShareQuality::Original,
-        )
-        .unwrap();
+        let copied =
+            export_photos(&[target("e1", &photo)], dest.path(), ShareQuality::Original).unwrap();
         assert_eq!(copied.saved.len(), 1);
         assert_eq!(fs::read(&copied.saved[0]).unwrap(), before);
         assert_eq!(fs::read(&photo).unwrap(), before);
 
-        let resized = export_photos(&[target("e1", &photo)], dest.path(), ShareQuality::High)
-            .unwrap();
+        let resized =
+            export_photos(&[target("e1", &photo)], dest.path(), ShareQuality::High).unwrap();
         assert_eq!(resized.saved.len(), 1);
         let out = &resized.saved[0];
-        assert_eq!(out.file_name().and_then(|n| n.to_str()), Some("src-high.jpg"));
+        assert_eq!(
+            out.file_name().and_then(|n| n.to_str()),
+            Some("src-high.jpg")
+        );
         let jpeg = fs::read(out).unwrap();
         assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
         assert_eq!(fs::read(&photo).unwrap(), before);

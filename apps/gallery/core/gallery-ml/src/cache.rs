@@ -777,7 +777,11 @@ impl CacheDb {
     ///
     /// Returns how many rows were re-opened.
     pub fn reopen_skipped_for_decoder(&self, current: u32) -> MlResult<usize> {
-        Ok(localcore_queue::reopen_skipped(&self.lock(), TAGGING, current)?)
+        Ok(localcore_queue::reopen_skipped(
+            &self.lock(),
+            TAGGING,
+            current,
+        )?)
     }
 
     /// Every `done` row that recorded a stat, so a run can spot in-place edits.
@@ -809,7 +813,11 @@ impl CacheDb {
     /// them" (overview, model packs) — the embeddings stay, so a downgrade back
     /// to the old pack is nearly free.
     pub fn mark_stale_for_pack(&self, pack: &str) -> MlResult<usize> {
-        Ok(localcore_queue::mark_stale_for_pack(&self.lock(), TAGGING, pack)?)
+        Ok(localcore_queue::mark_stale_for_pack(
+            &self.lock(),
+            TAGGING,
+            pack,
+        )?)
     }
 
     /// Paths that a run should process, oldest-enqueued first.
@@ -825,10 +833,12 @@ impl CacheDb {
     /// deliberate: an out-of-scope row is not a failure and must not burn a
     /// retry. It simply waits, in case the user switches back.
     pub fn claimable(&self, limit: usize, root_prefix: Option<&str>) -> MlResult<Vec<WorkItem>> {
-        Ok(localcore_queue::claimable(&self.lock(), TAGGING, limit, root_prefix)?
-            .into_iter()
-            .map(work_item_from_queue)
-            .collect())
+        Ok(
+            localcore_queue::claimable(&self.lock(), TAGGING, limit, root_prefix)?
+                .into_iter()
+                .map(work_item_from_queue)
+                .collect(),
+        )
     }
 
     /// One row by path.
@@ -853,7 +863,12 @@ impl CacheDb {
     ///
     /// Returns whether the row is still ours; see [`CacheDb::begin`].
     pub fn set_content_hash(&self, path: &str, hash: &[u8; 32]) -> MlResult<bool> {
-        Ok(localcore_queue::set_content_hash(&self.lock(), TAGGING, path, hash)?)
+        Ok(localcore_queue::set_content_hash(
+            &self.lock(),
+            TAGGING,
+            path,
+            hash,
+        )?)
     }
 
     /// Mark a row tagged under `pack` with `tag_count` tags, clearing any
@@ -958,7 +973,11 @@ impl CacheDb {
 
     /// [`CacheDb::reopen_skipped_for_decoder`] for the face queue.
     pub fn face_reopen_skipped_for_decoder(&self, current: u32) -> MlResult<usize> {
-        Ok(localcore_queue::reopen_skipped(&self.lock(), FACES, current)?)
+        Ok(localcore_queue::reopen_skipped(
+            &self.lock(),
+            FACES,
+            current,
+        )?)
     }
 
     /// [`CacheDb::done_rows_with_stat`] for the face queue.
@@ -978,7 +997,11 @@ impl CacheDb {
 
     /// [`CacheDb::mark_stale_for_pack`] for the face queue.
     pub fn face_mark_stale_for_pack(&self, pack: &str) -> MlResult<usize> {
-        Ok(localcore_queue::mark_stale_for_pack(&self.lock(), FACES, pack)?)
+        Ok(localcore_queue::mark_stale_for_pack(
+            &self.lock(),
+            FACES,
+            pack,
+        )?)
     }
 
     /// [`CacheDb::claimable`] for the face queue.
@@ -987,10 +1010,12 @@ impl CacheDb {
         limit: usize,
         root_prefix: Option<&str>,
     ) -> MlResult<Vec<WorkItem>> {
-        Ok(localcore_queue::claimable(&self.lock(), FACES, limit, root_prefix)?
-            .into_iter()
-            .map(work_item_from_queue)
-            .collect())
+        Ok(
+            localcore_queue::claimable(&self.lock(), FACES, limit, root_prefix)?
+                .into_iter()
+                .map(work_item_from_queue)
+                .collect(),
+        )
     }
 
     /// [`CacheDb::item`] for the face queue.
@@ -1005,7 +1030,12 @@ impl CacheDb {
 
     /// [`CacheDb::set_content_hash`] for the face queue.
     pub fn face_set_content_hash(&self, path: &str, hash: &[u8; 32]) -> MlResult<bool> {
-        Ok(localcore_queue::set_content_hash(&self.lock(), FACES, path, hash)?)
+        Ok(localcore_queue::set_content_hash(
+            &self.lock(),
+            FACES,
+            path,
+            hash,
+        )?)
     }
 
     /// [`CacheDb::finish_done`] for the face queue.

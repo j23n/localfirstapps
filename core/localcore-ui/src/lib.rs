@@ -10,7 +10,7 @@ mod tokens;
 
 pub use kinds::{ActionRole, Affordance, ItemKind, NavIntent, ScreenKind, StatusSeverity};
 pub use progress::{
-    count_detail, found_detail, format_count, format_remaining, ProgressDisplay, WorkProgress,
+    count_detail, format_count, format_remaining, found_detail, ProgressDisplay, WorkProgress,
     ETA_AFTER, REVEAL_AFTER,
 };
 pub use screens::{ContactsScreen, GalleryScreen, HealthScreen, MusicScreen};
@@ -58,10 +58,7 @@ mod tests {
         assert_eq!(gallery::THUMB_RADIUS, 8.0);
         assert_eq!(gallery::DISPLAY_FAMILY, "Newsreader");
         assert_eq!(gallery::DISPLAY_STYLE, "italic");
-        assert_eq!(
-            gallery::DISPLAY_FILE,
-            "Newsreader-Italic[opsz,wght].ttf"
-        );
+        assert_eq!(gallery::DISPLAY_FILE, "Newsreader-Italic[opsz,wght].ttf");
         assert_eq!(music::THUMB_RADIUS, 8.0);
     }
 

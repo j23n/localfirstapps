@@ -54,32 +54,34 @@ pub fn decode_frame(path: &str, max_side: u32) -> Option<RgbFrame> {
     };
     let tmp = temp_png();
     let ok = match tool {
-        Tool::FfmpegThumbnailer => run(
-            Command::new("ffmpegthumbnailer")
-                .arg("-i")
-                .arg(path)
-                .arg("-o")
-                .arg(&tmp)
-                .arg("-s")
-                .arg(max_side.to_string())
-                .arg("-t")
-                .arg("0"),
-        ),
-        Tool::Totem => run(
-            Command::new("totem-video-thumbnailer")
-                .arg("-s")
-                .arg(max_side.to_string())
-                .arg(path)
-                .arg(&tmp),
-        ),
-        Tool::Ffmpeg => run(
-            Command::new("ffmpeg")
-                .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-ss", "0"])
-                .arg("-i")
-                .arg(path)
-                .args(["-frames:v", "1", "-vf", &format!("scale={max_side}:-1")])
-                .arg(&tmp),
-        ),
+        Tool::FfmpegThumbnailer => run(Command::new("ffmpegthumbnailer")
+            .arg("-i")
+            .arg(path)
+            .arg("-o")
+            .arg(&tmp)
+            .arg("-s")
+            .arg(max_side.to_string())
+            .arg("-t")
+            .arg("0")),
+        Tool::Totem => run(Command::new("totem-video-thumbnailer")
+            .arg("-s")
+            .arg(max_side.to_string())
+            .arg(path)
+            .arg(&tmp)),
+        Tool::Ffmpeg => run(Command::new("ffmpeg")
+            .args([
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                "0",
+            ])
+            .arg("-i")
+            .arg(path)
+            .args(["-frames:v", "1", "-vf", &format!("scale={max_side}:-1")])
+            .arg(&tmp)),
         Tool::GstLaunch => {
             let uri = file_url_string(path);
             run(Command::new("gst-launch-1.0").args([
@@ -270,9 +272,6 @@ mod tests {
         };
         let frame = decode_frame(movie.path.to_str().unwrap(), 64).expect("grab");
         assert!(frame.width >= 1 && frame.height >= 1);
-        assert_eq!(
-            frame.rgb.len(),
-            (frame.width * frame.height * 3) as usize
-        );
+        assert_eq!(frame.rgb.len(), (frame.width * frame.height * 3) as usize);
     }
 }

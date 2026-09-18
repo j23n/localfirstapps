@@ -15,10 +15,10 @@ path = "src/lib.rs"
 name = "localgallery"
 path = "src/main.rs"
 
-# `ml` is not a crate feature. Scan Photos without a pack stays a
-# status/progress row. Do not add `ml = ["gallery-ffi/ml", "localgallery/ml"]`
-# until a later slice needs ONNX. `cargo test --all-features` in `shells/`
-# must not download `ort` or need `openssl.pc`.
+# `ml` is not a crate feature so `cargo test --all-features` in `shells/`
+# does not download `ort`. Scan Photos always runs geotagging. Objects &
+# Scenes / face tagging run when this crate is later given
+# `ml = ["gallery-ffi/ml", "localgallery/ml"]` and a pack is installed.
 
 [dependencies]
 shell-kit-gtk = { path = "../shell-kit-gtk" }

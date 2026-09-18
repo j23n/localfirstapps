@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use gallery_model::{PhotoFile, StableId};
 
 pub use collections::{collection_groups, leaf_tags, CollectionGroup};
-pub use people::{visible_people, PEOPLE_RAIL_CAP};
+pub use people::{page_people, visible_people, PEOPLE_RAIL_CAP};
 pub use search::{
     corpus_entry, corpus_terms, photo_count_label, SearchHit, SearchKind, DISTANT_PAST,
 };

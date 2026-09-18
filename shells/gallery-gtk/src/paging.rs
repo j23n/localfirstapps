@@ -314,6 +314,22 @@ impl ViewListModel {
         self.store.splice(self.store.n_items(), 0, &added);
     }
 
+    /// Drop matching rows from the existing store, high index first, so
+    /// GTK keeps the scroll position. Do not `splice(0, n, kept)`.
+    pub fn remove_ids(&self, drop: &HashSet<String>) -> u32 {
+        if drop.is_empty() {
+            return 0;
+        }
+        let mut positions: Vec<u32> = (0..self.n_items())
+            .filter(|&index| self.item(index).is_some_and(|item| drop.contains(&item.id)))
+            .collect();
+        positions.sort_unstable();
+        for position in positions.iter().rev() {
+            self.store.remove(*position);
+        }
+        positions.len() as u32
+    }
+
     #[must_use]
     pub fn from_list(list: &ViewList) -> Self {
         let _span = localcore_trace::span("listmodel", "from_list")
@@ -505,6 +521,21 @@ mod tests {
         assert_eq!(list.n_items(), 3);
         assert!(list.items().iter().all(|item| item.section == "photos"));
         assert_eq!(list.item(2).unwrap().id, "c");
+    }
+
+    #[test]
+    fn remove_ids_drops_rows_without_resetting_the_store() {
+        let model = ViewListModel::from_structure(&structure_with(5, 1));
+        let store = model.store();
+        assert_eq!(
+            model.remove_ids(&HashSet::from(["id-1".into(), "id-3".into()])),
+            2
+        );
+        assert_eq!(model.n_items(), 3);
+        assert_eq!(model.item(0).unwrap().id, "id-0");
+        assert_eq!(model.item(1).unwrap().id, "id-2");
+        assert_eq!(model.item(2).unwrap().id, "id-4");
+        assert_eq!(store.n_items(), 3);
     }
 
     #[test]

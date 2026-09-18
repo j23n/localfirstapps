@@ -56,8 +56,8 @@ pub use library::{
     compute_scheduled_memories, generate_memories, memory_cluster_key, memory_country_name,
     scheduled_memory_horizon_days, GenerateMemoriesCommand, LibraryBuildStructure, LibraryIndex,
     MemoryContactCommandItem, MemoryDateCommandItem, MemoryFolderCommandItem, MemoryGenerator,
-    MemoryKind, MemoryPersonCommandItem, MemoryStructure, ScheduledMemoryContext,
-    ScheduledMemoryStructure, TagStructureItem, TagStructures,
+    MemoryKind, MemoryPersonCommandItem, MemoryStructure, RemovePhotosResult,
+    ScheduledMemoryContext, ScheduledMemoryStructure, TagStructureItem, TagStructures,
 };
 pub use people::{person_link_state, visible_people, PersonLinkKind, PersonLinkResolution};
 pub use person_log::{
@@ -70,12 +70,12 @@ pub use places::{
     PlacesRecordOutcome, PlacesRunRecord, PlacesRunSummary, PlacesSession,
 };
 pub use scanner::{
-    load_snapshot, named_people_without_box, parse_xmp_bytes, probe_snapshot_version,
-    read_image_metadata, read_sidecar, read_video_date, save_snapshot, snapshot_version,
-    HostContentVersion, HostFaceRegion, HostImageMetadata, HostTagValue, HostWallClock,
-    ParsedSidecarHost, ScanCatalogHost, ScanCommand, ScanError, ScanMetrics, ScanProgressListener,
-    ScannedFolderHost, ScannedMediaHost, ScannedSidecarHost, ScannerSession, SidecarHostView,
-    SnapshotHostDocument,
+    load_snapshot, named_people_without_box, parse_xmp_bytes, photo_file_from_scan,
+    probe_snapshot_version, read_image_metadata, read_sidecar, read_video_date, save_snapshot,
+    snapshot_version, HostContentVersion, HostFaceRegion, HostImageMetadata, HostTagValue,
+    HostWallClock, ParsedSidecarHost, ScanCatalogHost, ScanCommand, ScanError, ScanMetrics,
+    ScanProgressListener, ScannedFolderHost, ScannedMediaHost, ScannedSidecarHost, ScannerSession,
+    SidecarHostView, SnapshotHostDocument,
 };
 pub use tagging::{
     inspect_model_pack, resolve_model_pack, ModelPackHostInfo, ModelPackHostResolution, PackSource,

@@ -1,11 +1,15 @@
 //! People-rail policy and contact-link resolution for both shells.
 //!
-//! `PeopleStore.visiblePeople` / `visiblePeopleForRail` and
-//! `ContactLinker.linkState` live here so GTK does not reimplement them.
+//! See all uses [`page_people`] (hidden last). The Collections rail uses
+//! [`rail_people`] (hidden omitted). `ContactLinker.linkState` lives here so
+//! GTK does not reimplement it.
 
 use std::collections::{HashMap, HashSet};
 
-use gallery_index::{visible_people as order_people, TagSuggestion, PEOPLE_RAIL_CAP};
+use gallery_index::{
+    page_people as order_page_people, visible_people as order_people, TagSuggestion,
+    PEOPLE_RAIL_CAP,
+};
 use gallery_memories::{Contact, LinkState, PersonKeys, PersonLink};
 
 use crate::library::{MemoryContactCommandItem, MemoryPersonCommandItem, TagStructureItem};
@@ -110,7 +114,7 @@ pub(crate) fn page_people(
     hidden: &[String],
     featured: &[String],
 ) -> Vec<TagSuggestion> {
-    order_people(people, hidden, featured, 0.0, false, None)
+    order_page_people(people, hidden, featured)
 }
 
 fn contact_from_item(item: MemoryContactCommandItem) -> Contact {
@@ -205,5 +209,37 @@ mod tests {
             }],
         );
         assert_eq!(dangling.kind, PersonLinkKind::Unlinked);
+    }
+
+    fn person(name: &str) -> TagSuggestion {
+        TagSuggestion {
+            id: format!("people/{}", name.to_lowercase()),
+            display_name: name.into(),
+            full_path: format!("People/{name}"),
+            namespace: Some("People".into()),
+            count: 1,
+            latest_photo_date: Some(400.0),
+        }
+    }
+
+    #[test]
+    fn page_keeps_hidden_at_the_end() {
+        let people = vec![person("Cy"), person("Ada"), person("Bob")];
+        let listed = page_people(&people, &["People/Cy".into()], &["People/Bob".into()]);
+        assert_eq!(
+            listed
+                .iter()
+                .map(|person| person.full_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["People/Bob", "People/Ada", "People/Cy"]
+        );
+        let rail = rail_people(
+            &people,
+            &["People/Cy".into()],
+            &["People/Bob".into()],
+            500.0,
+        );
+        assert!(!rail.iter().any(|person| person.full_path == "People/Cy"));
+        assert_eq!(rail[0].full_path, "People/Bob");
     }
 }

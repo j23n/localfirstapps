@@ -49,7 +49,9 @@ use crate::locations::{
 };
 use crate::people::{page_people, rail_people};
 use crate::person_log::PersonStateStructure;
-use crate::scanner::{photo_from_record, ScanPhoto, ScannedFolderHost, ScannedMediaHost};
+use crate::scanner::{
+    photo_from_record, photo_to_record, ScanPhoto, ScannedFolderHost, ScannedMediaHost,
+};
 use crate::view::{
     checked_window, GalleryMediaItem, GalleryTextRow, ViewAction, ViewContentState, ViewError,
     ViewSection, ViewSlotKind, ViewStructure,
@@ -117,6 +119,26 @@ pub struct LibraryBuildStructure {
     pub build_millis: u64,
 }
 
+/// What one [`LibraryIndex::remove_photos`] produced.
+///
+/// Structure + generation only (ADR 0003). The host already has the photo
+/// records; this names which ids left the table and the new window guard.
+///
+/// R6 role: structure DTO.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct RemovePhotosResult {
+    /// Canonical ids that were in the table and are now gone.
+    pub removed_ids: Vec<String>,
+    /// Window guard after the rewrite. Old `photo_window` calls are stale.
+    pub generation: u64,
+    /// Photos left in the table.
+    pub photo_count: u32,
+    /// Current Photos-screen projection with the dropped ids filtered out.
+    pub visible_photo_ids: Vec<String>,
+    /// True when the table is empty after the call.
+    pub empty: bool,
+}
+
 // ---------------------------------------------------------------------------
 // LibraryIndex
 // ---------------------------------------------------------------------------
@@ -124,9 +146,11 @@ pub struct LibraryBuildStructure {
 /// The photo table and every index over it: the sorted order, the search
 /// corpus, and the tag buckets.
 ///
-/// One instance per Store, rebuilt wholesale from `allPhotos` after every
-/// `apply(_:)` — the same contract `SearchIndex.build(allPhotos:)` and
-/// `TagIndex.build(allPhotos:)` had. Partial updates were never part of it.
+/// One instance per Store. `build` replaces the table wholesale after a scan
+/// or snapshot load — the same contract `SearchIndex.build(allPhotos:)` and
+/// `TagIndex.build(allPhotos:)` had. [`Self::remove_photos`] is the delete
+/// path: drop ids, `CoreIndex::build` the remaining table, rewrite folder
+/// slices. Sparse in-place patches are still not part of the contract.
 #[derive(uniffi::Object)]
 pub struct LibraryIndex {
     /// `RwLock` rather than `Mutex`: rebuilds are rare and exclusive, queries
@@ -605,10 +629,11 @@ impl LibraryIndex {
         ids
     }
 
-    /// People listing. Item ids are canonical `People/…` paths.
+    /// See-all people listing. Item ids are canonical `People/…` paths.
     ///
-    /// Hidden people are omitted and featured float to the front after
-    /// [`Self::set_person_state`]. Person photos already work via
+    /// Featured float to the front after [`Self::set_person_state`]; hidden
+    /// people are appended at the end. The Collections rail uses
+    /// [`Self::people_rail_structure`]. Person photos already work via
     /// [`Self::photo_ids_for_tag`] plus [`Self::set_photo_ids_view`].
     pub fn people_structure(&self) -> ViewStructure {
         let _span = localcore_trace::span("catalog", "people_structure");
@@ -883,6 +908,114 @@ impl LibraryIndex {
     pub fn photo_count(&self) -> u32 {
         read(&self.inner).index.photos().len() as u32
     }
+
+    /// Scanner folder rows currently attached to this table.
+    pub fn export_folders(&self) -> Vec<ScannedFolderHost> {
+        read(&self.inner).folders.folders().to_vec()
+    }
+
+    /// Photo ids in scan order — the array folder slices address.
+    pub fn scan_order_photo_ids(&self) -> Vec<String> {
+        read(&self.inner).folders.photo_ids().to_vec()
+    }
+
+    /// Drop `ids` from the photo table the way iOS `photosRemoved` does:
+    /// filter, `CoreIndex::build` the remainder, rewrite folder slices, bump
+    /// generation. Does **not** call [`Self::rebuild`] — that would empty the
+    /// folder table.
+    ///
+    /// Unknown ids are ignored. An empty or no-op request leaves generation
+    /// and folders alone.
+    pub fn remove_photos(&self, ids: Vec<String>) -> RemovePhotosResult {
+        let _span =
+            localcore_trace::span_always("catalog", "index.remove_photos").extra("n", ids.len());
+        let drop: HashSet<StableId> = ids.iter().map(|id| parse_id(id)).collect();
+        if drop.is_empty() {
+            let guard = read(&self.inner);
+            return RemovePhotosResult {
+                removed_ids: Vec::new(),
+                generation: guard.generation,
+                photo_count: guard.index.photos().len() as u32,
+                visible_photo_ids: guard
+                    .visible_photo_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                empty: guard.index.photos().is_empty(),
+            };
+        }
+
+        let mut guard = write(&self.inner);
+        let photos = guard.index.photos();
+        let mut kept_photos = Vec::with_capacity(photos.len());
+        let mut kept_offsets = Vec::with_capacity(guard.photo_time_zone_offsets.len());
+        let mut removed = Vec::new();
+        for (position, photo) in photos.iter().enumerate() {
+            if drop.contains(&photo.id) {
+                removed.push(photo.id.to_string());
+            } else {
+                kept_photos.push(photo.clone());
+                if position < guard.photo_time_zone_offsets.len() {
+                    kept_offsets.push(guard.photo_time_zone_offsets[position]);
+                }
+            }
+        }
+        if removed.is_empty() {
+            return RemovePhotosResult {
+                removed_ids: Vec::new(),
+                generation: guard.generation,
+                photo_count: photos.len() as u32,
+                visible_photo_ids: guard
+                    .visible_photo_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                empty: photos.is_empty(),
+            };
+        }
+
+        let drop_str: HashSet<String> = removed.iter().cloned().collect();
+        let index = CoreIndex::build(kept_photos);
+        let (tags, people) = index.tag_suggestions();
+        let visible_photo_ids: Vec<StableId> = guard
+            .visible_photo_ids
+            .iter()
+            .copied()
+            .filter(|id| !drop.contains(id) && index.photo(*id).is_some())
+            .collect();
+        let visible_sections = photo_view_sections(&index, &visible_photo_ids, &kept_offsets);
+        let path_by_id: HashMap<String, String> = index
+            .photos()
+            .iter()
+            .map(|photo| (photo.id.to_string(), photo.url.path().to_string()))
+            .collect();
+        let folders = guard.folders.without_photo_ids(&drop_str, &path_by_id);
+        let visible_folder_ids = folders.listing_ids(guard.visible_folder_parent.as_deref());
+
+        guard.generation = guard.generation.saturating_add(1);
+        guard.index = index;
+        guard.tags = tags;
+        guard.people = people;
+        refresh_person_lists(&mut guard);
+        guard.visible_photo_ids = visible_photo_ids;
+        guard.visible_sections = visible_sections;
+        guard.folders = folders;
+        guard.visible_folder_ids = visible_folder_ids;
+        guard.photo_time_zone_offsets = kept_offsets;
+
+        let photo_count = guard.index.photos().len() as u32;
+        RemovePhotosResult {
+            removed_ids: removed,
+            generation: guard.generation,
+            photo_count,
+            visible_photo_ids: guard
+                .visible_photo_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+            empty: photo_count == 0,
+        }
+    }
 }
 
 impl LibraryIndex {
@@ -899,6 +1032,16 @@ impl LibraryIndex {
             .index
             .first_photo_id_for_tag(&full_path)
             .map(|id| id.to_string())
+    }
+
+    /// Clone the photo table as scan records for a Scan Photos run.
+    pub fn export_photos(&self) -> Vec<ScannedMediaHost> {
+        read(&self.inner)
+            .index
+            .photos()
+            .iter()
+            .map(photo_to_record)
+            .collect()
     }
 }
 
@@ -1999,6 +2142,89 @@ mod tests {
     }
 
     #[test]
+    fn remove_photos_drops_sibling_and_bumps_generation() {
+        let (index, photos, folders) = nested_location_library();
+        index.set_photo_view(String::new(), Vec::new());
+        let before = index.photo_structure();
+        assert_eq!(before.sections[0].item_ids.len(), 3);
+        let alice = photos[1].id.clone();
+        let rome = photos[0].id.clone();
+        let result = index.remove_photos(vec![alice.clone()]);
+        assert_eq!(result.removed_ids, vec![alice.clone()]);
+        assert_eq!(result.photo_count, 2);
+        assert!(!result.empty);
+        assert!(result.generation > before.generation);
+        assert!(!result.visible_photo_ids.contains(&alice));
+        assert!(result.visible_photo_ids.contains(&rome));
+        assert_eq!(index.photo_count(), 2);
+        assert_eq!(
+            index.folder_photo_ids(folders[1].id.clone()),
+            vec![rome.clone()],
+            "2024 keeps its remaining own photo"
+        );
+        assert!(
+            index.folder_photo_ids(folders[2].id.clone()).is_empty(),
+            "paris own slice is empty after its only photo leaves"
+        );
+        assert_eq!(
+            index.folder_photo_ids(folders[3].id.clone()),
+            vec![photos[2].id.clone()]
+        );
+        let exported = index.export_folders();
+        assert_eq!(exported[0].total_photo_count, 2);
+        assert_eq!(exported[1].total_photo_count, 1);
+        assert_eq!(exported[2].total_photo_count, 0);
+        assert_eq!(exported[3].total_photo_count, 1);
+        assert!(index.photo_ids_for_tag("People/Alice".into()).is_empty());
+        assert!(matches!(
+            index.photo_window("photos".into(), 0, 20, before.generation),
+            Err(ViewError::StaleGeneration { .. })
+        ));
+        let fresh = index.photo_structure();
+        let rows = index
+            .photo_window("photos".into(), 0, 20, fresh.generation)
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|row| row.id != alice));
+    }
+
+    #[test]
+    fn remove_photos_unknown_id_is_noop() {
+        let (index, photos, _) = nested_location_library();
+        let before = index.view_generation();
+        let result = index.remove_photos(vec!["not-a-photo-id".into()]);
+        assert!(result.removed_ids.is_empty());
+        assert_eq!(result.photo_count, 3);
+        assert_eq!(result.generation, before);
+        assert_eq!(index.photo_count(), 3);
+        assert_eq!(
+            index.scan_order_photo_ids(),
+            photos
+                .iter()
+                .map(|photo| photo.id.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn remove_photos_rewrites_a_gone_cover_path() {
+        let (index, photos, mut folders) = nested_location_library();
+        folders[2].cover_photo_path = Some(photos[1].path.clone());
+        folders[1].cover_photo_path = Some(photos[0].path.clone());
+        index.set_folders(
+            folders.clone(),
+            photos.iter().map(|photo| photo.id.clone()).collect(),
+        );
+        index.remove_photos(vec![photos[1].id.clone()]);
+        let exported = index.export_folders();
+        assert_eq!(exported[2].cover_photo_path, None);
+        assert_eq!(
+            exported[1].cover_photo_path.as_deref(),
+            Some(photos[0].path.as_str())
+        );
+    }
+
+    #[test]
     fn person_state_hides_and_features_people_windows() {
         let index = LibraryIndex::default();
         index.build(vec![
@@ -2021,10 +2247,18 @@ mod tests {
         assert!(page.generation > before.generation);
         assert_eq!(
             page.sections[0].item_ids,
-            vec!["People/Bob".to_string(), "People/Ada".to_string()]
+            vec![
+                "People/Bob".to_string(),
+                "People/Ada".to_string(),
+                "People/Cy".to_string()
+            ]
         );
         let rail = index.people_rail_structure();
         assert_eq!(rail.sections[0].item_ids[0], "People/Bob");
+        assert!(
+            !rail.sections[0].item_ids.iter().any(|id| id == "People/Cy"),
+            "hidden people stay off the Collections rail"
+        );
         assert_eq!(
             index.person_full_path("people/ada".into()).as_deref(),
             Some("People/Ada")
@@ -2171,7 +2405,8 @@ mod tests {
     }
 
     /// A rebuild replaces the table wholesale — the contract `build(allPhotos:)`
-    /// always had, and the reason the app never needs a "remove photo" call.
+    /// always had. Delete uses [`LibraryIndex::remove_photos`] instead of
+    /// another `build` so folder slices survive.
     #[test]
     fn rebuilding_replaces_the_previous_table() {
         let index = LibraryIndex::default();

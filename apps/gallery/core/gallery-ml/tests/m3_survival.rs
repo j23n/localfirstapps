@@ -9,9 +9,7 @@
 //! SQL + XMP only: no ONNX, no detector, no `FaceEngine::open`. The pack
 //! swap itself is still the remaining step; see `apps/gallery/docs/m3-face-pack.md`.
 
-use gallery_meta::{
-    read_view, write_faces, Area, FaceDecision, FaceRegionWrite, FaceWriteRequest,
-};
+use gallery_meta::{read_view, write_faces, Area, FaceDecision, FaceRegionWrite, FaceWriteRequest};
 use gallery_ml::cache::{ClusterRow, ClusterState, FaceLibraryStats, StoredFace, META_FACE_PACK};
 use gallery_ml::{CacheDb, MlError, WorkState};
 use gallery_vfs::StdVfs;

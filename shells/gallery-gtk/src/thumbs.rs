@@ -483,7 +483,6 @@ impl ThumbSink {
             }
         }
     }
-
 }
 
 #[derive(Clone)]
