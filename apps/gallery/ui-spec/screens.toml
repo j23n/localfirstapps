@@ -128,13 +128,16 @@ sections = [
 id = "photo-info"
 kind = "detail"
 title = "Info"
-# Date, Camera, Location, Tags, People.
+# Date, Camera, Location, Tags, People, File, Faces, Sidecar.
 sections = [
     { id = "date", item = "field-row" },
     { id = "camera", item = "field-row" },
     { id = "location", item = "field-row" },
     { id = "tags", item = "field-row" },
     { id = "people", item = "field-row" },
+    { id = "file", item = "field-row" },
+    { id = "sidecar", item = "field-row" },
+    { id = "faces", item = "field-row" },
 ]
 
 [[screens]]

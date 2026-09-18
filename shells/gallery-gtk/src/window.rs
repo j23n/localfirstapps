@@ -4174,6 +4174,8 @@ impl Window {
         let _span = localcore_trace::span_always("viewer", "photo_info").extra("id", id);
         let session = self.inner.session.borrow();
         let path = session.path_for_photo(id).map(str::to_string);
+        let host = session.host_for_photo(id).cloned();
+        let regions = session.face_regions_for(id);
         drop(session);
         localcore_trace::event(
             "viewer",
@@ -4201,10 +4203,50 @@ impl Window {
             editable: false,
         }));
         group.append(&field_row(&FieldRowData {
-            label: "Camera".into(),
-            value: "—".into(),
+            label: "File".into(),
+            value: host
+                .as_ref()
+                .map(|host| host.filename.clone())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| "—".into()),
             editable: false,
         }));
+        if host.as_ref().is_some_and(|host| host.is_video) {
+            group.append(&field_row(&FieldRowData {
+                label: "Type".into(),
+                value: "Video".into(),
+                editable: false,
+            }));
+        }
+        group.append(&field_row(&FieldRowData {
+            label: "Camera".into(),
+            value: camera_label(
+                meta.as_ref().and_then(|meta| meta.make.as_deref()),
+                meta.as_ref().and_then(|meta| meta.model.as_deref()),
+            ),
+            editable: false,
+        }));
+        if let (Some(lat), Some(lon)) = (
+            meta.as_ref().and_then(|meta| meta.gps_latitude),
+            meta.as_ref().and_then(|meta| meta.gps_longitude),
+        ) {
+            group.append(&field_row(&FieldRowData {
+                label: "GPS".into(),
+                value: format!("{lat:.5}, {lon:.5}"),
+                editable: false,
+            }));
+        }
+        if let Some(country) = meta
+            .as_ref()
+            .and_then(|meta| meta.country_code.as_deref())
+            .filter(|code| !code.is_empty())
+        {
+            group.append(&field_row(&FieldRowData {
+                label: "Country".into(),
+                value: country.to_string(),
+                editable: false,
+            }));
+        }
         let location = meta
             .as_ref()
             .and_then(|meta| {
@@ -4219,6 +4261,22 @@ impl Window {
         group.append(&field_row(&FieldRowData {
             label: "Location".into(),
             value: location,
+            editable: false,
+        }));
+        let named_faces: Vec<_> = regions
+            .iter()
+            .filter_map(|region| region.name.as_deref())
+            .collect();
+        let faces = if !named_faces.is_empty() {
+            named_faces.join(", ")
+        } else if !regions.is_empty() {
+            format!("{} unnamed", regions.len())
+        } else {
+            "—".into()
+        };
+        group.append(&field_row(&FieldRowData {
+            label: "Faces".into(),
+            value: faces,
             editable: false,
         }));
         let tags = meta
@@ -4261,6 +4319,19 @@ impl Window {
         group.append(&field_row(&FieldRowData {
             label: "People".into(),
             value: people_value,
+            editable: false,
+        }));
+        let sidecar = match path.as_deref() {
+            Some(path) => match gallery_meta::sidecar_exists(&gallery_vfs::StdVfs::new(), path) {
+                Ok(true) => gallery_meta::sidecar_path(path),
+                Ok(false) => "No sidecar on disk".into(),
+                Err(_) => "Sidecar unavailable".into(),
+            },
+            None => "Sidecar unavailable".into(),
+        };
+        group.append(&field_row(&FieldRowData {
+            label: "Sidecar".into(),
+            value: sidecar,
             editable: false,
         }));
         let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -6019,6 +6090,18 @@ fn photo_tile() -> gtk::AspectFrame {
 
 /// iOS `PhotoPageView`: movies play inline. Host flag wins; the path
 /// extension is the fallback when a row was not in the host map.
+fn camera_label(make: Option<&str>, model: Option<&str>) -> String {
+    match (
+        make.map(str::trim).filter(|value| !value.is_empty()),
+        model.map(str::trim).filter(|value| !value.is_empty()),
+    ) {
+        (Some(make), Some(model)) => format!("{make} {model}"),
+        (Some(make), None) => make.to_string(),
+        (None, Some(model)) => model.to_string(),
+        (None, None) => "—".into(),
+    }
+}
+
 fn viewer_is_video(host: Option<&crate::session::PhotoHost>, path: Option<&str>) -> bool {
     host.is_some_and(|host| host.is_video) || path.is_some_and(localgallery::video::is_video_path)
 }
@@ -6223,6 +6306,18 @@ mod tests {
         assert_eq!(filter_chip_icon("Vacation"), "tag-symbolic");
         assert_eq!(display_filter_label("People/Ada"), "Ada");
         assert_eq!(display_filter_label("date:2024-06"), "2024-06");
+    }
+
+    #[test]
+    fn camera_label_joins_make_and_model() {
+        assert_eq!(
+            super::camera_label(Some("Canon"), Some("EOS R5")),
+            "Canon EOS R5"
+        );
+        assert_eq!(super::camera_label(Some("Canon"), None), "Canon");
+        assert_eq!(super::camera_label(None, Some("EOS R5")), "EOS R5");
+        assert_eq!(super::camera_label(None, None), "—");
+        assert_eq!(super::camera_label(Some("  "), Some("")), "—");
     }
 
     #[test]

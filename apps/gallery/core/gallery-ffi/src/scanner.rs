@@ -643,6 +643,10 @@ pub struct HostImageMetadata {
     pub gps_longitude: Option<f64>,
     /// Face regions from the sidecar.
     pub face_regions: Vec<HostFaceRegion>,
+    /// EXIF / TIFF `Make`.
+    pub make: Option<String>,
+    /// EXIF / TIFF `Model`.
+    pub model: Option<String>,
 }
 
 /// The three things a `.xmp` contributes, plus photo-tools stamps.
@@ -691,6 +695,8 @@ pub fn read_image_metadata(path: String) -> HostImageMetadata {
         gps_latitude: meta.gps_latitude,
         gps_longitude: meta.gps_longitude,
         face_regions: meta.face_regions.iter().map(region_to_record).collect(),
+        make: meta.make,
+        model: meta.model,
     }
 }
 
