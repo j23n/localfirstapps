@@ -183,7 +183,7 @@ struct FolderBrowserView: View {
     private func folderLink(_ row: GalleryTextRow) -> some View {
         let hasChildren = store.index.folderHasChildren(row.id)
         let photoIDs = store.index.folderPhotoIDs(folderID: row.id)
-        NavigationLink {
+        return NavigationLink {
             if !hasChildren, !photoIDs.isEmpty, let uuid = UUID(uuidString: row.id) {
                 FolderGridView(title: row.title, folderID: uuid)
             } else if let dest = store.index.folderDestination(id: row.id) {

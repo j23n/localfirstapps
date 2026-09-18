@@ -459,7 +459,7 @@ struct CollectionsView: View {
     private func eventRow(_ row: GalleryTextRow) -> some View {
         let tag = store.index.tagSuggestion(for: row.id)
         let coverURL = tag.flatMap { store.photos(forTag: $0).first?.url }
-        HStack(spacing: 14) {
+        return HStack(spacing: 14) {
             if let coverURL {
                 ThumbnailView(url: coverURL, size: 68, cornerRadius: 10)
                     .frame(width: 68, height: 68)

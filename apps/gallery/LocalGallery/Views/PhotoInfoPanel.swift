@@ -531,7 +531,7 @@ struct PhotoInfoPanel: View {
             latitudinalMeters: 1000,
             longitudinalMeters: 1000
         )
-        Map(initialPosition: .region(region)) {
+        return Map(initialPosition: .region(region)) {
             Marker("", coordinate: coordinate)
         }
         .frame(height: 88)
