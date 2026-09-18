@@ -1,9 +1,11 @@
 //! Display rows and logged actions — the surface both shells call.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use contacts_core::{
-    apply_draft, choice_rows, conflict_rows, delete_logged, draft_from_card, field_rows, list_rows,
-    read_ops, resolve_logged, save_logged, write, Birthday, Card, ContactDraft, MemVfs, MergeKind,
-    Store, TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
+    apply_draft, assign_tag_logged, choice_rows, conflict_rows, delete_logged, draft_from_card,
+    field_rows, list_rows, read_ops, resolve_logged, save_logged, write, Birthday, Card,
+    ContactDraft, MemVfs, MergeKind, Store, TYPE_CONTACT_DELETED, TYPE_CONTACT_SAVED,
 };
 use localcore_vfs::{Entry, ReadSeek, Stat, Vfs, VfsError, VfsResult};
 
@@ -192,4 +194,93 @@ fn resolution_rewalks_before_ignoring_a_folder_log_failure() {
 
     assert!(store.conflict_groups().is_empty());
     assert!(!vfs.exists("/lib/alice.sync-conflict-20200901-120000-PHONE01.vcf"));
+}
+
+struct ListCounter {
+    inner: MemVfs,
+    lists: AtomicUsize,
+}
+
+impl ListCounter {
+    fn new() -> Self {
+        Self {
+            inner: MemVfs::new(),
+            lists: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl Vfs for ListCounter {
+    fn open(&self, path: &str) -> VfsResult<Box<dyn ReadSeek + Send>> {
+        self.inner.open(path)
+    }
+
+    fn stat(&self, path: &str) -> VfsResult<Stat> {
+        self.inner.stat(path)
+    }
+
+    fn list(&self, dir: &str) -> VfsResult<Vec<Entry>> {
+        self.lists.fetch_add(1, Ordering::SeqCst);
+        self.inner.list(dir)
+    }
+
+    fn stat_entry(&self, path: &str) -> VfsResult<Entry> {
+        self.inner.stat_entry(path)
+    }
+
+    fn create_dir_all(&self, dir: &str) -> VfsResult<()> {
+        self.inner.create_dir_all(dir)
+    }
+
+    fn append(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
+        self.inner.append(path, bytes)
+    }
+
+    fn write_atomic(&self, path: &str, bytes: &[u8]) -> VfsResult<()> {
+        self.inner.write_atomic(path, bytes)
+    }
+
+    fn exists(&self, path: &str) -> bool {
+        self.inner.exists(path)
+    }
+
+    fn remove(&self, path: &str) -> VfsResult<()> {
+        self.inner.remove(path)
+    }
+
+    fn rename(&self, from: &str, to: &str) -> VfsResult<()> {
+        self.inner.rename(from, to)
+    }
+}
+
+#[test]
+fn assign_tag_does_not_list_once_per_contact() {
+    let vfs = ListCounter::new();
+    for (name, id) in [("ann.vcf", "a-1"), ("ben.vcf", "b-1"), ("cam.vcf", "c-1")] {
+        let mut card = Card::new(name);
+        card.local_id = id.into();
+        card.full_name = name.trim_end_matches(".vcf").to_ascii_uppercase();
+        vfs.inner
+            .insert(&format!("/lib/{name}"), write(&card).into_bytes());
+    }
+    let mut store = Store::open(&vfs, "/lib").unwrap();
+    vfs.lists.store(0, Ordering::SeqCst);
+
+    let changed = assign_tag_logged(
+        &vfs,
+        &mut store,
+        "linux-test",
+        "vip",
+        &["a-1".into(), "b-1".into(), "c-1".into()],
+    )
+    .unwrap();
+    assert_eq!(changed, 3);
+    let lists = vfs.lists.load(Ordering::SeqCst);
+    assert_eq!(
+        lists, 1,
+        "assign_tag should walk once, not once per contact"
+    );
+    for id in ["a-1", "b-1", "c-1"] {
+        assert!(store.get(id).unwrap().categories.iter().any(|c| c == "vip"));
+    }
 }

@@ -8,6 +8,23 @@ use std::fs;
 use std::io::Write;
 
 #[test]
+fn invalid_device_is_invalid_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_str().unwrap();
+    let err = match ContactsSession::open(root.into(), "bad device".into()) {
+        Ok(_) => panic!("expected invalid device to fail open"),
+        Err(err) => err,
+    };
+    assert!(matches!(
+        err,
+        ContactsError::InvalidCommand {
+            user_actionable: true,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn conflict_name_matches_grammar() {
     assert!(is_conflict_name(
         "alice.sync-conflict-20200901-120000-PHONE01.vcf".into()

@@ -278,6 +278,8 @@ name = "health-ffi"
 version = "0.1.0"
 dependencies = [
  "health-core",
+ "rusqlite",
+ "serde_json",
  "tempfile",
  "uniffi",
 ]

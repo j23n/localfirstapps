@@ -6,11 +6,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use localcore_conflict::ConflictGroup;
-use localcore_vfs::Vfs;
+use localcore_vfs::{write_then_remove_copies, Vfs};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::model::{Playlist, PlaylistEntry, PlaylistFormat};
-use crate::playlist::{canonical_bytes, parse_playlist};
+use crate::playlist::{canonical_bytes, parse_playlist, PLAYLIST_READ_CAP};
 use crate::StoreError;
 
 /// Typed conflict disposition used by both shells.
@@ -69,7 +69,7 @@ pub fn plan_merge(
     }
     let mut copy_paths = Vec::new();
     for copy in &group.copies {
-        let path = if is_absolute(&copy.path) {
+        let path = if crate::path::is_absolute(&copy.path) {
             copy.path.clone()
         } else {
             crate::path::join(root, &copy.path)
@@ -86,7 +86,7 @@ pub fn plan_merge(
     for (_, version) in versions.iter().skip(1) {
         match merge_two(&merged, version) {
             Ok(next) => merged = next,
-            Err(()) => needs_choice = true,
+            Err(_) => needs_choice = true,
         }
     }
     merged.path = surviving_path.clone();
@@ -110,7 +110,7 @@ pub fn plan_merge(
 }
 
 fn parse_at(vfs: &dyn Vfs, read_path: &str, canonical_path: &str) -> Result<Playlist, StoreError> {
-    let bytes = vfs.read(read_path)?;
+    let bytes = vfs.read_capped(read_path, PLAYLIST_READ_CAP)?;
     let mut playlist = parse_playlist(canonical_path, &bytes)?;
     playlist.path = canonical_path.to_owned();
     playlist.id = localcore_id::derive(canonical_path).to_string();
@@ -140,20 +140,23 @@ pub fn apply_merge(
     selected.id = localcore_id::derive(&selected.path).to_string();
     selected.name = crate::path::file_stem(&selected.path);
     let bytes = canonical_bytes(&selected);
-    vfs.write_atomic(&plan.surviving_path, &bytes)?;
+    write_then_remove_copies(vfs, &plan.surviving_path, &bytes, &plan.copy_paths)?;
     selected.content_token = crate::playlist::content_token(&bytes);
     crate::playlist::refresh_entry_ids(&mut selected);
-    for copy_path in &plan.copy_paths {
-        if vfs.try_exists(copy_path)? {
-            vfs.remove(copy_path)?;
-        }
-    }
     Ok(selected)
+}
+
+/// Why two playlists cannot be unioned without a whole-document choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MergeIssue {
+    Overlap,
+    Reorder,
+    DirectiveConflict,
 }
 
 /// Merge two ordered documents when additions occupy disjoint gaps between
 /// common entries. Duplicate entries are distinguished by occurrence count.
-fn merge_two(base: &Playlist, incoming: &Playlist) -> Result<Playlist, ()> {
+fn merge_two(base: &Playlist, incoming: &Playlist) -> Result<Playlist, MergeIssue> {
     let base_tokens = tokens(&base.entries);
     let incoming_tokens = tokens(&incoming.entries);
     let base_set: BTreeSet<&str> = base_tokens.iter().map(String::as_str).collect();
@@ -169,7 +172,7 @@ fn merge_two(base: &Playlist, incoming: &Playlist) -> Result<Playlist, ()> {
         .filter(|token| base_set.contains(token))
         .collect();
     if common_base != common_incoming {
-        return Err(());
+        return Err(MergeIssue::Reorder);
     }
     let common: BTreeSet<&str> = common_base.iter().copied().collect();
     let base_gaps = gaps(&base.entries, &base_tokens, &common);
@@ -179,7 +182,7 @@ fn merge_two(base: &Playlist, incoming: &Playlist) -> Result<Playlist, ()> {
         let left = &base_gaps[gap_index];
         let right = &incoming_gaps[gap_index];
         if !left.is_empty() && !right.is_empty() && tokens(left) != tokens(right) {
-            return Err(());
+            return Err(MergeIssue::Overlap);
         }
         if left.is_empty() {
             output.extend(right.clone());
@@ -248,17 +251,17 @@ fn merge_preserved_lines(base: &[String], incoming: &[String]) -> Vec<String> {
 fn merge_entry_metadata(
     base: &PlaylistEntry,
     incoming: &PlaylistEntry,
-) -> Result<PlaylistEntry, ()> {
+) -> Result<PlaylistEntry, MergeIssue> {
     let mut merged = base.clone();
     if base.directives.is_empty() {
         merged.directives = incoming.directives.clone();
     } else if !incoming.directives.is_empty() && base.directives != incoming.directives {
-        return Err(());
+        return Err(MergeIssue::DirectiveConflict);
     }
     if base.pls_fields.is_empty() {
         merged.pls_fields = incoming.pls_fields.clone();
     } else if !incoming.pls_fields.is_empty() && base.pls_fields != incoming.pls_fields {
-        return Err(());
+        return Err(MergeIssue::DirectiveConflict);
     }
     Ok(merged)
 }
@@ -297,12 +300,4 @@ fn gaps(
         }
     }
     output
-}
-
-fn is_absolute(path: &str) -> bool {
-    path.starts_with('/')
-        || path
-            .as_bytes()
-            .get(1)
-            .is_some_and(|separator| *separator == b':')
 }

@@ -46,7 +46,7 @@ pub use folder_log::{
 };
 pub use localcore_conflict::{is_conflict_name, ConflictCopy, ConflictGroup};
 pub use localcore_log::valid_device;
-pub use localcore_vfs::{MemVfs, StdVfs, Vfs};
+pub use localcore_vfs::{ConfinedVfs, MemVfs, StdVfs, Vfs};
 pub use merge::{apply_merge, plan_merge, FieldConflict, MergeKind, MergePlan};
 pub use store::{join_root, Store, StoreError, TEMP_PREFIX};
 pub use vcard::{parse, parse_multiple, suggested_file_name, write};

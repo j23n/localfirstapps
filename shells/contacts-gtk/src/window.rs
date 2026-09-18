@@ -15,8 +15,8 @@ use contacts_core::{
     assign_tag_logged, bulk_delete_logged, conflict_preview, conflict_rows, delete_logged,
     detail_rows, export_vcard_text, list_rows_filtered, load_edit_draft, new_edit_draft,
     remove_tag_logged, rename_tag_logged, resolve_logged, save_contact_logged, search_hits,
-    tag_rows, BirthdayDraft, ContactEditDraft, LabeledAddressDraft, LabeledValueDraft, MergeKind,
-    SaveContactCommand, StdVfs, Store, Vfs, TEMP_PREFIX,
+    tag_rows, BirthdayDraft, ConfinedVfs, ContactEditDraft, LabeledAddressDraft, LabeledValueDraft,
+    MergeKind, SaveContactCommand, StdVfs, Store, Vfs, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
     about_dialog, action_row, apply_progress_row, chip_bar, chrome_progress, confirm_dialog,
@@ -784,7 +784,13 @@ impl Window {
         let status = self.inner.work.clone();
         let (tx, rx) = mpsc::channel();
         self.inner.work_rx.replace(Some(rx));
-        let vfs = StdVfs::new(TEMP_PREFIX);
+        let vfs = match ConfinedVfs::new(TEMP_PREFIX, &folder) {
+            Ok(vfs) => vfs,
+            Err(error) => {
+                let _ = tx.send(ContactsWork::Failed(error.to_string()));
+                return;
+            }
+        };
         thread::spawn(move || {
             let report = |discovered: usize| {
                 if let Ok(mut guard) = status.lock() {

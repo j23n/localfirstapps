@@ -4,10 +4,10 @@
 //! deleted until [`apply_merge`] — that call *is* the explicit choice (R10).
 
 use localcore_conflict::ConflictGroup;
-use localcore_vfs::Vfs;
+use localcore_vfs::{is_absolute, relative_to, write_then_remove_copies, Vfs};
 
 use crate::card::{Card, Labeled, LabeledAddress};
-use crate::store::{join_root, StoreError};
+use crate::store::{join_root, StoreError, MAX_VCARD_BYTES};
 use crate::vcard::{parse, write};
 
 /// How a group resolves before the user confirms.
@@ -57,7 +57,7 @@ pub fn plan_merge(
     let surviving_path = group.surviving_path(root);
     let surviving_exists = vfs.try_exists(&surviving_path)?;
     let surviving = if surviving_exists {
-        let bytes = vfs.read(&surviving_path)?;
+        let bytes = vfs.read_capped(&surviving_path, MAX_VCARD_BYTES)?;
         parse(&bytes, &group.canonical_name, false)
     } else {
         None
@@ -68,12 +68,12 @@ pub fn plan_merge(
         versions.push(("surviving".into(), card));
     }
     for copy in &group.copies {
-        let path = if is_absolute_path(&copy.path) {
+        let path = if is_absolute(&copy.path) {
             copy.path.clone()
         } else {
             join_root(root, &copy.path)
         };
-        let bytes = vfs.read(&path)?;
+        let bytes = vfs.read_capped(&path, MAX_VCARD_BYTES)?;
         if let Some(card) = parse(&bytes, &group.canonical_name, false) {
             versions.push((copy.name.clone(), card));
         }
@@ -100,7 +100,7 @@ pub fn plan_merge(
         .copies
         .iter()
         .map(|c| {
-            if is_absolute_path(&c.path) {
+            if is_absolute(&c.path) {
                 c.path.clone()
             } else {
                 join_root(root, &c.path)
@@ -110,7 +110,7 @@ pub fn plan_merge(
 
     Ok(MergePlan {
         kind,
-        canonical_name: relative_to_root(root, &surviving_path),
+        canonical_name: relative_to(root, &surviving_path),
         merged,
         conflicts,
         copy_paths,
@@ -157,12 +157,12 @@ pub fn apply_merge(
     }
     card.file_name = plan.canonical_name.clone();
     card.canonicalize();
-    vfs.write_atomic(&plan.surviving_path, write(&card).as_bytes())?;
-    for copy in &plan.copy_paths {
-        if vfs.try_exists(copy)? {
-            vfs.remove(copy)?;
-        }
-    }
+    write_then_remove_copies(
+        vfs,
+        &plan.surviving_path,
+        write(&card).as_bytes(),
+        &plan.copy_paths,
+    )?;
     Ok(card)
 }
 
@@ -604,20 +604,4 @@ fn multiset_union_strings<'a>(values: impl Iterator<Item = &'a Vec<String>>) -> 
         .into_iter()
         .flat_map(|(value, count)| std::iter::repeat_n(value, count))
         .collect()
-}
-
-fn is_absolute_path(path: &str) -> bool {
-    path.starts_with(['/', '\\'])
-        || path
-            .as_bytes()
-            .get(1)
-            .is_some_and(|separator| *separator == b':')
-}
-
-fn relative_to_root(root: &str, path: &str) -> String {
-    let root = root.trim_end_matches(['/', '\\']);
-    path.strip_prefix(root)
-        .and_then(|rest| rest.strip_prefix(['/', '\\']))
-        .unwrap_or(path)
-        .to_owned()
 }

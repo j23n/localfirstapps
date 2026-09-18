@@ -304,3 +304,21 @@ fn enqueue_nfc_and_nfd_share_one_row() {
     let row = item(&conn, Q, &nfd).unwrap().unwrap();
     assert_eq!(row.path, nfc);
 }
+
+#[test]
+fn claimable_prefix_is_a_directory_boundary() {
+    let mut conn = mem();
+    enqueue(&mut conn, Q, &["/music/a".into(), "/musically/a".into()]).unwrap();
+    let under_music: Vec<String> = claimable(&conn, Q, 0, Some("/music"))
+        .unwrap()
+        .into_iter()
+        .map(|i| i.path)
+        .collect();
+    assert_eq!(under_music, vec!["/music/a".to_string()]);
+    let with_slash: Vec<String> = claimable(&conn, Q, 0, Some("/music/"))
+        .unwrap()
+        .into_iter()
+        .map(|i| i.path)
+        .collect();
+    assert_eq!(with_slash, vec!["/music/a".to_string()]);
+}

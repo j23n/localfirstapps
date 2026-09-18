@@ -5,9 +5,8 @@
 
 uniffi::setup_scaffolding!("ContactsCore");
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
-use contacts_core::StdVfs;
 use contacts_core::{
     assign_tag_logged, bulk_delete_logged, choice_rows as core_choice_rows,
     conflict_preview as core_conflict_preview, conflict_rows as core_conflict_rows, delete_logged,
@@ -15,13 +14,14 @@ use contacts_core::{
     is_conflict_name as core_is_conflict_name, list_rows as core_list_rows,
     list_rows_filtered as core_list_rows_filtered, load_edit_draft, remove_tag_logged,
     rename_tag_logged, resolve_logged, save_contact_logged, search_hits as core_search_hits,
-    tag_rows as core_tag_rows, valid_device, BirthdayDraft as CoreBirthdayDraft,
+    tag_rows as core_tag_rows, valid_device, BirthdayDraft as CoreBirthdayDraft, ConfinedVfs,
     ConflictPreview as CoreConflictPreview, ConflictRow as CoreConflictRow,
     ContactEditDraft as CoreContactEditDraft, FieldRow as CoreFieldRow,
     LabeledAddressDraft as CoreLabeledAddressDraft, LabeledValueDraft as CoreLabeledValueDraft,
     MergeKind as CoreMergeKind, SaveContactCommand as CoreSaveContactCommand,
     SearchHit as CoreSearchHit, Store, StoreError, TextRow as CoreTextRow, TEMP_PREFIX,
 };
+use localcore_vfs::VfsError;
 
 /// `text-row` (ADR 0004 R4).
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
@@ -290,6 +290,14 @@ impl From<StoreError> for ContactsError {
     }
 }
 
+impl From<VfsError> for ContactsError {
+    fn from(err: VfsError) -> Self {
+        Self::Io {
+            message: err.to_string(),
+        }
+    }
+}
+
 /// Syncthing conflict-copy predicate (ADR 0005 R7).
 #[uniffi::export]
 pub fn is_conflict_name(name: String) -> bool {
@@ -299,7 +307,7 @@ pub fn is_conflict_name(name: String) -> bool {
 /// Open a contacts folder on the real filesystem.
 #[derive(uniffi::Object)]
 pub struct ContactsSession {
-    vfs: StdVfs,
+    vfs: ConfinedVfs,
     device: String,
     store: Mutex<Store>,
 }
@@ -313,11 +321,12 @@ impl ContactsSession {
     #[uniffi::constructor]
     pub fn open(root: String, device: String) -> Result<Self, ContactsError> {
         if !valid_device(&device) {
-            return Err(ContactsError::Io {
+            return Err(ContactsError::InvalidCommand {
                 message: format!("invalid device {device:?}"),
+                user_actionable: true,
             });
         }
-        let vfs = StdVfs::new(TEMP_PREFIX);
+        let vfs = ConfinedVfs::new(TEMP_PREFIX, &root)?;
         let store = Store::open(&vfs, &root)?;
         Ok(Self {
             vfs,
@@ -328,7 +337,7 @@ impl ContactsSession {
 
     /// `text-row` list, sorted by title.
     pub fn list_rows(&self) -> Result<Vec<TextRow>, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(core_list_rows(&store, "")
             .into_iter()
             .map(to_text)
@@ -341,7 +350,7 @@ impl ContactsSession {
         query: String,
         tag: Option<String>,
     ) -> Result<Vec<TextRow>, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(core_list_rows_filtered(&store, &query, tag.as_deref())
             .into_iter()
             .map(to_text)
@@ -354,7 +363,7 @@ impl ContactsSession {
         query: String,
         tag: Option<String>,
     ) -> Result<Vec<SearchHit>, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(core_search_hits(&store, &query, tag.as_deref())
             .into_iter()
             .map(to_search)
@@ -363,13 +372,13 @@ impl ContactsSession {
 
     /// Display-ready tag filters with contact counts.
     pub fn tag_rows(&self) -> Result<Vec<TextRow>, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(core_tag_rows(&store).into_iter().map(to_text).collect())
     }
 
     /// `field-row`s for one card.
     pub fn field_rows(&self, id: String) -> Result<Vec<FieldRow>, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(core_detail_rows(&store, &id)?
             .into_iter()
             .map(to_field)
@@ -383,7 +392,7 @@ impl ContactsSession {
 
     /// Reload the authoritative Card by id and return its typed edit draft.
     pub fn contact_edit_draft(&self, id: String) -> Result<ContactEditDraft, ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         Ok(from_core_draft(load_edit_draft(
             &self.vfs, &mut store, &id,
         )?))
@@ -394,7 +403,7 @@ impl ContactsSession {
         &self,
         command: SaveContactCommand,
     ) -> Result<ContactEditDraft, ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         let saved = save_contact_logged(
             &self.vfs,
             &mut store,
@@ -408,58 +417,58 @@ impl ContactsSession {
 
     /// Canonical vCard text for an explicit export operation only.
     pub fn export_vcard_text(&self, id: String) -> Result<String, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(core_export_vcard_text(&store, &id)?)
     }
 
     /// Basename of the `.vcf` this id lives in.
     pub fn file_name(&self, id: String) -> Result<String, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         let card = store.get(&id).ok_or(ContactsError::NotFound)?;
         Ok(card.file_name.clone())
     }
 
     /// Delete one card (and its file when it was the last sibling).
     pub fn delete(&self, id: String) -> Result<(), ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         delete_logged(&self.vfs, &mut store, &self.device, &id)?;
         Ok(())
     }
 
     /// Delete several contacts with one logged delete action per id.
     pub fn delete_many(&self, ids: Vec<String>) -> Result<u64, ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         Ok(bulk_delete_logged(&self.vfs, &mut store, &self.device, &ids)? as u64)
     }
 
     /// Assign a tag to several contacts through typed draft saves.
     pub fn assign_tag(&self, tag: String, ids: Vec<String>) -> Result<u64, ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         Ok(assign_tag_logged(&self.vfs, &mut store, &self.device, &tag, &ids)? as u64)
     }
 
     /// Rename a tag on every contact through typed draft saves.
     pub fn rename_tag(&self, old_name: String, new_name: String) -> Result<u64, ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         Ok(rename_tag_logged(&self.vfs, &mut store, &self.device, &old_name, &new_name)? as u64)
     }
 
     /// Remove a tag from every contact through typed draft saves.
     pub fn remove_tag(&self, tag: String) -> Result<u64, ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         Ok(remove_tag_logged(&self.vfs, &mut store, &self.device, &tag)? as u64)
     }
 
     /// Re-walk the folder.
     pub fn reload(&self) -> Result<(), ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         *store = Store::open(&self.vfs, &store.root)?;
         Ok(())
     }
 
     /// Conflict groups with display copy and a typed merge disposition.
     pub fn conflict_rows(&self) -> Result<Vec<ConflictRow>, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(core_conflict_rows(&self.vfs, &store)?
             .into_iter()
             .map(to_conflict)
@@ -471,7 +480,7 @@ impl ContactsSession {
         &self,
         canonical_name: String,
     ) -> Result<ConflictPreview, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(to_preview(core_conflict_preview(
             &self.vfs,
             &store,
@@ -484,7 +493,7 @@ impl ContactsSession {
         &self,
         canonical_name: String,
     ) -> Result<Vec<TextRow>, ContactsError> {
-        let store = self.store.lock().expect("session lock");
+        let store = self.lock()?;
         Ok(core_choice_rows(&self.vfs, &store, &canonical_name)?
             .into_iter()
             .map(to_text)
@@ -498,7 +507,7 @@ impl ContactsSession {
         canonical_name: String,
         choice_ids: Vec<String>,
     ) -> Result<(), ContactsError> {
-        let mut store = self.store.lock().expect("session lock");
+        let mut store = self.lock()?;
         resolve_logged(
             &self.vfs,
             &mut store,
@@ -507,6 +516,14 @@ impl ContactsSession {
             &choice_ids,
         )?;
         Ok(())
+    }
+}
+
+impl ContactsSession {
+    fn lock(&self) -> Result<MutexGuard<'_, Store>, ContactsError> {
+        self.store.lock().map_err(|_| ContactsError::Io {
+            message: "Contacts session state is unavailable".into(),
+        })
     }
 }
 

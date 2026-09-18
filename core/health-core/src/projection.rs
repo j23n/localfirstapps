@@ -3,6 +3,7 @@
 //! Apple `export.xml` is not read. Sample rows come from log events or from
 //! streamed NDJSON sample blobs (ADR 0008).
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,13 +21,16 @@ use crate::{Error, Result};
 /// SQLite application_id `'ARCH'`.
 pub const APPLICATION_ID: i32 = 1_095_913_288;
 
-const SCHEMA: &[&str] = &[
+const PRAGMAS: &[&str] = &[
     "PRAGMA journal_mode = OFF",
     "PRAGMA synchronous = OFF",
     "PRAGMA page_size = 4096",
     "PRAGMA encoding = 'UTF-8'",
     "PRAGMA user_version = 0",
     "PRAGMA application_id = 1095913288",
+];
+
+const TABLES: &[&str] = &[
     "CREATE TABLE events (
   id TEXT PRIMARY KEY,
   ts TEXT NOT NULL,
@@ -103,12 +107,6 @@ const SCHEMA: &[&str] = &[
   size INTEGER NOT NULL,
   PRIMARY KEY (blob_sha256, path)
 )",
-    "CREATE TABLE apple_exports (
-  sha256 TEXT PRIMARY KEY,
-  locale TEXT,
-  export_date TEXT,
-  me TEXT NOT NULL
-)",
     "CREATE VIEW preferred_observations AS
 SELECT o.* FROM observations o
 JOIN source_precedence sp ON o.source = sp.source_name
@@ -163,24 +161,33 @@ fn rebuild_from(root: &Path, report: &ReadReport) -> Result<()> {
     }
 
     let mut db = Connection::open(&path)?;
+    apply_pragmas(&db)?;
+    for stmt in TABLES {
+        db.execute(stmt, [])?;
+    }
+
+    let voided = voided_ids(&report.events);
+    let mut next_n = HashMap::new();
+    let tx = db.transaction()?;
+    insert_events(&tx, &report.events)?;
+    apply_corrections(&tx, &report.events)?;
+    samples::project_log_events(&tx, &report.events, &voided, &mut next_n)?;
+    samples::project_sample_blobs(&tx, root, &report.events, &voided, &mut next_n)?;
+    write_source_precedence(&tx, root)?;
+    tx.commit()?;
+    db.execute_batch("VACUUM")?;
+    chmod_db(&path);
+    Ok(())
+}
+
+fn apply_pragmas(db: &Connection) -> Result<()> {
+    // [`PRAGMAS`] documents the set; returning PRAGMAs cannot use `execute`.
+    let _ = PRAGMAS;
     db.pragma_update(None, "journal_mode", "OFF")?;
     db.pragma_update(None, "synchronous", "OFF")?;
     db.pragma_update(None, "page_size", 4096)?;
     db.pragma_update(None, "user_version", 0)?;
     db.pragma_update(None, "application_id", APPLICATION_ID)?;
-    for stmt in SCHEMA.iter().skip(6) {
-        db.execute(stmt, [])?;
-    }
-
-    let tx = db.transaction()?;
-    insert_events(&tx, &report.events)?;
-    apply_corrections(&tx, &report.events)?;
-    samples::project_log_events(&tx, &report.events)?;
-    samples::project_sample_blobs(&tx, root, &report.events)?;
-    write_source_precedence(&tx, root)?;
-    tx.commit()?;
-    db.execute_batch("VACUUM")?;
-    chmod_db(&path);
     Ok(())
 }
 
@@ -506,6 +513,23 @@ pub fn semantic_dump(db: &Connection) -> Result<serde_json::Value> {
         "observations": query_observations(db, None, None)?,
         "episodes": query_episodes(db, None)?,
     }))
+}
+
+/// Event ids retracted or superseded by a correction in `events`.
+///
+/// Same definition [`is_voided`] reads back from the projection after
+/// [`apply_corrections`]: any `retract`/`supersede` target is voided.
+pub fn voided_ids(events: &[Event]) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for ev in events {
+        if ev.event_type != TYPE_RETRACT && ev.event_type != TYPE_SUPERSEDE {
+            continue;
+        }
+        if let Some(target) = ev.target() {
+            out.insert(target);
+        }
+    }
+    out
 }
 
 /// Whether an event id is currently retracted or superseded.

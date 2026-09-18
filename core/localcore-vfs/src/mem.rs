@@ -284,4 +284,20 @@ mod tests {
             vec!["/a.txt".to_string(), "/b.txt".to_string()]
         );
     }
+
+    #[test]
+    fn read_capped_refuses_a_file_over_the_limit() {
+        let vfs = MemVfs::new();
+        vfs.insert("/lib/a.txt", vec![b'x'; 8]);
+        assert_eq!(vfs.read_capped("/lib/a.txt", 8).unwrap(), vec![b'x'; 8]);
+        assert_eq!(vfs.read("/lib/a.txt").unwrap(), vec![b'x'; 8]);
+        let err = vfs.read_capped("/lib/a.txt", 7).unwrap_err();
+        match err {
+            VfsError::InvalidPath { path, reason } => {
+                assert_eq!(path, "/lib/a.txt");
+                assert!(reason.contains("7") && reason.contains("cap"), "{reason}");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 }

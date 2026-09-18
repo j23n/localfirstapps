@@ -4,11 +4,12 @@
 //! `{ "class": "observation"|"episode", "item": { ... } }` — the same shape as
 //! the retired export golden. XML is never parsed.
 
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use localcore_log::{parse_blob_import, Event, TYPE_BLOB_IMPORT, TYPE_OBSERVATION};
+use localcore_log::{parse_blob_import, Event, TYPE_BLOB_IMPORT, TYPE_EPISODE, TYPE_OBSERVATION};
 use rusqlite::{params, Transaction};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -24,14 +25,19 @@ struct SampleLine {
     item: Value,
 }
 
-pub(crate) fn project_log_events(tx: &Transaction<'_>, events: &[Event]) -> Result<()> {
+pub(crate) fn project_log_events(
+    tx: &Transaction<'_>,
+    events: &[Event],
+    voided: &HashSet<String>,
+    next_n: &mut HashMap<String, i64>,
+) -> Result<()> {
     for ev in events {
-        if is_voided(tx, &ev.id)? {
+        if voided.contains(&ev.id) {
             continue;
         }
         match ev.event_type.as_str() {
-            TYPE_OBSERVATION => insert_observation(tx, &ev.body, None, Some(&ev.id))?,
-            "episode" => insert_episode(tx, &ev.body, None, Some(&ev.id))?,
+            TYPE_OBSERVATION => insert_observation(tx, &ev.body, None, Some(&ev.id), next_n)?,
+            TYPE_EPISODE => insert_episode(tx, &ev.body, None, Some(&ev.id))?,
             _ => {}
         }
     }
@@ -42,9 +48,11 @@ pub(crate) fn project_sample_blobs(
     tx: &Transaction<'_>,
     root: &Path,
     events: &[Event],
+    voided: &HashSet<String>,
+    next_n: &mut HashMap<String, i64>,
 ) -> Result<()> {
     for ev in events {
-        if ev.event_type != TYPE_BLOB_IMPORT || is_voided(tx, &ev.id)? {
+        if ev.event_type != TYPE_BLOB_IMPORT || voided.contains(&ev.id) {
             continue;
         }
         let blob = parse_blob_import(&ev.body).map_err(|err| Error::Invalid(err.to_string()))?;
@@ -55,7 +63,7 @@ pub(crate) fn project_sample_blobs(
         if !is_sample_blob(&blob.kind, &path)? {
             continue;
         }
-        stream_sample_file(tx, &path, &blob.sha256, &ev.id)?;
+        stream_sample_file(tx, &path, &blob.sha256, &ev.id, next_n)?;
     }
     Ok(())
 }
@@ -83,7 +91,13 @@ fn is_sample_blob(kind: &str, path: &Path) -> Result<bool> {
     }
 }
 
-fn stream_sample_file(tx: &Transaction<'_>, path: &Path, sha: &str, event_id: &str) -> Result<()> {
+fn stream_sample_file(
+    tx: &Transaction<'_>,
+    path: &Path,
+    sha: &str,
+    event_id: &str,
+    next_n: &mut HashMap<String, i64>,
+) -> Result<()> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     for (idx, line) in reader.lines().enumerate() {
@@ -95,8 +109,10 @@ fn stream_sample_file(tx: &Transaction<'_>, path: &Path, sha: &str, event_id: &s
         let parsed: SampleLine = serde_json::from_str(trimmed)
             .map_err(|err| Error::Invalid(format!("{}:{}: {err}", path.display(), idx + 1)))?;
         match parsed.class.as_str() {
-            "observation" => insert_observation(tx, &parsed.item, Some(sha), Some(event_id))?,
-            "episode" => insert_episode(tx, &parsed.item, Some(sha), Some(event_id))?,
+            TYPE_OBSERVATION => {
+                insert_observation(tx, &parsed.item, Some(sha), Some(event_id), next_n)?
+            }
+            TYPE_EPISODE => insert_episode(tx, &parsed.item, Some(sha), Some(event_id))?,
             other => {
                 return Err(Error::Invalid(format!(
                     "{}:{}: unknown sample class {other}",
@@ -114,10 +130,15 @@ fn insert_observation(
     item: &Value,
     blob_sha: Option<&str>,
     event_id: Option<&str>,
+    next_n: &mut HashMap<String, i64>,
 ) -> Result<()> {
     let dedup = text(item, "dedup_key")
         .ok_or_else(|| Error::Invalid("observation missing dedup_key".into()))?;
-    let n = next_n(tx, "observations", &dedup)?;
+    let n = {
+        let slot = next_n.entry(dedup.clone()).or_insert(0);
+        *slot += 1;
+        *slot
+    };
     let metadata = item.get("metadata").cloned().unwrap_or_else(|| json!({}));
     let metadata = if metadata.is_array() {
         json!({ "entries": metadata })
@@ -177,32 +198,6 @@ fn insert_episode(
         ],
     )?;
     Ok(())
-}
-
-fn next_n(tx: &Transaction<'_>, table: &str, dedup: &str) -> Result<i64> {
-    let n: i64 = tx.query_row(
-        &format!("SELECT COUNT(*) FROM {table} WHERE dedup_key = ?1"),
-        [dedup],
-        |row| row.get(0),
-    )?;
-    Ok(n + 1)
-}
-
-fn is_voided(tx: &Transaction<'_>, id: &str) -> Result<bool> {
-    let retracted: i64 = tx
-        .query_row("SELECT retracted FROM events WHERE id = ?1", [id], |row| {
-            row.get(0)
-        })
-        .unwrap_or(0);
-    let superseded: Option<String> = tx
-        .query_row(
-            "SELECT superseded_by FROM events WHERE id = ?1",
-            [id],
-            |row| row.get(0),
-        )
-        .ok()
-        .flatten();
-    Ok(retracted != 0 || superseded.is_some())
 }
 
 fn text(value: &Value, key: &str) -> Option<String> {

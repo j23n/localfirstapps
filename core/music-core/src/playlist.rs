@@ -13,6 +13,9 @@ use crate::model::{Playlist, PlaylistEntry, PlaylistFormat, Track};
 use crate::path::{file_stem, parent, resolve_audio};
 use crate::StoreError;
 
+/// Playlist files larger than this are skipped rather than loaded whole.
+pub(crate) const PLAYLIST_READ_CAP: u64 = 8 * 1024 * 1024;
+
 /// Parse one playlist according to its filename extension.
 pub fn parse_playlist(path: &str, bytes: &[u8]) -> Result<Playlist, StoreError> {
     let format = PlaylistFormat::from_extension(
@@ -163,12 +166,21 @@ fn split_pls_index(key: &str) -> Option<(&str, usize)> {
     }
 }
 
-/// Re-resolve entry ids against the current track projection.
-pub fn hydrate_entries(playlist: &mut Playlist, tracks: &[Track]) {
-    let by_path: BTreeMap<&str, &str> = tracks
+/// Path → track id for one walk snapshot. Built once when hydrating many playlists.
+pub(crate) fn track_path_index(tracks: &[Track]) -> BTreeMap<&str, &str> {
+    tracks
         .iter()
         .map(|track| (track.path.as_str(), track.id.as_str()))
-        .collect();
+        .collect()
+}
+
+/// Re-resolve entry ids against the current track projection.
+pub fn hydrate_entries(playlist: &mut Playlist, tracks: &[Track]) {
+    hydrate_entries_with_paths(playlist, &track_path_index(tracks));
+}
+
+/// [`hydrate_entries`] using a prebuilt path map.
+pub(crate) fn hydrate_entries_with_paths(playlist: &mut Playlist, by_path: &BTreeMap<&str, &str>) {
     for entry in &mut playlist.entries {
         entry.track_id = entry
             .resolved_path

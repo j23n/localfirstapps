@@ -27,12 +27,12 @@ pub mod gallery;
 
 pub use event::{
     known_type, new_event_id, now_utc, parse_blob_import, ts_with_nanos, valid_device, valid_type,
-    BlobImport, Event, TS_FORMAT, TYPE_BLOB_IMPORT, TYPE_EXTRACTION, TYPE_FEATURED_PHOTO_CLEAR,
-    TYPE_FEATURED_PHOTO_SET, TYPE_MEDITATION, TYPE_MED_EVENT, TYPE_MED_START, TYPE_MED_STOP,
-    TYPE_NOTE, TYPE_OBSERVATION, TYPE_PERSON_CONTACT_LINK_CLEAR, TYPE_PERSON_CONTACT_LINK_SET,
-    TYPE_PERSON_FEATURED, TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_CLEAR, TYPE_PERSON_ME_SET,
-    TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED, TYPE_PERSON_UNHIDDEN,
-    TYPE_RETRACT, TYPE_SUPERSEDE,
+    BlobImport, Event, TS_FORMAT, TYPE_BLOB_IMPORT, TYPE_EPISODE, TYPE_EXTRACTION,
+    TYPE_FEATURED_PHOTO_CLEAR, TYPE_FEATURED_PHOTO_SET, TYPE_MEDITATION, TYPE_MED_EVENT,
+    TYPE_MED_START, TYPE_MED_STOP, TYPE_NOTE, TYPE_OBSERVATION, TYPE_PERSON_CONTACT_LINK_CLEAR,
+    TYPE_PERSON_CONTACT_LINK_SET, TYPE_PERSON_FEATURED, TYPE_PERSON_HIDDEN, TYPE_PERSON_ME_CLEAR,
+    TYPE_PERSON_ME_SET, TYPE_PERSON_MIGRATED, TYPE_PERSON_RENAMED, TYPE_PERSON_UNFEATURED,
+    TYPE_PERSON_UNHIDDEN, TYPE_RETRACT, TYPE_SUPERSEDE,
 };
 pub use gallery::{
     append_person, is_person_event_type, migrate_from_snapshot, migrate_from_snapshot_json,
@@ -100,6 +100,8 @@ impl std::error::Error for TornTail {
 pub enum Error {
     Invalid(String),
     Io(io::Error),
+    /// A [`Vfs`] operation failed. The inner type is preserved.
+    Vfs(VfsError),
     Json {
         path: PathBuf,
         line: usize,
@@ -124,6 +126,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::Invalid(msg) => write!(f, "{msg}"),
             Error::Io(e) => write!(f, "{e}"),
+            Error::Vfs(e) => write!(f, "{e}"),
             Error::Json { path, line, source } => {
                 write!(f, "{}:{line}: {source}", path.display())
             }
@@ -136,6 +139,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Io(e) => Some(e),
+            Error::Vfs(e) => Some(e),
             Error::Json { source, .. } => Some(source),
             Error::TornTail(t) => Some(t),
             Error::Invalid(_) => None,
@@ -151,7 +155,7 @@ impl From<io::Error> for Error {
 
 impl From<VfsError> for Error {
     fn from(e: VfsError) -> Self {
-        Error::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+        Error::Vfs(e)
     }
 }
 
@@ -204,6 +208,19 @@ pub fn append_on(vfs: &dyn Vfs, root: &str, ev: &Event) -> Result<()> {
     Ok(())
 }
 
+/// [`Event::fresh`] plus [`append_on`]. Used by contacts/music folder logs.
+pub fn append_op(
+    vfs: &dyn Vfs,
+    root: &str,
+    device: &str,
+    event_type: &str,
+    body: serde_json::Value,
+) -> Result<Event> {
+    let ev = Event::fresh(device, event_type, body);
+    append_on(vfs, root, &ev)?;
+    Ok(ev)
+}
+
 /// Walk `log/*/*.ndjson` and return events sorted by `(ts, id)`.
 pub fn read_all(root: impl AsRef<Path>) -> Result<Vec<Event>> {
     Ok(read_report_on(&std_vfs(), &root_str(root)?)?.events)
@@ -244,9 +261,13 @@ pub fn read_report_on(vfs: &dyn Vfs, root: &str) -> Result<ReadReport> {
 fn walk_ndjson(vfs: &dyn Vfs, dir: &str, out: &mut Vec<String>) -> Result<()> {
     for ent in vfs.list(dir)? {
         let path = join_root(dir, &ent.name);
-        if ent.kind == EntryKind::Dir {
-            walk_ndjson(vfs, &path, out)?;
-            continue;
+        match ent.kind {
+            EntryKind::Dir => {
+                walk_ndjson(vfs, &path, out)?;
+                continue;
+            }
+            EntryKind::Symlink => continue,
+            EntryKind::File => {}
         }
         if ent.name.ends_with(".ndjson") {
             out.push(path);

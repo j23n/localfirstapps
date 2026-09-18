@@ -1,10 +1,11 @@
 //! Portable-v1 export, restore, and read-only fsck.
 
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
-use localcore_log::{parse_blob_import, Event, TYPE_BLOB_IMPORT};
+use localcore_log::{parse_blob_import, Event, TYPE_BLOB_IMPORT, TYPE_RETRACT, TYPE_SUPERSEDE};
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, Result};
@@ -172,8 +173,49 @@ fn copy_verified(src: &Path, dest: &Path, expect: &str) -> Result<u64> {
     Ok(size)
 }
 
+/// Controls how [`restore_with`] treats corrections that target dest events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RestoreOptions {
+    /// When `false` (the safe default), refuse `retract`/`supersede` whose
+    /// `body.target` is already in the destination archive.
+    pub allow_voiding_existing: bool,
+}
+
 /// Replay a portable export into `dest_root`, keeping event ids.
+///
+/// Safe default: a restore must not void events that already exist in
+/// `dest_root`. Corrections that only target other events from the same
+/// export still apply (empty-dest round-trip).
 pub fn restore(export_dir: impl AsRef<Path>, dest_root: impl AsRef<Path>) -> Result<()> {
+    restore_with(
+        export_dir,
+        dest_root,
+        RestoreOptions {
+            allow_voiding_existing: false,
+        },
+    )
+}
+
+/// Privileged merge: allow incoming `retract`/`supersede` to void dest events.
+pub fn restore_allowing_voids(
+    export_dir: impl AsRef<Path>,
+    dest_root: impl AsRef<Path>,
+) -> Result<()> {
+    restore_with(
+        export_dir,
+        dest_root,
+        RestoreOptions {
+            allow_voiding_existing: true,
+        },
+    )
+}
+
+/// Replay a portable export with explicit [`RestoreOptions`].
+pub fn restore_with(
+    export_dir: impl AsRef<Path>,
+    dest_root: impl AsRef<Path>,
+    opts: RestoreOptions,
+) -> Result<()> {
     let export_dir = export_dir.as_ref();
     let dest_root = dest_root.as_ref();
     let listed = localcore_blob::list(export_dir)?;
@@ -188,14 +230,16 @@ pub fn restore(export_dir: impl AsRef<Path>, dest_root: impl AsRef<Path>) -> Res
         }
     }
 
-    let mut have = std::collections::HashSet::new();
+    let mut have = HashSet::new();
     for ev in localcore_log::read_all(dest_root)? {
         have.insert(ev.id);
     }
+    let preexisting = have.clone();
 
     let events_path = export_dir.join("events.ndjson");
     let file = File::open(&events_path)?;
     let reader = BufReader::new(file);
+    let mut incoming = Vec::new();
     for (idx, line) in reader.lines().enumerate() {
         let line = line?;
         let trimmed = line.trim();
@@ -207,10 +251,33 @@ pub fn restore(export_dir: impl AsRef<Path>, dest_root: impl AsRef<Path>) -> Res
         if have.contains(&ev.id) {
             continue;
         }
+        if !opts.allow_voiding_existing {
+            if let Some(target) = void_target(&ev) {
+                if preexisting.contains(target) {
+                    return Err(Error::Invalid(format!(
+                        "restore: {target} is already in the destination; {} would void an existing event",
+                        ev.event_type
+                    )));
+                }
+            }
+        }
+        have.insert(ev.id.clone());
+        incoming.push(ev);
+    }
+    for ev in incoming {
         localcore_log::append(dest_root, &ev)?;
-        have.insert(ev.id);
     }
     Ok(())
+}
+
+fn void_target(ev: &Event) -> Option<&str> {
+    if ev.event_type != TYPE_RETRACT && ev.event_type != TYPE_SUPERSEDE {
+        return None;
+    }
+    ev.body
+        .get("target")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
 }
 
 /// Verify blob hashes and references. Never repairs.

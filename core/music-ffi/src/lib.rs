@@ -14,12 +14,12 @@ use music_core::{
     playlist_action_rows as core_playlist_action_rows,
     playlist_entry_rows as core_playlist_entry_rows, playlist_rows as core_playlist_rows,
     remove_entries_logged, resolve_conflict_logged, set_library_view, ActionRole as CoreActionRole,
-    AddTracksCommand as CoreAddTracksCommand, ConflictDisposition as CoreConflictDisposition,
-    CreatePlaylistCommand as CoreCreateCommand, DeletePlaylistCommand as CoreDeleteCommand,
-    MetadataUpdate, MovePlaylistEntryCommand as CoreMoveCommand,
-    RemovePlaylistEntriesCommand as CoreRemoveCommand,
+    AddTracksCommand as CoreAddTracksCommand, ConfinedVfs,
+    ConflictDisposition as CoreConflictDisposition, CreatePlaylistCommand as CoreCreateCommand,
+    DeletePlaylistCommand as CoreDeleteCommand, MetadataUpdate,
+    MovePlaylistEntryCommand as CoreMoveCommand, RemovePlaylistEntriesCommand as CoreRemoveCommand,
     ResolveConflictCommand as CoreResolveCommand, SetLibraryViewCommand as CoreSetViewCommand,
-    SortOption as CoreSortOption, StatusSeverity as CoreStatusSeverity, StdVfs, Store, StoreError,
+    SortOption as CoreSortOption, StatusSeverity as CoreStatusSeverity, Store, StoreError,
     TEMP_PREFIX,
 };
 
@@ -397,7 +397,7 @@ pub fn is_conflict_name(name: String) -> bool {
 /// Real-filesystem music session.
 #[derive(uniffi::Object)]
 pub struct MusicSession {
-    vfs: StdVfs,
+    vfs: ConfinedVfs,
     device: String,
     store: Mutex<Store>,
 }
@@ -413,7 +413,10 @@ impl MusicSession {
                 user_actionable: true,
             });
         }
-        let vfs = StdVfs::new(TEMP_PREFIX);
+        let vfs = ConfinedVfs::new(TEMP_PREFIX, &root).map_err(|error| MusicError::Io {
+            message: error.to_string(),
+            user_actionable: true,
+        })?;
         let store = Store::open(&vfs, &root)?;
         Ok(Self {
             vfs,

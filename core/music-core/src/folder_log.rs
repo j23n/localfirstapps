@@ -5,7 +5,7 @@
 //! intentionally generous 100 playlist edits/day and roughly 300 bytes/event,
 //! growth is about 11 MB/year.
 
-use localcore_log::{append_on, read_all_on, Event};
+use localcore_log::{append_op, read_all_on, Event};
 use localcore_vfs::Vfs;
 use serde_json::json;
 
@@ -35,12 +35,9 @@ fn write(
     event_type: &str,
     body: serde_json::Value,
 ) -> Result<(), StoreError> {
-    append_on(
-        vfs,
-        &log_root(folder),
-        &Event::fresh(device, event_type, body),
-    )
-    .map_err(|error| StoreError::Io(error.to_string()))
+    append_op(vfs, &log_root(folder), device, event_type, body)
+        .map(|_| ())
+        .map_err(|error| StoreError::Io(error.to_string()))
 }
 
 /// Append `playlist_created`.
@@ -105,7 +102,7 @@ pub fn append_group_resolved(
         folder,
         device,
         TYPE_GROUP_RESOLVED,
-        json!({ "id": group_id, "kind": kind }),
+        json!({ "id": group_id, "canonical": group_id, "kind": kind }),
     )
 }
 

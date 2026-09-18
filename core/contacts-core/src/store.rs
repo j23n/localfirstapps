@@ -1,8 +1,8 @@
 //! Folder index: walk `.vcf`, search, save, delete. Through [`Vfs`] only.
 
 use localcore_conflict::ConflictGroup;
-use localcore_vfs::{Vfs, VfsError};
-use localcore_walk::{walk_with_hooks, WalkOutcome};
+use localcore_vfs::{relative_to, Vfs, VfsError};
+use localcore_walk::{walk_with_hooks_and_policy, FileSymlinkPolicy, WalkOutcome};
 use uuid::Uuid;
 
 use crate::card::{Card, Layout};
@@ -11,14 +11,13 @@ use crate::vcard::{parse_multiple, suggested_file_name, write};
 /// Temp prefix already listed in `apps/contacts/.stignore`.
 pub const TEMP_PREFIX: &str = ".contacts-tmp-";
 
+/// Largest `.vcf` the store will pull into memory.
+pub(crate) const MAX_VCARD_BYTES: u64 = 8 * 1024 * 1024;
+
 /// Join `root` and a basename without inventing a scheme.
 #[must_use]
 pub fn join_root(root: &str, name: &str) -> String {
-    let root = root.trim_end_matches('/');
-    if name.is_empty() {
-        return root.to_owned();
-    }
-    format!("{root}/{name}")
+    localcore_vfs::join(root, name)
 }
 
 /// Headless store. Cards are the authority; this index is a projection (R3).
@@ -92,12 +91,13 @@ impl Store {
         cancelled: Option<&dyn Fn() -> bool>,
     ) -> Result<Option<Self>, StoreError> {
         let _span = localcore_trace::span_always("contacts", "Store::open");
-        let Some(outcome) = walk_with_hooks(
+        let Some(outcome) = walk_with_hooks_and_policy(
             vfs,
             root,
             &|name| name.to_ascii_lowercase().ends_with(".vcf"),
             on_progress,
             cancelled,
+            FileSymlinkPolicy::Skip,
         ) else {
             return Ok(None);
         };
@@ -107,8 +107,8 @@ impl Store {
     fn from_walk(vfs: &dyn Vfs, root: &str, outcome: WalkOutcome) -> Result<Self, StoreError> {
         let mut cards = Vec::new();
         for file in &outcome.files {
-            let bytes = vfs.read(&file.path)?;
-            let file_name = relative_to_root(root, &file.path);
+            let bytes = vfs.read_capped(&file.path, MAX_VCARD_BYTES)?;
+            let file_name = relative_to(root, &file.path);
             let mut parsed = parse_multiple(&bytes, &file_name, false);
             let mut rewrite = false;
             for card in &mut parsed {
@@ -121,7 +121,15 @@ impl Store {
                 let joined: String = parsed.iter().map(write).collect();
                 vfs.write_atomic(&file.path, joined.as_bytes())?;
             }
-            cards.extend(parsed);
+            for card in parsed {
+                if cards
+                    .iter()
+                    .any(|existing: &Card| existing.local_id == card.local_id)
+                {
+                    continue;
+                }
+                cards.push(card);
+            }
         }
         localcore_trace::event(
             "contacts",
@@ -154,7 +162,7 @@ impl Store {
     /// Stable folder-relative key for a conflict group.
     #[must_use]
     pub(crate) fn conflict_id(&self, group: &ConflictGroup) -> String {
-        relative_to_root(&self.root, &group.id())
+        relative_to(&self.root, &group.id())
     }
 
     /// Conflict group selected by its opaque folder-relative key.
@@ -221,7 +229,7 @@ impl Store {
         }
         let path = join_root(&self.root, &card.file_name);
         let mut file_cards: Vec<Card> = if vfs.try_exists(&path)? {
-            let bytes = vfs.read(&path)?;
+            let bytes = vfs.read_capped(&path, MAX_VCARD_BYTES)?;
             let mut disk = parse_multiple(&bytes, &card.file_name, false);
             for sibling in &mut disk {
                 if sibling.local_id.is_empty() {
@@ -311,12 +319,4 @@ impl Store {
         }
         Ok(candidate)
     }
-}
-
-fn relative_to_root(root: &str, path: &str) -> String {
-    let root = root.trim_end_matches(['/', '\\']);
-    path.strip_prefix(root)
-        .and_then(|rest| rest.strip_prefix(['/', '\\']))
-        .unwrap_or(path)
-        .to_owned()
 }

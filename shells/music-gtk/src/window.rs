@@ -13,8 +13,8 @@ use gtk::gdk;
 use gtk::gio;
 use gtk::glib;
 use music_core::{
-    ConflictDisposition, LibraryContentState, SortOption, StatusSeverity as CoreStatusSeverity,
-    StdVfs, Store, TEMP_PREFIX,
+    ConfinedVfs, ConflictDisposition, LibraryContentState, SortOption,
+    StatusSeverity as CoreStatusSeverity, StdVfs, Store, TEMP_PREFIX,
 };
 use shell_kit_gtk::{
     about_dialog, action_row, adaptive_shell, apply_progress_row, banner, choice_dropdown,
@@ -757,7 +757,13 @@ impl Window {
         let status = self.inner.work.clone();
         let (tx, rx) = mpsc::channel();
         self.inner.work_rx.replace(Some(rx));
-        let vfs = StdVfs::new(TEMP_PREFIX);
+        let vfs = match ConfinedVfs::new(TEMP_PREFIX, &folder) {
+            Ok(vfs) => vfs,
+            Err(error) => {
+                let _ = tx.send(LibraryWork::Failed(error.to_string()));
+                return;
+            }
+        };
         thread::spawn(move || {
             let report = |discovered: usize| {
                 if let Ok(mut guard) = status.lock() {

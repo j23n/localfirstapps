@@ -3,11 +3,7 @@
 /// Join a folder and one relative component.
 #[must_use]
 pub fn join(folder: &str, child: &str) -> String {
-    if folder.ends_with('/') {
-        format!("{folder}{child}")
-    } else {
-        format!("{folder}/{child}")
-    }
+    localcore_vfs::join(folder, child)
 }
 
 /// Parent path, or an empty string for a bare filename.
@@ -67,9 +63,17 @@ pub fn standardize(path: &str) -> String {
     }
 }
 
+/// Leading `/` or `\`, or a Windows drive `X:`.
+#[must_use]
+pub fn is_absolute(path: &str) -> bool {
+    localcore_vfs::is_absolute(path)
+}
+
 /// Resolve a playlist entry when it is a local path with a supported audio
 /// extension. HTTP(S) entries remain in the parsed playlist but are not
-/// handed to a media host.
+/// handed to a media host. Relative entries that leave `playlist_dir` via
+/// `..` are dropped; already-absolute paths are kept so in-library tracks
+/// outside the playlist folder still resolve.
 #[must_use]
 pub fn resolve_audio(raw_path: &str, playlist_dir: &str) -> Option<String> {
     let path = raw_path.trim();
@@ -83,10 +87,14 @@ pub fn resolve_audio(raw_path: &str, playlist_dir: &str) -> Option<String> {
     {
         return None;
     }
-    let resolved = if path.starts_with('/') {
+    let resolved = if is_absolute(path) {
         standardize(path)
     } else {
-        standardize(&join(playlist_dir, path))
+        let resolved = standardize(&join(playlist_dir, path));
+        if !localcore_vfs::is_under_root(playlist_dir, &resolved) {
+            return None;
+        }
+        resolved
     };
     matches!(
         crate::model::classify_name(basename(&resolved)),
@@ -115,9 +123,5 @@ pub fn relative_path(track_path: &str, playlist_dir: &str) -> String {
 /// Path relative to the selected folder for display/opaque ids.
 #[must_use]
 pub fn relative_to(root: &str, path: &str) -> String {
-    let root = root.trim_end_matches('/');
-    path.strip_prefix(root)
-        .and_then(|rest| rest.strip_prefix('/'))
-        .unwrap_or(path)
-        .to_owned()
+    localcore_vfs::relative_to(root, path)
 }

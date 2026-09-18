@@ -22,8 +22,10 @@
 //! # What the walk does
 //!
 //! - Depth-first, explicit stack. One [`Vfs::list`] per directory.
-//! - A **file** symlink is a file (size and times follow the target). A
-//!   **directory** symlink is not descended. The selected root may itself
+//! - A **file** symlink is a file (size and times follow the target) under
+//!   [`FileSymlinkPolicy::Follow`] (the default, used by gallery).
+//!   [`FileSymlinkPolicy::Skip`] omits file-symlink content (contacts/music).
+//!   A **directory** symlink is not descended. The selected root may itself
 //!   be a symlink: it is the start path, never a child entry.
 //! - Names starting with `.` are skipped (not descended, not reported).
 //!   Hidden-file policy lives here rather than on [`Vfs`].
@@ -57,6 +59,24 @@ pub use path_form::decomposed;
 /// Matches the gallery scanner's batch: the callback often hops threads, and
 /// firing per file made those hops dominate a large tree.
 const PROGRESS_BATCH: usize = 500;
+
+/// Whether a **file** symlink is reported as content.
+///
+/// Directory symlinks are never descended, regardless of this policy.
+/// The walk root may itself be a symlink.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum FileSymlinkPolicy {
+    /// Index file symlinks. Size and times follow the target.
+    ///
+    /// Gallery relies on this: a linked photo is still a photo.
+    #[default]
+    Follow,
+    /// Do not index file-symlink content.
+    ///
+    /// Contacts and music use this so a link cannot pull bytes from
+    /// outside the selected folder into the identity index.
+    Skip,
+}
 
 /// One visited directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,6 +186,10 @@ pub fn walk_with_progress(
 /// `None` means the caller asked to stop. There is no partial outcome: a
 /// half-walked tree is indistinguishable from a tree whose second half was
 /// deleted.
+///
+/// File symlinks are indexed ([`FileSymlinkPolicy::Follow`]). Contacts and
+/// music call [`walk_with_hooks_and_policy`] with
+/// [`FileSymlinkPolicy::Skip`].
 pub fn walk_with_hooks(
     vfs: &dyn Vfs,
     root: &str,
@@ -173,8 +197,30 @@ pub fn walk_with_hooks(
     on_progress: Option<&dyn Fn(usize)>,
     cancelled: Option<&dyn Fn() -> bool>,
 ) -> Option<WalkOutcome> {
+    walk_with_hooks_and_policy(
+        vfs,
+        root,
+        is_content,
+        on_progress,
+        cancelled,
+        FileSymlinkPolicy::Follow,
+    )
+}
+
+/// [`walk_with_hooks`], with an explicit [`FileSymlinkPolicy`].
+///
+/// Gallery keeps [`FileSymlinkPolicy::Follow`]. Contacts and music pass
+/// [`FileSymlinkPolicy::Skip`] so a file symlink is not treated as content.
+pub fn walk_with_hooks_and_policy(
+    vfs: &dyn Vfs,
+    root: &str,
+    is_content: &dyn Fn(&str) -> bool,
+    on_progress: Option<&dyn Fn(usize)>,
+    cancelled: Option<&dyn Fn() -> bool>,
+    file_symlink_policy: FileSymlinkPolicy,
+) -> Option<WalkOutcome> {
     let _span = localcore_trace::span_always("walk", "walk_with_hooks");
-    let mut walker = Walker::new(vfs, is_content);
+    let mut walker = Walker::new(vfs, is_content, file_symlink_policy);
     let mut stack: Vec<(String, Option<usize>)> = vec![(root.to_string(), None)];
 
     while let Some((dir, parent)) = stack.pop() {
@@ -217,6 +263,7 @@ pub fn walk_with_hooks(
 struct Walker<'a> {
     vfs: &'a dyn Vfs,
     is_content: &'a dyn Fn(&str) -> bool,
+    file_symlink_policy: FileSymlinkPolicy,
     directories: Vec<WalkDirectory>,
     files: Vec<WalkFile>,
     conflict_paths: Vec<String>,
@@ -226,10 +273,15 @@ struct Walker<'a> {
 }
 
 impl<'a> Walker<'a> {
-    fn new(vfs: &'a dyn Vfs, is_content: &'a dyn Fn(&str) -> bool) -> Self {
+    fn new(
+        vfs: &'a dyn Vfs,
+        is_content: &'a dyn Fn(&str) -> bool,
+        file_symlink_policy: FileSymlinkPolicy,
+    ) -> Self {
         Walker {
             vfs,
             is_content,
+            file_symlink_policy,
             directories: Vec::new(),
             files: Vec::new(),
             conflict_paths: Vec::new(),
@@ -289,6 +341,11 @@ impl<'a> Walker<'a> {
                             continue;
                         }
                         subdirs.push((entry.name, path));
+                        continue;
+                    }
+                    if entry.kind == EntryKind::Symlink
+                        && self.file_symlink_policy == FileSymlinkPolicy::Skip
+                    {
                         continue;
                     }
                     if !(self.is_content)(&entry.name) {
@@ -622,6 +679,37 @@ mod tests {
         let alias = out.files.iter().find(|f| f.name == "alias.jpg").unwrap();
         assert_eq!(alias.size, 2);
         assert_eq!(alias.kind, EntryKind::Symlink);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_symlink_outside_the_root_is_indexed_only_when_following() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        let outside = dir.path().join("secret.jpg");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("inside.jpg"), b"in").unwrap();
+        std::fs::write(&outside, b"out").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("alias.jpg")).unwrap();
+
+        let vfs = StdVfs::new(".walk-tmp-");
+        let root_s = root.to_str().unwrap();
+
+        let follow = walk(&vfs, root_s, images_and_xmp);
+        let mut found = names(&follow.files);
+        found.sort_unstable();
+        assert_eq!(found, vec!["alias.jpg", "inside.jpg"]);
+
+        let skip = walk_with_hooks_and_policy(
+            &vfs,
+            root_s,
+            &images_and_xmp,
+            None,
+            None,
+            FileSymlinkPolicy::Skip,
+        )
+        .unwrap();
+        assert_eq!(names(&skip.files), vec!["inside.jpg"]);
     }
 
     #[test]

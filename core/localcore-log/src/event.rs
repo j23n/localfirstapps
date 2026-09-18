@@ -24,6 +24,7 @@ pub const TYPE_NOTE: &str = "note";
 pub const TYPE_EXTRACTION: &str = "extraction";
 pub const TYPE_SUPERSEDE: &str = "supersede";
 pub const TYPE_RETRACT: &str = "retract";
+pub const TYPE_EPISODE: &str = "episode";
 
 pub const TYPE_PERSON_HIDDEN: &str = "person_hidden";
 pub const TYPE_PERSON_UNHIDDEN: &str = "person_unhidden";
@@ -87,6 +88,7 @@ pub fn known_type(t: &str) -> bool {
             | TYPE_EXTRACTION
             | TYPE_SUPERSEDE
             | TYPE_RETRACT
+            | TYPE_EPISODE
             | TYPE_PERSON_HIDDEN
             | TYPE_PERSON_UNHIDDEN
             | TYPE_PERSON_FEATURED
@@ -520,6 +522,7 @@ mod tests {
         assert!(!valid_type("Note"));
         assert!(!valid_type("bad-type"));
         assert!(!known_type("contact_saved"));
+        assert!(known_type(TYPE_EPISODE));
     }
 
     #[test]

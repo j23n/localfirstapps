@@ -5,7 +5,8 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use health_core::{
-    kind_catalog, observation_gaps, open, query_observations, rebuild, short_kind, table_counts,
+    kind_catalog, observation_gaps, open, query_episodes, query_observations, rebuild, short_kind,
+    table_counts, TYPE_EPISODE, TYPE_RETRACT,
 };
 use localcore_blob::put;
 use localcore_log::{append, Event, TYPE_BLOB_IMPORT};
@@ -134,4 +135,72 @@ fn observation_events_in_the_log_project_without_a_blob() {
         rows[0].event_id.as_deref(),
         Some("01900000-0000-7000-8000-0000000000cc")
     );
+}
+
+#[test]
+fn episode_events_in_the_log_project_without_a_blob() {
+    let tmp = tempfile::tempdir().unwrap();
+    append(
+        tmp.path(),
+        &Event::new(
+            "01900000-0000-7000-8000-0000000000dd",
+            "2025-02-02T09:00:00.000000000Z",
+            "manual",
+            TYPE_EPISODE,
+            json!({
+                "dedup_key": "ep-1",
+                "kind": "HKWorkoutActivityTypeRunning",
+                "start_ts": "2025-02-02T09:00:00.000000000Z",
+                "end_ts": "2025-02-02T09:30:00.000000000Z"
+            }),
+        ),
+    )
+    .unwrap();
+    rebuild(tmp.path()).unwrap();
+    let db = open(tmp.path()).unwrap();
+    let rows = query_episodes(&db, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].kind, "HKWorkoutActivityTypeRunning");
+    assert_eq!(
+        rows[0].event_id.as_deref(),
+        Some("01900000-0000-7000-8000-0000000000dd")
+    );
+}
+
+#[test]
+fn retracted_observation_is_not_projected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let obs_id = "01900000-0000-7000-8000-0000000000ee";
+    append(
+        tmp.path(),
+        &Event::new(
+            obs_id,
+            "2025-03-01T08:00:00.000000000Z",
+            "manual",
+            health_core::TYPE_OBSERVATION,
+            json!({
+                "dedup_key": "void-me",
+                "kind": "HKQuantityTypeIdentifierBodyMass",
+                "source": "manual",
+                "start_ts": "2025-03-01T08:00:00.000000000Z",
+                "end_ts": "2025-03-01T08:00:00.000000000Z",
+                "value": "70"
+            }),
+        ),
+    )
+    .unwrap();
+    append(
+        tmp.path(),
+        &Event::new(
+            "01900000-0000-7000-8000-0000000000ef",
+            "2025-03-01T08:01:00.000000000Z",
+            "manual",
+            TYPE_RETRACT,
+            json!({"target": obs_id}),
+        ),
+    )
+    .unwrap();
+    rebuild(tmp.path()).unwrap();
+    let db = open(tmp.path()).unwrap();
+    assert_eq!(query_observations(&db, None, None).unwrap().len(), 0);
 }

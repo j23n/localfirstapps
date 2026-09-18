@@ -7,7 +7,9 @@ use localcore_vfs::Vfs;
 use crate::folder_log::{append_changed, append_created, append_deleted, append_group_resolved};
 use crate::merge::{apply_merge, plan_merge, ConflictDisposition};
 use crate::model::{Playlist, PlaylistEntry, PlaylistFormat};
-use crate::playlist::{empty_playlist, hydrate_entries, parse_playlist, write_playlist};
+use crate::playlist::{
+    empty_playlist, hydrate_entries, parse_playlist, write_playlist, PLAYLIST_READ_CAP,
+};
 use crate::projection::SortOption;
 use crate::{Store, StoreError};
 
@@ -247,7 +249,7 @@ fn authoritative_playlist(
     if !vfs.try_exists(&projected.path)? {
         return Err(StoreError::NotFound);
     }
-    let bytes = vfs.read(&projected.path)?;
+    let bytes = vfs.read_capped(&projected.path, PLAYLIST_READ_CAP)?;
     let mut authoritative = parse_playlist(&projected.path, &bytes)?;
     if authoritative.content_token != expected_token {
         return Err(StoreError::StalePlaylist {

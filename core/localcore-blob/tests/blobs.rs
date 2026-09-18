@@ -3,7 +3,11 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use localcore_blob::{exists, hash_file, list, open, path, put, verify};
+use localcore_blob::{
+    exists, exists_on, hash_file, list, list_on, open, path, path_on, put, put_on, verify,
+    verify_on, Error,
+};
+use localcore_vfs::{MemVfs, Vfs, VfsError};
 
 const HELLO_SHA: &str = "a70940623490fa4c251737cf74e1bf75a0327bb18766cc5620edbde3a985c96d";
 
@@ -129,4 +133,68 @@ fn go_and_rust_m0_blobs_are_byte_and_hash_identical() {
     assert_eq!(hash_file(&rust[0].path).unwrap(), (HELLO_SHA.into(), 40));
     verify(&go_root, HELLO_SHA).unwrap();
     verify(&rust_root, HELLO_SHA).unwrap();
+}
+
+#[test]
+fn vfs_error_stays_typed() {
+    let vfs = MemVfs::new();
+    match verify_on(&vfs, "/store", HELLO_SHA) {
+        Err(Error::Vfs(VfsError::NotFound { path })) => {
+            assert!(path.contains(HELLO_SHA), "{path}");
+        }
+        other => panic!("want Error::Vfs(NotFound), got {other:?}"),
+    }
+    let err = Error::from(VfsError::NotFound {
+        path: "/missing".into(),
+    });
+    assert!(matches!(err, Error::Vfs(VfsError::NotFound { .. })));
+    assert_eq!(err.to_string(), "not found: /missing");
+}
+
+#[test]
+fn put_on_existed_verifies_content() {
+    let vfs = MemVfs::new();
+    let first = put_on(&vfs, "/store", &b"hello"[..]).unwrap();
+    assert!(!first.existed);
+    verify_on(&vfs, "/store", &first.hash).unwrap();
+
+    let again = put_on(&vfs, "/store", &b"hello"[..]).unwrap();
+    assert!(again.existed);
+    assert_eq!(again.hash, first.hash);
+
+    let dest = path_on("/store", &first.hash).unwrap();
+    vfs.write_atomic(&dest, b"CORRUPT").unwrap();
+    match put_on(&vfs, "/store", &b"hello"[..]) {
+        Err(Error::VerifyMismatch { hash, actual }) => {
+            assert_eq!(hash, first.hash);
+            assert_ne!(actual, first.hash);
+        }
+        other => panic!("want VerifyMismatch, got {other:?}"),
+    }
+    assert!(
+        vfs.paths().iter().all(|p| !p.contains("/blobs/tmp/put-")),
+        "temp must be removed after a verify mismatch: {:?}",
+        vfs.paths()
+    );
+    assert!(exists_on(&vfs, "/store", &first.hash).unwrap());
+}
+
+#[test]
+#[cfg(unix)]
+fn list_skips_hash_named_symlink() {
+    let root = tempfile::tempdir().unwrap();
+    let stored = put(root.path(), &b"hello"[..]).unwrap();
+    let dest = path(root.path(), &stored.hash).unwrap();
+    let planted = "0".repeat(64);
+    let link = dest.parent().unwrap().join(&planted);
+    std::os::unix::fs::symlink(&dest, &link).unwrap();
+
+    let listed = list(root.path()).unwrap();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].sha256, stored.hash);
+
+    let vfs = localcore_vfs::StdVfs::new(localcore_blob::TEMP_PREFIX);
+    let via_vfs = list_on(&vfs, root.path().to_str().unwrap()).unwrap();
+    assert_eq!(via_vfs.len(), 1);
+    assert_eq!(via_vfs[0].sha256, stored.hash);
 }

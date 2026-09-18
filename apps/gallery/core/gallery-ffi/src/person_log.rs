@@ -85,6 +85,10 @@ impl From<localcore_log::Error> for PersonLogError {
                 offset: t.offset,
                 detail: t.err.to_string(),
             },
+            localcore_log::Error::Vfs(err) => PersonLogError::Io {
+                path: err.path().to_owned(),
+                detail: err.to_string(),
+            },
         }
     }
 }

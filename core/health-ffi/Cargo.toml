@@ -13,7 +13,9 @@ crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
 health-core = { path = "../health-core" }
+rusqlite = { version = "0.40", features = ["bundled"] }
 uniffi = { workspace = true }
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile = "3"

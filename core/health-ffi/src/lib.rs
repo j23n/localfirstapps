@@ -5,6 +5,14 @@
 
 uniffi::setup_scaffolding!("HealthCore");
 
+use std::sync::{Mutex, MutexGuard};
+
+use health_core::display::{
+    chart_row, counts_dto, event_rows, export_result, fsck_result, gap_structure, kind_rows,
+    rebuild_result, restore_result, ArchiveCommandResult as CoreArchiveCommandResult,
+    ArchiveCounts as CoreArchiveCounts, ChartRow as CoreChartRow, EventRow as CoreEventRow,
+    GapStructure as CoreGapStructure, KindRow as CoreKindRow,
+};
 use health_core::{
     episode_gaps, export, fsck, kind_catalog, observation_gaps, open, overall_gaps, query,
     query_observations, rebuild, restore, table_counts, Filter,
@@ -22,6 +30,18 @@ pub struct ChartRow {
     pub values: Vec<f64>,
 }
 
+impl From<CoreChartRow> for ChartRow {
+    fn from(row: CoreChartRow) -> Self {
+        Self {
+            title: row.title,
+            subtitle: row.subtitle,
+            unit: row.unit,
+            latest: row.latest,
+            values: row.values,
+        }
+    }
+}
+
 /// `text-row` for one projected event.
 ///
 /// R6 role: text-row
@@ -33,6 +53,17 @@ pub struct EventRow {
     pub trailing: Option<String>,
 }
 
+impl From<CoreEventRow> for EventRow {
+    fn from(row: CoreEventRow) -> Self {
+        Self {
+            id: row.id,
+            title: row.title,
+            subtitle: row.subtitle,
+            trailing: row.trailing,
+        }
+    }
+}
+
 /// Kind catalog row.
 ///
 /// R6 role: text-row
@@ -42,6 +73,17 @@ pub struct KindRow {
     pub title: String,
     pub subtitle: Option<String>,
     pub trailing: Option<String>,
+}
+
+impl From<CoreKindRow> for KindRow {
+    fn from(row: CoreKindRow) -> Self {
+        Self {
+            id: row.id,
+            title: row.title,
+            subtitle: row.subtitle,
+            trailing: row.trailing,
+        }
+    }
 }
 
 /// Gap report as status + missing-day ids.
@@ -56,6 +98,18 @@ pub struct GapStructure {
     pub missing: Vec<String>,
 }
 
+impl From<CoreGapStructure> for GapStructure {
+    fn from(row: CoreGapStructure) -> Self {
+        Self {
+            title: row.title,
+            detail: row.detail,
+            present_days: row.present_days,
+            missing_days: row.missing_days,
+            missing: row.missing,
+        }
+    }
+}
+
 /// Rebuild / fsck command result.
 ///
 /// R6 role: command DTO
@@ -64,6 +118,16 @@ pub struct ArchiveCommandResult {
     pub ok: bool,
     pub title: String,
     pub detail: Option<String>,
+}
+
+impl From<CoreArchiveCommandResult> for ArchiveCommandResult {
+    fn from(row: CoreArchiveCommandResult) -> Self {
+        Self {
+            ok: row.ok,
+            title: row.title,
+            detail: row.detail,
+        }
+    }
 }
 
 /// Table totals after rebuild.
@@ -77,171 +141,165 @@ pub struct ArchiveCounts {
     pub episodes: u32,
 }
 
+impl From<CoreArchiveCounts> for ArchiveCounts {
+    fn from(row: CoreArchiveCounts) -> Self {
+        Self {
+            events: row.events,
+            blobs: row.blobs,
+            observations: row.observations,
+            episodes: row.episodes,
+        }
+    }
+}
+
 /// Host-owned archive root.
 #[derive(uniffi::Object)]
 pub struct HealthArchive {
     root: String,
+    db: Mutex<Option<rusqlite::Connection>>,
 }
 
 #[uniffi::export]
 impl HealthArchive {
     #[uniffi::constructor]
     pub fn new(root: String) -> Self {
-        Self { root }
+        Self {
+            root,
+            db: Mutex::new(None),
+        }
     }
 
     pub fn rebuild(&self) -> Result<ArchiveCommandResult, HealthError> {
+        self.clear_db()?;
         let report = rebuild(&self.root)?;
-        let torn = report.torn_tails.len();
-        Ok(ArchiveCommandResult {
-            ok: torn == 0,
-            title: format!("{} events", report.events.len()),
-            detail: (torn > 0).then(|| format!("{torn} torn tail(s)")),
-        })
+        self.cache_open()?;
+        Ok(rebuild_result(&report).into())
     }
 
     pub fn counts(&self) -> Result<ArchiveCounts, HealthError> {
-        let db = open(&self.root)?;
-        let c = table_counts(&db)?;
-        Ok(ArchiveCounts {
-            events: sat(c.events),
-            blobs: sat(c.blobs),
-            observations: sat(c.observations),
-            episodes: sat(c.episodes),
-        })
+        self.with_db(|db| Ok(counts_dto(table_counts(db)?).into()))
     }
 
     pub fn events(&self, current_only: bool) -> Result<Vec<EventRow>, HealthError> {
-        let db = open(&self.root)?;
-        let rows = query(
-            &db,
-            &Filter {
-                current: current_only,
-                ..Filter::default()
-            },
-        )?;
-        Ok(rows
-            .into_iter()
-            .map(|row| EventRow {
-                id: row.id.clone(),
-                title: row.event_type,
-                subtitle: Some(format!("{} · {}", row.dev, row.ts)),
-                trailing: if row.retracted {
-                    Some("retracted".into())
-                } else {
-                    row.superseded_by.map(|_| "superseded".into())
+        self.with_db(|db| {
+            let rows = query(
+                db,
+                &Filter {
+                    current: current_only,
+                    ..Filter::default()
                 },
-            })
-            .collect())
+            )?;
+            Ok(event_rows(&rows).into_iter().map(EventRow::from).collect())
+        })
     }
 
     pub fn kind_chart(&self, kind: String) -> Result<ChartRow, HealthError> {
-        let db = open(&self.root)?;
-        let rows = query_observations(&db, Some(&kind), None)?;
-        let values: Vec<f64> = rows
-            .iter()
-            .filter_map(|row| row.value.as_deref()?.parse().ok())
-            .collect();
-        let latest = rows.last().and_then(|row| row.value.clone());
-        let unit = rows.iter().find_map(|row| row.unit.clone());
-        Ok(ChartRow {
-            title: health_core::short_kind(&kind).to_string(),
-            subtitle: rows
-                .first()
-                .map(|row| row.start_ts[..10.min(row.start_ts.len())].to_string()),
-            unit,
-            latest,
-            values,
+        self.with_db(|db| {
+            let rows = query_observations(db, Some(&kind), None)?;
+            Ok(chart_row(&kind, &rows).into())
         })
     }
 
     pub fn catalog(&self) -> Result<Vec<KindRow>, HealthError> {
-        let db = open(&self.root)?;
-        Ok(kind_catalog(&db)?
-            .into_iter()
-            .map(|kind| KindRow {
-                id: kind.kind.clone(),
-                title: health_core::short_kind(&kind.kind).to_string(),
-                subtitle: (!kind.unit.is_empty()).then_some(kind.unit),
-                trailing: Some(kind.n.to_string()),
-            })
-            .collect())
+        self.with_db(|db| {
+            Ok(kind_rows(&kind_catalog(db)?)
+                .into_iter()
+                .map(KindRow::from)
+                .collect())
+        })
     }
 
     pub fn observation_gaps(&self, kind: Option<String>) -> Result<GapStructure, HealthError> {
-        let db = open(&self.root)?;
-        let report = observation_gaps(&db, kind.as_deref())?;
-        Ok(gap_structure(report))
+        self.with_db(|db| Ok(gap_structure(observation_gaps(db, kind.as_deref())?).into()))
     }
 
     pub fn episode_gaps(&self, kind: Option<String>) -> Result<GapStructure, HealthError> {
-        let db = open(&self.root)?;
-        Ok(gap_structure(episode_gaps(&db, kind.as_deref())?))
+        self.with_db(|db| Ok(gap_structure(episode_gaps(db, kind.as_deref())?).into()))
     }
 
     pub fn overall_gaps(&self) -> Result<GapStructure, HealthError> {
-        let db = open(&self.root)?;
-        Ok(gap_structure(overall_gaps(&db)?))
+        self.with_db(|db| Ok(gap_structure(overall_gaps(db)?).into()))
     }
 
     pub fn fsck(&self) -> Result<ArchiveCommandResult, HealthError> {
-        let report = fsck(&self.root)?;
-        Ok(ArchiveCommandResult {
-            ok: report.ok(),
-            title: format!("{} events, {} blobs", report.events, report.blobs),
-            detail: (!report.ok()).then(|| format!("{} issue(s)", report.issues.len())),
-        })
+        Ok(fsck_result(&fsck(&self.root)?).into())
     }
 
     pub fn export_archive(&self, out_dir: String) -> Result<ArchiveCommandResult, HealthError> {
-        let man = export(&self.root, &out_dir)?;
-        Ok(ArchiveCommandResult {
-            ok: true,
-            title: format!("exported {} events", man.event_count),
-            detail: Some(format!("{} blobs", man.blob_count)),
-        })
+        Ok(export_result(&export(&self.root, &out_dir)?).into())
     }
 
     pub fn restore_archive(&self, from_dir: String) -> Result<ArchiveCommandResult, HealthError> {
         restore(&from_dir, &self.root)?;
-        Ok(ArchiveCommandResult {
-            ok: true,
-            title: "restored".into(),
-            detail: None,
+        self.clear_db()?;
+        rebuild(&self.root)?;
+        self.cache_open()?;
+        Ok(restore_result().into())
+    }
+}
+
+impl HealthArchive {
+    fn lock_db(&self) -> Result<MutexGuard<'_, Option<rusqlite::Connection>>, HealthError> {
+        self.db.lock().map_err(|_| HealthError::Failed {
+            message: "archive connection lock poisoned".into(),
         })
     }
-}
 
-fn gap_structure(report: health_core::GapReport) -> GapStructure {
-    let present_days = report.present_n() as u32;
-    let missing_days = report.missing_n() as u32;
-    let title = if report.kind.is_empty() {
-        report.table
-    } else {
-        health_core::short_kind(&report.kind).to_string()
-    };
-    GapStructure {
-        title,
-        detail: (!report.first.is_empty()).then(|| format!("{} – {}", report.first, report.last)),
-        present_days,
-        missing_days,
-        missing: report.missing,
+    fn clear_db(&self) -> Result<(), HealthError> {
+        *self.lock_db()? = None;
+        Ok(())
     }
-}
 
-fn sat(n: i64) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
+    fn cache_open(&self) -> Result<(), HealthError> {
+        *self.lock_db()? = Some(open(&self.root)?);
+        Ok(())
+    }
+
+    fn with_db<T>(
+        &self,
+        f: impl FnOnce(&rusqlite::Connection) -> Result<T, HealthError>,
+    ) -> Result<T, HealthError> {
+        let mut guard = self.lock_db()?;
+        if guard.is_none() {
+            *guard = Some(open(&self.root)?);
+        }
+        let db = guard.as_ref().ok_or_else(|| HealthError::Failed {
+            message: "archive connection missing".into(),
+        })?;
+        f(db)
+    }
 }
 
 #[derive(uniffi::Error, Debug, Clone, PartialEq, Eq)]
 pub enum HealthError {
+    Invalid { message: String },
+    Io { message: String },
+    MissingDatabase { message: String },
     Failed { message: String },
 }
 
 impl From<health_core::Error> for HealthError {
     fn from(err: health_core::Error) -> Self {
-        HealthError::Failed {
-            message: err.to_string(),
+        match err {
+            health_core::Error::Invalid(message) => HealthError::Invalid { message },
+            health_core::Error::Io(err) => HealthError::Io {
+                message: err.to_string(),
+            },
+            health_core::Error::MissingDatabase { path } => HealthError::MissingDatabase {
+                message: format!("query: database missing at {}; run rebuild", path.display()),
+            },
+            health_core::Error::Sqlite(err) => HealthError::Failed {
+                message: err.to_string(),
+            },
+            health_core::Error::Log(err) => HealthError::Failed {
+                message: err.to_string(),
+            },
+            health_core::Error::Blob(err) => HealthError::Failed {
+                message: err.to_string(),
+            },
+            health_core::Error::Json(err) => HealthError::Failed {
+                message: err.to_string(),
+            },
         }
     }
 }
@@ -249,7 +307,10 @@ impl From<health_core::Error> for HealthError {
 impl std::fmt::Display for HealthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HealthError::Failed { message } => write!(f, "{message}"),
+            HealthError::Invalid { message }
+            | HealthError::Io { message }
+            | HealthError::MissingDatabase { message }
+            | HealthError::Failed { message } => write!(f, "{message}"),
         }
     }
 }

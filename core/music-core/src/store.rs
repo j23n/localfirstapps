@@ -4,12 +4,15 @@ use std::collections::BTreeMap;
 
 use localcore_conflict::ConflictGroup;
 use localcore_vfs::{Vfs, VfsError};
-use localcore_walk::{walk_with_hooks, WalkOutcome};
+use localcore_walk::{walk_with_hooks_and_policy, FileSymlinkPolicy, WalkOutcome};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::display::{StatusRow, StatusSeverity, TextRow};
 use crate::model::{classify_name, FileClass, MetadataUpdate, Playlist, Track};
-use crate::playlist::{hydrate_entries, parse_playlist};
+use crate::playlist::{
+    hydrate_entries, hydrate_entries_with_paths, parse_playlist, track_path_index,
+    PLAYLIST_READ_CAP,
+};
 use crate::projection::{LibraryContentState, LibraryProjection, SortOption};
 
 /// Temp prefix already excluded by `apps/music/.stignore`.
@@ -102,6 +105,8 @@ pub struct Store {
     pub root: String,
     tracks: Vec<Track>,
     playlists: Vec<Playlist>,
+    track_by_id: BTreeMap<String, usize>,
+    playlist_by_id: BTreeMap<String, usize>,
     conflict_groups: Vec<ConflictGroup>,
     scan_issues: Vec<StatusRow>,
     projection: LibraryProjection,
@@ -125,12 +130,13 @@ impl Store {
         cancelled: Option<&dyn Fn() -> bool>,
     ) -> Result<Option<Self>, StoreError> {
         let _span = localcore_trace::span_always("music", "Store::open");
-        let Some(outcome) = walk_with_hooks(
+        let Some(outcome) = walk_with_hooks_and_policy(
             vfs,
             root,
             &|name| classify_name(name).is_some(),
             on_progress,
             cancelled,
+            FileSymlinkPolicy::Skip,
         ) else {
             return Ok(None);
         };
@@ -182,7 +188,7 @@ impl Store {
                 Some(FileClass::Audio) => {
                     tracks.push(Track::from_file(path, file.size, file.mtime));
                 }
-                Some(FileClass::Playlist(_)) => match vfs.read(&path) {
+                Some(FileClass::Playlist(_)) => match vfs.read_capped(&path, PLAYLIST_READ_CAP) {
                     Ok(bytes) => match parse_playlist(&path, &bytes) {
                         Ok(playlist) => playlists.push(playlist),
                         Err(error) => scan_issues.push(StatusRow {
@@ -202,8 +208,9 @@ impl Store {
         }
 
         tracks.sort_by(|left, right| left.id.cmp(&right.id));
+        let by_path = track_path_index(&tracks);
         for playlist in &mut playlists {
-            hydrate_entries(playlist, &tracks);
+            hydrate_entries_with_paths(playlist, &by_path);
         }
         playlists.sort_by(|left, right| {
             canon(&left.name)
@@ -216,14 +223,19 @@ impl Store {
             .filter(|group| classify_name(&group.canonical_name).is_some())
             .collect();
         let projection = LibraryProjection::new(&tracks);
-        Ok(Self {
+        let mut store = Self {
             root: root.to_owned(),
             tracks,
             playlists,
+            track_by_id: BTreeMap::new(),
+            playlist_by_id: BTreeMap::new(),
             conflict_groups,
             scan_issues,
             projection,
-        })
+        };
+        store.reindex_tracks();
+        store.reindex_playlists();
+        Ok(store)
     }
 
     fn empty(root: &str) -> Self {
@@ -231,10 +243,30 @@ impl Store {
             root: root.to_owned(),
             tracks: Vec::new(),
             playlists: Vec::new(),
+            track_by_id: BTreeMap::new(),
+            playlist_by_id: BTreeMap::new(),
             conflict_groups: Vec::new(),
             scan_issues: Vec::new(),
             projection: LibraryProjection::new(&[]),
         }
+    }
+
+    fn reindex_tracks(&mut self) {
+        self.track_by_id = self
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(index, track)| (track.id.clone(), index))
+            .collect();
+    }
+
+    fn reindex_playlists(&mut self) {
+        self.playlist_by_id = self
+            .playlists
+            .iter()
+            .enumerate()
+            .map(|(index, playlist)| (playlist.id.clone(), index))
+            .collect();
     }
 
     /// Reload while retaining metadata supplied by the host for unchanged ids
@@ -328,17 +360,20 @@ impl Store {
     /// Track by opaque id.
     #[must_use]
     pub fn track(&self, id: &str) -> Option<&Track> {
-        self.tracks.iter().find(|track| track.id == id)
+        self.track_by_id.get(id).map(|&index| &self.tracks[index])
     }
 
     /// Playlist by opaque id.
     #[must_use]
     pub fn playlist(&self, id: &str) -> Option<&Playlist> {
-        self.playlists.iter().find(|playlist| playlist.id == id)
+        self.playlist_by_id
+            .get(id)
+            .map(|&index| &self.playlists[index])
     }
 
     pub(crate) fn playlist_mut(&mut self, id: &str) -> Option<&mut Playlist> {
-        self.playlists.iter_mut().find(|playlist| playlist.id == id)
+        let index = *self.playlist_by_id.get(id)?;
+        Some(&mut self.playlists[index])
     }
 
     pub(crate) fn replace_playlist(&mut self, mut playlist: Playlist) {
@@ -353,6 +388,7 @@ impl Store {
 
     pub(crate) fn remove_playlist(&mut self, id: &str) {
         self.playlists.retain(|playlist| playlist.id != id);
+        self.reindex_playlists();
     }
 
     pub(crate) fn sort_playlists(&mut self) {
@@ -361,6 +397,7 @@ impl Store {
                 .cmp(&canon(&right.name))
                 .then_with(|| left.id.cmp(&right.id))
         });
+        self.reindex_playlists();
     }
 
     /// Apply display metadata returned by the host media reader.
@@ -373,14 +410,14 @@ impl Store {
         &mut self,
         updates: Vec<MetadataUpdate>,
     ) -> Result<u64, StoreError> {
-        let _span = localcore_trace::span("music", "Store::apply_metadata_batch")
-            .extra("n", updates.len());
+        let _span =
+            localcore_trace::span("music", "Store::apply_metadata_batch").extra("n", updates.len());
         for update in updates {
-            let track = self
-                .tracks
-                .iter_mut()
-                .find(|track| track.id == update.id)
+            let index = *self
+                .track_by_id
+                .get(&update.id)
                 .ok_or(StoreError::NotFound)?;
+            let track = &mut self.tracks[index];
             if !update.title.trim().is_empty() {
                 track.title = update.title.trim().to_owned();
             }
@@ -390,6 +427,7 @@ impl Store {
             track.has_artwork = update.has_artwork;
             track.has_lyrics = update.has_lyrics;
             track.metadata_loaded = true;
+            track.refresh_display_keys();
         }
         self.projection.rebuild(&self.tracks);
         Ok(self.projection.generation)

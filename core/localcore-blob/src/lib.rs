@@ -36,12 +36,12 @@ pub struct BlobInfo {
 pub enum Error {
     /// Digest is not 64 hexadecimal characters.
     InvalidHash,
+    /// `std::fs` helpers ([`open`], [`hash_file`]) and non-UTF-8 roots.
     Io(io::Error),
+    /// A [`Vfs`] operation failed. The inner type is preserved.
+    Vfs(VfsError),
     /// File at the content-addressed path hashes to a different digest.
-    VerifyMismatch {
-        hash: String,
-        actual: String,
-    },
+    VerifyMismatch { hash: String, actual: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -51,6 +51,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::InvalidHash => write!(f, "sha256 must be 64 hex chars"),
             Error::Io(e) => write!(f, "{e}"),
+            Error::Vfs(e) => write!(f, "{e}"),
             Error::VerifyMismatch { hash, actual } => {
                 write!(f, "blob {hash}: content hashes to {actual}")
             }
@@ -62,6 +63,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Io(e) => Some(e),
+            Error::Vfs(e) => Some(e),
             _ => None,
         }
     }
@@ -75,7 +77,7 @@ impl From<io::Error> for Error {
 
 impl From<VfsError> for Error {
     fn from(e: VfsError) -> Self {
-        Error::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+        Error::Vfs(e)
     }
 }
 
@@ -202,6 +204,7 @@ pub fn put_on(vfs: &dyn Vfs, root: &str, mut reader: impl Read) -> Result<PutRes
     let result = (|| -> Result<PutResult> {
         let dest = path_on(root, &hash)?;
         if vfs.try_exists(&dest)? {
+            verify_on(vfs, root, &hash)?;
             let _ = vfs.remove(&tmp);
             return Ok(PutResult {
                 hash,
@@ -250,9 +253,14 @@ pub fn list_on(vfs: &dyn Vfs, root: &str) -> Result<Vec<BlobInfo>> {
 fn walk_blobs(vfs: &dyn Vfs, dir: &str, out: &mut Vec<BlobInfo>) -> Result<()> {
     for ent in vfs.list(dir)? {
         let path = format!("{}/{}", dir.trim_end_matches('/'), ent.name);
-        if ent.kind == EntryKind::Dir {
-            walk_blobs(vfs, &path, out)?;
-            continue;
+        match ent.kind {
+            EntryKind::Dir => {
+                walk_blobs(vfs, &path, out)?;
+                continue;
+            }
+            // A hash-named symlink is not a stored blob.
+            EntryKind::Symlink => continue,
+            EntryKind::File => {}
         }
         if !valid_sha256(&ent.name) {
             continue;
@@ -266,14 +274,12 @@ fn walk_blobs(vfs: &dyn Vfs, dir: &str, out: &mut Vec<BlobInfo>) -> Result<()> {
     Ok(())
 }
 
-/// Stream `path` and return its SHA-256 hex digest and size.
-pub fn hash_file(path: impl AsRef<Path>) -> Result<(String, u64)> {
-    let mut f = File::open(path.as_ref())?;
+fn hash_reader(reader: &mut dyn Read) -> io::Result<(String, u64)> {
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     let mut n = 0u64;
     loop {
-        let got = f.read(&mut buf)?;
+        let got = reader.read(&mut buf)?;
         if got == 0 {
             break;
         }
@@ -283,10 +289,26 @@ pub fn hash_file(path: impl AsRef<Path>) -> Result<(String, u64)> {
     Ok((encode_hex(&hasher.finalize()), n))
 }
 
+fn hash_vfs(vfs: &dyn Vfs, path: &str) -> Result<(String, u64)> {
+    let mut reader = vfs.open(path)?;
+    hash_reader(&mut *reader).map_err(|err| Error::Vfs(VfsError::from_io(path, &err)))
+}
+
+/// Stream `path` and return its SHA-256 hex digest and size.
+pub fn hash_file(path: impl AsRef<Path>) -> Result<(String, u64)> {
+    let mut f = File::open(path.as_ref())?;
+    Ok(hash_reader(&mut f)?)
+}
+
 /// Report whether the file at the content-addressed path hashes to `hash`.
 pub fn verify(root: impl AsRef<Path>, hash: &str) -> Result<()> {
-    let p = path(&root, hash)?;
-    let (got, _) = hash_file(p)?;
+    verify_on(&std_vfs(), &root_str(root)?, hash)
+}
+
+/// [`verify`] through an explicit [`Vfs`].
+pub fn verify_on(vfs: &dyn Vfs, root: &str, hash: &str) -> Result<()> {
+    let dest = path_on(root, hash)?;
+    let (got, _) = hash_vfs(vfs, &dest)?;
     let want = hash.to_ascii_lowercase();
     if got != want {
         return Err(Error::VerifyMismatch {

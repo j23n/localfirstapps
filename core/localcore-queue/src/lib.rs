@@ -299,7 +299,11 @@ pub fn enqueue(conn: &mut Connection, q: Queue, paths: &[String]) -> rusqlite::R
     tx.commit()?;
     localcore_trace::event(
         "queue",
-        format!("enqueued table={} inserted={inserted} asked={}", q.table, paths.len()),
+        format!(
+            "enqueued table={} inserted={inserted} asked={}",
+            q.table,
+            paths.len()
+        ),
     );
     Ok(inserted)
 }
@@ -326,8 +330,10 @@ pub fn mark_stale_for_pack(conn: &Connection, q: Queue, pack: &str) -> rusqlite:
 /// Includes `pending`, `stale`, and `failed` rows that have retries left.
 /// `limit` of 0 means "everything".
 ///
-/// `root_prefix`, when given, restricts the result to paths under that
-/// directory using a literal prefix (`substr`), not `LIKE`/`GLOB`.
+/// `root_prefix`, when given, restricts the result to that path or its
+/// descendants as a directory boundary (`path = prefix` or `prefix` + `/`),
+/// using literal `substr`, not `LIKE`/`GLOB`. `/music` therefore does not
+/// match `/musically/...`. A trailing slash on the prefix is ignored.
 pub fn claimable(
     conn: &Connection,
     q: Queue,
@@ -338,7 +344,7 @@ pub fn claimable(
         "SELECT path, content_hash, state, model_pack, error_code, retry_count
          FROM {}
          WHERE (state IN (?1, ?2) OR (state = ?3 AND retry_count < ?4))
-           AND (?6 IS NULL OR substr(path, 1, length(?6)) = ?6)
+           AND (?6 IS NULL OR path = ?6 OR substr(path, 1, length(?7)) = ?7)
          ORDER BY updated_at, path
          LIMIT ?5",
         ident(q.table)
@@ -346,7 +352,11 @@ pub fn claimable(
     let _span = localcore_trace::span("queue", "claimable")
         .extra("table", q.table)
         .extra("limit", limit);
-    let prefix = root_prefix.map(nfc_path);
+    let prefix = root_prefix.map(|p| {
+        let nfc = nfc_path(p);
+        nfc.trim_end_matches('/').to_string()
+    });
+    let child_prefix = prefix.as_ref().map(|p| format!("{p}/"));
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(
         params![
@@ -356,6 +366,7 @@ pub fn claimable(
             MAX_RETRIES,
             if limit == 0 { -1i64 } else { limit as i64 },
             prefix.as_deref(),
+            child_prefix.as_deref(),
         ],
         row_to_item,
     )?;

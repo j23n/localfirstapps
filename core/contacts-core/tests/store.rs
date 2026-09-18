@@ -141,6 +141,23 @@ fn delete_last_card_removes_file() {
 }
 
 #[test]
+fn later_duplicate_id_is_not_indexed() {
+    let vfs = MemVfs::new();
+    vfs.insert("/lib/alice.vcf", alice().into_bytes());
+    vfs.insert(
+        "/lib/copy.vcf",
+        b"BEGIN:VCARD\r\nVERSION:3.0\r\nX-LOCALCONTACTS-ID:alice-1\r\nFN:Alias\r\nEND:VCARD\r\n"
+            .to_vec(),
+    );
+    let before = vfs.read("/lib/copy.vcf").unwrap();
+    let store = Store::open(&vfs, "/lib").unwrap();
+    assert_eq!(store.cards().len(), 1);
+    assert_eq!(store.get("alice-1").unwrap().full_name, "Alice");
+    assert_eq!(store.get("alice-1").unwrap().file_name, "alice.vcf");
+    assert_eq!(vfs.read("/lib/copy.vcf").unwrap(), before);
+}
+
+#[test]
 fn missing_id_is_assigned_and_persisted() {
     let vfs = MemVfs::new();
     vfs.insert(

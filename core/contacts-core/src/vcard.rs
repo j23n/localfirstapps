@@ -500,6 +500,10 @@ fn parse_birthday(value: &str) -> Option<Birthday> {
     None
 }
 
+/// Decoded PHOTO payload cap. Encoded size is refused first so a huge
+/// base64 line is not decoded into memory.
+const MAX_PHOTO_BYTES: usize = 2 * 1024 * 1024;
+
 fn parse_photo(value: &str, params: &[String]) -> Option<Vec<u8>> {
     let is_b64 = params.iter().any(|p| {
         let u = p.to_ascii_uppercase();
@@ -508,8 +512,19 @@ fn parse_photo(value: &str, params: &[String]) -> Option<Vec<u8>> {
     if !is_b64 {
         return None;
     }
+    // 4 encoded chars → 3 decoded bytes; refuse before allocating the decode.
+    if value.len() > MAX_PHOTO_BYTES.saturating_mul(4).div_ceil(3) {
+        return None;
+    }
     let cleaned: String = value.chars().filter(|c| !c.is_whitespace()).collect();
-    STANDARD.decode(cleaned).ok()
+    if cleaned.len() > MAX_PHOTO_BYTES.saturating_mul(4).div_ceil(3) {
+        return None;
+    }
+    let decoded = STANDARD.decode(cleaned).ok()?;
+    if decoded.len() > MAX_PHOTO_BYTES {
+        return None;
+    }
+    Some(decoded)
 }
 
 fn extract_photo_media_type(params: &[String]) -> String {

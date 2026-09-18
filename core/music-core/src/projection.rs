@@ -154,15 +154,11 @@ impl LibraryProjection {
 }
 
 fn compare(left: &Track, right: &Track, sort: SortOption) -> Ordering {
-    let by_title = || display_key(&left.title).cmp(&display_key(&right.title));
+    let by_title = || left.title_key.cmp(&right.title_key);
     let primary = match sort {
         SortOption::Title => by_title(),
-        SortOption::Artist => display_key(&left.artist)
-            .cmp(&display_key(&right.artist))
-            .then_with(by_title),
-        SortOption::Album => display_key(&left.album)
-            .cmp(&display_key(&right.album))
-            .then_with(by_title),
+        SortOption::Artist => left.artist_key.cmp(&right.artist_key).then_with(by_title),
+        SortOption::Album => left.album_key.cmp(&right.album_key).then_with(by_title),
         SortOption::Duration => left.duration_ms.cmp(&right.duration_ms).then_with(by_title),
     };
     primary.then_with(|| left.id.cmp(&right.id))
@@ -202,7 +198,10 @@ fn search_text(value: &str) -> String {
 }
 
 fn corpus(track: &Track) -> String {
-    search_text(&format!("{} {} {}", track.title, track.artist, track.album))
+    format!(
+        "{} {} {}",
+        track.title_key, track.artist_key, track.album_key
+    )
 }
 
 fn first_letter(value: &str) -> String {

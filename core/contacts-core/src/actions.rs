@@ -54,40 +54,9 @@ pub fn save_contact_logged(
     command: SaveContactCommand,
 ) -> Result<ContactEditDraft, StoreError> {
     let _span = localcore_trace::span_always("contacts", "save_contact_logged");
-    validate_draft(&command.draft)?;
     let root = store.root.clone();
-    let mut authoritative = Store::open(vfs, &root)?;
-    let draft = command.draft;
-    let mut card = if let Some(id) = draft.id.as_deref() {
-        let current = authoritative.get(id).cloned().ok_or(StoreError::NotFound)?;
-        let actual = content_token(&current);
-        let expected = draft
-            .content_token
-            .as_deref()
-            .ok_or_else(|| {
-                StoreError::InvalidCommand(
-                    "An existing contact save requires a content token".into(),
-                )
-            })?
-            .to_owned();
-        if expected != actual {
-            *store = authoritative;
-            return Err(StoreError::StaleEdit { expected, actual });
-        }
-        current
-    } else {
-        if draft.content_token.is_some() {
-            return Err(StoreError::InvalidCommand(
-                "A new contact must not carry a content token".into(),
-            ));
-        }
-        Card::new("")
-    };
-    apply_edit_draft(&mut card, &draft);
-    let saved = save_logged(vfs, &mut authoritative, device, card)?;
-    let result = edit_draft_from_card(&saved);
-    *store = authoritative;
-    Ok(result)
+    *store = Store::open(vfs, &root)?;
+    save_draft_on_store(vfs, store, device, command.draft)
 }
 
 /// Delete a card and best-effort append `contact_deleted`.
@@ -130,12 +99,12 @@ pub fn assign_tag_logged(
     reload_and_require_ids(vfs, store, &ids)?;
     let mut changed = 0;
     for id in ids {
-        let mut draft = load_edit_draft(vfs, store, &id)?;
+        let mut draft = draft_from_store(store, &id)?;
         if draft.categories.contains(&tag) {
             continue;
         }
         draft.categories.push(tag.clone());
-        save_contact_logged(vfs, store, device, SaveContactCommand { draft })?;
+        save_draft_on_store(vfs, store, device, draft)?;
         changed += 1;
     }
     Ok(changed)
@@ -164,14 +133,14 @@ pub fn rename_tag_logged(
         .collect();
     let mut changed = 0;
     for id in ids {
-        let mut draft = load_edit_draft(vfs, store, &id)?;
+        let mut draft = draft_from_store(store, &id)?;
         for category in &mut draft.categories {
             if category == &old_name {
                 *category = new_name.clone();
             }
         }
         dedup_categories(&mut draft.categories);
-        save_contact_logged(vfs, store, device, SaveContactCommand { draft })?;
+        save_draft_on_store(vfs, store, device, draft)?;
         changed += 1;
     }
     Ok(changed)
@@ -195,9 +164,9 @@ pub fn remove_tag_logged(
         .collect();
     let mut changed = 0;
     for id in ids {
-        let mut draft = load_edit_draft(vfs, store, &id)?;
+        let mut draft = draft_from_store(store, &id)?;
         draft.categories.retain(|category| category != &tag);
-        save_contact_logged(vfs, store, device, SaveContactCommand { draft })?;
+        save_draft_on_store(vfs, store, device, draft)?;
         changed += 1;
     }
     Ok(changed)
@@ -235,6 +204,48 @@ pub fn resolve_logged(
     *store = Store::open(vfs, &store.root)?;
     let _ = append_group_resolved(vfs, &store.root, device, group_id, kind);
     Ok(())
+}
+
+fn draft_from_store(store: &Store, id: &str) -> Result<ContactEditDraft, StoreError> {
+    let card = store.get(id).ok_or(StoreError::NotFound)?;
+    Ok(edit_draft_from_card(card))
+}
+
+/// Token-check and save against the current in-memory store. No re-walk.
+fn save_draft_on_store(
+    vfs: &dyn Vfs,
+    store: &mut Store,
+    device: &str,
+    draft: ContactEditDraft,
+) -> Result<ContactEditDraft, StoreError> {
+    validate_draft(&draft)?;
+    let mut card = if let Some(id) = draft.id.as_deref() {
+        let current = store.get(id).cloned().ok_or(StoreError::NotFound)?;
+        let actual = content_token(&current);
+        let expected = draft
+            .content_token
+            .as_deref()
+            .ok_or_else(|| {
+                StoreError::InvalidCommand(
+                    "An existing contact save requires a content token".into(),
+                )
+            })?
+            .to_owned();
+        if expected != actual {
+            return Err(StoreError::StaleEdit { expected, actual });
+        }
+        current
+    } else {
+        if draft.content_token.is_some() {
+            return Err(StoreError::InvalidCommand(
+                "A new contact must not carry a content token".into(),
+            ));
+        }
+        Card::new("")
+    };
+    apply_edit_draft(&mut card, &draft);
+    let saved = save_logged(vfs, store, device, card)?;
+    Ok(edit_draft_from_card(&saved))
 }
 
 fn validate_draft(draft: &ContactEditDraft) -> Result<(), StoreError> {

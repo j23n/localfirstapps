@@ -54,6 +54,19 @@ fn lexical_standardization_matches_swift_track_identity_input() {
     assert_eq!(localcore_id::derive(&direct), localcore_id::derive(&dotted));
 }
 
+#[cfg(unix)]
+#[test]
+fn file_symlinks_are_not_playable_tracks() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    std::fs::write(root.join("real.mp3"), b"audio").unwrap();
+    std::os::unix::fs::symlink(root.join("real.mp3"), root.join("alias.mp3")).unwrap();
+    let vfs = music_core::StdVfs::new(music_core::TEMP_PREFIX);
+    let store = Store::open(&vfs, root.to_str().unwrap()).unwrap();
+    assert_eq!(store.tracks().len(), 1);
+    assert!(store.tracks()[0].path.ends_with("/real.mp3"));
+}
+
 #[test]
 fn walk_projects_audio_and_playlists_but_never_conflict_copies() {
     let vfs = music_core::MemVfs::new();

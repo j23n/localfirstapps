@@ -3,7 +3,7 @@
 //! Layout: `{folder}/.contacts/log/<dev>/YYYY-MM.ndjson`.
 //! Types live here, not in `localcore-log::known_type`.
 
-use localcore_log::{append_on, read_all_on, Event};
+use localcore_log::{append_op, read_all_on, Event};
 use localcore_vfs::Vfs;
 use serde_json::json;
 
@@ -36,8 +36,9 @@ fn write(
     event_type: &str,
     body: serde_json::Value,
 ) -> Result<(), StoreError> {
-    let ev = Event::fresh(device, event_type, body);
-    append_on(vfs, &log_root(folder), &ev).map_err(map_err)
+    append_op(vfs, &log_root(folder), device, event_type, body)
+        .map(|_| ())
+        .map_err(map_err)
 }
 
 /// Append `contact_saved{id}`.
@@ -61,7 +62,7 @@ pub fn append_deleted(
     )
 }
 
-/// Append `group_resolved{canonical, kind}`.
+/// Append `group_resolved{id, canonical, kind}`.
 pub fn append_group_resolved(
     vfs: &dyn Vfs,
     folder: &str,
@@ -74,7 +75,7 @@ pub fn append_group_resolved(
         folder,
         device,
         TYPE_GROUP_RESOLVED,
-        json!({ "canonical": canonical, "kind": kind }),
+        json!({ "id": canonical, "canonical": canonical, "kind": kind }),
     )
 }
 

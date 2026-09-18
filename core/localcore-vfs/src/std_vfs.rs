@@ -36,9 +36,9 @@ static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 ///
 /// Paths are used verbatim: no root, no sandboxing, no normalization. On iOS
 /// the caller has already started the security scope for the enclosing folder.
-/// `temp_prefix` is the name prefix [`Vfs::write_atomic`] uses for sibling
-/// temps; [`Vfs::list`] skips those names so a concurrent scan never sees
-/// a half-written file.
+/// Confinement is a wrapper — see [`crate::ConfinedVfs`]. `temp_prefix` is
+/// the name prefix [`Vfs::write_atomic`] uses for sibling temps; [`Vfs::list`]
+/// skips those names so a concurrent scan never sees a half-written file.
 #[derive(Debug, Clone, Copy)]
 pub struct StdVfs {
     temp_prefix: &'static str,
@@ -110,7 +110,7 @@ const MAX_SYMLINK_HOPS: usize = 32;
 /// A path that does not exist — the common case, a sidecar being created — is
 /// returned unchanged. A dangling symlink resolves to what it points at, which
 /// is where the user asked for the bytes to go.
-fn resolve_symlink(path: &Path) -> VfsResult<PathBuf> {
+pub(crate) fn resolve_symlink(path: &Path) -> VfsResult<PathBuf> {
     let mut current = path.to_path_buf();
     for _ in 0..MAX_SYMLINK_HOPS {
         let Ok(md) = fs::symlink_metadata(&current) else {

@@ -7,6 +7,22 @@ use music_core::{
 };
 
 #[test]
+fn relative_playlist_entries_cannot_escape_the_playlist_folder() {
+    let escaped = parse_playlist("/music/mix.m3u", b"#EXTM3U\n../secret.mp3\n").unwrap();
+    assert_eq!(escaped.entries[0].resolved_path, None);
+    let nested = parse_playlist("/music/mix.m3u", b"#EXTM3U\nNested/song.mp3\n").unwrap();
+    assert_eq!(
+        nested.entries[0].resolved_path.as_deref(),
+        Some("/music/Nested/song.mp3")
+    );
+    let absolute = parse_playlist("/music/Nested/mix.m3u", b"#EXTM3U\n/music/song.mp3\n").unwrap();
+    assert_eq!(
+        absolute.entries[0].resolved_path.as_deref(),
+        Some("/music/song.mp3")
+    );
+}
+
+#[test]
 fn m3u_parse_retains_missing_remote_and_foreign_directives() {
     let bytes = b"\xef\xbb\xbf#EXTM3U\r\n#EXTINF:12,Foreign title\r\nsong.mp3\r\nhttps://example.test/live.mp3\r\nmissing.flac\r\n";
     let playlist = parse_playlist("/music/mix.m3u8", bytes).unwrap();

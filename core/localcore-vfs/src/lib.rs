@@ -2,7 +2,8 @@
 //!
 //! App cores never touch `std::fs` directly; they go through [`Vfs`] so the
 //! same code runs against a real directory ([`StdVfs`]) and an in-memory tree
-//! ([`MemVfs`], tests).
+//! ([`MemVfs`], tests). [`StdVfs`] is unconfined — paths are used verbatim.
+//! [`ConfinedVfs`] wraps it and refuses paths that leave a selected folder.
 //!
 //! The trait is path-based: on iOS/simulator Swift resolves the
 //! security-scoped root and starts access before calling in, so the core
@@ -20,14 +21,18 @@
 
 #![forbid(unsafe_code)]
 
+mod confined;
 mod error;
 mod mem;
+mod path;
 mod std_vfs;
 
 use std::io::{Read, Seek};
 
+pub use confined::ConfinedVfs;
 pub use error::{VfsError, VfsResult};
 pub use mem::MemVfs;
+pub use path::{is_absolute, is_under_root, join, relative_to};
 pub use std_vfs::{take_unsupported_names, StdVfs};
 
 /// A readable, seekable byte stream. Blanket-implemented, so `File`,
@@ -301,6 +306,30 @@ pub trait Vfs: Send + Sync {
         Ok(buf)
     }
 
+    /// [`Vfs::read`], but refuse a file larger than `max_bytes`.
+    ///
+    /// [`Vfs::stat`] is checked first so a huge file is not pulled into
+    /// memory. A second check after the read covers a file that grew
+    /// between the two calls (TOCTOU). [`Vfs::read`] is unchanged for
+    /// gallery and other large-file callers.
+    fn read_capped(&self, path: &str, max_bytes: u64) -> VfsResult<Vec<u8>> {
+        let stat = self.stat(path)?;
+        if stat.size > max_bytes {
+            return Err(VfsError::InvalidPath {
+                path: path.to_string(),
+                reason: format!("file exceeds the {max_bytes}-byte read cap"),
+            });
+        }
+        let buf = self.read(path)?;
+        if buf.len() as u64 > max_bytes {
+            return Err(VfsError::InvalidPath {
+                path: path.to_string(),
+                reason: format!("file exceeds the {max_bytes}-byte read cap"),
+            });
+        }
+        Ok(buf)
+    }
+
     /// Delete `path`. Directories are removed recursively.
     ///
     /// The default answers [`VfsError::Io`] with `"not implemented"` so
@@ -323,6 +352,22 @@ pub trait Vfs: Send + Sync {
             message: "not implemented".into(),
         })
     }
+}
+
+/// Write `surviving_path` atomically, then remove each copy that exists.
+pub fn write_then_remove_copies(
+    vfs: &dyn Vfs,
+    surviving_path: &str,
+    bytes: &[u8],
+    copy_paths: &[String],
+) -> VfsResult<()> {
+    vfs.write_atomic(surviving_path, bytes)?;
+    for path in copy_paths {
+        if vfs.try_exists(path)? {
+            vfs.remove(path)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -408,5 +453,25 @@ mod tests {
         };
         assert_eq!(e.path(), "/a/b");
         assert_eq!(e.to_string(), "not found: /a/b");
+    }
+
+    #[test]
+    fn write_then_remove_copies_replaces_the_survivor_and_drops_existing_copies() {
+        let vfs = MemVfs::new();
+        vfs.insert("/lib/a.vcf", b"old");
+        vfs.insert("/lib/a.sync-conflict-x.vcf", b"copy");
+        write_then_remove_copies(
+            &vfs,
+            "/lib/a.vcf",
+            b"new",
+            &[
+                "/lib/a.sync-conflict-x.vcf".into(),
+                "/lib/already-gone.vcf".into(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(vfs.read("/lib/a.vcf").unwrap(), b"new");
+        assert!(!vfs.exists("/lib/a.sync-conflict-x.vcf"));
+        assert!(!vfs.exists("/lib/already-gone.vcf"));
     }
 }

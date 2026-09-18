@@ -1,6 +1,7 @@
 //! Music domain records. These stay inside `music-core`.
 
 use localcore_vfs::FileTime;
+use unicode_normalization::UnicodeNormalization;
 
 /// Audio files projected by the folder walk.
 pub const AUDIO_EXTENSIONS: &[&str] = &[
@@ -85,6 +86,12 @@ pub struct Track {
     pub artist: String,
     /// Display album.
     pub album: String,
+    /// NFC/lowercase [`Self::title`] used by sort and search.
+    pub(crate) title_key: String,
+    /// NFC/lowercase [`Self::artist`] used by sort and search.
+    pub(crate) artist_key: String,
+    /// NFC/lowercase [`Self::album`] used by sort and search.
+    pub(crate) album_key: String,
     /// Duration in integral milliseconds.
     pub duration_ms: u64,
     /// Whether the host found embedded artwork.
@@ -108,7 +115,7 @@ impl Track {
         source_mtime: Option<FileTime>,
     ) -> Self {
         let title = crate::path::file_stem(&path);
-        Self {
+        let mut track = Self {
             id: localcore_id::derive(&path).to_string(),
             path,
             source_size,
@@ -117,11 +124,27 @@ impl Track {
             title,
             artist: "Unknown Artist".into(),
             album: "Unknown Album".into(),
+            title_key: String::new(),
+            artist_key: String::new(),
+            album_key: String::new(),
             duration_ms: 0,
             has_artwork: false,
             has_lyrics: false,
-        }
+        };
+        track.refresh_display_keys();
+        track
     }
+
+    /// Refresh cached NFC/lowercase display keys after title/artist/album change.
+    pub(crate) fn refresh_display_keys(&mut self) {
+        self.title_key = display_key(&self.title);
+        self.artist_key = display_key(&self.artist);
+        self.album_key = display_key(&self.album);
+    }
+}
+
+fn display_key(value: &str) -> String {
+    value.trim().to_lowercase().nfc().collect()
 }
 
 /// Metadata returned by the platform media reader and applied to a track id.

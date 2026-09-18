@@ -4,10 +4,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use health_core::{
-    export, fsck, observation_gaps, open, query, rebuild, restore, semantic_dump, table_counts,
-    Filter, TYPE_NOTE,
+    export, fsck, observation_gaps, open, query, rebuild, restore, restore_allowing_voids,
+    semantic_dump, table_counts, Error, Filter, TYPE_NOTE, TYPE_RETRACT,
 };
-use localcore_log::{has_blob_import, Event};
+use localcore_log::{append, has_blob_import, Event};
+use serde_json::json;
 
 const HELLO_SHA: &str = "a70940623490fa4c251737cf74e1bf75a0327bb18766cc5620edbde3a985c96d";
 
@@ -148,6 +149,56 @@ fn portable_round_trip_and_fsck() {
     assert!(ok.ok(), "{:?}", ok.issues);
     assert_eq!(ok.events, 6);
     assert_eq!(ok.blobs, 1);
+}
+
+#[test]
+fn restore_refuses_to_void_preexisting_events() {
+    let dest = tempfile::tempdir().unwrap();
+    let existing_id = "01900000-0000-7000-8000-0000000000aa";
+    append(
+        dest.path(),
+        &Event::new(
+            existing_id,
+            "2025-01-01T00:00:00.000000000Z",
+            "manual",
+            TYPE_NOTE,
+            json!({"text": "keep"}),
+        ),
+    )
+    .unwrap();
+
+    let src = tempfile::tempdir().unwrap();
+    append(
+        src.path(),
+        &Event::new(
+            "01900000-0000-7000-8000-0000000000bb",
+            "2025-01-02T00:00:00.000000000Z",
+            "manual",
+            TYPE_RETRACT,
+            json!({"target": existing_id}),
+        ),
+    )
+    .unwrap();
+    let export_dir = tempfile::tempdir().unwrap();
+    export(src.path(), export_dir.path()).unwrap();
+
+    let err = restore(export_dir.path(), dest.path()).unwrap_err();
+    match err {
+        Error::Invalid(msg) => {
+            assert!(msg.contains("void"), "{msg}");
+            assert!(msg.contains(existing_id), "{msg}");
+        }
+        other => panic!("expected Invalid, got {other}"),
+    }
+    let dest_events = localcore_log::read_all(dest.path()).unwrap();
+    assert_eq!(dest_events.len(), 1);
+    assert_eq!(dest_events[0].id, existing_id);
+    assert!(!dest_events.iter().any(|ev| ev.event_type == TYPE_RETRACT));
+
+    restore_allowing_voids(export_dir.path(), dest.path()).unwrap();
+    let dest_events = localcore_log::read_all(dest.path()).unwrap();
+    assert_eq!(dest_events.len(), 2);
+    assert!(dest_events.iter().any(|ev| ev.event_type == TYPE_RETRACT));
 }
 
 #[test]

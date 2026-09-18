@@ -2,8 +2,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use localcore_log::{
-    append, has_blob_import, read_all, read_report, Error, Event, TYPE_NOTE, TYPE_SUPERSEDE,
+    append, append_op, has_blob_import, known_type, read_all, read_all_on, read_report, Error,
+    Event, TYPE_EPISODE, TYPE_NOTE, TYPE_SUPERSEDE,
 };
+use localcore_vfs::{MemVfs, Vfs, VfsError};
 use serde_json::json;
 
 fn m0_root() -> PathBuf {
@@ -140,4 +142,64 @@ fn append_file_mode() {
         .mode()
         & 0o777;
     assert_eq!(file_mode, 0o600, "log file mode {file_mode:o}");
+}
+
+#[test]
+fn append_op_writes_fresh_event() {
+    let vfs = MemVfs::new();
+    let ev = append_op(&vfs, "/root", "manual", TYPE_NOTE, json!({"text": "hello"})).unwrap();
+    assert_eq!(ev.dev, "manual");
+    assert_eq!(ev.event_type, TYPE_NOTE);
+    assert!(ev.body.get("text").and_then(|v| v.as_str()) == Some("hello"));
+    let evs = read_all_on(&vfs, "/root").unwrap();
+    assert_eq!(evs.len(), 1);
+    assert_eq!(evs[0].id, ev.id);
+    assert_eq!(evs[0].ts, ev.ts);
+}
+
+#[test]
+fn type_episode_is_known_and_exported() {
+    assert_eq!(TYPE_EPISODE, "episode");
+    assert!(known_type(TYPE_EPISODE));
+}
+
+#[test]
+fn vfs_error_stays_typed() {
+    let vfs = MemVfs::new();
+    vfs.write_atomic("/root/log", b"not-a-directory").unwrap();
+    match read_all_on(&vfs, "/root") {
+        Err(Error::Vfs(VfsError::NotADirectory { path })) => {
+            assert!(path.ends_with("/log"), "{path}");
+        }
+        other => panic!("want Error::Vfs(NotADirectory), got {other:?}"),
+    }
+    let err = Error::from(VfsError::NotFound {
+        path: "/missing".into(),
+    });
+    assert!(matches!(err, Error::Vfs(VfsError::NotFound { .. })));
+    assert_eq!(err.to_string(), "not found: /missing");
+}
+
+#[test]
+#[cfg(unix)]
+fn read_all_skips_symlink_ndjson() {
+    let root = tempfile::tempdir().unwrap();
+    let ev = Event::new(
+        "01900000-0000-7000-8000-0000000000aa",
+        "2024-06-02T08:00:00.000000000Z",
+        "manual",
+        TYPE_NOTE,
+        json!({"text": "hello"}),
+    );
+    append(root.path(), &ev).unwrap();
+    let real = root.path().join("log/manual/2024-06.ndjson");
+    let link = root.path().join("log/manual/evil.ndjson");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let evs = read_all(root.path()).unwrap();
+    assert_eq!(
+        evs.len(),
+        1,
+        "symlink .ndjson must not be ingested: {evs:?}"
+    );
+    assert_eq!(evs[0].id, ev.id);
 }

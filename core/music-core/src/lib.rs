@@ -37,7 +37,7 @@ pub use folder_log::{
 };
 pub use localcore_conflict::{is_conflict_name, ConflictCopy, ConflictGroup};
 pub use localcore_log::valid_device;
-pub use localcore_vfs::{MemVfs, StdVfs, Vfs};
+pub use localcore_vfs::{ConfinedVfs, MemVfs, StdVfs, Vfs};
 pub use merge::{apply_merge, plan_merge, ConflictDisposition, MergePlan};
 pub use model::{
     classify_name, FileClass, MetadataUpdate, Playlist, PlaylistEntry, PlaylistFormat, Track,

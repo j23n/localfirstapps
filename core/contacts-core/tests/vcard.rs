@@ -133,6 +133,17 @@ fn photo_base64_and_uri() {
 }
 
 #[test]
+fn photo_over_two_mib_is_skipped() {
+    // 4 encoded chars → 3 decoded bytes; this payload would decode over 2 MiB.
+    let b64 = "A".repeat((2 * 1024 * 1024 * 4) / 3 + 8);
+    let c = card(&format!(
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nPHOTO;ENCODING=b;TYPE=JPEG:{b64}\r\nEND:VCARD\r\n"
+    ));
+    assert!(c.photo.is_none());
+    assert!(c.unknown_fields.iter().any(|l| l.contains("PHOTO")));
+}
+
+#[test]
 fn categories_and_id() {
     let c = card("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:X\r\nCATEGORIES:friends, family ,work\r\nX-LOCALCONTACTS-ID:abc-123\r\nEND:VCARD\r\n");
     assert_eq!(c.categories, ["friends", "family", "work"]);
