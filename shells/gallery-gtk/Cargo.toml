@@ -31,6 +31,7 @@ contacts-core = { path = "../../core/contacts-core" }
 # stays off — leftover `ui` must not enter this graph.
 localgallery = { path = "../../apps/gallery/linux", default-features = false }
 gallery-vfs = { path = "../../apps/gallery/core/gallery-vfs" }
+gallery-model = { path = "../../apps/gallery/core/gallery-model" }
 gtk = { package = "gtk4", version = "0.11", features = ["v4_22"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }
 pango = { version = "0.22", features = ["v1_56"] }

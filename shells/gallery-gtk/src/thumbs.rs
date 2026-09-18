@@ -200,6 +200,27 @@ impl ThumbCache {
         );
     }
 
+    /// People tile: leftover `PoolKind::Face` crop from the display thumb.
+    pub fn bind_face(
+        &self,
+        picture: &gtk::Picture,
+        path: &str,
+        id: &str,
+        scale: u32,
+        region: &gallery_model::photo::FaceRegion,
+    ) {
+        let size = grid_thumb_size(scale);
+        self.enqueue(
+            ThumbSink::Picture(picture.clone()),
+            path,
+            id,
+            PoolKind::Face {
+                size,
+                region: region.clone(),
+            },
+        );
+    }
+
     /// Kit `media_item` prefix `gtk::Image` named `thumb`.
     #[allow(dead_code)]
     pub fn bind_prefix(&self, image: &gtk::Image, thumbnail_ref: &str, id: &str, scale: u32) {
@@ -582,6 +603,21 @@ mod tests {
         assert!(grid.contains("large"));
         let view = job_key("abc", &PoolKind::Viewer { max_side: 800 });
         assert!(view.contains("800"));
+        let face = job_key(
+            "abc",
+            &PoolKind::Face {
+                size: localgallery::xdg_thumb::ThumbSize::Large,
+                region: gallery_model::photo::FaceRegion {
+                    name: Some("Ada".into()),
+                    center_x: 0.25,
+                    center_y: 0.4,
+                    width: 0.2,
+                    height: 0.2,
+                },
+            },
+        );
+        assert!(face.contains("face"));
+        assert!(face.contains("0.250"));
     }
 
     fn ensure_gtk() -> bool {

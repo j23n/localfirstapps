@@ -168,12 +168,23 @@ pub fn snapshot_reuse_from_load_error(path: &Path, error: ScanError) -> Snapshot
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+fn host_region_to_face(region: &gallery_ffi::HostFaceRegion) -> gallery_model::photo::FaceRegion {
+    gallery_model::photo::FaceRegion {
+        name: region.name.clone(),
+        center_x: region.center_x,
+        center_y: region.center_y,
+        width: region.width,
+        height: region.height,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct PhotoHost {
     pub path: String,
     pub filename: String,
     pub is_video: bool,
     pub live_photo_video_path: Option<String>,
+    pub face_regions: Vec<gallery_ffi::HostFaceRegion>,
 }
 
 /// Leaf folder shown as an Events tile (leftover `event_folders`).
@@ -737,6 +748,7 @@ impl Session {
                 filename: photo.filename.clone(),
                 is_video: photo.is_video,
                 live_photo_video_path: photo.live_photo_video_path.clone(),
+                face_regions: photo.face_regions.clone(),
             };
             hosts.insert(derived_photo_id(&photo.path), host.clone());
             hosts.insert(photo.id.clone(), host);
@@ -1560,6 +1572,27 @@ impl Session {
         let ids = self.index.photo_ids_for_tag(tag.to_string());
         localcore_trace::event("photos", format!("photo_ids_for_tag n={}", ids.len()));
         ids
+    }
+
+    /// MWG regions on a scanned photo. Empty when the host has none.
+    pub fn face_regions_for(&self, photo_id: &str) -> Vec<gallery_model::photo::FaceRegion> {
+        self.hosts
+            .get(photo_id)
+            .map(|host| host.face_regions.iter().map(host_region_to_face).collect())
+            .unwrap_or_default()
+    }
+
+    /// First named box on the cover whose leaf matches `person` (leftover
+    /// [`localgallery::faces::named_region_for`]).
+    pub fn named_cover_region(
+        &self,
+        photo_id: &str,
+        person: &str,
+    ) -> Option<gallery_model::photo::FaceRegion> {
+        let host = self.hosts.get(photo_id)?;
+        let mut photo = PhotoFile::new(&host.path, host.filename.clone(), 0);
+        photo.face_regions = host.face_regions.iter().map(host_region_to_face).collect();
+        localgallery::faces::named_region_for(&photo, person).cloned()
     }
 
     /// One cover photo for a person tile.
@@ -3020,6 +3053,62 @@ mod tests {
             .recovery_message()
             .unwrap()
             .contains("version 19"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn leftover_named_region_for_matches_person_leaf() {
+        let mut photo = PhotoFile::new("/lib/ada.jpg", "ada", 1);
+        photo.face_regions = vec![
+            gallery_model::photo::FaceRegion {
+                name: Some("Ada".into()),
+                center_x: 0.31,
+                center_y: 0.28,
+                width: 0.2,
+                height: 0.2,
+            },
+            gallery_model::photo::FaceRegion {
+                name: None,
+                center_x: 0.7,
+                center_y: 0.4,
+                width: 0.15,
+                height: 0.15,
+            },
+        ];
+        let found = localgallery::faces::named_region_for(&photo, "ada").expect("leaf match");
+        assert_eq!(found.name.as_deref(), Some("Ada"));
+        assert!((found.center_x - 0.31).abs() < f64::EPSILON);
+        assert!(localgallery::faces::named_region_for(&photo, "Bob").is_none());
+
+        let dir = temp_dir();
+        let path = dir.join("ada.jpg");
+        write_jpeg(&dir, "ada.jpg");
+        let mut row = media(path.to_str().unwrap(), Some(1.0), &["People/Ada"]);
+        row.face_regions = vec![gallery_ffi::HostFaceRegion {
+            name: Some("Ada".into()),
+            center_x: 0.31,
+            center_y: 0.28,
+            width: 0.2,
+            height: 0.2,
+        }];
+        let folders = vec![folder(
+            "folder-root",
+            dir.to_str().unwrap(),
+            "lib",
+            None,
+            0,
+            1,
+            1,
+        )];
+        let mut session = Session::new(32);
+        session
+            .apply_catalog(catalog(vec![row.clone()], folders), Some(&dir))
+            .unwrap();
+        let region = session
+            .named_cover_region(&row.id, "ADA")
+            .expect("session uses leftover named_region_for");
+        assert_eq!(region.name.as_deref(), Some("Ada"));
+        assert_eq!(session.face_regions_for(&row.id).len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

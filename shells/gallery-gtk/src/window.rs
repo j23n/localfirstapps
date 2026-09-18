@@ -2984,15 +2984,27 @@ impl Window {
     ) {
         set_cover_captions(root, title, subtitle);
         if let Some((id, path)) = photo {
-            self.bind_cover_photo(root, id, path);
+            self.bind_cover_photo(root, id, path, None);
         }
     }
 
-    fn bind_cover_photo(&self, root: &gtk::Widget, id: &str, path: &str) {
+    fn bind_cover_photo(
+        &self,
+        root: &gtk::Widget,
+        id: &str,
+        path: &str,
+        region: Option<&gallery_model::photo::FaceRegion>,
+    ) {
         if let Some(picture) = find_named_widget::<gtk::Picture>(root, "cover-pic") {
-            self.inner
-                .thumbs
-                .bind_grid(&picture, path, id, self.cover_scale());
+            if let Some(region) = region {
+                self.inner
+                    .thumbs
+                    .bind_face(&picture, path, id, self.cover_scale(), region);
+            } else {
+                self.inner
+                    .thumbs
+                    .bind_grid(&picture, path, id, self.cover_scale());
+            }
         }
     }
 
@@ -3520,7 +3532,7 @@ impl Window {
             }
             if let Some(stack) = &column {
                 let card = self.person_hub_card(row);
-                covers.push((card.clone(), row.id.clone()));
+                covers.push((card.clone(), row.id.clone(), row.title.clone()));
                 stack.append(&card);
             }
         }
@@ -3528,18 +3540,18 @@ impl Window {
         clip_hub_rail(rail)
     }
 
-    fn schedule_person_covers(&self, jobs: Vec<(gtk::Widget, String)>) {
+    fn schedule_person_covers(&self, jobs: Vec<(gtk::Widget, String, String)>) {
         self.pump_person_covers(jobs, 0);
     }
 
-    fn pump_person_covers(&self, jobs: Vec<(gtk::Widget, String)>, start: usize) {
+    fn pump_person_covers(&self, jobs: Vec<(gtk::Widget, String, String)>, start: usize) {
         const CHUNK: usize = 4;
         if start >= jobs.len() {
             return;
         }
         let end = (start + CHUNK).min(jobs.len());
-        for (card, id) in &jobs[start..end] {
-            self.bind_person_cover(card, id);
+        for (card, id, title) in &jobs[start..end] {
+            self.bind_person_cover(card, id, title);
         }
         if end < jobs.len() {
             let this = self.clone();
@@ -3583,7 +3595,7 @@ impl Window {
         btn.upcast()
     }
 
-    fn bind_person_cover(&self, root: &gtk::Widget, tag_id: &str) {
+    fn bind_person_cover(&self, root: &gtk::Widget, tag_id: &str, title: &str) {
         let Some(id) = self.inner.session.borrow().person_cover_photo_id(tag_id) else {
             return;
         };
@@ -3596,7 +3608,8 @@ impl Window {
         let Some(path) = path else {
             return;
         };
-        self.bind_cover_photo(root, &id, &path);
+        let region = self.inner.session.borrow().named_cover_region(&id, title);
+        self.bind_cover_photo(root, &id, &path, region.as_ref());
     }
 
     fn people_tiles(&self, rows: &[gallery_ffi::GalleryTextRow]) -> gtk::Widget {
@@ -3637,12 +3650,20 @@ impl Window {
                         .path_for_photo(id)
                         .map(ToOwned::to_owned)
                 });
-                this.bind_cover(
+                let region = cover.as_ref().and_then(|id| {
+                    this.inner
+                        .session
+                        .borrow()
+                        .named_cover_region(id, &row.title)
+                });
+                set_cover_captions(
                     &root,
                     &row.title,
                     row.trailing.as_deref().unwrap_or_default(),
-                    cover.as_deref().zip(path.as_deref()),
                 );
+                if let Some((id, path)) = cover.as_deref().zip(path.as_deref()) {
+                    this.bind_cover_photo(&root, id, path, region.as_ref());
+                }
                 this.set_person_badges(&root, &row.id, &row.title);
             }
         });
@@ -6211,6 +6232,7 @@ mod tests {
             filename: "Clip.MOV".into(),
             is_video: true,
             live_photo_video_path: None,
+            face_regions: Vec::new(),
         };
         assert!(viewer_is_video(Some(&host), Some(&host.path)));
         assert!(viewer_is_video(None, Some("/lib/a.mp4")));
@@ -6220,6 +6242,7 @@ mod tests {
             filename: "a.jpg".into(),
             is_video: false,
             live_photo_video_path: None,
+            face_regions: Vec::new(),
         };
         assert!(!viewer_is_video(Some(&still), Some(&still.path)));
     }
