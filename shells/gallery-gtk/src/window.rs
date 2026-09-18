@@ -4026,7 +4026,7 @@ impl Window {
             self.inner.window.height().max(1) as u32,
             self.inner.window.scale_factor().max(1) as u32,
         );
-        let media =
+        let (media, still) =
             viewer_media_surface(&self.inner.thumbs, &id, path.as_deref(), is_video, max_side);
         let overlay = gtk::Overlay::new();
         overlay.set_child(Some(&media));
@@ -4081,8 +4081,15 @@ impl Window {
         }
         chrome.append(&overflow);
         overlay.add_overlay(&chrome);
+        let mut hideables = vec![chrome.upcast::<gtk::Widget>()];
         if viewer_shows_sequence_osd(ids.len(), self.inner.window.height()) {
-            overlay.add_overlay(&self.filmstrip(ids, index));
+            let strip = self.filmstrip(ids, index);
+            overlay.add_overlay(&strip);
+            hideables.push(strip);
+        }
+        attach_tap_to_hide(&media, hideables);
+        if let Some(still) = still {
+            attach_still_pinch_zoom(&still);
         }
 
         let group = gio::SimpleActionGroup::new();
@@ -6256,7 +6263,7 @@ fn viewer_media_surface(
     path: Option<&str>,
     is_video: bool,
     max_side: u32,
-) -> gtk::Widget {
+) -> (gtk::Widget, Option<gtk::Picture>) {
     let stage = gtk::Overlay::new();
     stage.set_hexpand(true);
     stage.set_vexpand(true);
@@ -6299,7 +6306,86 @@ fn viewer_media_surface(
             stage.add_overlay(&play);
         }
     }
-    stage.upcast()
+    let still = (!is_video).then(|| picture.clone());
+    (stage.upcast(), still)
+}
+
+const VIEWER_MAX_ZOOM: f64 = 4.0;
+
+thread_local! {
+    static STILL_ZOOM_CSS: Cell<u32> = const { Cell::new(0) };
+}
+
+fn clamp_viewer_zoom(current: f64, factor: f64) -> f64 {
+    (current * factor).clamp(1.0, VIEWER_MAX_ZOOM)
+}
+
+fn attach_tap_to_hide(target: &impl IsA<gtk::Widget>, hideables: Vec<gtk::Widget>) {
+    if hideables.is_empty() {
+        return;
+    }
+    let shown = Rc::new(Cell::new(true));
+    let origin = Rc::new(Cell::new((0.0, 0.0)));
+    let tap = gtk::GestureClick::new();
+    tap.set_button(1);
+    tap.connect_pressed({
+        let origin = origin.clone();
+        move |_, _, x, y| origin.set((x, y))
+    });
+    tap.connect_released(move |_, n_press, x, y| {
+        if n_press != 1 {
+            return;
+        }
+        let (ox, oy) = origin.get();
+        if (x - ox).hypot(y - oy) > 16.0 {
+            return;
+        }
+        let next = !shown.get();
+        shown.set(next);
+        for widget in &hideables {
+            widget.set_visible(next);
+        }
+    });
+    target.add_controller(tap);
+}
+
+fn attach_still_pinch_zoom(picture: &gtk::Picture) {
+    let token = STILL_ZOOM_CSS.with(|cell| {
+        let next = cell.get().wrapping_add(1);
+        cell.set(next);
+        next
+    });
+    let class = format!("gallery-zoom-{token}");
+    picture.add_css_class(&class);
+    let scale = Rc::new(Cell::new(1.0_f64));
+    let begin = Rc::new(Cell::new(1.0_f64));
+    let provider = gtk::CssProvider::new();
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+    let apply = {
+        let provider = provider.clone();
+        let class = class.clone();
+        move |value: f64| {
+            provider.load_from_string(&format!(".{class} {{ transform: scale({value}); }}"));
+        }
+    };
+    let zoom = gtk::GestureZoom::new();
+    zoom.connect_begin({
+        let scale = scale.clone();
+        let begin = begin.clone();
+        move |_, _| begin.set(scale.get())
+    });
+    zoom.connect_scale_changed(move |_, factor| {
+        let next = clamp_viewer_zoom(begin.get(), factor);
+        scale.set(next);
+        apply(next);
+    });
+    picture.add_controller(zoom);
 }
 
 fn viewer_play_button() -> gtk::Button {
@@ -6450,6 +6536,13 @@ mod tests {
         assert_eq!(filter_chip_icon("Vacation"), "tag-symbolic");
         assert_eq!(display_filter_label("People/Ada"), "Ada");
         assert_eq!(display_filter_label("date:2024-06"), "2024-06");
+    }
+
+    #[test]
+    fn pinch_zoom_is_capped_on_the_existing_still() {
+        assert_eq!(super::clamp_viewer_zoom(1.0, 2.0), 2.0);
+        assert_eq!(super::clamp_viewer_zoom(3.0, 2.0), 4.0);
+        assert_eq!(super::clamp_viewer_zoom(1.0, 0.2), 1.0);
     }
 
     #[test]
